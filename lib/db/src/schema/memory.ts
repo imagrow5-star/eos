@@ -33,7 +33,9 @@ export const moodScoresTable = pgTable("mood_scores", {
 export const remindersTable = pgTable("reminders", {
   id: serial("id").primaryKey(),
   content: text("content").notNull(),
-  dueDate: text("due_date"), // YYYY-MM-DD nullable
+  scheduledTime: text("scheduled_time"), // "HH:MM" 24h, nullable = no specific time
+  isRecurring: boolean("is_recurring").notNull().default(false), // repeats daily at scheduledTime
+  dueDate: text("due_date"), // YYYY-MM-DD for one-off reminders, nullable
   isDone: boolean("is_done").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

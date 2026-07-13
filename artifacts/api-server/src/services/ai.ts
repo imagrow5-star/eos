@@ -327,3 +327,54 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
     logger.error({ err }, "Memory extraction failed");
   }
 }
+
+// ─── Goal task breakdown ──────────────────────────────────────────────────────
+
+export async function breakGoalIntoTasks(
+  goalTitle: string,
+  goalDescription: string,
+): Promise<string[]> {
+  const anthropic = getAnthropic();
+
+  if (!anthropic) {
+    // Sensible mock sub-tasks when no API key
+    return [
+      "Write down exactly what this goal means to you in one sentence",
+      "Identify the single smallest action you could take today",
+      "Set a reminder to check back on this in three days",
+    ];
+  }
+
+  const prompt = `Break this goal into 3–5 concrete, small, achievable sub-tasks. Return ONLY a JSON array of strings with no explanation.
+
+Goal: "${goalTitle}"${goalDescription ? `\nContext: ${goalDescription}` : ""}
+
+Rules:
+- Each task must be achievable in one session or one day
+- Be specific and concrete — no vague advice
+- Order from simplest to more involved
+- Plain language, no buzzwords or therapy-speak
+- Return ONLY: ["task 1", "task 2", "task 3"]`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 300,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const textBlock = response.content.find((b) => b.type === "text");
+    if (!textBlock) return [];
+
+    const raw = textBlock.text.replace(/```(?:json)?\n?/g, "").trim();
+    const tasks = JSON.parse(raw) as string[];
+    return Array.isArray(tasks) ? tasks.filter((t) => typeof t === "string").slice(0, 5) : [];
+  } catch (err) {
+    logger.error({ err }, "Goal task breakdown failed");
+    return [
+      "Start with one small step today",
+      "Set a reminder to check in tomorrow",
+      "Tell someone you trust about this goal",
+    ];
+  }
+}

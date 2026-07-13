@@ -326,7 +326,7 @@ components:
           type: boolean
         currentStep:
           type: string
-          description: "path | country | name | relationshipType | energy | companionName | done"
+          description: "purpose | name | companionName | country | ageBand | done"
         companionFirstMessage:
           type: ["string", "null"]
           description: The companion's next question or first greeting after onboarding completes
@@ -339,7 +339,7 @@ components:
       properties:
         step:
           type: string
-          description: "path | country | name | relationshipType | energy | companionName"
+          description: "purpose | name | companionName | country | ageBand"
         answer:
           type: string
       required:
@@ -363,10 +363,13 @@ components:
           description: "playful | calm | deep"
         userPath:
           type: string
-          description: "breakup | bereavement"
+          description: "lonely | support | breakup | bereavement"
         country:
           type: string
           description: "US | UK | AU | other"
+        ageBand:
+          type: string
+          description: "18-25 | 26-35 | 36-50 | 50+"
         createdAt:
           type: string
           format: date-time
@@ -383,6 +386,7 @@ components:
         - energy
         - userPath
         - country
+        - ageBand
         - createdAt
         - daysSinceStart
         - currentStage
@@ -401,6 +405,8 @@ components:
         userPath:
           type: string
         country:
+          type: string
+        ageBand:
           type: string
 
     Message:

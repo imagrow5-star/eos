@@ -8,12 +8,14 @@ export const profileTable = pgTable("profile", {
   companionName: text("companion_name").notNull().default("Asha"),
   relationshipType: text("relationship_type").notNull().default("friend"), // friend | romantic
   energy: text("energy").notNull().default("calm"), // playful | calm | deep
-  userPath: text("user_path").notNull().default("breakup"), // breakup | bereavement
+  userPath: text("user_path").notNull().default("breakup"), // lonely | support | breakup | bereavement
   country: text("country").notNull().default(""), // US | UK | AU | other
-  onboardingStep: text("onboarding_step").notNull().default("path"), // path | country | name | relationshipType | energy | companionName | done
+  ageBand: text("age_band").notNull().default(""), // 18-25 | 26-35 | 36-50 | 50+
+  // purpose -> name -> companionName -> country -> ageBand -> done  (also accepts legacy "path" step)
+  onboardingStep: text("onboarding_step").notNull().default("purpose"),
   isOnboardingComplete: boolean("is_onboarding_complete").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-  morningNoteDate: text("morning_note_date"), // last date morning note was generated YYYY-MM-DD
+  morningNoteDate: text("morning_note_date"),
   visitDates: text("visit_dates").array().notNull().default([]),
   changeTalkDetected: boolean("change_talk_detected").notNull().default(false),
 });

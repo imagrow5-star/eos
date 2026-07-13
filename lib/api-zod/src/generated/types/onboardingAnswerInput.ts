@@ -7,7 +7,7 @@
  */
 
 export interface OnboardingAnswerInput {
-  /** path | country | name | relationshipType | energy | companionName */
+  /** purpose | name | companionName | country | ageBand */
   step: string;
   answer: string;
 }

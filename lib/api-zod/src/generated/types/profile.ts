@@ -14,10 +14,12 @@ export interface Profile {
   relationshipType: string;
   /** playful | calm | deep */
   energy: string;
-  /** breakup | bereavement */
+  /** lonely | support | breakup | bereavement */
   userPath: string;
   /** US | UK | AU | other */
   country: string;
+  /** 18-25 | 26-35 | 36-50 | 50+ */
+  ageBand: string;
   createdAt: Date;
   daysSinceStart: number;
   /** 1=Arrival 2=Held 3=FirstStep 4=Building */

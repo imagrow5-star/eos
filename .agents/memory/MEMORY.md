@@ -2,3 +2,4 @@
 - [Two-path onboarding](two-path-onboarding.md) — Branching onboarding: breakup vs bereavement; profile route must return userPath + country
 - [System prompt rules](system-prompt-rules.md) — Voice mirroring, anti-ex-surveillance, country crisis lines baked into buildSystemPrompt
 - [Voice infinite loop fix](voice-loop-fix.md) — useSpeechRecognition must use a ref for onResult callback; never put it in useEffect deps
+- [Goals route zod ban](goals-zod-ban.md) — api-server package has no zod dep; goals.ts must use plain JS validation, not z.object()

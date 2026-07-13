@@ -11,7 +11,7 @@ export interface HealthStatus {
 
 export interface OnboardingStatus {
   isComplete: boolean;
-  /** path | country | name | relationshipType | energy | companionName | done */
+  /** purpose | name | companionName | country | ageBand | done */
   currentStep: string;
   /**
      * The companion's next question or first greeting after onboarding completes
@@ -21,7 +21,7 @@ export interface OnboardingStatus {
 }
 
 export interface OnboardingAnswerInput {
-  /** path | country | name | relationshipType | energy | companionName */
+  /** purpose | name | companionName | country | ageBand */
   step: string;
   answer: string;
 }
@@ -34,10 +34,12 @@ export interface Profile {
   relationshipType: string;
   /** playful | calm | deep */
   energy: string;
-  /** breakup | bereavement */
+  /** lonely | support | breakup | bereavement */
   userPath: string;
   /** US | UK | AU | other */
   country: string;
+  /** 18-25 | 26-35 | 36-50 | 50+ */
+  ageBand: string;
   createdAt: string;
   daysSinceStart: number;
   /** 1=Arrival 2=Held 3=FirstStep 4=Building */
@@ -51,6 +53,7 @@ export interface ProfileInput {
   energy?: string;
   userPath?: string;
   country?: string;
+  ageBand?: string;
 }
 
 export interface Message {

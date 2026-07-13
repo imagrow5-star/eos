@@ -13,4 +13,5 @@ export interface ProfileInput {
   energy?: string;
   userPath?: string;
   country?: string;
+  ageBand?: string;
 }

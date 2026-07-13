@@ -35,6 +35,22 @@ async function recordVisit(profileId: number, currentVisitDates: string[]) {
   return currentVisitDates;
 }
 
+function buildProfilePayload(profile: ReturnType<typeof Object.assign>, daysSinceStart: number, stage: number) {
+  return {
+    id: profile.id,
+    userName: profile.userName,
+    companionName: profile.companionName,
+    relationshipType: profile.relationshipType,
+    energy: profile.energy,
+    userPath: profile.userPath,
+    country: profile.country,
+    ageBand: profile.ageBand ?? "",
+    createdAt: profile.createdAt,
+    daysSinceStart,
+    currentStage: stage,
+  };
+}
+
 router.get("/profile", async (req, res): Promise<void> => {
   let profile = await getOrCreateProfile();
   profile.visitDates = await recordVisit(profile.id, profile.visitDates);
@@ -44,20 +60,7 @@ router.get("/profile", async (req, res): Promise<void> => {
     (Date.now() - profile.createdAt.getTime()) / (1000 * 60 * 60 * 24),
   );
 
-  res.json(
-    GetProfileResponse.parse({
-      id: profile.id,
-      userName: profile.userName,
-      companionName: profile.companionName,
-      relationshipType: profile.relationshipType,
-      energy: profile.energy,
-      userPath: profile.userPath,
-      country: profile.country,
-      createdAt: profile.createdAt,
-      daysSinceStart,
-      currentStage: stage,
-    }),
-  );
+  res.json(GetProfileResponse.parse(buildProfilePayload(profile, daysSinceStart, stage)));
 });
 
 router.put("/profile", async (req, res): Promise<void> => {
@@ -75,6 +78,10 @@ router.put("/profile", async (req, res): Promise<void> => {
   if (data.companionName != null) updates.companionName = data.companionName;
   if (data.relationshipType != null) updates.relationshipType = data.relationshipType;
   if (data.energy != null) updates.energy = data.energy;
+  if (data.userPath != null) updates.userPath = data.userPath;
+  if (data.country != null) updates.country = data.country;
+  // ageBand is not in the generated ProfileInput yet — accept it if present
+  if ((data as any).ageBand != null) updates.ageBand = (data as any).ageBand;
 
   const [updated] = await db
     .update(profileTable)
@@ -92,20 +99,7 @@ router.put("/profile", async (req, res): Promise<void> => {
     (Date.now() - updated.createdAt.getTime()) / (1000 * 60 * 60 * 24),
   );
 
-  res.json(
-    UpdateProfileResponse.parse({
-      id: updated.id,
-      userName: updated.userName,
-      companionName: updated.companionName,
-      relationshipType: updated.relationshipType,
-      energy: updated.energy,
-      userPath: updated.userPath,
-      country: updated.country,
-      createdAt: updated.createdAt,
-      daysSinceStart,
-      currentStage: stage,
-    }),
-  );
+  res.json(UpdateProfileResponse.parse(buildProfilePayload(updated, daysSinceStart, stage)));
 });
 
 export { getOrCreateProfile };

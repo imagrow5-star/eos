@@ -8,7 +8,7 @@
 
 export interface OnboardingStatus {
   isComplete: boolean;
-  /** path | country | name | relationshipType | energy | companionName | done */
+  /** purpose | name | companionName | country | ageBand | done */
   currentStep: string;
   /**
      * The companion's next question or first greeting after onboarding completes
