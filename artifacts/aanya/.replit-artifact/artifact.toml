@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "Aanya — Your Companion"
+version = "1.0.0"
+id = "artifacts/aanya"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21617
+
+[services.development]
+run = "pnpm --filter @workspace/aanya run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/aanya", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/aanya/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21617"
+BASE_PATH = "/"

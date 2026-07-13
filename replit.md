@@ -1,36 +1,53 @@
-# [Project name]
+# Aanya
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A warm AI companion web app for people recovering from a breakup. Users talk to a personally named AI companion who remembers everything about them, tracks their mood and habits, and guides them gently from pure emotional support toward rebuilding their life — without ever feeling like a wellness app.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/api-server run dev` — API server (port determined by workflow)
+- `pnpm --filter @workspace/aanya run dev` — Frontend (port determined by workflow)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
+- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string
+- Optional env: `ANTHROPIC_API_KEY` — Claude API key (app works in mock mode without it)
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
+- Frontend: React + Vite, Tailwind CSS v4, Framer Motion, Recharts, Wouter
 - API: Express 5
 - DB: PostgreSQL + Drizzle ORM
+- AI: Anthropic Claude (`claude-opus-4-5` for chat, `claude-haiku-4-5` for memory extraction) with mock fallback
 - Validation: Zod (`zod/v4`), `drizzle-zod`
 - API codegen: Orval (from OpenAPI spec)
 - Build: esbuild (CJS bundle)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `lib/api-spec/openapi.yaml` — API contract (source of truth)
+- `lib/db/src/schema/` — DB schema: profile, messages, memory_facts, personality_signals, wins, mood_scores, reminders, habits, habit_completions
+- `artifacts/api-server/src/services/ai.ts` — Anthropic calls, mock mode, memory extraction, morning note
+- `artifacts/api-server/src/services/systemPrompt.ts` — dynamic system prompt builder (injects memories, stage, wisdom)
+- `artifacts/api-server/src/services/stage.ts` — relationship stage calculation (1–4) + milestone helpers
+- `artifacts/api-server/src/routes/` — onboarding, profile, chat, memory, journey routes
+- `artifacts/aanya/src/pages/` — Chat.tsx, Journey.tsx, Memory.tsx
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- **Single-user**: No auth. Profile is always id=1, created on first request.
+- **Mock mode**: If `ANTHROPIC_API_KEY` is unset, the app returns warm stage-appropriate hardcoded replies with a simulated delay. All other functionality (memory, habits, journey) works fully.
+- **Memory extraction**: Triggered every 4 user messages as a background job (does not block response). Uses `claude-haiku-4-5` for cost efficiency.
+- **Relationship stages** (1→4, forward-only): Stage gate based on visit days, memory count, change-talk detection, mood average, and habit streak — never just time.
+- **Forgiving streak**: A streak doesn't break until the user misses 2 consecutive days (today and yesterday both absent).
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- **Onboarding**: Conversational (chat-based, never a form) — companion asks name, relationship type, energy, and her own name
+- **Chat**: Full message history, typing indicator, morning note (once daily), voice mode with browser SpeechRecognition + speechSynthesis
+- **Journey panel** (`/journey`): Stage badge, day/streak/wins stats, mood line chart, habits with 7-day completion dots, milestone grid, wins list
+- **Memory panel** (`/memory`): Personality signals with confidence levels, remembered facts by category
 
 ## User preferences
 
@@ -38,7 +55,9 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- After any OpenAPI spec change, run `pnpm --filter @workspace/api-spec run codegen` before touching routes or frontend
+- The `@anthropic-ai/sdk` uses `require()` dynamic import in the ai.ts service to avoid crashing when key is absent
+- `voice.ts` uses a ref pattern for the `onResult` callback to avoid an infinite re-render loop in `useSpeechRecognition`
 
 ## Pointers
 

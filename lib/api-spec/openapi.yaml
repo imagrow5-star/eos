@@ -3,20 +3,29 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Aanya - AI Companion API for breakup recovery
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: onboarding
+    description: Onboarding flow
+  - name: profile
+    description: User profile
+  - name: chat
+    description: Chat messages
+  - name: memory
+    description: Memory engine - facts, signals, wins, habits
+  - name: journey
+    description: Journey stats and progress
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +33,282 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /onboarding/status:
+    get:
+      operationId: getOnboardingStatus
+      tags: [onboarding]
+      summary: Get onboarding completion status
+      responses:
+        "200":
+          description: Onboarding status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OnboardingStatus"
+
+  /onboarding/answer:
+    post:
+      operationId: submitOnboardingAnswer
+      tags: [onboarding]
+      summary: Submit an onboarding answer (one step at a time)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OnboardingAnswerInput"
+      responses:
+        "200":
+          description: Next onboarding step or completion
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OnboardingStatus"
+
+  /profile:
+    get:
+      operationId: getProfile
+      tags: [profile]
+      summary: Get user profile
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+    put:
+      operationId: updateProfile
+      tags: [profile]
+      summary: Update user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileInput"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+
+  /chat/messages:
+    get:
+      operationId: getMessages
+      tags: [chat]
+      summary: Get all chat messages
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+
+  /chat/send:
+    post:
+      operationId: sendMessage
+      tags: [chat]
+      summary: Send a user message and get companion reply
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageInput"
+      responses:
+        "200":
+          description: Companion reply message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatReply"
+
+  /chat/morning-note:
+    post:
+      operationId: generateMorningNote
+      tags: [chat]
+      summary: Generate the daily morning note from companion
+      responses:
+        "200":
+          description: Morning note message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
+  /memory/facts:
+    get:
+      operationId: getMemoryFacts
+      tags: [memory]
+      summary: Get all remembered facts about the user
+      responses:
+        "200":
+          description: List of facts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MemoryFact"
+
+  /memory/signals:
+    get:
+      operationId: getPersonalitySignals
+      tags: [memory]
+      summary: Get personality signals observed from conversations
+      responses:
+        "200":
+          description: List of personality signals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PersonalitySignal"
+
+  /memory/wins:
+    get:
+      operationId: getWins
+      tags: [memory]
+      summary: Get all real-world wins logged
+      responses:
+        "200":
+          description: List of wins
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Win"
+    post:
+      operationId: createWin
+      tags: [memory]
+      summary: Log a new win
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WinInput"
+      responses:
+        "201":
+          description: Created win
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Win"
+
+  /memory/habits:
+    get:
+      operationId: getHabits
+      tags: [memory]
+      summary: Get all habits with streaks and recent completions
+      responses:
+        "200":
+          description: List of habits
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Habit"
+    post:
+      operationId: createHabit
+      tags: [memory]
+      summary: Create a new habit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HabitInput"
+      responses:
+        "201":
+          description: Created habit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Habit"
+
+  /memory/habits/{id}:
+    put:
+      operationId: updateHabit
+      tags: [memory]
+      summary: Update a habit
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HabitUpdate"
+      responses:
+        "200":
+          description: Updated habit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Habit"
+
+  /memory/habits/{id}/complete:
+    post:
+      operationId: completeHabit
+      tags: [memory]
+      summary: Mark a habit as completed for today
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated habit with new streak
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Habit"
+
+  /journey:
+    get:
+      operationId: getJourney
+      tags: [journey]
+      summary: Get full journey stats including stage, streaks, mood history, milestones
+      responses:
+        "200":
+          description: Journey stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Journey"
+
+  /journey/mood:
+    get:
+      operationId: getMoodHistory
+      tags: [journey]
+      summary: Get mood score history for chart
+      responses:
+        "200":
+          description: List of mood scores over time
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MoodEntry"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +319,317 @@ components:
       required:
         - status
 
+    OnboardingStatus:
+      type: object
+      properties:
+        isComplete:
+          type: boolean
+        currentStep:
+          type: string
+          description: "name | relationshipType | energy | companionName | done"
+        companionFirstMessage:
+          type: ["string", "null"]
+          description: The companion's warm first greeting after onboarding completes
+      required:
+        - isComplete
+        - currentStep
+
+    OnboardingAnswerInput:
+      type: object
+      properties:
+        step:
+          type: string
+          description: "name | relationshipType | energy | companionName"
+        answer:
+          type: string
+      required:
+        - step
+        - answer
+
+    Profile:
+      type: object
+      properties:
+        id:
+          type: integer
+        userName:
+          type: string
+        companionName:
+          type: string
+        relationshipType:
+          type: string
+          description: "friend | romantic"
+        energy:
+          type: string
+          description: "playful | calm | deep"
+        createdAt:
+          type: string
+          format: date-time
+        daysSinceStart:
+          type: integer
+        currentStage:
+          type: integer
+          description: "1=Arrival 2=Held 3=FirstStep 4=Building"
+      required:
+        - id
+        - userName
+        - companionName
+        - relationshipType
+        - energy
+        - createdAt
+        - daysSinceStart
+        - currentStage
+
+    ProfileInput:
+      type: object
+      properties:
+        userName:
+          type: string
+        companionName:
+          type: string
+        relationshipType:
+          type: string
+        energy:
+          type: string
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: integer
+        role:
+          type: string
+          description: "user | assistant"
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        isMorningNote:
+          type: boolean
+      required:
+        - id
+        - role
+        - content
+        - createdAt
+        - isMorningNote
+
+    MessageInput:
+      type: object
+      properties:
+        content:
+          type: string
+          minLength: 1
+      required:
+        - content
+
+    ChatReply:
+      type: object
+      properties:
+        userMessage:
+          $ref: "#/components/schemas/Message"
+        assistantMessage:
+          $ref: "#/components/schemas/Message"
+        memoryExtracted:
+          type: boolean
+          description: Whether memory extraction ran this cycle
+      required:
+        - userMessage
+        - assistantMessage
+        - memoryExtracted
+
+    MemoryFact:
+      type: object
+      properties:
+        id:
+          type: integer
+        fact:
+          type: string
+        category:
+          type: string
+          description: "life | preference | event | person | goal"
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - fact
+        - category
+        - createdAt
+
+    PersonalitySignal:
+      type: object
+      properties:
+        id:
+          type: integer
+        signal:
+          type: string
+        observedCount:
+          type: integer
+        isActive:
+          type: boolean
+          description: True after observed 3+ times
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - signal
+        - observedCount
+        - isActive
+        - createdAt
+
+    Win:
+      type: object
+      properties:
+        id:
+          type: integer
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - content
+        - createdAt
+
+    WinInput:
+      type: object
+      properties:
+        content:
+          type: string
+          minLength: 1
+      required:
+        - content
+
+    Habit:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        whenThen:
+          type: string
+          description: "When-then anchor e.g. 'after morning chai'"
+        reason:
+          type: string
+        isActive:
+          type: boolean
+        streak:
+          type: integer
+        lastCompleted:
+          type: ["string", "null"]
+          format: date
+        recentCompletions:
+          type: array
+          items:
+            type: string
+            format: date
+          description: Last 7 days of completion dates
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - whenThen
+        - reason
+        - isActive
+        - streak
+        - createdAt
+        - recentCompletions
+
+    HabitInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        whenThen:
+          type: string
+        reason:
+          type: string
+      required:
+        - name
+        - whenThen
+        - reason
+
+    HabitUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        whenThen:
+          type: string
+        reason:
+          type: string
+        isActive:
+          type: boolean
+
+    Journey:
+      type: object
+      properties:
+        stage:
+          type: integer
+          description: "1=Arrival 2=Held 3=FirstStep 4=Building"
+        stageLabel:
+          type: string
+          description: "Arrival | Held | First Step | Building"
+        dayCounter:
+          type: integer
+        streak:
+          type: integer
+        winCount:
+          type: integer
+        habitCount:
+          type: integer
+        averageMoodRecent:
+          type: ["number", "null"]
+        milestones:
+          type: array
+          items:
+            $ref: "#/components/schemas/Milestone"
+        moodCaption:
+          type: ["string", "null"]
+      required:
+        - stage
+        - stageLabel
+        - dayCounter
+        - streak
+        - winCount
+        - habitCount
+        - milestones
+
+    Milestone:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        isUnlocked:
+          type: boolean
+        unlockedAt:
+          type: ["string", "null"]
+          format: date-time
+      required:
+        - id
+        - label
+        - isUnlocked
+
+    MoodEntry:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        score:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - date
+        - score
+        - createdAt
