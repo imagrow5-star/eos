@@ -21,8 +21,8 @@ export const HealthCheckResponse = zod.object({
  */
 export const GetOnboardingStatusResponse = zod.object({
   "isComplete": zod.boolean(),
-  "currentStep": zod.string().describe('name | relationshipType | energy | companionName | done'),
-  "companionFirstMessage": zod.string().nullish().describe('The companion\'s warm first greeting after onboarding completes')
+  "currentStep": zod.string().describe('path | country | name | relationshipType | energy | companionName | done'),
+  "companionFirstMessage": zod.string().nullish().describe('The companion\'s next question or first greeting after onboarding completes')
 })
 
 
@@ -30,14 +30,14 @@ export const GetOnboardingStatusResponse = zod.object({
  * @summary Submit an onboarding answer (one step at a time)
  */
 export const SubmitOnboardingAnswerBody = zod.object({
-  "step": zod.string().describe('name | relationshipType | energy | companionName'),
+  "step": zod.string().describe('path | country | name | relationshipType | energy | companionName'),
   "answer": zod.string()
 })
 
 export const SubmitOnboardingAnswerResponse = zod.object({
   "isComplete": zod.boolean(),
-  "currentStep": zod.string().describe('name | relationshipType | energy | companionName | done'),
-  "companionFirstMessage": zod.string().nullish().describe('The companion\'s warm first greeting after onboarding completes')
+  "currentStep": zod.string().describe('path | country | name | relationshipType | energy | companionName | done'),
+  "companionFirstMessage": zod.string().nullish().describe('The companion\'s next question or first greeting after onboarding completes')
 })
 
 
@@ -50,6 +50,8 @@ export const GetProfileResponse = zod.object({
   "companionName": zod.string(),
   "relationshipType": zod.string().describe('friend | romantic'),
   "energy": zod.string().describe('playful | calm | deep'),
+  "userPath": zod.string().describe('breakup | bereavement'),
+  "country": zod.string().describe('US | UK | AU | other'),
   "createdAt": zod.coerce.date(),
   "daysSinceStart": zod.number(),
   "currentStage": zod.number().describe('1=Arrival 2=Held 3=FirstStep 4=Building')
@@ -63,7 +65,9 @@ export const UpdateProfileBody = zod.object({
   "userName": zod.string().optional(),
   "companionName": zod.string().optional(),
   "relationshipType": zod.string().optional(),
-  "energy": zod.string().optional()
+  "energy": zod.string().optional(),
+  "userPath": zod.string().optional(),
+  "country": zod.string().optional()
 })
 
 export const UpdateProfileResponse = zod.object({
@@ -72,6 +76,8 @@ export const UpdateProfileResponse = zod.object({
   "companionName": zod.string(),
   "relationshipType": zod.string().describe('friend | romantic'),
   "energy": zod.string().describe('playful | calm | deep'),
+  "userPath": zod.string().describe('breakup | bereavement'),
+  "country": zod.string().describe('US | UK | AU | other'),
   "createdAt": zod.coerce.date(),
   "daysSinceStart": zod.number(),
   "currentStage": zod.number().describe('1=Arrival 2=Held 3=FirstStep 4=Building')

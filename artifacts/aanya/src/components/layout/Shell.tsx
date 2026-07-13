@@ -17,22 +17,26 @@ export function Shell({ children }: { children: React.ReactNode }) {
         {children}
       </main>
 
-      {/* Bottom Navigation */}
-      <nav className="absolute bottom-0 left-0 right-0 h-[72px] bg-card/80 backdrop-blur-xl border-t border-white/5 z-20 px-6 flex items-center justify-around pb-safe">
+      {/* Bottom Navigation — gold hairline top border, deep navy base */}
+      <nav className="absolute bottom-0 left-0 right-0 h-[72px] bg-card/90 backdrop-blur-xl border-t border-primary/20 z-20 px-6 flex items-center justify-around pb-safe">
         {navItems.map((item) => {
           const isActive = location === item.href;
           return (
-            <Link key={item.href} href={item.href} className="flex flex-col items-center justify-center w-16 h-full gap-1 group">
+            <Link
+              key={item.href}
+              href={item.href}
+              className="flex flex-col items-center justify-center w-16 h-full gap-1 group"
+            >
               <div className={cn(
                 "p-2 rounded-full transition-all duration-300",
-                isActive 
-                  ? "bg-primary/20 text-primary shadow-[0_0_15px_rgba(157,113,232,0.3)]" 
-                  : "text-muted-foreground group-hover:text-primary/70"
+                isActive
+                  ? "bg-primary/15 text-primary"
+                  : "text-muted-foreground group-hover:text-secondary/70"
               )}>
-                <item.icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
+                <item.icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 1.75} />
               </div>
               <span className={cn(
-                "text-[10px] tracking-wide transition-colors",
+                "text-[10px] tracking-widest uppercase transition-colors",
                 isActive ? "text-primary font-medium" : "text-muted-foreground"
               )}>
                 {item.label}

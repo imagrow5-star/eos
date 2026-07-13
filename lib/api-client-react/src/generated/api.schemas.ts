@@ -11,17 +11,17 @@ export interface HealthStatus {
 
 export interface OnboardingStatus {
   isComplete: boolean;
-  /** name | relationshipType | energy | companionName | done */
+  /** path | country | name | relationshipType | energy | companionName | done */
   currentStep: string;
   /**
-     * The companion's warm first greeting after onboarding completes
+     * The companion's next question or first greeting after onboarding completes
      * @nullable
      */
   companionFirstMessage?: string | null;
 }
 
 export interface OnboardingAnswerInput {
-  /** name | relationshipType | energy | companionName */
+  /** path | country | name | relationshipType | energy | companionName */
   step: string;
   answer: string;
 }
@@ -34,6 +34,10 @@ export interface Profile {
   relationshipType: string;
   /** playful | calm | deep */
   energy: string;
+  /** breakup | bereavement */
+  userPath: string;
+  /** US | UK | AU | other */
+  country: string;
   createdAt: string;
   daysSinceStart: number;
   /** 1=Arrival 2=Held 3=FirstStep 4=Building */
@@ -45,6 +49,8 @@ export interface ProfileInput {
   companionName?: string;
   relationshipType?: string;
   energy?: string;
+  userPath?: string;
+  country?: string;
 }
 
 export interface Message {

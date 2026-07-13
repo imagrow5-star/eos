@@ -11,4 +11,6 @@ export interface ProfileInput {
   companionName?: string;
   relationshipType?: string;
   energy?: string;
+  userPath?: string;
+  country?: string;
 }

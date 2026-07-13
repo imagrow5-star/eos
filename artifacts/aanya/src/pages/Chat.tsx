@@ -13,7 +13,7 @@ import {
   useGenerateMorningNote,
   useGetProfile,
   getGetOnboardingStatusQueryKey,
-  getGetMessagesQueryKey
+  getGetMessagesQueryKey,
 } from "@workspace/api-client-react";
 
 import { chatMessageSchema, type ChatMessageFormValues } from "@/lib/schemas";
@@ -23,36 +23,33 @@ import { Button } from "@/components/ui/button";
 import { useSpeechRecognition, speakText } from "@/lib/voice";
 import { cn } from "@/lib/utils";
 
+// ─── Typing indicator ─────────────────────────────────────────────────────────
+
 function TypingIndicator() {
   return (
-    <div className="flex space-x-1.5 items-center bg-card/50 w-fit px-4 py-3 rounded-2xl rounded-tl-sm border border-card-border/50 shadow-sm backdrop-blur-sm">
-      <motion.div
-        className="w-1.5 h-1.5 bg-primary/60 rounded-full"
-        animate={{ y: [0, -3, 0] }}
-        transition={{ duration: 0.6, repeat: Infinity, delay: 0 }}
-      />
-      <motion.div
-        className="w-1.5 h-1.5 bg-primary/60 rounded-full"
-        animate={{ y: [0, -3, 0] }}
-        transition={{ duration: 0.6, repeat: Infinity, delay: 0.2 }}
-      />
-      <motion.div
-        className="w-1.5 h-1.5 bg-primary/60 rounded-full"
-        animate={{ y: [0, -3, 0] }}
-        transition={{ duration: 0.6, repeat: Infinity, delay: 0.4 }}
-      />
+    <div className="flex space-x-1.5 items-center bg-card/60 w-fit px-4 py-3 rounded-2xl rounded-tl-sm border border-primary/12 shadow-sm backdrop-blur-sm">
+      {[0, 0.2, 0.4].map((delay, i) => (
+        <motion.div
+          key={i}
+          className="w-1.5 h-1.5 bg-secondary/50 rounded-full"
+          animate={{ y: [0, -3, 0] }}
+          transition={{ duration: 0.65, repeat: Infinity, delay }}
+        />
+      ))}
     </div>
   );
 }
 
+// ─── Main Chat component ──────────────────────────────────────────────────────
+
 export default function Chat() {
   const queryClient = useQueryClient();
   const scrollRef = useRef<HTMLDivElement>(null);
-  
+
   const { data: onboarding } = useGetOnboardingStatus();
   const { data: profile } = useGetProfile();
-  const { data: messages = [] } = useGetMessages({ 
-    query: { enabled: !!onboarding?.isComplete } 
+  const { data: messages = [] } = useGetMessages({
+    query: { enabled: !!onboarding?.isComplete },
   });
 
   const generateMorningNote = useGenerateMorningNote();
@@ -62,6 +59,8 @@ export default function Chat() {
   const [isTyping, setIsTyping] = useState(false);
   const [continuousVoice, setContinuousVoice] = useState(false);
   const morningNoteTriggered = useRef(false);
+
+  const isBereavement = profile?.userPath === "bereavement";
 
   const form = useForm<ChatMessageFormValues>({
     resolver: zodResolver(chatMessageSchema),
@@ -80,16 +79,17 @@ export default function Chat() {
         },
       });
     }
-    // generateMorningNoteMutate is stable from react-query; morningNoteTriggered is a ref
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onboarding?.isComplete]);
 
-  // Scroll to bottom
+  // Scroll to bottom on new messages
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, onboarding?.currentStep, isTyping]);
+
+  // ─── Send handler (works for onboarding and chat) ──────────────────────────
 
   const handleSend = async (data: ChatMessageFormValues) => {
     if (!data.content.trim()) return;
@@ -105,17 +105,16 @@ export default function Chat() {
             queryClient.setQueryData(getGetOnboardingStatusQueryKey(), newStatus);
             setIsTyping(false);
             if (newStatus.isComplete && newStatus.companionFirstMessage && continuousVoice) {
-               speakText(newStatus.companionFirstMessage, () => {
-                  if (continuousVoice) voice.startListening();
-               });
+              speakText(newStatus.companionFirstMessage, () => {
+                if (continuousVoice) voice.startListening();
+              });
             }
           },
-          onError: () => setIsTyping(false)
+          onError: () => setIsTyping(false),
         }
       );
     } else {
       setIsTyping(true);
-      // Optimistic user message can be added if needed, but we rely on invalidation for now
       sendMessage.mutate(
         { data: { content } },
         {
@@ -128,7 +127,7 @@ export default function Chat() {
               });
             }
           },
-          onError: () => setIsTyping(false)
+          onError: () => setIsTyping(false),
         }
       );
     }
@@ -151,24 +150,28 @@ export default function Chat() {
     }
   };
 
-  const companionName = profile?.companionName || "Aanya";
+  const companionName = profile?.companionName || "Asha";
   const companionInitials = companionName.substring(0, 2).toUpperCase();
+
+  // ─── Chat content renderer ─────────────────────────────────────────────────
 
   const chatContent = () => {
     if (!onboarding?.isComplete) {
       return (
         <div className="flex flex-col gap-4">
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
+            key={onboarding?.currentStep}
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
             className="flex items-end gap-2 max-w-[85%]"
           >
-            <div className="bg-secondary/20 text-foreground border border-secondary/30 px-4 py-3 rounded-2xl rounded-bl-sm shadow-sm backdrop-blur-sm">
-              <p className="text-sm font-serif leading-relaxed text-secondary-foreground/90">
-                {onboarding?.currentStep === "name" && "Hi. It's late. You don't have to be strong here. What should I call you?"}
-                {onboarding?.currentStep === "relationshipType" && "And who am I to you? A friend to sit with, or someone closer?"}
-                {onboarding?.currentStep === "energy" && "Do you need me to be playful to distract you, calm to ground you, or deep so we can just talk about it?"}
-                {onboarding?.currentStep === "companionName" && "I'll be whatever you need. Do you have a name for me?"}
+            <div className="bg-card border border-primary/15 px-5 py-3.5 rounded-2xl rounded-bl-sm shadow-sm">
+              <p className={cn(
+                "companion-message leading-relaxed text-foreground/88",
+                isBereavement ? "text-[17px]" : "text-[16px]"
+              )}>
+                {onboarding?.companionFirstMessage || "Hello. What brought you here today?"}
               </p>
             </div>
           </motion.div>
@@ -181,31 +184,44 @@ export default function Chat() {
         <AnimatePresence initial={false}>
           {messages.map((msg, idx) => {
             const isCompanion = msg.role === "assistant";
-            const showAvatar = isCompanion && (idx === 0 || messages[idx - 1].role !== "assistant");
-            
+            const showAvatar =
+              isCompanion && (idx === 0 || messages[idx - 1].role !== "assistant");
+
             return (
               <motion.div
                 key={msg.id}
-                initial={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, ease: "easeOut" }}
                 className={cn(
                   "flex flex-col w-full max-w-[85%]",
                   isCompanion ? "self-start" : "self-end items-end"
                 )}
               >
-                <div 
+                {showAvatar && (
+                  <span className="text-[10px] text-muted-foreground/60 tracking-widest uppercase mb-1.5 ml-1">
+                    {companionName}
+                  </span>
+                )}
+                <div
                   className={cn(
-                    "px-[18px] py-3 text-[15px] leading-relaxed shadow-sm relative group",
-                    isCompanion 
-                      ? "bg-secondary/15 text-foreground border border-secondary/20 rounded-2xl rounded-tl-[4px]" 
-                      : "bg-muted text-muted-foreground border border-white/5 rounded-2xl rounded-tr-[4px]"
+                    "px-[18px] py-3 leading-relaxed shadow-sm relative",
+                    isCompanion
+                      ? "bg-card border border-primary/15 rounded-2xl rounded-tl-sm"
+                      : "bg-muted/60 border border-white/5 rounded-2xl rounded-tr-sm"
                   )}
                 >
-                  <p className={cn(isCompanion ? "font-serif text-[15.5px]" : "font-sans text-[14.5px]")}>
+                  <p className={cn(
+                    isCompanion
+                      ? cn("companion-message text-foreground/90", isBereavement ? "text-[17px]" : "text-[16px]")
+                      : "font-sans text-[14.5px] text-foreground/70"
+                  )}>
                     {msg.content}
                   </p>
                   {msg.isMorningNote && (
-                    <span className="absolute -top-3 left-4 text-[10px] text-primary/70 tracking-widest uppercase bg-background px-2 font-medium">Morning Note</span>
+                    <span className="absolute -top-3 left-4 text-[9px] text-primary/70 tracking-[0.2em] uppercase bg-background px-2 font-medium">
+                      Morning Note
+                    </span>
                   )}
                 </div>
               </motion.div>
@@ -216,56 +232,72 @@ export default function Chat() {
     );
   };
 
+  // ─── Render ────────────────────────────────────────────────────────────────
+
   return (
-    <div className="flex flex-col h-full w-full relative bg-gradient-to-b from-background via-background to-card/30">
-      {/* Header */}
-      <header className="h-[72px] flex items-center justify-between px-6 border-b border-white/5 bg-background/80 backdrop-blur-xl z-20 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-secondary/20 border border-secondary/30 flex items-center justify-center shadow-[0_0_20px_rgba(225,29,72,0.15)] relative overflow-hidden">
-             <div className="absolute inset-0 bg-gradient-to-tr from-secondary/20 to-transparent" />
-             <span className="font-serif text-sm font-medium text-secondary-foreground relative z-10 tracking-wider">
-               {companionInitials}
-             </span>
+    <div className={cn(
+      "flex flex-col h-full w-full relative bg-background",
+      isBereavement && "gentle-mode"
+    )}>
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <header className="h-16 flex items-center justify-between px-5 border-b border-primary/20 bg-background/98 backdrop-blur-xl z-20 shrink-0 relative">
+        {/* Companion presence — left */}
+        <div className="flex items-center gap-2.5">
+          <div className="relative">
+            <div className="w-8 h-8 rounded-full bg-card border border-primary/25 flex items-center justify-center">
+              <span className="font-serif text-[11px] text-secondary/80 tracking-wider">
+                {companionInitials}
+              </span>
+            </div>
+            <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-primary/70 rounded-full border border-background animate-pulse-slow" />
           </div>
-          <div className="flex flex-col">
-            <h1 className="font-serif text-lg text-foreground leading-tight tracking-wide">
-              {companionName}
-            </h1>
-            <span className="text-[11px] text-primary/70 tracking-wider uppercase flex items-center gap-1.5">
-              <span className="w-1 h-1 rounded-full bg-primary animate-pulse-slow shadow-[0_0_8px_var(--color-primary)]" />
-              Here for you
-            </span>
-          </div>
+          <span className="text-[10px] text-muted-foreground/80 tracking-widest uppercase font-medium">
+            {companionName}
+          </span>
         </div>
+
+        {/* ASHA wordmark — centered */}
+        <div className="absolute left-1/2 -translate-x-1/2 select-none pointer-events-none">
+          <span className="font-serif text-[13px] font-medium tracking-[0.48em] text-foreground/70">
+            A S H{" "}
+          </span>
+          <span className="font-serif text-[13px] font-medium text-primary">
+            A
+          </span>
+        </div>
+
+        {/* Voice toggle — right */}
         {onboarding?.isComplete && (
           <Button
             variant="ghost"
             size="icon"
             onClick={toggleContinuousVoice}
             className={cn(
-              "rounded-full transition-all duration-500",
-              continuousVoice 
-                ? "bg-secondary/20 text-secondary hover:bg-secondary/30 shadow-[0_0_15px_rgba(225,29,72,0.3)]" 
-                : "text-muted-foreground hover:text-primary"
+              "rounded-full w-9 h-9 transition-all duration-500",
+              continuousVoice
+                ? "bg-primary/15 text-primary voice-active"
+                : "text-muted-foreground hover:text-primary hover:bg-primary/10"
             )}
           >
-            {continuousVoice ? <Phone className="w-4 h-4 animate-pulse-slow" /> : <PhoneOff className="w-4 h-4" />}
+            {continuousVoice
+              ? <Phone className="w-4 h-4" />
+              : <PhoneOff className="w-4 h-4" />}
           </Button>
         )}
       </header>
 
-      {/* Messages */}
-      <div 
+      {/* ── Messages area ──────────────────────────────────────────────────── */}
+      <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 scroll-smooth"
+        className="flex-1 overflow-y-auto px-4 sm:px-6 py-7 scroll-smooth"
       >
         <div className="flex flex-col justify-end min-h-full pb-4">
           {chatContent()}
-          
+
           <AnimatePresence>
             {isTyping && (
               <motion.div
-                initial={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 className="mt-6 self-start"
@@ -277,12 +309,14 @@ export default function Chat() {
         </div>
       </div>
 
-      {/* Input Area */}
-      <div className="p-4 sm:p-6 bg-gradient-to-t from-background via-background/95 to-transparent pt-8 shrink-0 relative z-20">
+      {/* ── Input area ─────────────────────────────────────────────────────── */}
+      <div className="px-4 sm:px-6 pb-5 pt-3 bg-background shrink-0 relative z-20">
+        {/* Gold hairline above input */}
+        <div className="h-px bg-primary/15 mb-4" />
         <Form {...form}>
-          <form 
-            onSubmit={form.handleSubmit(handleSend)} 
-            className="flex items-center gap-2 max-w-3xl mx-auto bg-card border border-white/5 rounded-full pl-5 pr-2 py-2 shadow-lg backdrop-blur-xl"
+          <form
+            onSubmit={form.handleSubmit(handleSend)}
+            className="flex items-center gap-2 max-w-3xl mx-auto bg-card border border-primary/20 rounded-full pl-5 pr-2 py-1.5 shadow-sm"
           >
             <FormField
               control={form.control}
@@ -290,10 +324,14 @@ export default function Chat() {
               render={({ field }) => (
                 <FormItem className="flex-1">
                   <FormControl>
-                    <Input 
-                      {...field} 
-                      placeholder={continuousVoice ? "Listening..." : "Tell me what's on your mind..."} 
-                      className="border-0 bg-transparent shadow-none focus-visible:ring-0 px-0 placeholder:text-muted-foreground/50 text-[15px] h-auto py-1"
+                    <Input
+                      {...field}
+                      placeholder={
+                        continuousVoice
+                          ? "Listening..."
+                          : "Tell me what's on your mind..."
+                      }
+                      className="border-0 bg-transparent shadow-none focus-visible:ring-0 px-0 placeholder:text-muted-foreground/40 text-[14.5px] h-auto py-1.5 text-foreground/85"
                       disabled={isTyping || continuousVoice}
                       autoComplete="off"
                     />
@@ -307,10 +345,10 @@ export default function Chat() {
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  "rounded-full w-10 h-10 transition-colors",
-                  voice.isListening 
-                    ? "text-primary bg-primary/20 voice-active" 
-                    : "text-muted-foreground hover:text-primary hover:bg-white/5"
+                  "rounded-full w-9 h-9 transition-colors shrink-0",
+                  voice.isListening
+                    ? "text-primary bg-primary/15 voice-active"
+                    : "text-muted-foreground hover:text-primary hover:bg-primary/10"
                 )}
                 onClick={() => {
                   if (voice.isListening) voice.stopListening();
@@ -318,15 +356,19 @@ export default function Chat() {
                 }}
                 disabled={isTyping || continuousVoice}
               >
-                <Mic className="w-[18px] h-[18px]" strokeWidth={2.5} />
+                <Mic className="w-[17px] h-[17px]" strokeWidth={2} />
               </Button>
-              <Button 
-                type="submit" 
-                size="icon" 
-                className="rounded-full w-10 h-10 bg-primary/20 text-primary hover:bg-primary/30 hover:text-primary shadow-[0_0_10px_rgba(157,113,232,0.2)] transition-all"
-                disabled={isTyping || continuousVoice || (!form.watch("content") && !voice.isListening)}
+              <Button
+                type="submit"
+                size="icon"
+                className="rounded-full w-9 h-9 bg-primary/15 text-primary hover:bg-primary/25 transition-all border border-primary/25 shrink-0"
+                disabled={
+                  isTyping ||
+                  continuousVoice ||
+                  (!form.watch("content") && !voice.isListening)
+                }
               >
-                <Send className="w-[18px] h-[18px] ml-0.5" strokeWidth={2.5} />
+                <Send className="w-[16px] h-[16px] ml-0.5" strokeWidth={2} />
               </Button>
             </div>
           </form>

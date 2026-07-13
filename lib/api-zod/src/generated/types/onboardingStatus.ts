@@ -8,10 +8,10 @@
 
 export interface OnboardingStatus {
   isComplete: boolean;
-  /** name | relationshipType | energy | companionName | done */
+  /** path | country | name | relationshipType | energy | companionName | done */
   currentStep: string;
   /**
-     * The companion's warm first greeting after onboarding completes
+     * The companion's next question or first greeting after onboarding completes
      * @nullable
      */
   companionFirstMessage?: string | null;

@@ -5,10 +5,12 @@ import { z } from "zod/v4";
 export const profileTable = pgTable("profile", {
   id: serial("id").primaryKey(),
   userName: text("user_name").notNull().default(""),
-  companionName: text("companion_name").notNull().default("Aanya"),
+  companionName: text("companion_name").notNull().default("Asha"),
   relationshipType: text("relationship_type").notNull().default("friend"), // friend | romantic
   energy: text("energy").notNull().default("calm"), // playful | calm | deep
-  onboardingStep: text("onboarding_step").notNull().default("name"), // name | relationshipType | energy | companionName | done
+  userPath: text("user_path").notNull().default("breakup"), // breakup | bereavement
+  country: text("country").notNull().default(""), // US | UK | AU | other
+  onboardingStep: text("onboarding_step").notNull().default("path"), // path | country | name | relationshipType | energy | companionName | done
   isOnboardingComplete: boolean("is_onboarding_complete").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   morningNoteDate: text("morning_note_date"), // last date morning note was generated YYYY-MM-DD

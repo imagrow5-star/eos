@@ -326,10 +326,10 @@ components:
           type: boolean
         currentStep:
           type: string
-          description: "name | relationshipType | energy | companionName | done"
+          description: "path | country | name | relationshipType | energy | companionName | done"
         companionFirstMessage:
           type: ["string", "null"]
-          description: The companion's warm first greeting after onboarding completes
+          description: The companion's next question or first greeting after onboarding completes
       required:
         - isComplete
         - currentStep
@@ -339,7 +339,7 @@ components:
       properties:
         step:
           type: string
-          description: "name | relationshipType | energy | companionName"
+          description: "path | country | name | relationshipType | energy | companionName"
         answer:
           type: string
       required:
@@ -361,6 +361,12 @@ components:
         energy:
           type: string
           description: "playful | calm | deep"
+        userPath:
+          type: string
+          description: "breakup | bereavement"
+        country:
+          type: string
+          description: "US | UK | AU | other"
         createdAt:
           type: string
           format: date-time
@@ -375,6 +381,8 @@ components:
         - companionName
         - relationshipType
         - energy
+        - userPath
+        - country
         - createdAt
         - daysSinceStart
         - currentStage
@@ -389,6 +397,10 @@ components:
         relationshipType:
           type: string
         energy:
+          type: string
+        userPath:
+          type: string
+        country:
           type: string
 
     Message:

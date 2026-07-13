@@ -17,7 +17,7 @@ async function getOrCreateProfile() {
   if (profiles.length > 0) return profiles[0]!;
   const [profile] = await db
     .insert(profileTable)
-    .values({ userName: "", companionName: "Aanya" })
+    .values({ userName: "", companionName: "Asha" })
     .returning();
   return profile!;
 }
@@ -51,6 +51,8 @@ router.get("/profile", async (req, res): Promise<void> => {
       companionName: profile.companionName,
       relationshipType: profile.relationshipType,
       energy: profile.energy,
+      userPath: profile.userPath,
+      country: profile.country,
       createdAt: profile.createdAt,
       daysSinceStart,
       currentStage: stage,
@@ -97,6 +99,8 @@ router.put("/profile", async (req, res): Promise<void> => {
       companionName: updated.companionName,
       relationshipType: updated.relationshipType,
       energy: updated.energy,
+      userPath: updated.userPath,
+      country: updated.country,
       createdAt: updated.createdAt,
       daysSinceStart,
       currentStage: stage,

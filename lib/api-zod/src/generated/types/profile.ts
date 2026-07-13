@@ -14,6 +14,10 @@ export interface Profile {
   relationshipType: string;
   /** playful | calm | deep */
   energy: string;
+  /** breakup | bereavement */
+  userPath: string;
+  /** US | UK | AU | other */
+  country: string;
   createdAt: Date;
   daysSinceStart: number;
   /** 1=Arrival 2=Held 3=FirstStep 4=Building */
