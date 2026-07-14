@@ -28,7 +28,7 @@ async function sendPasswordResetEmail(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: "ASHA <noreply@asha.app>",
+      from: process.env.RESEND_FROM_EMAIL ?? "ASHA <onboarding@resend.dev>",
       to: [toEmail],
       subject: "Reset your ASHA password",
       html: `
