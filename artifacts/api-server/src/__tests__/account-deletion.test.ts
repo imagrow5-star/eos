@@ -65,12 +65,13 @@ async function cleanupUser(email: string): Promise<void> {
 // ─── Test ────────────────────────────────────────────────────────────────────
 
 const TEST_EMAIL = `deletion-test-${Date.now()}@example.invalid`;
+const TEST_EMAIL_B = `deletion-test-b-${Date.now()}@example.invalid`;
 const TEST_PASSWORD = "Test1234!";
 
 describe("DELETE /api/auth/account", () => {
   afterEach(async () => {
-    // Safety net: remove test user even if the deletion endpoint failed
-    await cleanupUser(TEST_EMAIL);
+    // Safety net: remove test users even if the deletion endpoint failed
+    await Promise.all([cleanupUser(TEST_EMAIL), cleanupUser(TEST_EMAIL_B)]);
   });
 
   it("wipes all user-owned data and clears the session cookie", async () => {
@@ -259,6 +260,154 @@ describe("DELETE /api/auth/account", () => {
     // ── 6. Session cleared — /api/auth/me must return 401 ─────────────────
     const meRes = await agent.get("/api/auth/me");
     expect(meRes.status).toBe(401);
+  });
+
+  it("deleting user A leaves user B's data completely untouched", async () => {
+    // ── 1. Sign up user A ─────────────────────────────────────────────────
+    const agentA = request.agent(app);
+
+    const signupA = await agentA
+      .post("/api/auth/signup")
+      .send({ email: TEST_EMAIL, password: TEST_PASSWORD });
+
+    expect(signupA.status).toBe(201);
+    const userAId: number = signupA.body.user.id;
+    expect(userAId).toBeTypeOf("number");
+
+    // ── 2. Sign up user B ─────────────────────────────────────────────────
+    const agentB = request.agent(app);
+
+    const signupB = await agentB
+      .post("/api/auth/signup")
+      .send({ email: TEST_EMAIL_B, password: TEST_PASSWORD });
+
+    expect(signupB.status).toBe(201);
+    const userBId: number = signupB.body.user.id;
+    expect(userBId).toBeTypeOf("number");
+
+    // ── 3. Populate every user-owned table for BOTH users ─────────────────
+
+    async function populateUser(uid: number, tag: string): Promise<{ habitId: number; goalId: number }> {
+      // profile
+      const profileExists = await pool.query(
+        "SELECT id FROM profile WHERE user_id = $1 LIMIT 1",
+        [uid],
+      );
+      if (profileExists.rowCount === 0) {
+        await pool.query(
+          `INSERT INTO profile (user_id, user_name, companion_name) VALUES ($1, $2, 'Asha')`,
+          [uid, `User ${tag}`],
+        );
+      }
+
+      await pool.query(
+        `INSERT INTO messages (user_id, role, content) VALUES ($1, 'user', $2)`,
+        [uid, `hello from ${tag}`],
+      );
+
+      await pool.query(
+        `INSERT INTO memory_facts (user_id, fact, category) VALUES ($1, $2, 'life')`,
+        [uid, `fact from ${tag}`],
+      );
+
+      await pool.query(
+        `INSERT INTO personality_signals (user_id, signal) VALUES ($1, $2)`,
+        [uid, `signal-${tag}`],
+      );
+
+      await pool.query(
+        `INSERT INTO wins (user_id, content) VALUES ($1, $2)`,
+        [uid, `win from ${tag}`],
+      );
+
+      await pool.query(
+        `INSERT INTO mood_scores (user_id, score, date) VALUES ($1, 8, '2026-07-14')`,
+        [uid],
+      );
+
+      await pool.query(
+        `INSERT INTO reminders (user_id, content) VALUES ($1, $2)`,
+        [uid, `reminder from ${tag}`],
+      );
+
+      const habitRow = await pool.query<{ id: number }>(
+        `INSERT INTO habits (user_id, name, when_then, reason) VALUES ($1, $2, 'Every morning', 'Health') RETURNING id`,
+        [uid, `Habit-${tag}`],
+      );
+      const habitId = habitRow.rows[0]!.id;
+
+      await pool.query(
+        `INSERT INTO habit_completions (user_id, habit_id, completed_date) VALUES ($1, $2, '2026-07-14')`,
+        [uid, habitId],
+      );
+
+      const goalRow = await pool.query<{ id: number }>(
+        `INSERT INTO goals (user_id, title, description) VALUES ($1, $2, '') RETURNING id`,
+        [uid, `Goal-${tag}`],
+      );
+      const goalId = goalRow.rows[0]!.id;
+
+      await pool.query(
+        `INSERT INTO goal_tasks (goal_id, content) VALUES ($1, $2)`,
+        [goalId, `task from ${tag}`],
+      );
+
+      await pool.query(
+        `INSERT INTO commitments (user_id, content, cue) VALUES ($1, $2, 'morning')`,
+        [uid, `commitment from ${tag}`],
+      );
+
+      await pool.query(
+        `INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES ($1, $2, NOW() + INTERVAL '1 hour')`,
+        [`testtoken-${tag}-${uid}`, uid],
+      );
+
+      return { habitId, goalId };
+    }
+
+    const [, { habitId: bHabitId, goalId: bGoalId }] = await Promise.all([
+      populateUser(userAId, "A"),
+      populateUser(userBId, "B"),
+    ]);
+
+    // ── 4. Delete user A's account ────────────────────────────────────────
+    const deleteRes = await agentA.delete("/api/auth/account");
+    expect(deleteRes.status).toBe(200);
+    expect(deleteRes.body.ok).toBe(true);
+
+    // ── 5. Assert user B's data is completely intact ───────────────────────
+
+    expect(await rowCount("users", "id = $1", [userBId])).toBe(1);
+    expect(await rowCount("profile", "user_id = $1", [userBId])).toBeGreaterThan(0);
+    expect(await rowCount("messages", "user_id = $1", [userBId])).toBeGreaterThan(0);
+    expect(await rowCount("memory_facts", "user_id = $1", [userBId])).toBeGreaterThan(0);
+    expect(await rowCount("personality_signals", "user_id = $1", [userBId])).toBeGreaterThan(0);
+    expect(await rowCount("wins", "user_id = $1", [userBId])).toBeGreaterThan(0);
+    expect(await rowCount("mood_scores", "user_id = $1", [userBId])).toBeGreaterThan(0);
+    expect(await rowCount("reminders", "user_id = $1", [userBId])).toBeGreaterThan(0);
+
+    expect(await rowCount("habits", "user_id = $1", [userBId])).toBeGreaterThan(0);
+    expect(
+      await rowCount("habit_completions", "habit_id = $1", [bHabitId]),
+    ).toBeGreaterThan(0);
+
+    expect(await rowCount("goals", "user_id = $1", [userBId])).toBeGreaterThan(0);
+    expect(
+      await rowCount("goal_tasks", "goal_id = $1", [bGoalId]),
+    ).toBeGreaterThan(0);
+
+    expect(await rowCount("commitments", "user_id = $1", [userBId])).toBeGreaterThan(0);
+    expect(
+      await rowCount("password_reset_tokens", "user_id = $1", [userBId]),
+    ).toBeGreaterThan(0);
+    expect(
+      await rowCount("email_verification_tokens", "user_id = $1", [userBId]),
+    ).toBeGreaterThan(0);
+
+    // ── 6. User B can still log in ────────────────────────────────────────
+    const meResB = await agentB.get("/api/auth/me");
+    expect(meResB.status).toBe(200);
+    expect(meResB.body.user.id).toBe(userBId);
   });
 
   it("deletion handler covers every table with a user_id column", async () => {
