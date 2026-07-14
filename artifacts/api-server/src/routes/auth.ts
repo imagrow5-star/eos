@@ -501,20 +501,35 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
   try {
     const now = new Date();
 
-    const [row] = await db
+    // First, look up the token without any expiry/used filter so we can give
+    // a precise error message (expired vs never-existed vs already used).
+    const [anyRow] = await db
       .select()
       .from(passwordResetTokensTable)
-      .where(
-        and(
-          eq(passwordResetTokensTable.token, token),
-          gt(passwordResetTokensTable.expiresAt, now),
-          isNull(passwordResetTokensTable.usedAt),
-        ),
-      )
+      .where(eq(passwordResetTokensTable.token, token))
       .limit(1);
 
-    if (!row) {
-      res.status(400).json({ error: "This reset link is invalid or has expired. Please request a new one." });
+    if (!anyRow) {
+      res.status(400).json({
+        error: "This reset link is invalid.",
+        code: "TOKEN_INVALID",
+      });
+      return;
+    }
+
+    if (anyRow.usedAt !== null) {
+      res.status(400).json({
+        error: "This reset link has already been used. Please request a new one if you need to reset your password again.",
+        code: "TOKEN_USED",
+      });
+      return;
+    }
+
+    if (anyRow.expiresAt <= now) {
+      res.status(400).json({
+        error: "This reset link has expired. Please request a new one.",
+        code: "TOKEN_EXPIRED",
+      });
       return;
     }
 
@@ -532,8 +547,11 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
     );
 
     if (consumed.rowCount === 0) {
-      // Another request beat us to it — treat as invalid
-      res.status(400).json({ error: "This reset link is invalid or has expired. Please request a new one." });
+      // Another request beat us to it (race condition) — treat as expired
+      res.status(400).json({
+        error: "This reset link has expired. Please request a new one.",
+        code: "TOKEN_EXPIRED",
+      });
       return;
     }
 
@@ -541,15 +559,15 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
     await db
       .update(usersTable)
       .set({ hashedPassword })
-      .where(eq(usersTable.id, row.userId));
+      .where(eq(usersTable.id, anyRow.userId));
 
     // Invalidate all existing sessions for this user
     await pool.query(
       `DELETE FROM user_sessions WHERE sess::jsonb->>'userId' = $1::text`,
-      [String(row.userId)],
+      [String(anyRow.userId)],
     );
 
-    logger.info({ userId: row.userId }, "Password reset successfully");
+    logger.info({ userId: anyRow.userId }, "Password reset successfully");
     res.json({ ok: true });
   } catch (err) {
     logger.error({ err }, "reset-password error");

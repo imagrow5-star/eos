@@ -11,6 +11,7 @@ export function AuthScreen() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [expiredToken, setExpiredToken] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resetToken, setResetToken] = useState<string | null>(null);
@@ -50,6 +51,7 @@ export function AuthScreen() {
   const switchTab = (t: Tab) => {
     setTab(t);
     setError(null);
+    setExpiredToken(false);
     setSuccess(null);
   };
 
@@ -90,7 +92,12 @@ export function AuthScreen() {
         });
         const data = await r.json();
         if (!r.ok) {
-          setError(data.error ?? "Something went wrong. Please try again.");
+          if (data.code === "TOKEN_EXPIRED") {
+            setExpiredToken(true);
+            setError(null);
+          } else {
+            setError(data.error ?? "Something went wrong. Please try again.");
+          }
           return;
         }
         setSuccess("Your password has been updated. You can now sign in.");
@@ -182,7 +189,7 @@ export function AuthScreen() {
           )}
 
           {/* Sub-screen heading for forgot / reset */}
-          {(tab === "forgot" || tab === "reset") && (
+          {(tab === "forgot" || tab === "reset") && !expiredToken && (
             <div className="mb-8">
               <h2 className="text-xl font-serif text-foreground mb-1">
                 {tabLabels[tab]}
@@ -193,6 +200,43 @@ export function AuthScreen() {
                   : "Choose a new password for your account."}
               </p>
             </div>
+          )}
+
+          {/* Expired token screen */}
+          {tab === "reset" && expiredToken && (
+            <motion.div
+              key="expired"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="text-center space-y-5 py-2"
+            >
+              <div className="text-4xl">⏰</div>
+              <h2 className="text-xl font-serif text-foreground">Link expired</h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                This reset link has expired. Password reset links are only valid for a short time for your security.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setExpiredToken(false);
+                  setResetToken(null);
+                  setPassword("");
+                  setConfirmPassword("");
+                  switchTab("forgot");
+                }}
+                className="w-full bg-primary text-background py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all mt-2"
+              >
+                Request a new link
+              </button>
+              <button
+                type="button"
+                onClick={() => switchTab("login")}
+                className="w-full text-xs text-muted-foreground hover:text-primary transition-colors underline underline-offset-2 pb-1"
+              >
+                ← Back to sign in
+              </button>
+            </motion.div>
           )}
 
           {/* Cancelled reset screen */}
@@ -223,7 +267,7 @@ export function AuthScreen() {
           )}
 
           <AnimatePresence mode="wait">
-          {tab !== "cancelled" && (
+          {tab !== "cancelled" && !(tab === "reset" && expiredToken) && (
             <motion.form
               key={tab}
               onSubmit={handleSubmit}
