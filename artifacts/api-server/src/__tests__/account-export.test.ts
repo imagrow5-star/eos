@@ -411,3 +411,123 @@ describe("GET /api/account/export", () => {
     ).toEqual([]);
   });
 });
+
+// ─── HTML export (?format=html) ─────────────────────────────────────────────────
+
+/** Sign up + verify a user WITHOUT populating any product data. */
+async function signupEmptyUser(
+  agent: ReturnType<typeof request.agent>,
+  email: string,
+): Promise<number> {
+  const signupRes = await agent
+    .post("/api/auth/signup")
+    .send({ email, password: "Test1234!" });
+  expect(signupRes.status).toBe(201);
+  const userId: number = signupRes.body.user.id;
+  await pool.query(
+    `UPDATE users SET email_verified_at = NOW() WHERE id = $1`,
+    [userId],
+  );
+  return userId;
+}
+
+const HTML_EMAIL_A = `export-html-a-${TS}@example.invalid`;
+const HTML_EMAIL_EMPTY = `export-html-empty-${TS}@example.invalid`;
+
+describe("GET /api/account/export?format=html", () => {
+  afterEach(async () => {
+    await Promise.all([cleanupUser(HTML_EMAIL_A), cleanupUser(HTML_EMAIL_EMPTY)]);
+  });
+
+  it("serves an HTML attachment with the right headers", async () => {
+    const agentA = request.agent(app);
+    await signupAndPopulate(agentA, HTML_EMAIL_A, "H");
+
+    const res = await agentA.get("/api/account/export?format=html");
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/text\/html/);
+    expect(res.headers["content-disposition"]).toMatch(/attachment/);
+    expect(res.headers["content-disposition"]).toMatch(/\.html/);
+    expect(res.text.startsWith("<!DOCTYPE html>")).toBe(true);
+  });
+
+  it("renders every section heading and real data for a populated user", async () => {
+    const agentA = request.agent(app);
+    const a = await signupAndPopulate(agentA, HTML_EMAIL_A, "H");
+
+    const res = await agentA.get("/api/account/export?format=html");
+    expect(res.status).toBe(200);
+    const html = res.text;
+
+    // Every section heading is present
+    expect(html).toContain("Conversation history");
+    expect(html).toContain("Wins &amp; victories");
+    expect(html).toContain("Habits");
+    expect(html).toContain("Goals");
+    expect(html).toContain("Mood journal");
+    expect(html).toContain("knows about you"); // memory section
+    expect(html).toContain("Commitments");
+    expect(html).toContain("Reminders");
+    expect(html).toContain("Personality insights");
+
+    // Actual data values from each populated table appear in the report
+    expect(html).toContain(a.messageContent);
+    expect(html).toContain(a.winContent);
+    expect(html).toContain(a.habitName);
+    expect(html).toContain(a.goalTitle);
+    expect(html).toContain(a.memoryFact);
+    expect(html).toContain(a.commitmentContent);
+    expect(html).toContain(a.reminderContent);
+    expect(html).toContain(a.personalitySignal);
+
+    // No empty-state fallbacks should appear when the user has data
+    expect(html).not.toContain("No messages yet.");
+    expect(html).not.toContain("No wins recorded yet.");
+    expect(html).not.toContain("No habits tracked yet.");
+    expect(html).not.toContain("No goals set yet.");
+  });
+
+  it("shows empty-state fallbacks for a user with no data", async () => {
+    const agentEmpty = request.agent(app);
+    await signupEmptyUser(agentEmpty, HTML_EMAIL_EMPTY);
+
+    const res = await agentEmpty.get("/api/account/export?format=html");
+    expect(res.status).toBe(200);
+    const html = res.text;
+
+    // Section headings still render...
+    expect(html).toContain("Conversation history");
+    expect(html).toContain("Mood journal");
+    expect(html).toContain("Personality insights");
+
+    // ...but each section shows its "empty" fallback string
+    expect(html).toContain("No messages yet.");
+    expect(html).toContain("No wins recorded yet.");
+    expect(html).toContain("No habits tracked yet.");
+    expect(html).toContain("No goals set yet.");
+    expect(html).toContain("No mood logs yet.");
+    expect(html).toContain("No memories recorded yet.");
+    expect(html).toContain("No commitments yet.");
+    expect(html).toContain("No reminders set.");
+    expect(html).toContain("No personality signals observed yet.");
+  });
+
+  it("escapes HTML in user content to prevent broken markup / injection", async () => {
+    const agentA = request.agent(app);
+    const userId = await signupEmptyUser(agentA, HTML_EMAIL_A);
+    const xss = `<script>alert('x')</script> & "quotes"`;
+    await pool.query(
+      `INSERT INTO wins (user_id, content) VALUES ($1, $2)`,
+      [userId, xss],
+    );
+
+    const res = await agentA.get("/api/account/export?format=html");
+    expect(res.status).toBe(200);
+    const html = res.text;
+
+    // The raw script tag must never appear unescaped in the output
+    expect(html).not.toContain("<script>alert('x')</script>");
+    // The escaped form should be present instead
+    expect(html).toContain("&lt;script&gt;");
+  });
+});
