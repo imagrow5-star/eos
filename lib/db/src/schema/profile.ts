@@ -19,6 +19,8 @@ export const profileTable = pgTable("profile", {
   visitDates: text("visit_dates").array().notNull().default([]),
   changeTalkDetected: boolean("change_talk_detected").notNull().default(false),
   voiceId: text("voice_id").notNull().default("EXAVITQu4vr4xnSDxMaL"), // ElevenLabs voice ID — default Sarah
+  companionGender: text("companion_gender").notNull().default("woman"), // woman | man | nonbinary
+  userGender: text("user_gender"), // man | woman | other (nullable — optional onboarding step)
 });
 
 export const insertProfileSchema = createInsertSchema(profileTable).omit({ id: true });

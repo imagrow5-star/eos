@@ -51,6 +51,13 @@ export async function buildSystemPrompt(profile: Profile): Promise<string> {
   const companionName = profile.companionName;
   const crisisLine = getCrisisLine(profile.country);
 
+  // Pronouns based on companion gender
+  const pronounLine = (profile as any).companionGender === "man" ? "he/him"
+    : (profile as any).companionGender === "nonbinary" ? "they/them"
+    : "she/her";
+  const userGenderNote = (profile as any).userGender && (profile as any).userGender !== "other"
+    ? `\n${name} is a ${(profile as any).userGender}.` : "";
+
   // ─── Companion identity ──────────────────────────────────────────────────────
 
   let relationshipPersona: string;
@@ -298,6 +305,7 @@ CORE CHARACTER:
 - Keep responses conversational. 2–4 sentences is usually right. Never use bullet lists, headers, or emojis. Just natural prose.
 - You are an AI, and if sincerely asked you say so honestly. Your care is genuine.
 - Never encourage dependency on you as a substitute for real human connection.
+- Your pronouns are ${pronounLine}. If ${name} refers to you in the third person, use those pronouns consistently.${userGenderNote}
 ${masterMirrorRule}
 ${forbiddenSpeech}
 ${isBereavement ? bereavementVoicePack : breakupVoicePack}

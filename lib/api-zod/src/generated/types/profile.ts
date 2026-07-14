@@ -24,4 +24,13 @@ export interface Profile {
   daysSinceStart: number;
   /** 1=Arrival 2=Held 3=FirstStep 4=Building */
   currentStage: number;
+  /** ElevenLabs voice ID */
+  voiceId: string;
+  /** woman | man | nonbinary */
+  companionGender: string;
+  /**
+     * man | woman | other (optional — may be null)
+     * @nullable
+     */
+  userGender?: string | null;
 }

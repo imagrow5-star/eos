@@ -1,32 +1,52 @@
 ---
-name: Voice choice & profile extras
-description: voiceId column on profile, how TTS picks voice, and fields not in generated OpenAPI types
+name: Voice choice, companion gender & expanded voices
+description: voiceId + companionGender + userGender on profile; full 10-voice library; pronoun system; onboarding step order
 ---
 
-## voiceId on profile
+## Onboarding step order (current)
 
-- Added `voiceId text default 'EXAVITQu4vr4xnSDxMaL'` to `profileTable` — default is Sarah.
-- DB migration run with `pnpm --filter @workspace/db run push`.
-- Profile GET returns it as `profile.voiceId` (built manually in `buildProfilePayload`, not via generated schema — same pattern as `ageBand`).
-- Profile PUT accepts it via `(data as any).voiceId` cast since it's not in the generated `UpdateProfileBody` Zod type yet.
+`purpose → companionGender → name → companionName → country → ageBand → userGender → done`
 
-## TTS voice priority
+- `companionGender` (new step 2): sets companionGender + default voiceId in DB
+- `userGender` (new final step): optional/skippable — answer "skip" to bypass; sets isOnboardingComplete = true
+- ageBand no longer sets isOnboardingComplete
 
-`/api/tts` body → `ELEVENLABS_VOICE_ID` env var → `DEFAULT_VOICE_ID` (Sarah).  
-Body `voiceId` is validated against an allowlist of the 5 curated voices.
+## companionGender on profile
 
-## Chat voice picker
+- `companion_gender TEXT NOT NULL DEFAULT 'woman'` — woman | man | nonbinary
+- When answered in onboarding: also sets `voiceId` to gender-matched default
+  - woman/nonbinary → Sarah (EXAVITQu4vr4xnSDxMaL)
+  - man → Adam (pNInz6obpgDQGcFmaJgB)
+- companionName suggestions are gender-keyed in getStepQuestion
 
-`speakText(text, { voiceId })` — the `voiceId` field is threaded from `profile.voiceId` through `handleSpeak` in `Chat.tsx`. Preview button calls `speakText` with a fixed sample string and the candidate voice ID.
+## userGender on profile
 
-**Why:** Multiple voice options cost the same per-character as one voice (ElevenLabs premade pricing). Safe to offer freely.
+- `user_gender TEXT` (nullable) — man | woman | other
+- Nullable: profile.userGender may be null for users who skipped
+- Injected into system prompt as: `${name} is a ${userGender}.` (only when not null/other)
 
-## Habit detection (background)
+## Pronoun system in systemPrompt.ts
 
-After every chat message, `detectHabitMentions(profile, userMsg, assistantReply, activeHabits)` runs in background alongside `extractCommitments`. Detects:
-1. User mentioned completing an existing habit → auto-inserts completion + recalculates streak.
-2. Companion + user agreed on a NEW habit → auto-creates habit in DB.
+- `pronounLine` derived from profile.companionGender → she/her | he/him | they/them
+- Added to CORE CHARACTER block: "Your pronouns are ${pronounLine}..."
+- Uses `(profile as any).companionGender` cast since Profile DB type may not always propagate before runtime
 
-Streak recalc is a local function `recalcHabitStreak` inside `ai.ts` (not shared with the route) to avoid coupling.
+## 10-voice library (TTS allowlist)
 
-**Why:** Keeping habit detection as a separate non-blocking call (not merged into commitment extraction) makes each pass simpler and more reliable.
+Female: Sarah, Matilda, Lily, Rachel, Alice
+Male: Antoni, Charlie, Adam, George, Arnold
+
+ALLOWED_VOICE_IDS in tts.ts must include all 10. Voice picker in Chat.tsx organized into Female/Male sections, ordered by companionGender (man → Male first).
+
+## voiceId flow (fixed)
+
+- `voiceId` was previously stripped by `GetProfileResponse.parse()` (Zod strips unknown keys)
+- Fixed: added voiceId to openapi.yaml Profile schema → ran orval codegen → now in generated Zod type
+- Same fix applied to companionGender and userGender
+- Always re-run `pnpm exec orval` in lib/api-spec/ after adding fields to openapi.yaml
+
+## Profile PUT pattern
+
+Extra fields not yet in generated OpenAPI ProfileInput are accepted via `(data as any)` cast in profile.ts PUT handler. Same pattern for: ageBand, voiceId, companionGender, userGender.
+
+**Why:** Avoids re-running codegen for every small field addition. The cast is safe since the DB update is strongly typed via `Partial<typeof profileTable.$inferInsert>`.

@@ -14,4 +14,7 @@ export interface ProfileInput {
   userPath?: string;
   country?: string;
   ageBand?: string;
+  voiceId?: string;
+  companionGender?: string;
+  userGender?: string;
 }

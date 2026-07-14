@@ -21,7 +21,7 @@ export const HealthCheckResponse = zod.object({
  */
 export const GetOnboardingStatusResponse = zod.object({
   "isComplete": zod.boolean(),
-  "currentStep": zod.string().describe('purpose | name | companionName | country | ageBand | done'),
+  "currentStep": zod.string().describe('purpose | companionGender | name | companionName | country | ageBand | userGender | done'),
   "companionFirstMessage": zod.string().nullish().describe('The companion\'s next question or first greeting after onboarding completes')
 })
 
@@ -30,13 +30,13 @@ export const GetOnboardingStatusResponse = zod.object({
  * @summary Submit an onboarding answer (one step at a time)
  */
 export const SubmitOnboardingAnswerBody = zod.object({
-  "step": zod.string().describe('purpose | name | companionName | country | ageBand'),
+  "step": zod.string().describe('purpose | companionGender | name | companionName | country | ageBand | userGender'),
   "answer": zod.string()
 })
 
 export const SubmitOnboardingAnswerResponse = zod.object({
   "isComplete": zod.boolean(),
-  "currentStep": zod.string().describe('purpose | name | companionName | country | ageBand | done'),
+  "currentStep": zod.string().describe('purpose | companionGender | name | companionName | country | ageBand | userGender | done'),
   "companionFirstMessage": zod.string().nullish().describe('The companion\'s next question or first greeting after onboarding completes')
 })
 
@@ -55,7 +55,10 @@ export const GetProfileResponse = zod.object({
   "ageBand": zod.string().describe('18-25 | 26-35 | 36-50 | 50+'),
   "createdAt": zod.coerce.date(),
   "daysSinceStart": zod.number(),
-  "currentStage": zod.number().describe('1=Arrival 2=Held 3=FirstStep 4=Building')
+  "currentStage": zod.number().describe('1=Arrival 2=Held 3=FirstStep 4=Building'),
+  "voiceId": zod.string().describe('ElevenLabs voice ID'),
+  "companionGender": zod.string().describe('woman | man | nonbinary'),
+  "userGender": zod.string().nullish().describe('man | woman | other (optional — may be null)')
 })
 
 
@@ -69,7 +72,10 @@ export const UpdateProfileBody = zod.object({
   "energy": zod.string().optional(),
   "userPath": zod.string().optional(),
   "country": zod.string().optional(),
-  "ageBand": zod.string().optional()
+  "ageBand": zod.string().optional(),
+  "voiceId": zod.string().optional(),
+  "companionGender": zod.string().optional(),
+  "userGender": zod.string().optional()
 })
 
 export const UpdateProfileResponse = zod.object({
@@ -83,7 +89,10 @@ export const UpdateProfileResponse = zod.object({
   "ageBand": zod.string().describe('18-25 | 26-35 | 36-50 | 50+'),
   "createdAt": zod.coerce.date(),
   "daysSinceStart": zod.number(),
-  "currentStage": zod.number().describe('1=Arrival 2=Held 3=FirstStep 4=Building')
+  "currentStage": zod.number().describe('1=Arrival 2=Held 3=FirstStep 4=Building'),
+  "voiceId": zod.string().describe('ElevenLabs voice ID'),
+  "companionGender": zod.string().describe('woman | man | nonbinary'),
+  "userGender": zod.string().nullish().describe('man | woman | other (optional — may be null)')
 })
 
 

@@ -326,7 +326,7 @@ components:
           type: boolean
         currentStep:
           type: string
-          description: "purpose | name | companionName | country | ageBand | done"
+          description: "purpose | companionGender | name | companionName | country | ageBand | userGender | done"
         companionFirstMessage:
           type: ["string", "null"]
           description: The companion's next question or first greeting after onboarding completes
@@ -339,7 +339,7 @@ components:
       properties:
         step:
           type: string
-          description: "purpose | name | companionName | country | ageBand"
+          description: "purpose | companionGender | name | companionName | country | ageBand | userGender"
         answer:
           type: string
       required:
@@ -378,6 +378,15 @@ components:
         currentStage:
           type: integer
           description: "1=Arrival 2=Held 3=FirstStep 4=Building"
+        voiceId:
+          type: string
+          description: "ElevenLabs voice ID"
+        companionGender:
+          type: string
+          description: "woman | man | nonbinary"
+        userGender:
+          type: ["string", "null"]
+          description: "man | woman | other (optional — may be null)"
       required:
         - id
         - userName
@@ -390,6 +399,8 @@ components:
         - createdAt
         - daysSinceStart
         - currentStage
+        - voiceId
+        - companionGender
 
     ProfileInput:
       type: object
@@ -407,6 +418,12 @@ components:
         country:
           type: string
         ageBand:
+          type: string
+        voiceId:
+          type: string
+        companionGender:
+          type: string
+        userGender:
           type: string
 
     Message:

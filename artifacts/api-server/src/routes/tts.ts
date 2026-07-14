@@ -6,13 +6,20 @@ const router: IRouter = Router();
 // Default: Sarah — warm, natural, friendly female voice from ElevenLabs premade library
 const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 
-// All curated premade voices available in the voice picker
+// All curated premade voices available in the voice picker (female + male)
 const ALLOWED_VOICE_IDS = new Set([
-  "EXAVITQu4vr4xnSDxMaL", // Sarah
-  "21m00Tcm4TlvDq8ikWAM", // Rachel
-  "pFZP5JQG7iQjIQuC4Bku", // Lily
-  "XrExE9yKIg1WjnnlVkGX", // Matilda
-  "pNInz6obpgDQGcFmaJgB", // Adam
+  // Female
+  "EXAVITQu4vr4xnSDxMaL", // Sarah — soft & warm (younger)
+  "XrExE9yKIg1WjnnlVkGX", // Matilda — bright & friendly (younger)
+  "pFZP5JQG7iQjIQuC4Bku", // Lily — gentle, British
+  "21m00Tcm4TlvDq8ikWAM", // Rachel — calm & grounded (mature)
+  "Xb7hH8MSUJpSbSDYk0k2", // Alice — confident, British (mature)
+  // Male
+  "ErXwobaYiN019PkySvjV", // Antoni — warm & easy (younger)
+  "IKne3meq5aSn9XLyUdCD", // Charlie — casual, Australian (younger)
+  "pNInz6obpgDQGcFmaJgB", // Adam — deep & warm (mature)
+  "JBFqnCBsd6RMkjVDRZzb", // George — warm, British (mature)
+  "VR6AewLTigWG4xSOukaG", // Arnold — crisp & steady (mature)
 ]);
 
 router.post("/tts", async (req, res): Promise<void> => {

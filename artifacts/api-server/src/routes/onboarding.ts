@@ -68,6 +68,11 @@ function getStepQuestion(step: string, profile: Profile): string {
     case "path":
       return "Hello. I'm really glad you're here. What brought you today?";
 
+    case "companionGender":
+      return isBereavement
+        ? "Before we go further — who would feel most natural to lean on? A woman, a man, or someone non-binary / no preference? There's no wrong answer."
+        : "Before I introduce myself properly — would it feel more natural talking to a woman, a man, or someone non-binary? Just go with whatever feels right.";
+
     case "name":
       return isBereavement
         ? "Thank you for trusting me with that. I'm honoured you're here. What's your name?"
@@ -75,7 +80,14 @@ function getStepQuestion(step: string, profile: Profile): string {
 
     case "companionName": {
       const userName = profile.userName || "you";
-      return `${userName}. What would you like to call me? You can keep Asha, or choose anything that feels right — Mia, Luna, Claire, Sofia. It's entirely yours.`;
+      const gender = (profile as any).companionGender ?? "woman";
+      const suggestions =
+        gender === "man"
+          ? "Alex, Ethan, Liam, Noah — or any name you like"
+          : gender === "nonbinary"
+            ? "River, Sky, Sam, Sage — or any name you like"
+            : "Mia, Sofia, Luna, Aria — or any name you like";
+      return `${userName}. What would you like to call me? You can keep Asha, or choose something that feels right — ${suggestions}. It's entirely yours.`;
     }
 
     case "country":
@@ -83,6 +95,9 @@ function getStepQuestion(step: string, profile: Profile): string {
 
     case "ageBand":
       return "And roughly how old are you? It helps me get the tone right.";
+
+    case "userGender":
+      return "One last thing — and this is completely optional, so feel free to skip. Knowing a little about you helps me get the tone right. What's your gender?";
 
     // Legacy steps — kept for any existing in-progress profiles
     case "relationshipType":
@@ -101,15 +116,17 @@ function getStepQuestion(step: string, profile: Profile): string {
 function getNextStep(currentStep: string, _profile: Profile): string {
   switch (currentStep) {
     case "purpose":
-    case "path":       return "name";
-    case "name":       return "companionName";
-    case "companionName": return "country";
-    case "country":    return "ageBand";
-    case "ageBand":    return "done";
+    case "path":            return "companionGender";
+    case "companionGender": return "name";
+    case "name":            return "companionName";
+    case "companionName":   return "country";
+    case "country":         return "ageBand";
+    case "ageBand":         return "userGender";
+    case "userGender":      return "done";
     // Legacy flow compat
     case "relationshipType": return "energy";
-    case "energy":     return "companionName";
-    default:           return "done";
+    case "energy":          return "companionName";
+    default:                return "done";
   }
 }
 
@@ -199,6 +216,22 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
       break;
     }
 
+    // ── Companion gender ──────────────────────────────────────────────────────
+    case "companionGender": {
+      const lower = answer.toLowerCase().trim();
+      if (lower === "man" || lower === "male" || lower.includes("he/him") || (lower.includes("man") && !lower.includes("woman"))) {
+        updates.companionGender = "man";
+        updates.voiceId = "pNInz6obpgDQGcFmaJgB"; // Adam — default male voice
+      } else if (lower.includes("non") || lower.includes("neutral") || lower.includes("they") || lower === "nonbinary" || lower.includes("no preference")) {
+        updates.companionGender = "nonbinary";
+        updates.voiceId = "EXAVITQu4vr4xnSDxMaL"; // Sarah — neutral default
+      } else {
+        updates.companionGender = "woman";
+        updates.voiceId = "EXAVITQu4vr4xnSDxMaL"; // Sarah — default female voice
+      }
+      break;
+    }
+
     // ── Name ─────────────────────────────────────────────────────────────────
     case "name": {
       const cleaned = extractName(answer, 2);
@@ -238,7 +271,25 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
             ? "36-50"
             : lower.includes("26") || lower.includes("30") || lower.includes("35")
               ? "26-35"
-              : "18-25"; // default for youngest band
+              : "18-25";
+      // Next step is userGender (optional) — onboarding not complete yet
+      break;
+    }
+
+    // ── User gender (optional / skippable — final step) ───────────────────────
+    case "userGender": {
+      const lower = answer.toLowerCase().trim();
+      const isSkip =
+        lower === "skip" ||
+        lower.includes("prefer not") ||
+        lower.includes("not to say") ||
+        lower.includes("skip this");
+      if (!isSkip) {
+        updates.userGender =
+          lower.includes("woman") || lower.includes("female") ? "woman"
+          : lower.includes("man") || lower.includes("male") ? "man"
+          : "other";
+      }
       updates.isOnboardingComplete = true;
       break;
     }
