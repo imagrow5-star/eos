@@ -4,6 +4,9 @@
  * Model: eleven_multilingual_v2 (emotionally-aware, warmer delivery)
  * Voice settings tuned for warm, expressive, human presence.
  * Falls back gracefully if a voice ID is invalid or expired.
+ *
+ * Uses the /with-timestamps endpoint so the frontend can drive live captions.
+ * Response: { audio: base64, format: "mp3", alignment?: CharAlignment }
  */
 
 import { Router, type IRouter } from "express";
@@ -44,21 +47,38 @@ const VOICE_SETTINGS = {
   use_speaker_boost: true,
 } as const;
 
-// ─── Helper: make a single TTS attempt ───────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface CharAlignment {
+  characters: string[];
+  character_start_times_seconds: number[];
+  character_end_times_seconds: number[];
+}
+
+interface TTSWithTimestampsResponse {
+  audio_base64: string;
+  alignment: CharAlignment;
+  normalized_alignment: CharAlignment;
+}
+
+// ─── Helper: make a single TTS attempt (with-timestamps endpoint) ────────────
 
 async function attemptTTS(
   apiKey: string,
   voiceId: string,
   text: string,
-): Promise<{ ok: true; buffer: ArrayBuffer } | { ok: false; status: number; body: string }> {
+): Promise<
+  | { ok: true; audioBase64: string; alignment: CharAlignment }
+  | { ok: false; status: number; body: string }
+> {
   const res = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/with-timestamps`,
     {
       method: "POST",
       headers: {
         "xi-api-key": apiKey,
         "Content-Type": "application/json",
-        Accept: "audio/mpeg",
+        Accept: "application/json",
       },
       body: JSON.stringify({
         text: text.slice(0, 5000),
@@ -69,7 +89,12 @@ async function attemptTTS(
   );
 
   if (res.ok) {
-    return { ok: true, buffer: await res.arrayBuffer() };
+    const data = await res.json() as TTSWithTimestampsResponse;
+    return {
+      ok: true,
+      audioBase64: data.audio_base64,
+      alignment: data.alignment,
+    };
   }
   return { ok: false, status: res.status, body: await res.text() };
 }
@@ -148,9 +173,12 @@ router.post("/tts", async (req, res): Promise<void> => {
       return;
     }
 
-    const base64 = Buffer.from(result.buffer).toString("base64");
     logger.info({ voiceId, chars: text.length }, "TTS audio generated");
-    res.json({ audio: base64, format: "mp3" });
+    res.json({
+      audio: result.audioBase64,
+      format: "mp3",
+      alignment: result.alignment,
+    });
   } catch (err) {
     logger.error({ err, voiceId }, "ElevenLabs fetch threw an error");
     res.status(502).json({ error: "TTS request failed — check server logs" });

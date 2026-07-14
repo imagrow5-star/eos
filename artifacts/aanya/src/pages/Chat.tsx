@@ -137,6 +137,50 @@ function SpeakingBars() {
   );
 }
 
+// ─── Live caption component ───────────────────────────────────────────────────
+// Reveals words one at a time in sync with audio playback.
+// revealedWords: how many words to show (0 = nothing yet, totalWords = all done).
+// The most recently revealed word gets a gentle gold highlight.
+
+function LiveCaption({ text, revealedWords }: { text: string; revealedWords: number }) {
+  const words = text.trim().split(/\s+/);
+  const shown = words.slice(0, revealedWords);
+
+  return (
+    <>
+      {shown.map((word, i) => {
+        const isCurrentWord = i === revealedWords - 1;
+        return (
+          <span key={i}>
+            <motion.span
+              initial={{ opacity: 0, y: 3 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+              className={cn(
+                "inline-block",
+                isCurrentWord
+                  ? "text-primary/95 font-[490]"  // gold tint on current word
+                  : "text-foreground/90",
+              )}
+            >
+              {word}
+            </motion.span>
+            {i < shown.length - 1 && " "}
+          </span>
+        );
+      })}
+      {revealedWords === 0 && (
+        // Nothing yet — show a subtle pulsing dot so the bubble isn't empty
+        <motion.span
+          animate={{ opacity: [0.2, 0.6, 0.2] }}
+          transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
+          className="inline-block w-1.5 h-1.5 rounded-full bg-primary/50 align-middle"
+        />
+      )}
+    </>
+  );
+}
+
 // ─── Main Chat component ──────────────────────────────────────────────────────
 
 export default function Chat() {
@@ -160,6 +204,9 @@ export default function Chat() {
   const [showSettings, setShowSettings] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
+  // Live-caption state: which message is currently being spoken, and how many words revealed
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+  const [revealedWords, setRevealedWords] = useState(0);
   const morningNoteTriggered = useRef(false);
 
   const isBereavement = profile?.userPath === "bereavement";
@@ -216,15 +263,30 @@ export default function Chat() {
   }, [messages, onboarding?.currentStep, isTyping]);
 
   // ─── Shared speak helper ──────────────────────────────────────────────────
+  // messageId: when provided, drives live captions for that message bubble.
 
-  const handleSpeak = (text: string) => {
+  const handleSpeak = (text: string, messageId?: string) => {
+    if (messageId) {
+      setSpeakingMessageId(messageId);
+      setRevealedWords(0);
+    }
     speakText(text, {
       voiceId: activeVoiceId,
       onStart: () => setIsSpeaking(true),
       onEnd: () => {
         setIsSpeaking(false);
+        setSpeakingMessageId(null);
+        setRevealedWords(0);
         if (continuousVoice) voice.startListening();
       },
+      onWordReveal: messageId
+        ? (count, total) => {
+            setSpeakingMessageId(messageId);
+            setRevealedWords(count);
+            // On final word, keep revealed so text stays fully visible until onEnd clears state
+            if (count >= total) setRevealedWords(total);
+          }
+        : undefined,
     });
   };
 
@@ -257,7 +319,11 @@ export default function Chat() {
           onSuccess: (reply) => {
             queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
             setIsTyping(false);
-            handleSpeak(reply.assistantMessage.content);
+            // Pass the message ID so live captions know which bubble to animate
+            handleSpeak(
+              reply.assistantMessage.content,
+              String(reply.assistantMessage.id),
+            );
           },
           onError: () => setIsTyping(false),
         },
@@ -397,13 +463,26 @@ export default function Chat() {
                       : "bg-muted/60 border border-white/5 rounded-2xl rounded-tr-sm",
                   )}
                 >
-                  <p className={cn(
-                    isCompanion
-                      ? cn("companion-message text-foreground/90", isBereavement ? "text-[17px]" : "text-[16px]")
-                      : "font-sans text-[14.5px] text-foreground/70",
-                  )}>
-                    {msg.content}
-                  </p>
+                  {isCompanion && speakingMessageId === String(msg.id) ? (
+                    /* ── Live caption mode: reveal words in sync with audio ── */
+                    <p className={cn(
+                      "companion-message text-foreground/90",
+                      isBereavement ? "text-[17px]" : "text-[16px]",
+                    )}>
+                      <LiveCaption
+                        text={msg.content}
+                        revealedWords={revealedWords}
+                      />
+                    </p>
+                  ) : (
+                    <p className={cn(
+                      isCompanion
+                        ? cn("companion-message text-foreground/90", isBereavement ? "text-[17px]" : "text-[16px]")
+                        : "font-sans text-[14.5px] text-foreground/70",
+                    )}>
+                      {msg.content}
+                    </p>
+                  )}
                   {msg.isMorningNote && (
                     <span className="absolute -top-3 left-4 text-[9px] text-primary/70 tracking-[0.2em] uppercase bg-background px-2 font-medium">
                       Morning Note
