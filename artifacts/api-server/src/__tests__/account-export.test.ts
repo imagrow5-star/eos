@@ -335,37 +335,25 @@ describe("GET /api/account/export", () => {
 
   it("export payload covers every table that has a user_id column", async () => {
     /**
-     * Schema-coverage guard.
+     * Schema-coverage guard (payload-derived).
      *
-     * When a developer adds a new table with a user_id FK they MUST either:
-     *   1. Add a query for it in the Promise.all inside GET /account/export and
-     *      add its payload key to EXPORT_COVERED_TABLES below, OR
-     *   2. Add it to INTENTIONAL_EXCEPTIONS with a comment explaining why it
-     *      should not appear in the user-facing export.
+     * Instead of trusting a hand-maintained list of covered tables, this test
+     * reads the ACTUAL JSON export payload and derives which tables it
+     * represents from the payload's own keys (camelCase → snake_case). It then
+     * asserts that every table with a `user_id` column is either represented in
+     * that live payload or listed in INTENTIONAL_EXCEPTIONS with a reason.
      *
-     * Tables whose user_id is stored in a non-standard way (jsonb column) are
-     * listed in INTENTIONAL_EXCEPTIONS below.
+     * Because coverage is read from the real response, the guard fails in BOTH
+     * directions:
+     *   • a new user-owned table is added but no query is added to the export
+     *     (the table has a user_id column but never appears in the payload), and
+     *   • an existing query is removed from the export route (its key vanishes
+     *     from the payload, so the table becomes uncovered again).
      *
-     * "Covered" here means the table is queried and its rows appear in the
-     * JSON export payload.  Add a new key whenever you add a table to the
-     * export's Promise.all.
+     * Tables whose user_id is stored in a non-standard way (jsonb column, e.g.
+     * user_sessions) never appear in the information_schema query below, so they
+     * are covered by INTENTIONAL_EXCEPTIONS or ignored entirely.
      */
-
-    // Keys present in the JSON export payload for each user-owned table.
-    // habit_completions is included via a JOIN but is a user-owned table.
-    const EXPORT_COVERED_TABLES = new Set([
-      "profile",
-      "messages",
-      "memory_facts",
-      "wins",
-      "habits",
-      "habit_completions",
-      "goals",
-      "mood_scores",
-      "commitments",
-      "reminders",
-      "personality_signals",
-    ]);
 
     // Tables with a user_id column that are intentionally excluded from the
     // export because they are internal/operational data rather than user
@@ -373,40 +361,92 @@ describe("GET /api/account/export", () => {
     const INTENTIONAL_EXCEPTIONS: Record<string, string> = {
       password_reset_tokens: "Internal security tokens — not user product data; excluded from export for security.",
       email_verification_tokens: "Internal security tokens — not user product data; excluded from export for security.",
-      // user_sessions stores userId inside a jsonb column, not a typed user_id column,
-      // so it does not appear in the information_schema query below.
+      // user_sessions stores userId inside a jsonb column, not a typed user_id
+      // column, so it never appears in the information_schema query below.
     };
 
-    const result = await pool.query<{ table_name: string }>(`
-      SELECT table_name
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND column_name   = 'user_id'
-      ORDER BY table_name
-    `);
+    // ── Fetch the REAL export payload for a freshly created user. Coverage is
+    // read from the payload keys, not a static list, so the guard tracks the
+    // route exactly. Payload keys are present even when a section has no rows.
+    const guardAgent = request.agent(app);
+    const guardEmail = `export-guard-${TS}@example.invalid`;
+    let payloadKeys: string[] = [];
+    try {
+      const signupRes = await guardAgent
+        .post("/api/auth/signup")
+        .send({ email: guardEmail, password: "Test1234!" });
+      expect(signupRes.status).toBe(201);
+      await pool.query(
+        `UPDATE users SET email_verified_at = NOW() WHERE id = $1`,
+        [signupRes.body.user.id],
+      );
 
-    const tablesWithUserId = result.rows.map((r) => r.table_name);
+      const exportRes = await guardAgent.get("/api/account/export");
+      expect(exportRes.status).toBe(200);
+      payloadKeys = Object.keys(exportRes.body as Record<string, unknown>);
+    } finally {
+      await cleanupUser(guardEmail);
+    }
 
-    const uncovered = tablesWithUserId.filter(
-      (t) => !EXPORT_COVERED_TABLES.has(t) && !(t in INTENTIONAL_EXCEPTIONS),
+    // ── Load the schema: every table, and which tables have a user_id column.
+    const [userIdResult, tablesResult] = await Promise.all([
+      pool.query<{ table_name: string }>(`
+        SELECT table_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND column_name = 'user_id'
+        ORDER BY table_name
+      `),
+      pool.query<{ table_name: string }>(`
+        SELECT table_name FROM information_schema.tables
+        WHERE table_schema = 'public'
+      `),
+    ]);
+    const tablesWithUserId = userIdResult.rows.map((r) => r.table_name);
+    const allTables = new Set(tablesResult.rows.map((r) => r.table_name));
+
+    // ── Derive the covered tables from the payload's own keys. A key like
+    // `memoryFacts` maps to the `memory_facts` table; `habitCompletions` →
+    // `habit_completions`. Keys that aren't real tables (e.g. `exportedAt`,
+    // `range`) are dropped by the allTables filter.
+    const toSnakeCase = (k: string) =>
+      k.replace(/[A-Z]/g, (c) => "_" + c.toLowerCase());
+    const coveredFromPayload = new Set(
+      payloadKeys.map(toSnakeCase).filter((t) => allTables.has(t)),
     );
 
+    // Sanity: the payload must map to at least one real table, otherwise the
+    // camelCase→snake_case assumption has silently broken and every table below
+    // would look "uncovered" for the wrong reason.
+    expect(
+      coveredFromPayload.size,
+      `No export payload key mapped to a real table. Payload keys were:\n  ` +
+        `${payloadKeys.join("\n  ")}\n\nThe camelCase→snake_case mapping in ` +
+        `this test may need updating.`,
+    ).toBeGreaterThan(0);
+
+    // ── Every user-owned table must appear in the live payload or be a
+    // documented exception.
+    const uncovered = tablesWithUserId.filter(
+      (t) => !coveredFromPayload.has(t) && !(t in INTENTIONAL_EXCEPTIONS),
+    );
     expect(
       uncovered,
-      `The following tables have a user_id column but are NOT represented in ` +
-        `GET /account/export:\n  ${uncovered.join("\n  ")}\n\n` +
-        `Add a query for them in the export route (account.ts) and add their ` +
-        `names to EXPORT_COVERED_TABLES in this test file.`,
+      `The following tables have a user_id column but do NOT appear in the ` +
+        `live GET /account/export payload:\n  ${uncovered.join("\n  ")}\n\n` +
+        `Add a query for each in the export route (account.ts) so its rows are ` +
+        `returned, or add it to INTENTIONAL_EXCEPTIONS in this test file with a ` +
+        `reason it should stay out of the user-facing export.`,
     ).toEqual([]);
 
-    // Inverse check: catch stale entries after a table is renamed or dropped.
+    // ── Inverse guard: an exception must still be a real table with a user_id
+    // column, so stale entries get cleaned up after a rename/drop.
     const schemaSet = new Set(tablesWithUserId);
-    const stale = [...EXPORT_COVERED_TABLES].filter((t) => !schemaSet.has(t));
-
+    const staleExceptions = Object.keys(INTENTIONAL_EXCEPTIONS).filter(
+      (t) => !schemaSet.has(t),
+    );
     expect(
-      stale,
-      `EXPORT_COVERED_TABLES references tables that no longer have a user_id ` +
-        `column in the schema:\n  ${stale.join("\n  ")}\n\n` +
+      staleExceptions,
+      `INTENTIONAL_EXCEPTIONS lists tables that no longer have a user_id ` +
+        `column in the schema:\n  ${staleExceptions.join("\n  ")}\n\n` +
         `Remove or update these entries in this test file.`,
     ).toEqual([]);
   });
