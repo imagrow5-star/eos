@@ -6,4 +6,5 @@ export * from "./habits";
 export * from "./goals";
 export * from "./commitments";
 export * from "./passwordResetTokens";
+export * from "./emailVerificationTokens";
 export * from "./userSessions";

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireVerified } from "../middleware/auth.js";
 import healthRouter from "./health";
 import authRouter from "./auth";
 import onboardingRouter from "./onboarding";
@@ -19,9 +19,10 @@ const router: IRouter = Router();
 router.use(healthRouter);
 router.use(authRouter);
 
-// ─── Protected routes — valid session required ────────────────────────────────
-// requireAuth sets req.userId on every request that passes through.
+// ─── Protected routes — valid session + verified email required ───────────────
+// requireAuth sets req.userId; requireVerified checks emailVerifiedAt in the DB.
 router.use(requireAuth as any);
+router.use(requireVerified as any);
 router.use(onboardingRouter);
 router.use(profileRouter);
 router.use(chatRouter);

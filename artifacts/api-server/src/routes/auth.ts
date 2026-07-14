@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { eq, and, gt, isNull } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { db, pool } from "@workspace/db";
-import { usersTable, passwordResetTokensTable } from "@workspace/db";
+import { usersTable, passwordResetTokensTable, emailVerificationTokensTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -53,6 +53,70 @@ async function sendPasswordResetEmail(
   }
 }
 
+async function sendVerificationEmail(
+  toEmail: string,
+  verifyUrl: string,
+): Promise<void> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    logger.warn({ verifyUrl }, "RESEND_API_KEY not set — verification link logged for dev");
+    return;
+  }
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: process.env.RESEND_FROM_EMAIL ?? "ASHA <onboarding@resend.dev>",
+      to: [toEmail],
+      subject: "Verify your ASHA email address",
+      html: `
+        <div style="font-family:Georgia,serif;max-width:480px;margin:0 auto;padding:40px 24px;background:#fffff8;color:#1a1a2e;">
+          <h1 style="font-size:32px;letter-spacing:0.25em;text-align:center;color:#b8962e;margin-bottom:8px;">ASHA</h1>
+          <p style="text-align:center;font-size:12px;letter-spacing:0.2em;color:#888;text-transform:uppercase;margin-bottom:40px;">Your companion, your story</p>
+          <p style="font-size:16px;line-height:1.6;">Hi there,</p>
+          <p style="font-size:16px;line-height:1.6;">Thank you for creating an ASHA account. Please verify your email address to get started. This link expires in 24 hours.</p>
+          <div style="text-align:center;margin:36px 0;">
+            <a href="${verifyUrl}" style="display:inline-block;background:#b8962e;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:14px;letter-spacing:0.1em;">Verify My Email</a>
+          </div>
+          <p style="font-size:13px;color:#888;line-height:1.6;">If you didn't create an ASHA account, you can safely ignore this email.</p>
+          <p style="font-size:13px;color:#888;line-height:1.6;">Or copy this link into your browser:<br><a href="${verifyUrl}" style="color:#b8962e;word-break:break-all;">${verifyUrl}</a></p>
+        </div>
+      `,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Resend API error ${res.status}: ${body}`);
+  }
+}
+
+/** Creates a verification token in the DB and fires off the email (no throw). */
+async function issueAndSendVerification(userId: number, email: string): Promise<void> {
+  try {
+    const token = randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    await db.insert(emailVerificationTokensTable).values({ token, userId, expiresAt });
+
+    const domain =
+      process.env.REPLIT_DEV_DOMAIN
+        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+        : "http://localhost:3000";
+
+    const verifyUrl = `${domain}/?verifyToken=${token}`;
+
+    await sendVerificationEmail(email, verifyUrl);
+    logger.info({ userId }, "Verification email sent");
+  } catch (err) {
+    logger.error({ err, userId }, "Failed to send verification email");
+  }
+}
+
 // ─── POST /auth/signup ────────────────────────────────────────────────────────
 
 router.post("/auth/signup", async (req, res): Promise<void> => {
@@ -92,7 +156,12 @@ router.post("/auth/signup", async (req, res): Promise<void> => {
 
     req.session.userId = user!.id;
     logger.info({ userId: user!.id }, "New user signed up");
-    res.status(201).json({ user: { id: user!.id, email: user!.email } });
+
+    // Fire-and-forget: send verification email after responding
+    res.status(201).json({ user: { id: user!.id, email: user!.email }, emailVerified: false });
+
+    // Issue verification asynchronously (don't block the response)
+    issueAndSendVerification(user!.id, user!.email);
   } catch (err: any) {
     if ((err as any)?.code === "23505") {
       // Race-condition unique violation
@@ -137,7 +206,10 @@ router.post("/auth/login", async (req, res): Promise<void> => {
 
     req.session.userId = user.id;
     logger.info({ userId: user.id }, "User logged in");
-    res.json({ user: { id: user.id, email: user.email } });
+    res.json({
+      user: { id: user.id, email: user.email },
+      emailVerified: user.emailVerifiedAt !== null,
+    });
   } catch (err) {
     logger.error({ err }, "Login error");
     res.status(500).json({ error: "Something went wrong. Please try again." });
@@ -164,7 +236,7 @@ router.get("/auth/me", async (req, res): Promise<void> => {
   }
 
   const [user] = await db
-    .select({ id: usersTable.id, email: usersTable.email })
+    .select({ id: usersTable.id, email: usersTable.email, emailVerifiedAt: usersTable.emailVerifiedAt })
     .from(usersTable)
     .where(eq(usersTable.id, userId))
     .limit(1);
@@ -175,7 +247,96 @@ router.get("/auth/me", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json({ user });
+  res.json({ user: { id: user.id, email: user.email }, emailVerified: user.emailVerifiedAt !== null });
+});
+
+// ─── GET /auth/verify-email ───────────────────────────────────────────────────
+
+router.get("/auth/verify-email", async (req, res): Promise<void> => {
+  const { token } = req.query;
+
+  if (!token || typeof token !== "string") {
+    res.status(400).json({ error: "Verification token is required." });
+    return;
+  }
+
+  try {
+    const now = new Date();
+
+    const [row] = await db
+      .select()
+      .from(emailVerificationTokensTable)
+      .where(
+        and(
+          eq(emailVerificationTokensTable.token, token),
+          gt(emailVerificationTokensTable.expiresAt, now),
+        ),
+      )
+      .limit(1);
+
+    if (!row) {
+      res.status(400).json({ error: "This verification link is invalid or has expired." });
+      return;
+    }
+
+    // Mark the user as verified
+    await db
+      .update(usersTable)
+      .set({ emailVerifiedAt: now })
+      .where(and(eq(usersTable.id, row.userId), isNull(usersTable.emailVerifiedAt)));
+
+    // Delete all verification tokens for this user (clean up)
+    await db
+      .delete(emailVerificationTokensTable)
+      .where(eq(emailVerificationTokensTable.userId, row.userId));
+
+    logger.info({ userId: row.userId }, "Email verified");
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "verify-email error");
+    res.status(500).json({ error: "Something went wrong. Please try again." });
+  }
+});
+
+// ─── POST /auth/resend-verification ──────────────────────────────────────────
+
+router.post("/auth/resend-verification", async (req, res): Promise<void> => {
+  const userId = req.session?.userId;
+  if (!userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+
+  try {
+    const [user] = await db
+      .select({ id: usersTable.id, email: usersTable.email, emailVerifiedAt: usersTable.emailVerifiedAt })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+
+    if (!user) {
+      res.status(401).json({ error: "Session invalid" });
+      return;
+    }
+
+    if (user.emailVerifiedAt !== null) {
+      res.status(400).json({ error: "Your email is already verified." });
+      return;
+    }
+
+    // Delete old tokens before issuing a new one
+    await db
+      .delete(emailVerificationTokensTable)
+      .where(eq(emailVerificationTokensTable.userId, userId));
+
+    // Respond immediately, then send the email
+    res.json({ ok: true });
+
+    issueAndSendVerification(user.id, user.email);
+  } catch (err) {
+    logger.error({ err }, "resend-verification error");
+    res.status(500).json({ error: "Something went wrong. Please try again." });
+  }
 });
 
 // ─── POST /auth/forgot-password ───────────────────────────────────────────────
@@ -320,6 +481,7 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
     await client.query("BEGIN");
     await client.query(`DELETE FROM user_sessions WHERE sess::jsonb->>'userId' = $1::text`, [String(userId)]);
     await client.query(`DELETE FROM password_reset_tokens WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM email_verification_tokens WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM messages          WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM memory_facts      WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM personality_signals WHERE user_id = $1`, [userId]);
