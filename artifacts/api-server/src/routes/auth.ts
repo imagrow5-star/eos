@@ -339,6 +339,96 @@ router.post("/auth/resend-verification", async (req, res): Promise<void> => {
   }
 });
 
+async function sendSecurityAlertEmail(
+  toEmail: string,
+  cancelUrl: string,
+): Promise<void> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    logger.warn({ cancelUrl }, "RESEND_API_KEY not set — cancel link logged for dev");
+    return;
+  }
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: process.env.RESEND_FROM_EMAIL ?? "ASHA <onboarding@resend.dev>",
+      to: [toEmail],
+      subject: "Security alert: password reset requested for your ASHA account",
+      html: `
+        <div style="font-family:Georgia,serif;max-width:480px;margin:0 auto;padding:40px 24px;background:#fffff8;color:#1a1a2e;">
+          <h1 style="font-size:32px;letter-spacing:0.25em;text-align:center;color:#b8962e;margin-bottom:8px;">ASHA</h1>
+          <p style="text-align:center;font-size:12px;letter-spacing:0.2em;color:#888;text-transform:uppercase;margin-bottom:40px;">Your companion, your story</p>
+          <p style="font-size:16px;line-height:1.6;">Hi there,</p>
+          <p style="font-size:16px;line-height:1.6;">Someone just requested a password reset for your ASHA account. If that was you, you can ignore this message — a separate email with the reset link was sent to you.</p>
+          <p style="font-size:16px;line-height:1.6;font-weight:bold;">If you did <em>not</em> request this, click below to cancel the reset immediately and keep your account safe.</p>
+          <div style="text-align:center;margin:36px 0;">
+            <a href="${cancelUrl}" style="display:inline-block;background:#c0392b;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:14px;letter-spacing:0.1em;">No, Secure My Account</a>
+          </div>
+          <p style="font-size:13px;color:#888;line-height:1.6;">Clicking that link will invalidate the pending reset request. Your password will remain unchanged.</p>
+          <p style="font-size:13px;color:#888;line-height:1.6;">Or copy this link into your browser:<br><a href="${cancelUrl}" style="color:#c0392b;word-break:break-all;">${cancelUrl}</a></p>
+        </div>
+      `,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Resend API error ${res.status}: ${body}`);
+  }
+}
+
+// ─── POST /auth/cancel-reset ──────────────────────────────────────────────────
+
+router.post("/auth/cancel-reset", async (req, res): Promise<void> => {
+  const { token } = req.body ?? {};
+
+  if (!token || typeof token !== "string") {
+    res.status(400).json({ error: "Token is required." });
+    return;
+  }
+
+  try {
+    // Look up the user from the token (expired or not — we still want to cancel)
+    const [row] = await db
+      .select({ userId: passwordResetTokensTable.userId })
+      .from(passwordResetTokensTable)
+      .where(
+        and(
+          eq(passwordResetTokensTable.token, token),
+          isNull(passwordResetTokensTable.usedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!row) {
+      // Token doesn't exist or was already used — treat as success to avoid enumeration
+      res.json({ ok: true });
+      return;
+    }
+
+    // Delete ALL pending reset tokens for this user
+    await db
+      .delete(passwordResetTokensTable)
+      .where(
+        and(
+          eq(passwordResetTokensTable.userId, row.userId),
+          isNull(passwordResetTokensTable.usedAt),
+        ),
+      );
+
+    logger.info({ userId: row.userId }, "Password reset cancelled by user via security alert");
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "cancel-reset error");
+    res.status(500).json({ error: "Something went wrong. Please try again." });
+  }
+});
+
 // ─── POST /auth/forgot-password ───────────────────────────────────────────────
 
 router.post("/auth/forgot-password", async (req, res): Promise<void> => {
@@ -382,8 +472,12 @@ router.post("/auth/forgot-password", async (req, res): Promise<void> => {
         : "http://localhost:3000";
 
     const resetUrl = `${domain}/?resetToken=${token}`;
+    const cancelUrl = `${domain}/?cancelReset=${token}`;
 
-    await sendPasswordResetEmail(user.email, resetUrl);
+    await Promise.all([
+      sendPasswordResetEmail(user.email, resetUrl),
+      sendSecurityAlertEmail(user.email, cancelUrl),
+    ]);
     logger.info({ userId: user.id }, "Password reset email sent");
   } catch (err) {
     logger.error({ err }, "forgot-password background error");

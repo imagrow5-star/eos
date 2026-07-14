@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-type Tab = "login" | "signup" | "forgot" | "reset";
+type Tab = "login" | "signup" | "forgot" | "reset" | "cancelled";
 
 export function AuthScreen() {
   const [tab, setTab] = useState<Tab>("login");
@@ -16,10 +16,12 @@ export function AuthScreen() {
   const [resetToken, setResetToken] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  // Detect reset token in the URL on mount
+  // Detect reset token or cancel-reset token in the URL on mount
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const token = params.get("resetToken");
+    const cancelToken = params.get("cancelReset");
+
     if (token) {
       setResetToken(token);
       setTab("reset");
@@ -27,6 +29,21 @@ export function AuthScreen() {
       const url = new URL(window.location.href);
       url.searchParams.delete("resetToken");
       window.history.replaceState({}, "", url.toString());
+    } else if (cancelToken) {
+      // Clean the token from the URL immediately
+      const url = new URL(window.location.href);
+      url.searchParams.delete("cancelReset");
+      window.history.replaceState({}, "", url.toString());
+
+      // Fire cancel request
+      setTab("cancelled");
+      fetch(`${import.meta.env.BASE_URL}api/auth/cancel-reset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: cancelToken }),
+      }).catch(() => {
+        // Best-effort — we already switched the tab to show the message
+      });
     }
   }, []);
 
@@ -113,6 +130,7 @@ export function AuthScreen() {
     signup: "Create account",
     forgot: "Reset password",
     reset: "Set new password",
+    cancelled: "Reset cancelled",
   };
 
   return (
@@ -177,7 +195,35 @@ export function AuthScreen() {
             </div>
           )}
 
+          {/* Cancelled reset screen */}
+          {tab === "cancelled" && (
+            <motion.div
+              key="cancelled"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="text-center space-y-5 py-2"
+            >
+              <div className="text-4xl">🔒</div>
+              <h2 className="text-xl font-serif text-foreground">Reset cancelled</h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                The password reset request has been cancelled. Any pending reset links are now invalid and your password remains unchanged.
+              </p>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                If you believe someone else requested this, consider updating your password as a precaution.
+              </p>
+              <button
+                type="button"
+                onClick={() => switchTab("login")}
+                className="w-full bg-primary text-background py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all mt-2"
+              >
+                Back to sign in
+              </button>
+            </motion.div>
+          )}
+
           <AnimatePresence mode="wait">
+          {tab !== "cancelled" && (
             <motion.form
               key={tab}
               onSubmit={handleSubmit}
@@ -297,6 +343,7 @@ export function AuthScreen() {
                         : "Update password"}
               </button>
             </motion.form>
+          )}
           </AnimatePresence>
 
           {/* Footer links */}

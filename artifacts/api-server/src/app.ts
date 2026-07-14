@@ -26,6 +26,23 @@ pool
   `)
   .catch((err) => logger.error({ err }, "Failed to ensure user_sessions table"));
 
+// Safety-net: add email_verified_at to users if the column was added after initial deploy.
+pool
+  .query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at timestamp;`)
+  .catch((err) => logger.error({ err }, "Failed to ensure email_verified_at column"));
+
+// Safety-net: ensure email_verification_tokens exists.
+pool
+  .query(`
+    CREATE TABLE IF NOT EXISTS email_verification_tokens (
+      token text PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at timestamp NOT NULL,
+      created_at timestamp NOT NULL DEFAULT now()
+    );
+  `)
+  .catch((err) => logger.error({ err }, "Failed to ensure email_verification_tokens table"));
+
 // ─── Periodic cleanup: expired and used password reset tokens ─────────────────
 async function cleanExpiredPasswordResetTokens() {
   try {
