@@ -6,8 +6,17 @@ const router: IRouter = Router();
 // Default: Sarah — warm, natural, friendly female voice from ElevenLabs premade library
 const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 
+// All curated premade voices available in the voice picker
+const ALLOWED_VOICE_IDS = new Set([
+  "EXAVITQu4vr4xnSDxMaL", // Sarah
+  "21m00Tcm4TlvDq8ikWAM", // Rachel
+  "pFZP5JQG7iQjIQuC4Bku", // Lily
+  "XrExE9yKIg1WjnnlVkGX", // Matilda
+  "pNInz6obpgDQGcFmaJgB", // Adam
+]);
+
 router.post("/tts", async (req, res): Promise<void> => {
-  const { text } = req.body as { text?: string };
+  const { text, voiceId: requestedVoiceId } = req.body as { text?: string; voiceId?: string };
 
   if (!text || typeof text !== "string" || !text.trim()) {
     res.status(400).json({ error: "text (non-empty string) required" });
@@ -20,7 +29,13 @@ router.post("/tts", async (req, res): Promise<void> => {
     return;
   }
 
-  const voiceId = process.env.ELEVENLABS_VOICE_ID?.trim() || DEFAULT_VOICE_ID;
+  // Priority: request body voiceId → env override → default
+  let voiceId = DEFAULT_VOICE_ID;
+  if (requestedVoiceId && ALLOWED_VOICE_IDS.has(requestedVoiceId)) {
+    voiceId = requestedVoiceId;
+  } else if (process.env.ELEVENLABS_VOICE_ID?.trim()) {
+    voiceId = process.env.ELEVENLABS_VOICE_ID.trim();
+  }
 
   try {
     const response = await fetch(

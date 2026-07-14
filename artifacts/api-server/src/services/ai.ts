@@ -1,4 +1,4 @@
-import { desc, eq, lte, sql } from "drizzle-orm";
+import { desc, eq, and, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   memoryFactsTable,
@@ -8,6 +8,8 @@ import {
   profileTable,
   messagesTable,
   commitmentsTable,
+  habitsTable,
+  habitCompletionsTable,
   type Profile,
 } from "@workspace/db";
 import { logger } from "../lib/logger.js";
@@ -436,6 +438,162 @@ RULES — read carefully:
     };
   } catch (err) {
     logger.error({ err }, "Commitment extraction failed");
+    return empty;
+  }
+}
+
+// ─── Habit detection (runs after every user message in background) ────────────
+//
+// Detects: (1) user mentioned completing an existing habit, (2) companion & user
+// agreed on a new habit in this exchange. Both are persisted automatically.
+
+export interface HabitDetectionResult {
+  completedHabitIds: number[];
+  newHabit: { name: string; whenThen: string; reason: string } | null;
+}
+
+async function recalcHabitStreak(habitId: number, today: string): Promise<void> {
+  const allCompletions = await db
+    .select({ date: habitCompletionsTable.completedDate })
+    .from(habitCompletionsTable)
+    .where(eq(habitCompletionsTable.habitId, habitId));
+
+  const completedDates = new Set(allCompletions.map((c) => c.date));
+
+  let streak = 0;
+  let checkDate = today;
+
+  if (!completedDates.has(today)) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - 1);
+    const yesterday = d.toISOString().slice(0, 10);
+    if (!completedDates.has(yesterday)) {
+      streak = 0;
+    } else {
+      checkDate = yesterday;
+    }
+  }
+
+  if (completedDates.has(checkDate)) {
+    while (completedDates.has(checkDate)) {
+      streak++;
+      const d = new Date(checkDate);
+      d.setDate(d.getDate() - 1);
+      checkDate = d.toISOString().slice(0, 10);
+    }
+  }
+
+  await db
+    .update(habitsTable)
+    .set({ streak, lastCompleted: today })
+    .where(eq(habitsTable.id, habitId));
+}
+
+export async function detectHabitMentions(
+  profile: Profile,
+  userMessage: string,
+  assistantReply: string,
+  activeHabits: Array<{ id: number; name: string; whenThen: string }>,
+): Promise<HabitDetectionResult> {
+  const empty: HabitDetectionResult = { completedHabitIds: [], newHabit: null };
+  const anthropic = getAnthropic();
+  if (!anthropic) return empty;
+  if (!userMessage?.trim()) return empty;
+
+  const habitsContext =
+    activeHabits.length > 0
+      ? activeHabits.map((h) => `  ID ${h.id}: "${h.name}" (cue: ${h.whenThen})`).join("\n")
+      : "  (no habits yet)";
+
+  const today = todayString();
+
+  const prompt = `You are detecting habit mentions in a companion chat message.
+
+User name: ${profile.userName || "the user"}
+Today: ${today}
+
+LAST USER MESSAGE:
+"${userMessage}"
+
+COMPANION'S REPLY:
+"${assistantReply}"
+
+EXISTING HABITS (id: name):
+${habitsContext}
+
+Return ONLY valid JSON — no explanation, no markdown:
+{
+  "completedHabitIds": [<array of integer IDs where the user said they did that habit — empty array if none>],
+  "newHabit": {
+    "name": "short habit name",
+    "whenThen": "When [trigger], I will [action] — the cue-based format",
+    "reason": "why it matters to the user"
+  }
+}
+
+RULES:
+- completedHabitIds: include an ID ONLY when the user clearly says they did that specific habit (e.g. "I went for a walk", "I texted Sam", "I journaled this morning"). Match by semantic similarity to the habit name/cue.
+- newHabit: set ONLY when BOTH are true:
+    (a) The companion explicitly suggested a specific new habit with a clear when/then cue in its reply
+    (b) The user agreed to it ("ok", "yeah", "sure", "I'll try that", "sounds good", "alright", "deal")
+  Otherwise set newHabit to null.
+- Return ONLY the JSON object. No markdown. No explanation.`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 250,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const textBlock = response.content.find((b) => b.type === "text");
+    if (!textBlock) return empty;
+
+    const raw = textBlock.text.replace(/```(?:json)?\n?/g, "").trim();
+    const result = JSON.parse(raw) as HabitDetectionResult;
+
+    // Mark completed habits
+    if (Array.isArray(result.completedHabitIds) && result.completedHabitIds.length > 0) {
+      for (const habitId of result.completedHabitIds) {
+        if (!activeHabits.some((h) => h.id === habitId)) continue;
+
+        // Insert completion if not already done today
+        const existing = await db
+          .select()
+          .from(habitCompletionsTable)
+          .where(
+            and(
+              eq(habitCompletionsTable.habitId, habitId),
+              eq(habitCompletionsTable.completedDate, today),
+            ),
+          );
+
+        if (existing.length === 0) {
+          await db.insert(habitCompletionsTable).values({ habitId, completedDate: today });
+          await recalcHabitStreak(habitId, today);
+          logger.info({ habitId }, "Habit auto-completed from chat mention");
+        }
+      }
+    }
+
+    // Create new habit if agreed upon
+    if (result.newHabit && result.newHabit.name?.length > 2 && result.newHabit.whenThen?.length > 5) {
+      await db.insert(habitsTable).values({
+        name: result.newHabit.name,
+        whenThen: result.newHabit.whenThen,
+        reason: result.newHabit.reason || "agreed in conversation",
+        isActive: true,
+        streak: 0,
+      });
+      logger.info({ name: result.newHabit.name }, "New habit created from conversation");
+    }
+
+    return {
+      completedHabitIds: result.completedHabitIds ?? [],
+      newHabit: result.newHabit ?? null,
+    };
+  } catch (err) {
+    logger.error({ err }, "Habit detection failed");
     return empty;
   }
 }

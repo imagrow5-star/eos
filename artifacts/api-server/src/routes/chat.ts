@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, asc, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { messagesTable, profileTable, commitmentsTable } from "@workspace/db";
+import { messagesTable, profileTable, commitmentsTable, habitsTable } from "@workspace/db";
 import {
   GetMessagesResponse,
   SendMessageBody,
@@ -13,6 +13,7 @@ import {
   getCompanionReply,
   extractMemory,
   extractCommitments,
+  detectHabitMentions,
   generateMorningNoteContent,
 } from "../services/ai.js";
 import { calculateStage, todayString } from "../services/stage.js";
@@ -87,18 +88,30 @@ router.post("/chat/send", async (req, res): Promise<void> => {
     .returning();
 
   // ── Background extractions ─────────────────────────────────────────────────
-  // Run commitment extraction after EVERY message (fast, Haiku, small context).
+  // Run after EVERY message: commitment extraction + habit mention detection.
   // Run memory extraction every 4 user messages (broader context sweep).
 
-  // Fetch open commitments for the extraction pass
-  const openCommitments = await db
-    .select({ id: commitmentsTable.id, content: commitmentsTable.content, cue: commitmentsTable.cue })
-    .from(commitmentsTable)
-    .where(sql`${commitmentsTable.state} = 'open'`)
-    .limit(10);
+  // Fetch open commitments and active habits for extraction passes (in parallel)
+  const [openCommitments, activeHabits] = await Promise.all([
+    db
+      .select({ id: commitmentsTable.id, content: commitmentsTable.content, cue: commitmentsTable.cue })
+      .from(commitmentsTable)
+      .where(sql`${commitmentsTable.state} = 'open'`)
+      .limit(10),
+    db
+      .select({ id: habitsTable.id, name: habitsTable.name, whenThen: habitsTable.whenThen })
+      .from(habitsTable)
+      .where(eq(habitsTable.isActive, true))
+      .limit(20),
+  ]);
 
+  // Fire commitment extraction + habit detection in parallel (both non-blocking)
   extractCommitments(profile, content, aiContent, openCommitments).catch((err) =>
     logger.error({ err }, "Background commitment extraction failed"),
+  );
+
+  detectHabitMentions(profile, content, aiContent, activeHabits).catch((err) =>
+    logger.error({ err }, "Background habit detection failed"),
   );
 
   let memoryExtracted = false;

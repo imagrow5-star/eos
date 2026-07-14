@@ -18,6 +18,7 @@ export const profileTable = pgTable("profile", {
   morningNoteDate: text("morning_note_date"),
   visitDates: text("visit_dates").array().notNull().default([]),
   changeTalkDetected: boolean("change_talk_detected").notNull().default(false),
+  voiceId: text("voice_id").notNull().default("EXAVITQu4vr4xnSDxMaL"), // ElevenLabs voice ID — default Sarah
 });
 
 export const insertProfileSchema = createInsertSchema(profileTable).omit({ id: true });

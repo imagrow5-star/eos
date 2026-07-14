@@ -45,6 +45,7 @@ function buildProfilePayload(profile: ReturnType<typeof Object.assign>, daysSinc
     userPath: profile.userPath,
     country: profile.country,
     ageBand: profile.ageBand ?? "",
+    voiceId: profile.voiceId ?? "EXAVITQu4vr4xnSDxMaL",
     createdAt: profile.createdAt,
     daysSinceStart,
     currentStage: stage,
@@ -80,8 +81,9 @@ router.put("/profile", async (req, res): Promise<void> => {
   if (data.energy != null) updates.energy = data.energy;
   if (data.userPath != null) updates.userPath = data.userPath;
   if (data.country != null) updates.country = data.country;
-  // ageBand is not in the generated ProfileInput yet — accept it if present
+  // ageBand and voiceId are not in the generated ProfileInput yet — accept if present
   if ((data as any).ageBand != null) updates.ageBand = (data as any).ageBand;
+  if ((data as any).voiceId != null) updates.voiceId = (data as any).voiceId;
 
   const [updated] = await db
     .update(profileTable)

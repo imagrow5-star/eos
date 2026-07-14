@@ -58,19 +58,23 @@ export function useSpeechRecognition(onResult: (text: string) => void) {
 export interface SpeakOptions {
   onStart?: () => void;
   onEnd?: () => void;
+  voiceId?: string; // ElevenLabs voice ID — overrides profile default if provided
 }
 
 export async function speakText(text: string, options?: SpeakOptions): Promise<void> {
-  const { onStart, onEnd } = options ?? {};
+  const { onStart, onEnd, voiceId } = options ?? {};
 
   if (!text?.trim()) { onEnd?.(); return; }
 
   // ── Try ElevenLabs via /api/tts ──────────────────────────────────────────
   try {
+    const body: Record<string, string> = { text };
+    if (voiceId) body.voiceId = voiceId;
+
     const response = await fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(body),
     });
 
     if (response.ok) {
