@@ -30,3 +30,9 @@ link works whether or not the confirming browser is logged in.
 - New columns on `email_verification_tokens` need both a drizzle schema change AND
   a safety-net `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` in api-server `app.ts`,
   since prod may not have run `drizzle-kit push`.
+- On change request, the OLD email gets a security alert (mirrors password-reset
+  `sendSecurityAlertEmail`): masked new address via `maskEmail()`, plus a
+  `?cancelEmailChange=<token>` link. `POST /auth/cancel-email-change` (no session
+  required — token is proof) deletes all of the user's change tokens so the staged
+  change can't be confirmed. Frontend handles the param in `AuthScreen.tsx` mount
+  effect (same shape as `cancelReset`), showing an `emailChangeCancelled` tab.

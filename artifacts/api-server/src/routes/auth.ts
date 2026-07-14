@@ -95,6 +95,22 @@ async function sendVerificationEmail(
   }
 }
 
+/**
+ * Masks an email address so a notice can reference it without leaking the full
+ * address. e.g. "newuser@gmail.com" -> "n***@g***.com".
+ */
+function maskEmail(email: string): string {
+  const at = email.lastIndexOf("@");
+  if (at <= 0) return "***";
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  const maskedLocal = local[0] + "***";
+  const dot = domain.lastIndexOf(".");
+  const maskedDomain =
+    dot > 0 ? domain[0] + "***" + domain.slice(dot) : domain[0] + "***";
+  return `${maskedLocal}@${maskedDomain}`;
+}
+
 async function sendChangeEmailVerification(
   toEmail: string,
   verifyUrl: string,
@@ -126,6 +142,55 @@ async function sendChangeEmailVerification(
           </div>
           <p style="font-size:13px;color:#888;line-height:1.6;">If you didn't request this change, you can safely ignore this email — nothing will change until you confirm.</p>
           <p style="font-size:13px;color:#888;line-height:1.6;">Or copy this link into your browser:<br><a href="${verifyUrl}" style="color:#b8962e;word-break:break-all;">${verifyUrl}</a></p>
+        </div>
+      `,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Resend API error ${res.status}: ${body}`);
+  }
+}
+
+/**
+ * Notifies the *current* (old) email address that a change to a new address was
+ * requested. Mirrors the password-reset security alert: it never reveals the
+ * full new address and offers a one-click way to cancel the pending change.
+ */
+async function sendEmailChangeSecurityAlert(
+  toEmail: string,
+  maskedNewEmail: string,
+  cancelUrl: string,
+): Promise<void> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    logger.warn({ cancelUrl }, "RESEND_API_KEY not set — email-change cancel link logged for dev");
+    return;
+  }
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: process.env.RESEND_FROM_EMAIL ?? "ASHA <onboarding@resend.dev>",
+      to: [toEmail],
+      subject: "Security alert: a new email address was requested for your ASHA account",
+      html: `
+        <div style="font-family:Georgia,serif;max-width:480px;margin:0 auto;padding:40px 24px;background:#fffff8;color:#1a1a2e;">
+          <h1 style="font-size:32px;letter-spacing:0.25em;text-align:center;color:#b8962e;margin-bottom:8px;">ASHA</h1>
+          <p style="text-align:center;font-size:12px;letter-spacing:0.2em;color:#888;text-transform:uppercase;margin-bottom:40px;">Your companion, your story</p>
+          <p style="font-size:16px;line-height:1.6;">Hi there,</p>
+          <p style="font-size:16px;line-height:1.6;">Someone just requested to change the email address on your ASHA account to a new address (<strong>${maskedNewEmail}</strong>). If that was you, no action is needed — nothing changes until the new address is confirmed, and this address stays in control until then.</p>
+          <p style="font-size:16px;line-height:1.6;font-weight:bold;">If you did <em>not</em> request this, click below to cancel the change immediately and keep your account safe.</p>
+          <div style="text-align:center;margin:36px 0;">
+            <a href="${cancelUrl}" style="display:inline-block;background:#c0392b;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:14px;letter-spacing:0.1em;">No, Secure My Account</a>
+          </div>
+          <p style="font-size:13px;color:#888;line-height:1.6;">Clicking that link will cancel the pending email change. Your account will keep using this address, and we recommend changing your password.</p>
+          <p style="font-size:13px;color:#888;line-height:1.6;">Or copy this link into your browser:<br><a href="${cancelUrl}" style="color:#c0392b;word-break:break-all;">${cancelUrl}</a></p>
         </div>
       `,
     }),
@@ -494,15 +559,21 @@ router.post("/auth/change-email", async (req, res): Promise<void> => {
       ? `https://${process.env.REPLIT_DEV_DOMAIN}`
       : "http://localhost:3000";
     const verifyUrl = `${domain}/?verifyToken=${token}`;
+    const cancelUrl = `${domain}/?cancelEmailChange=${token}`;
 
     // Respond before sending so a slow email provider doesn't hang the request.
     res.json({ ok: true, pendingEmail: cleanEmail });
 
+    // Confirmation goes to the NEW address; a security notice goes to the OLD
+    // (current) address so the rightful owner can react before it's confirmed.
     try {
-      await sendChangeEmailVerification(cleanEmail, verifyUrl);
-      logger.info({ userId }, "Change-email verification sent");
+      await Promise.all([
+        sendChangeEmailVerification(cleanEmail, verifyUrl),
+        sendEmailChangeSecurityAlert(user.email, maskEmail(cleanEmail), cancelUrl),
+      ]);
+      logger.info({ userId }, "Change-email verification and security alert sent");
     } catch (err) {
-      logger.error({ err, userId }, "Failed to send change-email verification");
+      logger.error({ err, userId }, "Failed to send change-email emails");
     }
   } catch (err) {
     logger.error({ err }, "change-email error");
@@ -598,6 +669,48 @@ router.post("/auth/cancel-reset", async (req, res): Promise<void> => {
     res.json({ ok: true });
   } catch (err) {
     logger.error({ err }, "cancel-reset error");
+    res.status(500).json({ error: "Something went wrong. Please try again." });
+  }
+});
+
+// ─── POST /auth/cancel-email-change ───────────────────────────────────────────
+// Reached from the security notice sent to the OLD email address. Cancels the
+// pending change by dropping the staged change token so the account keeps its
+// current address. No session required — the token is the proof of ownership.
+
+router.post("/auth/cancel-email-change", async (req, res): Promise<void> => {
+  const { token } = req.body ?? {};
+
+  if (!token || typeof token !== "string") {
+    res.status(400).json({ error: "Token is required." });
+    return;
+  }
+
+  try {
+    // Only match change tokens (newEmail set); expiry doesn't matter — we still
+    // want to be able to cancel.
+    const [row] = await db
+      .select({ userId: emailVerificationTokensTable.userId })
+      .from(emailVerificationTokensTable)
+      .where(eq(emailVerificationTokensTable.token, token))
+      .limit(1);
+
+    if (!row) {
+      // Token doesn't exist (or was already confirmed/cleared) — treat as success.
+      res.json({ ok: true });
+      return;
+    }
+
+    // Drop every pending change/verification token for this user so the staged
+    // change can no longer be confirmed.
+    await db
+      .delete(emailVerificationTokensTable)
+      .where(eq(emailVerificationTokensTable.userId, row.userId));
+
+    logger.info({ userId: row.userId }, "Email change cancelled by user via security alert");
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error({ err }, "cancel-email-change error");
     res.status(500).json({ error: "Something went wrong. Please try again." });
   }
 });

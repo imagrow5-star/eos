@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-type Tab = "login" | "signup" | "forgot" | "reset" | "cancelled";
+type Tab = "login" | "signup" | "forgot" | "reset" | "cancelled" | "emailChangeCancelled";
 
 export function AuthScreen() {
   const [tab, setTab] = useState<Tab>("login");
@@ -22,6 +22,7 @@ export function AuthScreen() {
     const params = new URLSearchParams(window.location.search);
     const token = params.get("resetToken");
     const cancelToken = params.get("cancelReset");
+    const cancelEmailChangeToken = params.get("cancelEmailChange");
 
     if (token) {
       setResetToken(token);
@@ -42,6 +43,21 @@ export function AuthScreen() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: cancelToken }),
+      }).catch(() => {
+        // Best-effort — we already switched the tab to show the message
+      });
+    } else if (cancelEmailChangeToken) {
+      // Clean the token from the URL immediately
+      const url = new URL(window.location.href);
+      url.searchParams.delete("cancelEmailChange");
+      window.history.replaceState({}, "", url.toString());
+
+      // Fire cancel request
+      setTab("emailChangeCancelled");
+      fetch(`${import.meta.env.BASE_URL}api/auth/cancel-email-change`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: cancelEmailChangeToken }),
       }).catch(() => {
         // Best-effort — we already switched the tab to show the message
       });
@@ -138,6 +154,7 @@ export function AuthScreen() {
     forgot: "Reset password",
     reset: "Set new password",
     cancelled: "Reset cancelled",
+    emailChangeCancelled: "Email change cancelled",
   };
 
   return (
@@ -266,8 +283,35 @@ export function AuthScreen() {
             </motion.div>
           )}
 
+          {/* Cancelled email-change screen */}
+          {tab === "emailChangeCancelled" && (
+            <motion.div
+              key="emailChangeCancelled"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="text-center space-y-5 py-2"
+            >
+              <div className="text-4xl">🔒</div>
+              <h2 className="text-xl font-serif text-foreground">Email change cancelled</h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                The request to change your account's email address has been cancelled. Your account keeps its current email, and nothing was changed.
+              </p>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                If you didn't request this, we recommend updating your password as a precaution.
+              </p>
+              <button
+                type="button"
+                onClick={() => switchTab("login")}
+                className="w-full bg-primary text-background py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all mt-2"
+              >
+                Back to sign in
+              </button>
+            </motion.div>
+          )}
+
           <AnimatePresence mode="wait">
-          {tab !== "cancelled" && !(tab === "reset" && expiredToken) && (
+          {tab !== "cancelled" && tab !== "emailChangeCancelled" && !(tab === "reset" && expiredToken) && (
             <motion.form
               key={tab}
               onSubmit={handleSubmit}
