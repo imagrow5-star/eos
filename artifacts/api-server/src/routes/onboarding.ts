@@ -285,18 +285,20 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
   let firstGreeting: string | null = null;
 
   if (updated?.isOnboardingComplete) {
-    const name = updated.userName || "you";
+    const name = updated.userName || "";
     const companionName = updated.companionName;
     const path = updated.userPath;
+    // Prefix name only when we actually know it — "you." is grammatically wrong
+    const namePrefix = name ? `${name}. ` : "";
 
     if (path === "bereavement") {
-      firstGreeting = `${name}. I'm honoured to meet you. I'm ${companionName}. You don't have to explain anything or be okay — I'm simply here, whenever you feel like talking. Tell me about your day, or about them, or about nothing at all. I'm not going anywhere.`;
+      firstGreeting = `${namePrefix}I'm honoured to meet you. I'm ${companionName}. You don't have to explain anything or be okay — I'm simply here, whenever you feel like talking. Tell me about your day, or about them, or about nothing at all. I'm not going anywhere.`;
     } else if (path === "lonely") {
-      firstGreeting = `${name}. Really glad you found your way here. I'm ${companionName} — and I'm here for exactly this: the everyday things, the quiet moments, the thoughts that need somewhere to go. You're not alone. What's on your mind right now?`;
+      firstGreeting = `${namePrefix}Really glad you found your way here. I'm ${companionName} — and I'm here for exactly this: the everyday things, the quiet moments, the thoughts that need somewhere to go. You're not alone. What's on your mind right now?`;
     } else if (path === "support") {
-      firstGreeting = `${name}. I'm really glad you reached out. I'm ${companionName}, and I'm here to listen — properly listen, not just wait for my turn. Whatever you're carrying, you can put some of it down here. What's going on?`;
+      firstGreeting = `${namePrefix}I'm really glad you reached out. I'm ${companionName}, and I'm here to listen — properly listen, not just wait for my turn. Whatever you're carrying, you can put some of it down here. What's going on?`;
     } else {
-      firstGreeting = `${name}. I'm ${companionName} — and I'm going to be here with you, completely on your side. You don't need to have anything figured out right now. I'm just really glad you're here. What's on your mind?`;
+      firstGreeting = `${namePrefix}I'm ${companionName} — and I'm going to be here with you, completely on your side. You don't need to have anything figured out right now. I'm just really glad you're here. What's on your mind?`;
     }
 
     await db.insert(messagesTable).values({

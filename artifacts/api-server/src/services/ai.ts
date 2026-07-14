@@ -724,8 +724,12 @@ Rules:
     const textBlock = response.content.find((b) => b.type === "text");
     if (!textBlock) return [];
 
-    const raw = textBlock.text.replace(/```(?:json)?\n?/g, "").trim();
-    const tasks = JSON.parse(raw) as string[];
+    // Strip code fences then try to extract a JSON array from anywhere in the text.
+    // Claude occasionally wraps the array in prose — the regex handles that.
+    const stripped = textBlock.text.replace(/```(?:json)?\n?/g, "").trim();
+    const arrayMatch = stripped.match(/\[[\s\S]*?\]/);
+    if (!arrayMatch) throw new Error("No JSON array found in response");
+    const tasks = JSON.parse(arrayMatch[0]) as string[];
     return Array.isArray(tasks) ? tasks.filter((t) => typeof t === "string").slice(0, 5) : [];
   } catch (err) {
     logger.error({ err }, "Goal task breakdown failed");

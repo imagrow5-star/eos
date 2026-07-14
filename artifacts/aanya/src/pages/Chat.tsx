@@ -205,6 +205,7 @@ export default function Chat() {
   // Streaming state: text accumulates token-by-token while the model generates
   const [streamingContent, setStreamingContent] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [streamError, setStreamError] = useState<string | null>(null);
   // Live-caption state: which message is currently being spoken, and how many words revealed
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [revealedWords, setRevealedWords] = useState(0);
@@ -300,6 +301,7 @@ export default function Chat() {
   const sendStreamingMessage = async (content: string) => {
     setIsStreaming(true);
     setStreamingContent("");
+    setStreamError(null);
 
     let finalContent = "";
     let finalMessageId: string | null = null;
@@ -354,6 +356,7 @@ export default function Chat() {
       }
     } catch (err) {
       console.error("[stream] Error:", err);
+      setStreamError("Something went wrong. Please try sending again.");
     }
 
     setIsStreaming(false);
@@ -376,6 +379,7 @@ export default function Chat() {
   const handleSend = async (data: ChatMessageFormValues) => {
     if (!data.content.trim()) return;
     const content = data.content.trim();
+    setStreamError(null);
     form.reset();
 
     if (!onboarding?.isComplete) {
@@ -560,6 +564,23 @@ export default function Chat() {
               </motion.div>
             );
           })}
+        </AnimatePresence>
+
+        {/* ── Stream error bubble ───────────────────────────────────────────── */}
+        <AnimatePresence>
+          {streamError && !isStreaming && (
+            <motion.div
+              key="stream-error"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="self-start max-w-[85%]"
+            >
+              <div className="px-[18px] py-3 rounded-2xl rounded-tl-sm bg-red-500/8 border border-red-500/20 text-[13.5px] text-red-400/80 font-sans leading-relaxed">
+                {streamError}
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
 
         {/* ── Streaming bubble — appears while model is generating ─────────── */}
@@ -998,7 +1019,7 @@ export default function Chat() {
         {/* Show a subtle "or type your answer" hint when choice buttons are shown */}
         {showChoiceButtons && !isTyping && (
           <p className="text-center text-[11px] text-muted-foreground/40 mt-3 tracking-wide">
-            or type your answer above
+            or type your own answer below
           </p>
         )}
         {showChoiceButtons && (
