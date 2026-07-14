@@ -221,13 +221,13 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
       const lower = answer.toLowerCase().trim();
       if (lower === "man" || lower === "male" || lower.includes("he/him") || (lower.includes("man") && !lower.includes("woman"))) {
         updates.companionGender = "man";
-        updates.voiceId = "pNInz6obpgDQGcFmaJgB"; // Adam — default male voice
+        updates.voiceId = "pNInz6obpgDQGcFmaJgB"; // Adam — deep & warm (default male)
       } else if (lower.includes("non") || lower.includes("neutral") || lower.includes("they") || lower === "nonbinary" || lower.includes("no preference")) {
         updates.companionGender = "nonbinary";
-        updates.voiceId = "EXAVITQu4vr4xnSDxMaL"; // Sarah — neutral default
+        updates.voiceId = "21m00Tcm4TlvDq8ikWAM"; // Rachel — calm & warm (neutral default)
       } else {
         updates.companionGender = "woman";
-        updates.voiceId = "EXAVITQu4vr4xnSDxMaL"; // Sarah — default female voice
+        updates.voiceId = "21m00Tcm4TlvDq8ikWAM"; // Rachel — calm & warm (default female)
       }
       break;
     }

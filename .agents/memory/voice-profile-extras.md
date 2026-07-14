@@ -31,12 +31,30 @@ description: voiceId + companionGender + userGender on profile; full 10-voice li
 - Added to CORE CHARACTER block: "Your pronouns are ${pronounLine}..."
 - Uses `(profile as any).companionGender` cast since Profile DB type may not always propagate before runtime
 
-## 10-voice library (TTS allowlist)
+## Voice library (premade + romantic)
 
-Female: Sarah, Matilda, Lily, Rachel, Alice
-Male: Antoni, Charlie, Adam, George, Arnold
+### Premade (13 voices, work without any setup)
+Female (7): Rachel 21m00Tcm4TlvDq8ikWAM, Bella EXAVITQu4vr4xnSDxMaL, Nicole piTKgcLEGmPE4e6mEKli, Elli MF3mGyEYCl7XYWbV9V6O, Matilda XrExE9yKIg1WjnnlVkGX, Lily pFZP5JQG7iQjIQuC4Bku, Alice Xb7hH8MSUJpSbSDYk0k2
+Male (6): Antoni ErXwobaYiN019PkySvjV, Adam pNInz6obpgDQGcFmaJgB, Brian nPczCjzI2devNBz1zQrb, Liam TX3LPaxmHKxFdv7VOQHJ, George JBFqnCBsd6RMkjVDRZzb, Charlie IKne3meq5aSn9XLyUdCD
 
-ALLOWED_VOICE_IDS in tts.ts must include all 10. Voice picker in Chat.tsx organized into Female/Male sections, ordered by companionGender (man → Male first).
+### Romantic / community (3 voices — must be added to account at startup)
+Sahara qT3qfGZ0g0ss8WV5908L (female), Emma S9EGwlCtMF7VXtENq79v (female), Benjamin LruHrtVF6PSyGItzMNHS (male)
+These IDs are the Voice Library IDs (not usable for TTS directly). voiceLibrary.ts adds them at startup via POST /v1/voices/add and maps libraryId → accountVoiceId. Client stores accountVoiceId in profile.voiceId.
+
+### TTS model
+`eleven_multilingual_v2` — emotionally-aware, warm delivery. Settings: stability 0.45, similarity_boost 0.8, style 0.3, use_speaker_boost true.
+
+### Voice picker UI (Chat.tsx)
+Three sections: Female / Male / Romantic & Intimate (Sparkles icon). Standard voices show accent + feel labels. Romantic voices show "unavailable" when unresolved. Sections ordered by companionGender (matching gender first).
+
+### Runtime fallback chain
+1. Requested voice ID (if in PREMADE_VOICE_IDS or isResolvedRomanticVoiceId)
+2. ELEVENLABS_VOICE_ID env override
+3. DEFAULT_VOICE_ID (Rachel 21m00Tcm4TlvDq8ikWAM)
+If ElevenLabs returns 422/404 → retry with DEFAULT_VOICE_ID. Never fail silently.
+
+### /api/voices/status endpoint
+Returns romantic voice resolution status (resolved bool + accountVoiceId) for the frontend picker.
 
 ## voiceId flow (fixed)
 

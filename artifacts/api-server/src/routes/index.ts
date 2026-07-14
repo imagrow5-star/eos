@@ -6,6 +6,7 @@ import chatRouter from "./chat";
 import memoryRouter from "./memory";
 import journeyRouter from "./journey";
 import ttsRouter from "./tts";
+import voicesRouter from "./voices";
 import goalsRouter from "./goals";
 import commitmentsRouter from "./commitments";
 
@@ -18,6 +19,7 @@ router.use(chatRouter);
 router.use(memoryRouter);
 router.use(journeyRouter);
 router.use(ttsRouter);
+router.use(voicesRouter);
 router.use(goalsRouter);
 router.use(commitmentsRouter);
 

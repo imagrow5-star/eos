@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { initVoiceLibrary } from "./services/voiceLibrary";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +23,14 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  // Initialise romantic community voices (non-blocking — failures logged and skipped)
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (apiKey) {
+    initVoiceLibrary(apiKey).catch((e) =>
+      logger.error({ err: e }, "Unexpected error in initVoiceLibrary"),
+    );
+  } else {
+    logger.warn("ELEVENLABS_API_KEY not set — skipping voice library init");
+  }
 });

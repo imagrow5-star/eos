@@ -1,29 +1,86 @@
+/**
+ * tts.ts — ElevenLabs text-to-speech proxy
+ *
+ * Model: eleven_multilingual_v2 (emotionally-aware, warmer delivery)
+ * Voice settings tuned for warm, expressive, human presence.
+ * Falls back gracefully if a voice ID is invalid or expired.
+ */
+
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
+import { isResolvedRomanticVoiceId } from "../services/voiceLibrary.js";
 
 const router: IRouter = Router();
 
-// Default: Sarah — warm, natural, friendly female voice from ElevenLabs premade library
-const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
+// ─── Premade voice allowlist ──────────────────────────────────────────────────
+// These IDs work immediately without any account setup.
 
-// All curated premade voices available in the voice picker (female + male)
-const ALLOWED_VOICE_IDS = new Set([
+const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; // Rachel — calm & warm
+
+const PREMADE_VOICE_IDS = new Set([
   // Female
-  "EXAVITQu4vr4xnSDxMaL", // Sarah — soft & warm (younger)
-  "XrExE9yKIg1WjnnlVkGX", // Matilda — bright & friendly (younger)
-  "pFZP5JQG7iQjIQuC4Bku", // Lily — gentle, British
-  "21m00Tcm4TlvDq8ikWAM", // Rachel — calm & grounded (mature)
-  "Xb7hH8MSUJpSbSDYk0k2", // Alice — confident, British (mature)
+  "21m00Tcm4TlvDq8ikWAM", // Rachel — calm & warm (American, younger)
+  "EXAVITQu4vr4xnSDxMaL", // Bella  — soft & friendly (American, younger)
+  "piTKgcLEGmPE4e6mEKli", // Nicole — soft & intimate (American, younger)
+  "MF3mGyEYCl7XYWbV9V6O", // Elli   — emotional & expressive (American, younger)
+  "XrExE9yKIg1WjnnlVkGX", // Matilda — warm & friendly (American, mature)
+  "pFZP5JQG7iQjIQuC4Bku", // Lily   — gentle (British, mature)
+  "Xb7hH8MSUJpSbSDYk0k2", // Alice  — confident (British, mature)
   // Male
-  "ErXwobaYiN019PkySvjV", // Antoni — warm & easy (younger)
-  "IKne3meq5aSn9XLyUdCD", // Charlie — casual, Australian (younger)
-  "pNInz6obpgDQGcFmaJgB", // Adam — deep & warm (mature)
-  "JBFqnCBsd6RMkjVDRZzb", // George — warm, British (mature)
-  "VR6AewLTigWG4xSOukaG", // Arnold — crisp & steady (mature)
+  "ErXwobaYiN019PkySvjV", // Antoni — warm & easy (American, younger)
+  "pNInz6obpgDQGcFmaJgB", // Adam   — deep & warm (American, mature)
+  "nPczCjzI2devNBz1zQrb", // Brian  — deep & comforting (American, mature)
+  "TX3LPaxmHKxFdv7VOQHJ", // Liam   — natural (American)
+  "JBFqnCBsd6RMkjVDRZzb", // George — warm & refined (British, mature)
+  "IKne3meq5aSn9XLyUdCD", // Charlie — casual (Australian, younger)
 ]);
 
+// ─── Warm voice settings ──────────────────────────────────────────────────────
+
+const VOICE_SETTINGS = {
+  stability: 0.45,        // looser = more expressive, human variation
+  similarity_boost: 0.8,  // high fidelity to the voice character
+  style: 0.3,             // slight style injection for emotional presence
+  use_speaker_boost: true,
+} as const;
+
+// ─── Helper: make a single TTS attempt ───────────────────────────────────────
+
+async function attemptTTS(
+  apiKey: string,
+  voiceId: string,
+  text: string,
+): Promise<{ ok: true; buffer: ArrayBuffer } | { ok: false; status: number; body: string }> {
+  const res = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+    {
+      method: "POST",
+      headers: {
+        "xi-api-key": apiKey,
+        "Content-Type": "application/json",
+        Accept: "audio/mpeg",
+      },
+      body: JSON.stringify({
+        text: text.slice(0, 5000),
+        model_id: "eleven_multilingual_v2",
+        voice_settings: VOICE_SETTINGS,
+      }),
+    },
+  );
+
+  if (res.ok) {
+    return { ok: true, buffer: await res.arrayBuffer() };
+  }
+  return { ok: false, status: res.status, body: await res.text() };
+}
+
+// ─── Route ───────────────────────────────────────────────────────────────────
+
 router.post("/tts", async (req, res): Promise<void> => {
-  const { text, voiceId: requestedVoiceId } = req.body as { text?: string; voiceId?: string };
+  const { text, voiceId: requestedVoiceId } = req.body as {
+    text?: string;
+    voiceId?: string;
+  };
 
   if (!text || typeof text !== "string" || !text.trim()) {
     res.status(400).json({ error: "text (non-empty string) required" });
@@ -32,58 +89,60 @@ router.post("/tts", async (req, res): Promise<void> => {
 
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
-    res.status(503).json({ error: "ElevenLabs not configured — ELEVENLABS_API_KEY secret not set" });
+    res
+      .status(503)
+      .json({ error: "ElevenLabs not configured — ELEVENLABS_API_KEY secret not set" });
     return;
   }
 
-  // Priority: request body voiceId → env override → default
+  // ── Resolve voice ID ────────────────────────────────────────────────────────
+  // Priority: request voiceId (if allowed) → env override → default
   let voiceId = DEFAULT_VOICE_ID;
-  if (requestedVoiceId && ALLOWED_VOICE_IDS.has(requestedVoiceId)) {
-    voiceId = requestedVoiceId;
-  } else if (process.env.ELEVENLABS_VOICE_ID?.trim()) {
+
+  if (requestedVoiceId) {
+    const isPremade = PREMADE_VOICE_IDS.has(requestedVoiceId);
+    const isRomantic = isResolvedRomanticVoiceId(requestedVoiceId);
+    if (isPremade || isRomantic) {
+      voiceId = requestedVoiceId;
+    } else {
+      logger.warn(
+        { requestedVoiceId },
+        "Requested voice ID is not in allowlist or not yet resolved — using default",
+      );
+    }
+  }
+
+  if (process.env.ELEVENLABS_VOICE_ID?.trim()) {
     voiceId = process.env.ELEVENLABS_VOICE_ID.trim();
   }
 
+  // ── TTS call with graceful fallback ────────────────────────────────────────
   try {
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-      {
-        method: "POST",
-        headers: {
-          "xi-api-key": apiKey,
-          "Content-Type": "application/json",
-          Accept: "audio/mpeg",
-        },
-        body: JSON.stringify({
-          text: text.slice(0, 5000), // ElevenLabs hard cap
-          model_id: "eleven_turbo_v2_5",
-          voice_settings: {
-            stability: 0.45,
-            similarity_boost: 0.75,
-            style: 0.15,
-            use_speaker_boost: true,
-          },
-        }),
-      },
-    );
+    let result = await attemptTTS(apiKey, voiceId, text);
 
-    if (!response.ok) {
-      const errBody = await response.text();
+    // Retry with default if voice has expired or is invalid (422 / 404)
+    if (!result.ok && (result.status === 422 || result.status === 404) && voiceId !== DEFAULT_VOICE_ID) {
+      logger.warn(
+        { status: result.status, voiceId, fallback: DEFAULT_VOICE_ID },
+        "Voice ID returned error — retrying with default voice",
+      );
+      result = await attemptTTS(apiKey, DEFAULT_VOICE_ID, text);
+    }
+
+    if (!result.ok) {
       logger.error(
-        { status: response.status, voiceId, body: errBody },
+        { status: result.status, voiceId, body: result.body },
         "ElevenLabs API returned error",
       );
       res.status(502).json({
         error: "ElevenLabs API error",
-        detail: errBody,
-        httpStatus: response.status,
+        detail: result.body,
+        httpStatus: result.status,
       });
       return;
     }
 
-    const buffer = await response.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString("base64");
-
+    const base64 = Buffer.from(result.buffer).toString("base64");
     logger.info({ voiceId, chars: text.length }, "TTS audio generated");
     res.json({ audio: base64, format: "mp3" });
   } catch (err) {
