@@ -396,7 +396,9 @@ router.get("/auth/verify-email", async (req, res): Promise<void> => {
           .set({ email: row.newEmail, emailVerifiedAt: now })
           .where(eq(usersTable.id, row.userId));
       } catch (err: any) {
-        if (err?.code === "23505") {
+        // Drizzle wraps driver errors in a DrizzleQueryError, so the pg unique
+        // violation code can live on the error or on its `cause`.
+        if (err?.code === "23505" || err?.cause?.code === "23505") {
           // Someone else claimed this address between request and confirmation.
           // Drop the stale token so the user can start over.
           await db
