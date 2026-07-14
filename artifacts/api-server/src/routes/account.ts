@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { EMBEDDED_FONTS_CSS } from "./report-fonts.js";
 
 const router = Router();
 
@@ -156,12 +157,14 @@ function buildHtmlReport(data: {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Your ASHA Report</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Inter:wght@400;500&display=swap');
+    /* Fonts are embedded as base64 woff2 data URIs (see report-fonts.ts) so the
+       report renders with its intended typography even when opened offline. */
+    ${EMBEDDED_FONTS_CSS}
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: 'Inter', sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       background: #faf8f5;
       color: #2d2a24;
       line-height: 1.6;
@@ -178,7 +181,7 @@ function buildHtmlReport(data: {
       margin-bottom: 40px;
     }
     .wordmark {
-      font-family: 'Cormorant Garamond', serif;
+      font-family: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
       font-size: 28px;
       letter-spacing: 0.5em;
       color: #8c7348;
@@ -186,7 +189,7 @@ function buildHtmlReport(data: {
     }
     .wordmark span { color: #d4a854; }
     .cover h1 {
-      font-family: 'Cormorant Garamond', serif;
+      font-family: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
       font-size: 22px;
       font-weight: 400;
       color: #5c5040;
@@ -227,7 +230,7 @@ function buildHtmlReport(data: {
       background: #fff;
       border: 1px solid #d4a85422;
       border-top-left-radius: 4px;
-      font-family: 'Cormorant Garamond', serif;
+      font-family: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
       font-size: 16px;
       color: #3a3328;
     }
@@ -309,8 +312,25 @@ function buildHtmlReport(data: {
 
     /* ── Print ── */
     @media print {
-      body { background: white; padding: 0; }
-      .cover { padding-top: 20px; }
+      /* Preserve branded colours, borders and accents on paper */
+      body {
+        background: white;
+        padding: 0;
+        font-size: 12px;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      /* Single column that fills the printable page width */
+      .page { max-width: 100%; }
+      .bubble { max-width: 100%; }
+      .cover { padding-top: 20px; page-break-after: avoid; break-after: avoid; }
+      /* Keep headings attached to their content */
+      .section-title { page-break-after: avoid; break-after: avoid; }
+      /* Never split an individual entry across a page break */
+      .msg, .habit-card, .goal-card, .mood-row, ul li {
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
     }
   </style>
 </head>
