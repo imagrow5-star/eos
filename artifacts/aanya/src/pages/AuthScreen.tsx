@@ -1,29 +1,90 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-type Tab = "login" | "signup";
+type Tab = "login" | "signup" | "forgot" | "reset";
 
 export function AuthScreen() {
   const [tab, setTab] = useState<Tab>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [resetToken, setResetToken] = useState<string | null>(null);
   const queryClient = useQueryClient();
+
+  // Detect reset token in the URL on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("resetToken");
+    if (token) {
+      setResetToken(token);
+      setTab("reset");
+      // Clean the token from the URL so it isn't accidentally shared
+      const url = new URL(window.location.href);
+      url.searchParams.delete("resetToken");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
 
   const switchTab = (t: Tab) => {
     setTab(t);
     setError(null);
+    setSuccess(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
     setIsSubmitting(true);
 
     try {
+      if (tab === "forgot") {
+        const r = await fetch(`${import.meta.env.BASE_URL}api/auth/forgot-password`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email.trim() }),
+        });
+        if (!r.ok) {
+          const data = await r.json();
+          setError(data.error ?? "Something went wrong. Please try again.");
+          return;
+        }
+        setSuccess(
+          "If an account with that email exists, you'll receive a reset link shortly. Check your inbox (and spam folder).",
+        );
+        setEmail("");
+        return;
+      }
+
+      if (tab === "reset") {
+        if (password !== confirmPassword) {
+          setError("Passwords don't match.");
+          return;
+        }
+        const r = await fetch(`${import.meta.env.BASE_URL}api/auth/reset-password`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: resetToken, password }),
+        });
+        const data = await r.json();
+        if (!r.ok) {
+          setError(data.error ?? "Something went wrong. Please try again.");
+          return;
+        }
+        setSuccess("Your password has been updated. You can now sign in.");
+        setResetToken(null);
+        setPassword("");
+        setConfirmPassword("");
+        setTimeout(() => switchTab("login"), 2000);
+        return;
+      }
+
+      // login / signup
       const endpoint = tab === "signup" ? "signup" : "login";
       const r = await fetch(`${import.meta.env.BASE_URL}api/auth/${endpoint}`, {
         method: "POST",
@@ -45,6 +106,13 @@ export function AuthScreen() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const tabLabels: Record<Tab, string> = {
+    login: "Sign in",
+    signup: "Create account",
+    forgot: "Reset password",
+    reset: "Set new password",
   };
 
   return (
@@ -74,98 +142,189 @@ export function AuthScreen() {
       >
         <div className="bg-card/70 backdrop-blur-xl border border-primary/20 rounded-2xl p-8 shadow-2xl">
 
-          {/* Tab switcher */}
-          <div className="flex rounded-xl bg-background/60 p-1 mb-8 gap-1">
-            {(["login", "signup"] as Tab[]).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => switchTab(t)}
-                className={cn(
-                  "flex-1 py-2.5 text-sm rounded-lg font-medium tracking-wide transition-all duration-200",
-                  tab === t
-                    ? "bg-primary text-background shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {t === "login" ? "Sign in" : "Create account"}
-              </button>
-            ))}
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Email */}
-            <div>
-              <label className="block text-[10px] text-muted-foreground tracking-widest uppercase mb-2">
-                Email
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                autoComplete="email"
-                required
-                className="w-full bg-background/50 border border-primary/20 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
-              />
-            </div>
-
-            {/* Password */}
-            <div>
-              <label className="block text-[10px] text-muted-foreground tracking-widest uppercase mb-2">
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={tab === "signup" ? "Minimum 8 characters" : "Your password"}
-                autoComplete={tab === "signup" ? "new-password" : "current-password"}
-                required
-                className="w-full bg-background/50 border border-primary/20 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
-              />
-            </div>
-
-            {/* Error message */}
-            <AnimatePresence mode="wait">
-              {error && (
-                <motion.p
-                  key="error"
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3"
+          {/* Tab switcher (only for login/signup) */}
+          {(tab === "login" || tab === "signup") && (
+            <div className="flex rounded-xl bg-background/60 p-1 mb-8 gap-1">
+              {(["login", "signup"] as Tab[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => switchTab(t)}
+                  className={cn(
+                    "flex-1 py-2.5 text-sm rounded-lg font-medium tracking-wide transition-all duration-200",
+                    tab === t
+                      ? "bg-primary text-background shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
                 >
-                  {error}
-                </motion.p>
+                  {tabLabels[t]}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Sub-screen heading for forgot / reset */}
+          {(tab === "forgot" || tab === "reset") && (
+            <div className="mb-8">
+              <h2 className="text-xl font-serif text-foreground mb-1">
+                {tabLabels[tab]}
+              </h2>
+              <p className="text-xs text-muted-foreground tracking-wide">
+                {tab === "forgot"
+                  ? "Enter your email and we'll send you a reset link."
+                  : "Choose a new password for your account."}
+              </p>
+            </div>
+          )}
+
+          <AnimatePresence mode="wait">
+            <motion.form
+              key={tab}
+              onSubmit={handleSubmit}
+              className="space-y-5"
+              initial={{ opacity: 0, x: 8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -8 }}
+              transition={{ duration: 0.2 }}
+            >
+              {/* Email — shown for login, signup, forgot */}
+              {tab !== "reset" && (
+                <div>
+                  <label className="block text-[10px] text-muted-foreground tracking-widest uppercase mb-2">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    required
+                    className="w-full bg-background/50 border border-primary/20 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
+                  />
+                </div>
               )}
-            </AnimatePresence>
 
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full bg-primary text-background py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-1"
-            >
-              {isSubmitting
-                ? "Please wait…"
-                : tab === "login"
-                  ? "Sign in"
-                  : "Create account"}
-            </button>
-          </form>
+              {/* Password — shown for login, signup, reset */}
+              {tab !== "forgot" && (
+                <div>
+                  <label className="block text-[10px] text-muted-foreground tracking-widest uppercase mb-2">
+                    {tab === "reset" ? "New password" : "Password"}
+                  </label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={tab === "login" ? "Your password" : "Minimum 8 characters"}
+                    autoComplete={tab === "login" ? "current-password" : "new-password"}
+                    required
+                    className="w-full bg-background/50 border border-primary/20 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
+                  />
+                </div>
+              )}
 
-          {/* Tab toggle link */}
-          <p className="text-center text-xs text-muted-foreground mt-6">
-            {tab === "login" ? "New here? " : "Already have an account? "}
-            <button
-              type="button"
-              onClick={() => switchTab(tab === "login" ? "signup" : "login")}
-              className="text-primary/80 hover:text-primary transition-colors underline underline-offset-2"
-            >
-              {tab === "login" ? "Create an account" : "Sign in instead"}
-            </button>
-          </p>
+              {/* Confirm password — only for reset */}
+              {tab === "reset" && (
+                <div>
+                  <label className="block text-[10px] text-muted-foreground tracking-widest uppercase mb-2">
+                    Confirm new password
+                  </label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Repeat your new password"
+                    autoComplete="new-password"
+                    required
+                    className="w-full bg-background/50 border border-primary/20 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
+                  />
+                </div>
+              )}
+
+              {/* Forgot password link — only on login tab */}
+              {tab === "login" && (
+                <div className="text-right -mt-1">
+                  <button
+                    type="button"
+                    onClick={() => switchTab("forgot")}
+                    className="text-[11px] text-muted-foreground hover:text-primary transition-colors underline underline-offset-2"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              )}
+
+              {/* Error message */}
+              <AnimatePresence mode="wait">
+                {error && (
+                  <motion.p
+                    key="error"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3"
+                  >
+                    {error}
+                  </motion.p>
+                )}
+                {success && (
+                  <motion.p
+                    key="success"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="text-sm text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-xl px-4 py-3"
+                  >
+                    {success}
+                  </motion.p>
+                )}
+              </AnimatePresence>
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full bg-primary text-background py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-1"
+              >
+                {isSubmitting
+                  ? "Please wait…"
+                  : tab === "login"
+                    ? "Sign in"
+                    : tab === "signup"
+                      ? "Create account"
+                      : tab === "forgot"
+                        ? "Send reset link"
+                        : "Update password"}
+              </button>
+            </motion.form>
+          </AnimatePresence>
+
+          {/* Footer links */}
+          <div className="mt-6 text-center space-y-2">
+            {(tab === "login" || tab === "signup") && (
+              <p className="text-xs text-muted-foreground">
+                {tab === "login" ? "New here? " : "Already have an account? "}
+                <button
+                  type="button"
+                  onClick={() => switchTab(tab === "login" ? "signup" : "login")}
+                  className="text-primary/80 hover:text-primary transition-colors underline underline-offset-2"
+                >
+                  {tab === "login" ? "Create an account" : "Sign in instead"}
+                </button>
+              </p>
+            )}
+            {(tab === "forgot" || tab === "reset") && (
+              <p className="text-xs text-muted-foreground">
+                <button
+                  type="button"
+                  onClick={() => switchTab("login")}
+                  className="text-primary/80 hover:text-primary transition-colors underline underline-offset-2"
+                >
+                  ← Back to sign in
+                </button>
+              </p>
+            )}
+          </div>
         </div>
       </motion.div>
 

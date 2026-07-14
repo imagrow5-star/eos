@@ -12,9 +12,9 @@ if (!process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET environment variable is required but not set.");
 }
 
-// Ensure the session table exists before the server starts accepting requests.
+// Ensure required tables exist before the server starts accepting requests.
 // connect-pg-simple's createTableIfMissing option is unreliable on cold starts,
-// so we create the table explicitly here.
+// so we create tables explicitly here.
 pool
   .query(`
     CREATE TABLE IF NOT EXISTS user_sessions (
@@ -23,8 +23,18 @@ pool
       expire timestamp(6) NOT NULL
     );
     CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON user_sessions (expire);
+
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      token text PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at timestamp NOT NULL,
+      used_at timestamp,
+      created_at timestamp NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id);
+    CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires_at ON password_reset_tokens(expires_at);
   `)
-  .catch((err) => logger.error({ err }, "Failed to ensure user_sessions table"));
+  .catch((err) => logger.error({ err }, "Failed to ensure required tables"));
 
 const app: Express = express();
 
