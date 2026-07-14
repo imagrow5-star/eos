@@ -4,3 +4,4 @@
 - [Voice infinite loop fix](voice-loop-fix.md) — useSpeechRecognition must use a ref for onResult callback; never put it in useEffect deps
 - [Goals route zod ban](goals-zod-ban.md) — api-server package has no zod dep; goals.ts must use plain JS validation, not z.object()
 - [Voice choice & profile extras](voice-profile-extras.md) — voiceId saved on profile (default Sarah); TTS route accepts voiceId in body; ageBand + voiceId accepted via (data as any) cast in profile PUT since not in generated types
+- [Streaming architecture](streaming-architecture.md) — /api/chat/stream SSE endpoint; claude-sonnet-4-5; prompt caching on system block; fire-and-forget background extractions after res.end()

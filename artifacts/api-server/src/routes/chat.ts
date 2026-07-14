@@ -10,6 +10,7 @@ import {
 } from "@workspace/api-zod";
 import { buildSystemPrompt } from "../services/systemPrompt.js";
 import {
+  streamCompanionReply,
   getCompanionReply,
   extractMemory,
   extractCommitments,
@@ -38,6 +39,129 @@ router.get("/chat/messages", async (req, res): Promise<void> => {
     .orderBy(asc(messagesTable.createdAt));
 
   res.json(GetMessagesResponse.parse(messages));
+});
+
+// ─── Streaming chat endpoint ─────────────────────────────────────────────────
+// Uses SSE to push tokens as they arrive from Anthropic, so the user sees
+// text almost instantly instead of waiting for the full reply.
+// Events: delta { text }, done { messageId, content }, error { error }
+
+router.post("/chat/stream", async (req, res): Promise<void> => {
+  const parsed = SendMessageBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { content } = parsed.data;
+
+  // Push SSE headers immediately so the browser starts reading the stream
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // prevent nginx/proxy buffering
+  res.flushHeaders();
+
+  const sendEvent = (event: string, data: unknown) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    // Flush if a compression middleware is wrapping the response
+    if (typeof (res as any).flush === "function") (res as any).flush();
+  };
+
+  try {
+    const profile = await getOrCreateProfile();
+
+    // Save user message
+    await db.insert(messagesTable).values({ role: "user", content, isMorningNote: false });
+
+    // Count user messages for memory extraction trigger
+    const [countRow] = await db
+      .select({ count: sql<string>`count(*)` })
+      .from(messagesTable)
+      .where(eq(messagesTable.role, "user"));
+    const userMsgCount = Number(countRow?.count ?? "0");
+
+    // Build system prompt, calculate stage, and fetch context window in parallel
+    const [systemPrompt, stage, recentMessages] = await Promise.all([
+      buildSystemPrompt(profile),
+      calculateStage(profile),
+      db
+        .select()
+        .from(messagesTable)
+        .orderBy(desc(messagesTable.createdAt))
+        .limit(21),
+    ]);
+
+    // Drop the just-inserted user message from the context window
+    // (it's passed separately as the final user turn)
+    const contextMessages = [...recentMessages].reverse().slice(0, -1);
+
+    // ── Stream tokens to the client ─────────────────────────────────────────
+    let aiContent = "";
+    aiContent = await streamCompanionReply(
+      systemPrompt,
+      contextMessages,
+      content,
+      stage,
+      (chunk) => sendEvent("delta", { text: chunk }),
+    );
+
+    // Persist assistant message
+    const [assistantMsg] = await db
+      .insert(messagesTable)
+      .values({ role: "assistant", content: aiContent, isMorningNote: false })
+      .returning();
+
+    // Signal completion — client uses messageId to anchor LiveCaption
+    sendEvent("done", { messageId: assistantMsg!.id, content: aiContent });
+    req.log.info({ userMsgCount }, "Message streamed");
+    res.end();
+
+    // ── Background extractions — fire-and-forget after response is sent ─────
+    // Fetching commitments/habits happens here, AFTER the stream ends,
+    // so it never adds to the user-facing latency.
+    (async () => {
+      const [openCommitments, activeHabits] = await Promise.all([
+        db
+          .select({ id: commitmentsTable.id, content: commitmentsTable.content, cue: commitmentsTable.cue })
+          .from(commitmentsTable)
+          .where(sql`${commitmentsTable.state} = 'open'`)
+          .limit(10),
+        db
+          .select({ id: habitsTable.id, name: habitsTable.name, whenThen: habitsTable.whenThen })
+          .from(habitsTable)
+          .where(eq(habitsTable.isActive, true))
+          .limit(20),
+      ]);
+
+      extractCommitments(profile, content, aiContent, openCommitments).catch((err) =>
+        logger.error({ err }, "Background commitment extraction failed"),
+      );
+      detectHabitMentions(profile, content, aiContent, activeHabits).catch((err) =>
+        logger.error({ err }, "Background habit detection failed"),
+      );
+
+      if (userMsgCount % 4 === 0 && userMsgCount > 0) {
+        const last8 = await db
+          .select()
+          .from(messagesTable)
+          .orderBy(desc(messagesTable.createdAt))
+          .limit(8);
+        extractMemory(profile, last8.reverse()).catch((err) =>
+          logger.error({ err }, "Background memory extraction failed"),
+        );
+      }
+    })().catch((err) => logger.error({ err }, "Background extraction wrapper failed"));
+
+  } catch (err) {
+    logger.error({ err }, "Chat stream error");
+    try {
+      sendEvent("error", { error: "Something went wrong. Please try again." });
+      res.end();
+    } catch {
+      // Response may already be closed
+    }
+  }
 });
 
 router.post("/chat/send", async (req, res): Promise<void> => {

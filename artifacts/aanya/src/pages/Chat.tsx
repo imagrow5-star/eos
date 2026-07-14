@@ -9,7 +9,6 @@ import {
   useGetOnboardingStatus,
   useSubmitOnboardingAnswer,
   useGetMessages,
-  useSendMessage,
   useGenerateMorningNote,
   useGetProfile,
   useUpdateProfile,
@@ -195,7 +194,6 @@ export default function Chat() {
 
   const generateMorningNote = useGenerateMorningNote();
   const submitAnswer = useSubmitOnboardingAnswer();
-  const sendMessage = useSendMessage();
   const updateProfile = useUpdateProfile();
 
   const [isTyping, setIsTyping] = useState(false);
@@ -204,6 +202,9 @@ export default function Chat() {
   const [showSettings, setShowSettings] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
+  // Streaming state: text accumulates token-by-token while the model generates
+  const [streamingContent, setStreamingContent] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
   // Live-caption state: which message is currently being spoken, and how many words revealed
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [revealedWords, setRevealedWords] = useState(0);
@@ -256,11 +257,11 @@ export default function Chat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onboarding?.isComplete]);
 
-  // Scroll to bottom on new content
+  // Scroll to bottom on new content (including streaming tokens)
   useEffect(() => {
     if (scrollRef.current)
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, onboarding?.currentStep, isTyping]);
+  }, [messages, onboarding?.currentStep, isTyping, streamingContent]);
 
   // ─── Shared speak helper ──────────────────────────────────────────────────
   // messageId: when provided, drives live captions for that message bubble.
@@ -290,6 +291,86 @@ export default function Chat() {
     });
   };
 
+  // ─── Streaming send (chat mode) ───────────────────────────────────────────
+  // Opens an SSE connection to /api/chat/stream. Tokens arrive as `delta` events
+  // and are appended to `streamingContent` so the user sees text building in real
+  // time. On `done` we get the persisted messageId, invalidate the query, then
+  // hand off to TTS + live captions.
+
+  const sendStreamingMessage = async (content: string) => {
+    setIsStreaming(true);
+    setStreamingContent("");
+
+    let finalContent = "";
+    let finalMessageId: string | null = null;
+
+    try {
+      const response = await fetch(`${import.meta.env.BASE_URL}api/chat/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE events are separated by double-newline
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+
+        for (const part of parts) {
+          let eventName = "";
+          let eventData = "";
+          for (const line of part.split("\n")) {
+            const trimmed = line.replace(/\r$/, "");
+            if (trimmed.startsWith("event: ")) eventName = trimmed.slice(7);
+            else if (trimmed.startsWith("data: ")) eventData = trimmed.slice(6);
+          }
+          if (!eventName || !eventData) continue;
+
+          const data = JSON.parse(eventData) as Record<string, unknown>;
+          if (eventName === "delta") {
+            const chunk = data.text as string;
+            setStreamingContent((prev) => prev + chunk);
+            finalContent += chunk;
+          } else if (eventName === "done") {
+            finalMessageId = String(data.messageId);
+            finalContent = data.content as string;
+          } else if (eventName === "error") {
+            throw new Error(data.error as string);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[stream] Error:", err);
+    }
+
+    setIsStreaming(false);
+    setStreamingContent("");
+
+    if (finalMessageId && finalContent) {
+      // Prime the caption state before the query re-fetch lands, so the bubble
+      // enters LiveCaption mode immediately (no flash of full text).
+      setSpeakingMessageId(finalMessageId);
+      setRevealedWords(0);
+      queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
+      handleSpeak(finalContent, finalMessageId);
+    } else {
+      queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
+    }
+  };
+
   // ─── Send handler (onboarding + chat) ────────────────────────────────────
 
   const handleSend = async (data: ChatMessageFormValues) => {
@@ -298,6 +379,7 @@ export default function Chat() {
     form.reset();
 
     if (!onboarding?.isComplete) {
+      // Onboarding uses the regular mutation — no streaming needed
       setIsTyping(true);
       submitAnswer.mutate(
         { data: { step: onboarding?.currentStep || "", answer: content } },
@@ -312,22 +394,8 @@ export default function Chat() {
         },
       );
     } else {
-      setIsTyping(true);
-      sendMessage.mutate(
-        { data: { content } },
-        {
-          onSuccess: (reply) => {
-            queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
-            setIsTyping(false);
-            // Pass the message ID so live captions know which bubble to animate
-            handleSpeak(
-              reply.assistantMessage.content,
-              String(reply.assistantMessage.id),
-            );
-          },
-          onError: () => setIsTyping(false),
-        },
-      );
+      // Chat uses streaming — text appears token-by-token, no artificial wait
+      await sendStreamingMessage(content);
     }
   };
 
@@ -451,7 +519,7 @@ export default function Chat() {
                 )}
               >
                 {showLabel && (
-                  <span className="text-[10px] text-muted-foreground/60 tracking-widest uppercase mb-1.5 ml-1">
+                  <span className="text-[10px] text-muted-foreground/60 tracking-widests uppercase mb-1.5 ml-1">
                     {companionName}
                   </span>
                 )}
@@ -492,6 +560,39 @@ export default function Chat() {
               </motion.div>
             );
           })}
+        </AnimatePresence>
+
+        {/* ── Streaming bubble — appears while model is generating ─────────── */}
+        <AnimatePresence>
+          {isStreaming && (
+            <motion.div
+              key="streaming-bubble"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.97 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="flex flex-col w-full max-w-[85%] self-start"
+            >
+              <span className="text-[10px] text-muted-foreground/60 tracking-widests uppercase mb-1.5 ml-1">
+                {companionName}
+              </span>
+              <div className="px-[18px] py-3 leading-relaxed shadow-sm bg-card border border-primary/15 rounded-2xl rounded-tl-sm">
+                <p className={cn(
+                  "companion-message text-foreground/90",
+                  isBereavement ? "text-[17px]" : "text-[16px]",
+                )}>
+                  {streamingContent || (
+                    /* Pulsing dot while waiting for first token */
+                    <motion.span
+                      animate={{ opacity: [0.2, 0.65, 0.2] }}
+                      transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
+                      className="inline-block w-1.5 h-1.5 rounded-full bg-primary/50 align-middle"
+                    />
+                  )}
+                </p>
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
     );
@@ -850,7 +951,7 @@ export default function Chat() {
                           continuousVoice ? "Listening..." : "Tell me what's on your mind..."
                         }
                         className="border-0 bg-transparent shadow-none focus-visible:ring-0 px-0 placeholder:text-muted-foreground/40 text-[14.5px] h-auto py-1.5 text-foreground/85"
-                        disabled={isTyping || continuousVoice}
+                        disabled={isTyping || continuousVoice || isStreaming}
                         autoComplete="off"
                       />
                     </FormControl>
@@ -872,7 +973,7 @@ export default function Chat() {
                     if (voice.isListening) voice.stopListening();
                     else voice.startListening();
                   }}
-                  disabled={isTyping || continuousVoice}
+                  disabled={isTyping || continuousVoice || isStreaming}
                 >
                   <Mic className="w-[17px] h-[17px]" strokeWidth={2} />
                 </Button>
@@ -883,6 +984,7 @@ export default function Chat() {
                   disabled={
                     isTyping ||
                     continuousVoice ||
+                    isStreaming ||
                     !form.watch("content")
                   }
                 >

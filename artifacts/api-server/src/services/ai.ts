@@ -67,7 +67,79 @@ function getMockResponse(stage: number): string {
   return responses[Math.floor(Math.random() * responses.length)]!;
 }
 
-// ─── Core: get companion reply ────────────────────────────────────────────────
+// ─── Core: stream companion reply (primary path) ──────────────────────────────
+// Uses Anthropic streaming + prompt caching on the system prompt.
+// Calls onChunk with each text delta so the caller can push it to the client
+// in real-time. Returns the full accumulated text when the stream ends.
+
+export async function streamCompanionReply(
+  systemPrompt: string,
+  contextMessages: { role: string; content: string }[],
+  userContent: string,
+  stage: number,
+  onChunk: (text: string) => void,
+): Promise<string> {
+  const anthropic = getAnthropic();
+
+  if (!anthropic) {
+    logger.warn("ANTHROPIC_API_KEY not set — streaming mock response");
+    const mock = getMockResponse(stage);
+    const words = mock.split(" ");
+    for (let i = 0; i < words.length; i++) {
+      await new Promise((r) => setTimeout(r, 55 + Math.random() * 65));
+      onChunk((i === 0 ? "" : " ") + words[i]);
+    }
+    return mock;
+  }
+
+  try {
+    const messages = [
+      ...contextMessages.map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      })),
+      { role: "user" as const, content: userContent },
+    ];
+
+    let fullText = "";
+
+    // Use cache_control on the system block so the large static system prompt
+    // is cached by Anthropic for 5 min — cuts both latency and cost on repeat messages.
+    const stream = await (anthropic.messages.create as any)({
+      model: "claude-sonnet-4-5",
+      max_tokens: 600,
+      system: [
+        {
+          type: "text",
+          text: systemPrompt,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
+      messages,
+      stream: true,
+    });
+
+    for await (const event of stream) {
+      if (
+        event.type === "content_block_delta" &&
+        event.delta?.type === "text_delta"
+      ) {
+        const chunk = event.delta.text as string;
+        fullText += chunk;
+        onChunk(chunk);
+      }
+    }
+
+    return fullText || "I'm here. Tell me more.";
+  } catch (err) {
+    logger.error({ err }, "Anthropic streaming error, falling back to mock");
+    const mock = getMockResponse(stage);
+    onChunk(mock);
+    return mock;
+  }
+}
+
+// ─── Core: get companion reply (non-streaming fallback / background use) ───────
 
 export async function getCompanionReply(
   systemPrompt: string,
@@ -79,7 +151,6 @@ export async function getCompanionReply(
 
   if (!anthropic) {
     logger.warn("ANTHROPIC_API_KEY not set — using mock response");
-    await new Promise((r) => setTimeout(r, 1200 + Math.random() * 800));
     return getMockResponse(stage);
   }
 
@@ -93,9 +164,15 @@ export async function getCompanionReply(
     ];
 
     const response = await anthropic.messages.create({
-      model: "claude-opus-4-5",
+      model: "claude-sonnet-4-5",
       max_tokens: 600,
-      system: systemPrompt,
+      system: [
+        {
+          type: "text",
+          text: systemPrompt,
+          cache_control: { type: "ephemeral" },
+        },
+      ] as any,
       messages,
     });
 
@@ -160,7 +237,7 @@ export async function generateMorningNoteContent(
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-opus-4-5",
+      model: "claude-sonnet-4-5",
       max_tokens: 350,
       messages: [{ role: "user", content: prompt }],
     });
