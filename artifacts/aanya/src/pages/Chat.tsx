@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2 } from "lucide-react";
+import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -445,6 +445,32 @@ export default function Chat() {
   // ─── Settings: delete account ─────────────────────────────────────────────
 
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    setExportError(null);
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/account/export`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setExportError((body as any)?.error ?? "Export failed. Please try again.");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `asha-export-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setExportError("Export failed. Please try again.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const handleDeleteAccount = async () => {
     if (deleteConfirmText !== "DELETE") return;
@@ -926,8 +952,31 @@ export default function Chat() {
               </p>
             </div>
 
-            {/* ── Delete account ──────────────────────────────────────── */}
-            <div className="pt-2 border-t border-destructive/10">
+            {/* ── Export + Delete account ─────────────────────────────── */}
+            <div className="pt-2 border-t border-destructive/10 space-y-3">
+              {/* Download my data */}
+              <div>
+                <button
+                  onClick={handleExport}
+                  disabled={isExporting}
+                  className="flex items-center gap-2 text-[11px] text-muted-foreground/50 hover:text-primary/70 tracking-wider uppercase transition-colors disabled:opacity-40"
+                >
+                  {isExporting ? (
+                    <motion.div
+                      className="w-3 h-3 border border-muted-foreground/40 border-t-transparent rounded-full"
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
+                    />
+                  ) : (
+                    <Download className="w-3 h-3" />
+                  )}
+                  {isExporting ? "Preparing download…" : "Download my data"}
+                </button>
+                {exportError && (
+                  <p className="text-[11px] text-destructive/70 mt-1">{exportError}</p>
+                )}
+              </div>
+
               {!showDeleteConfirm ? (
                 <button
                   onClick={() => setShowDeleteConfirm(true)}

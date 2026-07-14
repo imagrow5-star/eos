@@ -11,6 +11,7 @@ import ttsRouter from "./tts";
 import voicesRouter from "./voices";
 import goalsRouter from "./goals";
 import commitmentsRouter from "./commitments";
+import accountRouter from "./account";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use(ttsRouter);
 router.use(voicesRouter);
 router.use(goalsRouter);
 router.use(commitmentsRouter);
+router.use(accountRouter);
 
 export default router;
