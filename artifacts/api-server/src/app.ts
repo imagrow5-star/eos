@@ -43,25 +43,75 @@ pool
   `)
   .catch((err) => logger.error({ err }, "Failed to ensure email_verification_tokens table"));
 
-// ─── Periodic cleanup: expired and used password reset tokens ─────────────────
-async function cleanExpiredPasswordResetTokens() {
+// ─── Cleanup job health tracking ─────────────────────────────────────────────
+// Exported so the health route can expose it without a database query.
+export const cleanupJobState = {
+  lastSuccessAt: null as Date | null,
+  lastErrorAt: null as Date | null,
+  consecutiveFailures: 0,
+  deletedLastRun: 0,
+};
+
+const CLEANUP_DEAD_MAN_MS = 48 * 60 * 60 * 1000; // 48 hours
+
+// ─── Periodic cleanup: expired tokens ────────────────────────────────────────
+async function runTokenCleanup() {
   try {
-    const result = await pool.query(`
-      DELETE FROM password_reset_tokens
-      WHERE expires_at < NOW()
-         OR (used_at IS NOT NULL AND used_at < NOW() - INTERVAL '7 days')
-    `);
-    if (result.rowCount && result.rowCount > 0) {
-      logger.info({ deleted: result.rowCount }, "Cleaned up expired/used password reset tokens");
+    const [prt, evt] = await Promise.all([
+      pool.query(`
+        DELETE FROM password_reset_tokens
+        WHERE expires_at < NOW()
+           OR (used_at IS NOT NULL AND used_at < NOW() - INTERVAL '7 days')
+      `),
+      pool.query(`
+        DELETE FROM email_verification_tokens
+        WHERE expires_at < NOW()
+      `),
+    ]);
+
+    const deleted = (prt.rowCount ?? 0) + (evt.rowCount ?? 0);
+
+    cleanupJobState.lastSuccessAt = new Date();
+    cleanupJobState.consecutiveFailures = 0;
+    cleanupJobState.deletedLastRun = deleted;
+
+    if (deleted > 0) {
+      logger.info(
+        {
+          deletedPasswordResetTokens: prt.rowCount,
+          deletedVerificationTokens: evt.rowCount,
+        },
+        "Cleaned up expired/used tokens",
+      );
     }
   } catch (err) {
-    logger.error({ err }, "Failed to clean up password reset tokens");
+    cleanupJobState.consecutiveFailures += 1;
+    cleanupJobState.lastErrorAt = new Date();
+    logger.error(
+      { err, consecutiveFailures: cleanupJobState.consecutiveFailures },
+      "Token cleanup job failed",
+    );
+  }
+
+  // Dead-man's switch: warn loudly if no successful run in 48 hours
+  if (
+    cleanupJobState.lastSuccessAt === null ||
+    Date.now() - cleanupJobState.lastSuccessAt.getTime() > CLEANUP_DEAD_MAN_MS
+  ) {
+    logger.warn(
+      {
+        lastSuccessAt: cleanupJobState.lastSuccessAt,
+        consecutiveFailures: cleanupJobState.consecutiveFailures,
+        lastErrorAt: cleanupJobState.lastErrorAt,
+      },
+      "TOKEN_CLEANUP_STALE: token cleanup has not succeeded in over 48 hours — expired tokens may be accumulating",
+    );
   }
 }
 
 // Run once at startup, then every 24 hours
-cleanExpiredPasswordResetTokens();
-setInterval(cleanExpiredPasswordResetTokens, 24 * 60 * 60 * 1000);
+runTokenCleanup();
+setInterval(runTokenCleanup, 24 * 60 * 60 * 1000);
 
 const app: Express = express();
 
