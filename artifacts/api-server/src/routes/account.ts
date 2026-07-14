@@ -59,8 +59,11 @@ function buildHtmlReport(data: {
   habitCompletions: ExportRow[];
   goals: ExportRow[];
   moodScores: ExportRow[];
+  commitments: ExportRow[];
+  reminders: ExportRow[];
+  personalitySignals: ExportRow[];
 }): string {
-  const { exportedAt, profile, messages, memoryFacts, wins, habits, habitCompletions, goals, moodScores } = data;
+  const { exportedAt, profile, messages, memoryFacts, wins, habits, habitCompletions, goals, moodScores, commitments, reminders, personalitySignals } = data;
   const companionName = esc(profile?.companion_name ?? "Asha");
   const userPath = pathLabel(profile?.user_path as string);
 
@@ -81,14 +84,14 @@ function buildHtmlReport(data: {
   // ── Wins ─────────────────────────────────────────────────────────────────────
   const winsHtml = wins.length === 0
     ? `<p class="empty">No wins recorded yet.</p>`
-    : `<ul>${wins.map((w) => `<li><span class="win-title">${esc(w.title)}</span> <span class="ts">${fmtDate(w.created_at as string)}</span></li>`).join("")}</ul>`;
+    : `<ul>${wins.map((w) => `<li><span class="win-title">${esc(w.content)}</span> <span class="ts">${fmtDate(w.created_at as string)}</span></li>`).join("")}</ul>`;
 
   // ── Habits ───────────────────────────────────────────────────────────────────
   const completionsByHabit: Record<string, string[]> = {};
   for (const hc of habitCompletions) {
     const name = hc.habit_name as string;
     if (!completionsByHabit[name]) completionsByHabit[name] = [];
-    completionsByHabit[name].push(hc.completed_on as string);
+    completionsByHabit[name].push(hc.completed_date as string);
   }
   const habitsHtml = habits.length === 0
     ? `<p class="empty">No habits tracked yet.</p>`
@@ -98,7 +101,7 @@ function buildHtmlReport(data: {
         return `
         <div class="habit-card">
           <strong>${esc(name)}</strong>
-          <span class="freq">${esc(h.frequency)}</span>
+          <span class="freq">${esc(h.when_then)}</span>
           <span class="ts">${completions.length} completion${completions.length !== 1 ? "s" : ""}</span>
         </div>`;
       }).join("\n");
@@ -106,12 +109,15 @@ function buildHtmlReport(data: {
   // ── Goals ────────────────────────────────────────────────────────────────────
   const goalsHtml = goals.length === 0
     ? `<p class="empty">No goals set yet.</p>`
-    : goals.map((g) => `
-        <div class="goal-card status-${esc(g.status)}">
+    : goals.map((g) => {
+        const statusLabel = g.is_complete ? "completed" : "active";
+        return `
+        <div class="goal-card status-${statusLabel}">
           <div class="goal-title">${esc(g.title)}</div>
           ${g.description ? `<div class="goal-desc">${esc(g.description)}</div>` : ""}
-          <span class="goal-status">${esc(g.status)}</span>
-        </div>`).join("\n");
+          <span class="goal-status">${statusLabel}</span>
+        </div>`;
+      }).join("\n");
 
   // ── Mood ─────────────────────────────────────────────────────────────────────
   const moodHtml = moodScores.length === 0
@@ -120,14 +126,28 @@ function buildHtmlReport(data: {
         <div class="mood-row">
           <span class="mood-emoji">${moodEmoji(m.score as number)}</span>
           <span class="mood-score">${m.score}/10</span>
-          <span class="mood-date">${fmtDate(m.recorded_on as string)}</span>
-          ${m.note ? `<span class="mood-note">${esc(m.note)}</span>` : ""}
+          <span class="mood-date">${fmtDate(m.date as string)}</span>
         </div>`).join("\n");
 
   // ── Memory facts ─────────────────────────────────────────────────────────────
   const memoryHtml = memoryFacts.length === 0
     ? `<p class="empty">No memories recorded yet.</p>`
     : `<ul>${memoryFacts.map((f) => `<li>${esc(f.fact)}</li>`).join("")}</ul>`;
+
+  // ── Commitments ───────────────────────────────────────────────────────────────
+  const commitmentsHtml = commitments.length === 0
+    ? `<p class="empty">No commitments yet.</p>`
+    : `<ul>${commitments.map((c) => `<li><span class="win-title">${esc(c.content)}</span> <span class="ts">${fmtDate(c.created_at as string)}</span></li>`).join("")}</ul>`;
+
+  // ── Reminders ─────────────────────────────────────────────────────────────────
+  const remindersHtml = reminders.length === 0
+    ? `<p class="empty">No reminders set.</p>`
+    : `<ul>${reminders.map((r) => `<li><span class="win-title">${esc(r.content)}</span>${r.due_date ? ` <span class="ts">${fmtDate(r.due_date as string)}</span>` : ""}</li>`).join("")}</ul>`;
+
+  // ── Personality signals ───────────────────────────────────────────────────────
+  const signalsHtml = personalitySignals.length === 0
+    ? `<p class="empty">No personality signals observed yet.</p>`
+    : `<ul>${personalitySignals.map((s) => `<li>${esc(s.signal)}</li>`).join("")}</ul>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -333,6 +353,21 @@ function buildHtmlReport(data: {
     ${memoryHtml}
   </div>
 
+  <div class="section">
+    <div class="section-title">Commitments (${commitments.length})</div>
+    ${commitmentsHtml}
+  </div>
+
+  <div class="section">
+    <div class="section-title">Reminders (${reminders.length})</div>
+    ${remindersHtml}
+  </div>
+
+  <div class="section">
+    <div class="section-title">Personality insights (${personalitySignals.length})</div>
+    ${signalsHtml}
+  </div>
+
 </div>
 </body>
 </html>`;
@@ -356,6 +391,9 @@ router.get("/account/export", async (req, res): Promise<void> => {
       goalsResult,
       moodResult,
       profileResult,
+      commitmentsResult,
+      remindersResult,
+      personalitySignalsResult,
     ] = await Promise.all([
       pool.query(
         `SELECT role, content, is_morning_note, created_at FROM messages WHERE user_id = $1 ORDER BY created_at ASC`,
@@ -366,29 +404,41 @@ router.get("/account/export", async (req, res): Promise<void> => {
         [userId],
       ),
       pool.query(
-        `SELECT title, created_at FROM wins WHERE user_id = $1 ORDER BY created_at ASC`,
+        `SELECT content, created_at FROM wins WHERE user_id = $1 ORDER BY created_at ASC`,
         [userId],
       ),
       pool.query(
-        `SELECT id, name, frequency, created_at FROM habits WHERE user_id = $1 ORDER BY created_at ASC`,
+        `SELECT id, name, when_then, created_at FROM habits WHERE user_id = $1 ORDER BY created_at ASC`,
         [userId],
       ),
       pool.query(
-        `SELECT h.name AS habit_name, hc.completed_on FROM habit_completions hc
+        `SELECT h.name AS habit_name, hc.completed_date FROM habit_completions hc
          JOIN habits h ON h.id = hc.habit_id
-         WHERE h.user_id = $1 ORDER BY hc.completed_on ASC`,
+         WHERE h.user_id = $1 ORDER BY hc.completed_date ASC`,
         [userId],
       ),
       pool.query(
-        `SELECT title, description, status, created_at FROM goals WHERE user_id = $1 ORDER BY created_at ASC`,
+        `SELECT title, description, is_complete, created_at FROM goals WHERE user_id = $1 ORDER BY created_at ASC`,
         [userId],
       ),
       pool.query(
-        `SELECT score, note, recorded_on FROM mood_scores WHERE user_id = $1 ORDER BY recorded_on ASC`,
+        `SELECT score, date FROM mood_scores WHERE user_id = $1 ORDER BY date ASC`,
         [userId],
       ),
       pool.query(
         `SELECT companion_name, user_path, companion_gender, country, age_band, timezone, created_at FROM profile WHERE user_id = $1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT content, cue, state, created_at FROM commitments WHERE user_id = $1 ORDER BY created_at ASC`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT content, due_date, is_done, scheduled_time, is_recurring, created_at FROM reminders WHERE user_id = $1 ORDER BY created_at ASC`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT signal, observed_count, is_active, created_at FROM personality_signals WHERE user_id = $1 ORDER BY created_at ASC`,
         [userId],
       ),
     ]);
@@ -403,6 +453,9 @@ router.get("/account/export", async (req, res): Promise<void> => {
       habitCompletions: habitCompletionsResult.rows,
       goals: goalsResult.rows,
       moodScores: moodResult.rows,
+      commitments: commitmentsResult.rows,
+      reminders: remindersResult.rows,
+      personalitySignals: personalitySignalsResult.rows,
     };
 
     const dateSlug = new Date().toISOString().slice(0, 10);
