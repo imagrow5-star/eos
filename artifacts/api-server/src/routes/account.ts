@@ -635,7 +635,22 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
   const userId = (req as any).userId as number;
 
   try {
-    const [msgResult, habitResult, moodResult, memResult] = await Promise.all([
+    // The preview must mirror every user-owned category the full export
+    // (fetchExportPayload) returns, so a user sees the complete picture of what
+    // they'll download. The one export field with no count is the profile — it's
+    // a single settings record, not a collection.
+    const [
+      msgResult,
+      habitResult,
+      moodResult,
+      memResult,
+      winResult,
+      goalResult,
+      commitmentResult,
+      reminderResult,
+      signalResult,
+      habitCompletionResult,
+    ] = await Promise.all([
       pool.query(
         `SELECT COUNT(*) AS count,
                 MIN(created_at) AS first_at,
@@ -655,13 +670,45 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
         `SELECT COUNT(*) AS count FROM memory_facts WHERE user_id = $1`,
         [userId],
       ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM wins WHERE user_id = $1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM goals WHERE user_id = $1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM commitments WHERE user_id = $1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM reminders WHERE user_id = $1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM personality_signals WHERE user_id = $1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM habit_completions hc
+         JOIN habits h ON h.id = hc.habit_id
+         WHERE h.user_id = $1`,
+        [userId],
+      ),
     ]);
 
     res.json({
-      messageCount: parseInt(msgResult.rows[0].count, 10),
-      habitCount:   parseInt(habitResult.rows[0].count, 10),
-      moodCount:    parseInt(moodResult.rows[0].count, 10),
-      memoryCount:  parseInt(memResult.rows[0].count, 10),
+      messageCount:  parseInt(msgResult.rows[0].count, 10),
+      habitCount:    parseInt(habitResult.rows[0].count, 10),
+      moodCount:     parseInt(moodResult.rows[0].count, 10),
+      memoryCount:   parseInt(memResult.rows[0].count, 10),
+      winCount:      parseInt(winResult.rows[0].count, 10),
+      goalCount:     parseInt(goalResult.rows[0].count, 10),
+      commitmentCount: parseInt(commitmentResult.rows[0].count, 10),
+      reminderCount: parseInt(reminderResult.rows[0].count, 10),
+      personalitySignalCount: parseInt(signalResult.rows[0].count, 10),
+      habitCompletionCount: parseInt(habitCompletionResult.rows[0].count, 10),
       firstMessageAt: msgResult.rows[0].first_at ?? null,
       lastMessageAt:  msgResult.rows[0].last_at  ?? null,
     });

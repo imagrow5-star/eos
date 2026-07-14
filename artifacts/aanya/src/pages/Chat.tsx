@@ -515,6 +515,12 @@ export default function Chat() {
     habitCount: number;
     moodCount: number;
     memoryCount: number;
+    winCount: number;
+    goalCount: number;
+    commitmentCount: number;
+    reminderCount: number;
+    personalitySignalCount: number;
+    habitCompletionCount: number;
     firstMessageAt: string | null;
     lastMessageAt: string | null;
   }
@@ -1192,10 +1198,16 @@ export default function Chat() {
                 >
                   <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
                     {[
-                      { label: "Messages",  value: exportSummary.messageCount },
-                      { label: "Habits",    value: exportSummary.habitCount },
-                      { label: "Mood logs", value: exportSummary.moodCount },
-                      { label: "Memories",  value: exportSummary.memoryCount },
+                      { label: "Messages",   value: exportSummary.messageCount },
+                      { label: "Habits",     value: exportSummary.habitCount },
+                      { label: "Completions", value: exportSummary.habitCompletionCount },
+                      { label: "Mood logs",  value: exportSummary.moodCount },
+                      { label: "Memories",   value: exportSummary.memoryCount },
+                      { label: "Wins",       value: exportSummary.winCount },
+                      { label: "Goals",      value: exportSummary.goalCount },
+                      { label: "Commitments", value: exportSummary.commitmentCount },
+                      { label: "Reminders",  value: exportSummary.reminderCount },
+                      { label: "Insights",   value: exportSummary.personalitySignalCount },
                     ].map(({ label, value }) => (
                       <div key={label} className="flex items-baseline gap-1.5">
                         <span className="text-[15px] font-medium text-foreground/80 tabular-nums">
