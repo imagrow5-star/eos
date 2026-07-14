@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles } from "lucide-react";
+import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -201,6 +201,9 @@ export default function Chat() {
   const [continuousVoice, setContinuousVoice] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [renameValue, setRenameValue] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
   // Streaming state: text accumulates token-by-token while the model generates
   const [streamingContent, setStreamingContent] = useState("");
@@ -437,6 +440,31 @@ export default function Chat() {
         },
       },
     );
+  };
+
+  // ─── Settings: delete account ─────────────────────────────────────────────
+
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== "DELETE") return;
+    setIsDeletingAccount(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/auth/account`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setDeleteError((body as any)?.error ?? "Something went wrong. Please try again.");
+        return;
+      }
+      // Deletion confirmed — clear auth state so AuthGate redirects to login
+      queryClient.setQueryData(["/api/auth/me"], null);
+      await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+    } catch {
+      setDeleteError("Something went wrong. Please try again.");
+    } finally {
+      setIsDeletingAccount(false);
+    }
   };
 
   // ─── Settings: voice selection ────────────────────────────────────────────
@@ -896,6 +924,66 @@ export default function Chat() {
               <p className="text-[10px] text-muted-foreground/40 mt-2.5 text-center">
                 Press ▶ to hear a sample · any voice, any gender
               </p>
+            </div>
+
+            {/* ── Delete account ──────────────────────────────────────── */}
+            <div className="pt-2 border-t border-destructive/10">
+              {!showDeleteConfirm ? (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="flex items-center gap-2 text-[11px] text-destructive/50 hover:text-destructive/80 tracking-wider uppercase transition-colors"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Delete my account
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-[11px] text-destructive/80 leading-relaxed">
+                    This permanently deletes your account and all your conversations, memories, habits, and goals. This cannot be undone.
+                  </p>
+                  <p className="text-[10px] text-muted-foreground/60 tracking-wider uppercase">
+                    Type DELETE to confirm
+                  </p>
+                  {deleteError && (
+                    <p className="text-[11px] text-destructive/80">{deleteError}</p>
+                  )}
+                  <div className="flex gap-2">
+                    <Input
+                      value={deleteConfirmText}
+                      onChange={(e) => { setDeleteConfirmText(e.target.value); setDeleteError(null); }}
+                      placeholder="DELETE"
+                      className="bg-background/60 border-destructive/20 text-sm h-9 flex-1 text-foreground/85 placeholder:text-muted-foreground/30"
+                      disabled={isDeletingAccount}
+                      autoFocus
+                    />
+                    <Button
+                      size="sm"
+                      className="h-9 bg-destructive/10 text-destructive hover:bg-destructive/20 border border-destructive/25 px-4 disabled:opacity-40"
+                      onClick={handleDeleteAccount}
+                      disabled={deleteConfirmText !== "DELETE" || isDeletingAccount}
+                    >
+                      {isDeletingAccount ? (
+                        <motion.div
+                          className="w-3 h-3 border border-destructive/60 border-t-transparent rounded-full"
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
+                        />
+                      ) : (
+                        <Trash2 className="w-4 h-4" />
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-9 text-muted-foreground/50 hover:text-muted-foreground px-3"
+                      onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(""); }}
+                      disabled={isDeletingAccount}
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </motion.div>
         )}

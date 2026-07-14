@@ -302,4 +302,51 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
   }
 });
 
+// ─── DELETE /auth/account ─────────────────────────────────────────────────────
+
+router.delete("/auth/account", async (req, res): Promise<void> => {
+  const userId = req.session?.userId;
+  if (!userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+
+  try {
+    // Delete all user-owned data in a single transaction, ordered to respect FK constraints.
+    // goal_tasks cascade from goals, so we only need to delete goals explicitly.
+    await pool.query(
+      `BEGIN;
+       DELETE FROM user_sessions     WHERE sess::jsonb->>'userId' = $1::text;
+       DELETE FROM password_reset_tokens WHERE user_id = $1;
+       DELETE FROM messages          WHERE user_id = $1;
+       DELETE FROM memory_facts      WHERE user_id = $1;
+       DELETE FROM personality_signals WHERE user_id = $1;
+       DELETE FROM wins              WHERE user_id = $1;
+       DELETE FROM mood_scores       WHERE user_id = $1;
+       DELETE FROM reminders         WHERE user_id = $1;
+       DELETE FROM habit_completions WHERE habit_id IN (SELECT id FROM habits WHERE user_id = $1);
+       DELETE FROM habits            WHERE user_id = $1;
+       DELETE FROM goals             WHERE user_id = $1;
+       DELETE FROM commitments       WHERE user_id = $1;
+       DELETE FROM profile           WHERE user_id = $1;
+       DELETE FROM users             WHERE id = $1;
+       COMMIT;`,
+      [userId],
+    );
+
+    logger.info({ userId }, "Account deleted — all data wiped");
+
+    // Destroy the session and clear the cookie before responding
+    req.session.destroy((err) => {
+      if (err) logger.error({ err }, "Session destroy error after account deletion");
+      res.clearCookie("sid");
+      res.json({ ok: true });
+    });
+  } catch (err) {
+    logger.error({ err }, "Account deletion error");
+    try { await pool.query("ROLLBACK"); } catch {}
+    res.status(500).json({ error: "Something went wrong. Please try again." });
+  }
+});
+
 export default router;
