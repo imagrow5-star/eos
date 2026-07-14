@@ -106,7 +106,7 @@ export async function streamCompanionReply(
     // Use cache_control on the system block so the large static system prompt
     // is cached by Anthropic for 5 min — cuts both latency and cost on repeat messages.
     const stream = await (anthropic.messages.create as any)({
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-4-5-20250929",
       max_tokens: 600,
       system: [
         {
@@ -164,7 +164,7 @@ export async function getCompanionReply(
     ];
 
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-4-5-20250929",
       max_tokens: 600,
       system: [
         {
@@ -237,7 +237,7 @@ export async function generateMorningNoteContent(
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-4-5-20250929",
       max_tokens: 350,
       messages: [{ role: "user", content: prompt }],
     });
