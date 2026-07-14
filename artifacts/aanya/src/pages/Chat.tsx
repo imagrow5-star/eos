@@ -448,6 +448,37 @@ export default function Chat() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
+  // Preview state — null means not yet fetched, object means summary loaded
+  interface ExportSummary {
+    messageCount: number;
+    habitCount: number;
+    moodCount: number;
+    memoryCount: number;
+    firstMessageAt: string | null;
+    lastMessageAt: string | null;
+  }
+  const [exportSummary, setExportSummary] = useState<ExportSummary | null>(null);
+  const [isFetchingSummary, setIsFetchingSummary] = useState(false);
+
+  const handlePreviewExport = async () => {
+    setIsFetchingSummary(true);
+    setExportError(null);
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/account/export/summary`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setExportError((body as any)?.error ?? "Could not load summary. Please try again.");
+        return;
+      }
+      const data = await res.json();
+      setExportSummary(data);
+    } catch {
+      setExportError("Could not load summary. Please try again.");
+    } finally {
+      setIsFetchingSummary(false);
+    }
+  };
+
   const handleExport = async () => {
     setIsExporting(true);
     setExportError(null);
@@ -465,6 +496,7 @@ export default function Chat() {
       a.download = `asha-export-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
+      setExportSummary(null);
     } catch {
       setExportError("Export failed. Please try again.");
     } finally {
@@ -954,26 +986,86 @@ export default function Chat() {
 
             {/* ── Export + Delete account ─────────────────────────────── */}
             <div className="pt-2 border-t border-destructive/10 space-y-3">
-              {/* Download my data */}
-              <div>
-                <button
-                  onClick={handleExport}
-                  disabled={isExporting}
-                  className="flex items-center gap-2 text-[11px] text-muted-foreground/50 hover:text-primary/70 tracking-wider uppercase transition-colors disabled:opacity-40"
-                >
-                  {isExporting ? (
-                    <motion.div
-                      className="w-3 h-3 border border-muted-foreground/40 border-t-transparent rounded-full"
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
-                    />
-                  ) : (
-                    <Download className="w-3 h-3" />
-                  )}
-                  {isExporting ? "Preparing download…" : "Download my data"}
-                </button>
+              {/* Download my data — preview then download */}
+              <div className="space-y-2">
+                {!exportSummary ? (
+                  <button
+                    onClick={handlePreviewExport}
+                    disabled={isFetchingSummary}
+                    className="flex items-center gap-2 text-[11px] text-muted-foreground/50 hover:text-primary/70 tracking-wider uppercase transition-colors disabled:opacity-40"
+                  >
+                    {isFetchingSummary ? (
+                      <motion.div
+                        className="w-3 h-3 border border-muted-foreground/40 border-t-transparent rounded-full"
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
+                      />
+                    ) : (
+                      <Download className="w-3 h-3" />
+                    )}
+                    {isFetchingSummary ? "Loading summary…" : "Download my data"}
+                  </button>
+                ) : (
+                  <motion.div
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, ease: "easeOut" }}
+                    className="rounded-xl border border-primary/20 bg-background/50 px-4 py-3 space-y-3"
+                  >
+                    <p className="text-[10px] text-muted-foreground/60 tracking-[0.18em] uppercase">
+                      Your data snapshot
+                    </p>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+                      {[
+                        { label: "Messages",  value: exportSummary.messageCount },
+                        { label: "Habits",    value: exportSummary.habitCount },
+                        { label: "Mood logs", value: exportSummary.moodCount },
+                        { label: "Memories",  value: exportSummary.memoryCount },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="flex items-baseline gap-1.5">
+                          <span className="text-[15px] font-medium text-foreground/80 tabular-nums">
+                            {value.toLocaleString()}
+                          </span>
+                          <span className="text-[10.5px] text-muted-foreground/50">{label}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {exportSummary.firstMessageAt && (
+                      <p className="text-[10px] text-muted-foreground/40">
+                        {new Date(exportSummary.firstMessageAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                        {" · "}
+                        {new Date(exportSummary.lastMessageAt!).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-2 pt-0.5">
+                      <button
+                        onClick={handleExport}
+                        disabled={isExporting}
+                        className="flex items-center gap-1.5 text-[11px] text-primary/70 hover:text-primary tracking-wider uppercase transition-colors disabled:opacity-40"
+                      >
+                        {isExporting ? (
+                          <motion.div
+                            className="w-3 h-3 border border-primary/40 border-t-transparent rounded-full"
+                            animate={{ rotate: 360 }}
+                            transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
+                          />
+                        ) : (
+                          <Download className="w-3 h-3" />
+                        )}
+                        {isExporting ? "Preparing…" : "Download JSON"}
+                      </button>
+                      <span className="text-muted-foreground/25 text-[11px]">·</span>
+                      <button
+                        onClick={() => { setExportSummary(null); setExportError(null); }}
+                        className="text-[11px] text-muted-foreground/35 hover:text-muted-foreground/60 tracking-wider uppercase transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
                 {exportError && (
-                  <p className="text-[11px] text-destructive/70 mt-1">{exportError}</p>
+                  <p className="text-[11px] text-destructive/70">{exportError}</p>
                 )}
               </div>
 

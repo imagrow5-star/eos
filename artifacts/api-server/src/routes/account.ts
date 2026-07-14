@@ -81,4 +81,48 @@ router.get("/account/export", async (req, res): Promise<void> => {
   }
 });
 
+// ─── GET /account/export/summary ─────────────────────────────────────────────
+// Returns lightweight counts used to show a preview card before the user
+// downloads the full JSON export.
+
+router.get("/account/export/summary", async (req, res): Promise<void> => {
+  const userId = (req as any).userId as number;
+
+  try {
+    const [msgResult, habitResult, moodResult, memResult] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) AS count,
+                MIN(created_at) AS first_at,
+                MAX(created_at) AS last_at
+         FROM messages WHERE user_id = $1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM habits WHERE user_id = $1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM mood_scores WHERE user_id = $1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM memory_facts WHERE user_id = $1`,
+        [userId],
+      ),
+    ]);
+
+    res.json({
+      messageCount: parseInt(msgResult.rows[0].count, 10),
+      habitCount:   parseInt(habitResult.rows[0].count, 10),
+      moodCount:    parseInt(moodResult.rows[0].count, 10),
+      memoryCount:  parseInt(memResult.rows[0].count, 10),
+      firstMessageAt: msgResult.rows[0].first_at ?? null,
+      lastMessageAt:  msgResult.rows[0].last_at  ?? null,
+    });
+  } catch (err) {
+    logger.error({ err, userId }, "Failed to fetch export summary");
+    res.status(500).json({ error: "Could not load summary. Please try again." });
+  }
+});
+
 export default router;
