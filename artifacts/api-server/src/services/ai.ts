@@ -13,7 +13,7 @@ import {
   type Profile,
 } from "@workspace/db";
 import { logger } from "../lib/logger.js";
-import { todayString } from "./stage.js";
+import { todayInTimezone } from "./stage.js";
 
 // Anthropic client — lazy init so mock mode works without the key
 let _anthropic: import("@anthropic-ai/sdk").Anthropic | null = null;
@@ -190,7 +190,7 @@ export async function generateMorningNoteContent(
   profile: Profile,
   stage: number,
 ): Promise<string> {
-  const today = todayString();
+  const today = todayInTimezone((profile as any).timezone ?? "UTC");
 
   const [facts, wins, pendingFollowUps] = await Promise.all([
     db.select().from(memoryFactsTable).orderBy(desc(memoryFactsTable.createdAt)).limit(10),
@@ -360,7 +360,7 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
     }
 
     if (extracted.moodScore && extracted.moodScore >= 1 && extracted.moodScore <= 10) {
-      const today = todayString();
+      const today = todayInTimezone((profile as any).timezone ?? "UTC");
       await db.delete(moodScoresTable).where(eq(moodScoresTable.date, today));
       await db.insert(moodScoresTable).values({ score: Math.round(extracted.moodScore), date: today });
     }
@@ -401,7 +401,7 @@ export async function extractCommitments(
   openCommitments: Array<{ id: number; content: string; cue: string }>,
 ): Promise<CommitmentExtractionResult> {
   const anthropic = getAnthropic();
-  const today = todayString();
+  const today = todayInTimezone((profile as any).timezone ?? "UTC");
 
   const empty: CommitmentExtractionResult = {
     newCommitment: null,
@@ -582,7 +582,7 @@ export async function detectHabitMentions(
       ? activeHabits.map((h) => `  ID ${h.id}: "${h.name}" (cue: ${h.whenThen})`).join("\n")
       : "  (no habits yet)";
 
-  const today = todayString();
+  const today = todayInTimezone((profile as any).timezone ?? "UTC");
 
   const prompt = `You are detecting habit mentions in a companion chat message.
 

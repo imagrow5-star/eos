@@ -58,7 +58,8 @@ export const GetProfileResponse = zod.object({
   "currentStage": zod.number().describe('1=Arrival 2=Held 3=FirstStep 4=Building'),
   "voiceId": zod.string().describe('ElevenLabs voice ID'),
   "companionGender": zod.string().describe('woman | man | nonbinary'),
-  "userGender": zod.string().nullish().describe('man | woman | other (optional — may be null)')
+  "userGender": zod.string().nullish().describe('man | woman | other (optional — may be null)'),
+  "timezone": zod.string().describe('IANA timezone string e.g. America/New_York')
 })
 
 
@@ -75,7 +76,8 @@ export const UpdateProfileBody = zod.object({
   "ageBand": zod.string().optional(),
   "voiceId": zod.string().optional(),
   "companionGender": zod.string().optional(),
-  "userGender": zod.string().optional()
+  "userGender": zod.string().optional(),
+  "timezone": zod.string().optional()
 })
 
 export const UpdateProfileResponse = zod.object({
@@ -92,7 +94,8 @@ export const UpdateProfileResponse = zod.object({
   "currentStage": zod.number().describe('1=Arrival 2=Held 3=FirstStep 4=Building'),
   "voiceId": zod.string().describe('ElevenLabs voice ID'),
   "companionGender": zod.string().describe('woman | man | nonbinary'),
-  "userGender": zod.string().nullish().describe('man | woman | other (optional — may be null)')
+  "userGender": zod.string().nullish().describe('man | woman | other (optional — may be null)'),
+  "timezone": zod.string().describe('IANA timezone string e.g. America/New_York')
 })
 
 

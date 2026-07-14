@@ -17,7 +17,7 @@ import {
   detectHabitMentions,
   generateMorningNoteContent,
 } from "../services/ai.js";
-import { calculateStage, todayString } from "../services/stage.js";
+import { calculateStage, todayInTimezone } from "../services/stage.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -264,7 +264,7 @@ router.post("/chat/send", async (req, res): Promise<void> => {
 
 router.post("/chat/morning-note", async (req, res): Promise<void> => {
   const profile = await getOrCreateProfile();
-  const today = todayString();
+  const today = todayInTimezone((profile as any).timezone ?? "UTC");
 
   if (profile.morningNoteDate === today) {
     const existing = await db

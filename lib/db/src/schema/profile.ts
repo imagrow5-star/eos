@@ -21,6 +21,7 @@ export const profileTable = pgTable("profile", {
   voiceId: text("voice_id").notNull().default("EXAVITQu4vr4xnSDxMaL"), // ElevenLabs voice ID — default Sarah
   companionGender: text("companion_gender").notNull().default("woman"), // woman | man | nonbinary
   userGender: text("user_gender"), // man | woman | other (nullable — optional onboarding step)
+  timezone: text("timezone").notNull().default("UTC"), // IANA timezone e.g. "America/New_York"
 });
 
 export const insertProfileSchema = createInsertSchema(profileTable).omit({ id: true });

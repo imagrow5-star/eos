@@ -9,7 +9,7 @@ import {
   moodScoresTable,
   type Profile,
 } from "@workspace/db";
-import { calculateStage, stageMeta, todayString } from "./stage.js";
+import { calculateStage, stageMeta, todayInTimezone, getTimeContext } from "./stage.js";
 
 // ─── Crisis resource per country ──────────────────────────────────────────────
 
@@ -38,7 +38,9 @@ export async function buildSystemPrompt(profile: Profile): Promise<string> {
   const stage = await calculateStage(profile);
   const { label, rules } = stageMeta(stage);
   const isBereavement = profile.userPath === "bereavement";
-  const today = todayString();
+  const userTimezone = (profile as any).timezone ?? "UTC";
+  const timeCtx = getTimeContext(userTimezone);
+  const today = todayInTimezone(userTimezone);
   const sevenDaysAgo = last7Dates()[0]!;
 
   // Gather all context in parallel — two passes so habit completions don't
@@ -375,7 +377,30 @@ ESSENTIALISM — Greg McKeown:
 
   // ─── Build final prompt ──────────────────────────────────────────────────────
 
-  return `${relationshipPersona}
+  // ─── Date/time context block ────────────────────────────────────────────────
+  // Injected fresh on every message so she always knows the real time.
+  // Placed at the very top so it is never missed by the model.
+
+  const dateTimeBlock = `══════════════════════════════════════════════════════
+CURRENT DATE & TIME (real — use this, never invent or guess)
+══════════════════════════════════════════════════════
+${timeCtx.promptLine}
+• Day of week: ${timeCtx.dayOfWeek}
+• Part of day: ${timeCtx.partOfDay}
+• Full date: ${timeCtx.fullDate}
+• Year: ${timeCtx.year}
+
+USE THIS NATURALLY:
+- Greet based on time: "good morning" / "how's your afternoon going" / "hey, late night" etc.
+- Reference the day correctly: "it's ${timeCtx.dayOfWeek}" or "you made it through ${timeCtx.dayOfWeek}"
+- When ${name} mentions doing something (a walk, coffee, work), you know roughly when it happened
+- When logging habits or events, you know the accurate date: ${timeCtx.shortDate}
+- NEVER say "I don't know what time it is" — you do know. Use this.
+- Do NOT read this block out mechanically. Absorb it and speak naturally.`;
+
+  return `${dateTimeBlock}
+
+${relationshipPersona}
 
 ${energyDesc}
 

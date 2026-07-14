@@ -48,6 +48,7 @@ function buildProfilePayload(profile: ReturnType<typeof Object.assign>, daysSinc
     voiceId: profile.voiceId ?? "EXAVITQu4vr4xnSDxMaL",
     companionGender: (profile as any).companionGender ?? "woman",
     userGender: (profile as any).userGender ?? null,
+    timezone: (profile as any).timezone ?? "UTC",
     createdAt: profile.createdAt,
     daysSinceStart,
     currentStage: stage,
@@ -88,6 +89,7 @@ router.put("/profile", async (req, res): Promise<void> => {
   if ((data as any).voiceId != null) updates.voiceId = (data as any).voiceId;
   if ((data as any).companionGender != null) updates.companionGender = (data as any).companionGender;
   if ((data as any).userGender != null) updates.userGender = (data as any).userGender;
+  if ((data as any).timezone != null) updates.timezone = (data as any).timezone;
 
   const [updated] = await db
     .update(profileTable)

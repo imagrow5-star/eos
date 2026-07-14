@@ -17,6 +17,117 @@ export function formatDate(d: Date): string {
   return d.toISOString().split("T")[0]!;
 }
 
+// ─── Timezone-aware date helpers ──────────────────────────────────────────────
+
+/**
+ * Returns today's date as YYYY-MM-DD in the given IANA timezone.
+ * en-CA locale reliably formats as YYYY-MM-DD.
+ * Falls back to UTC todayString() if the timezone is unrecognised.
+ */
+export function todayInTimezone(tz: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
+  } catch {
+    return todayString();
+  }
+}
+
+/**
+ * Returns yesterday's date as YYYY-MM-DD in the given IANA timezone.
+ */
+export function yesterdayInTimezone(tz: string): string {
+  try {
+    const d = new Date(Date.now() - 86_400_000);
+    return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(d);
+  } catch {
+    return formatDate(new Date(Date.now() - 86_400_000));
+  }
+}
+
+// ─── TimeContext — rich date/time object for system-prompt injection ───────────
+
+export interface TimeContext {
+  dayOfWeek: string;  // "Thursday"
+  fullDate: string;   // "July 14, 2026"
+  shortDate: string;  // "2026-07-14"
+  time12: string;     // "10:32 PM"
+  partOfDay: string;  // "early morning" | "morning" | "afternoon" | "evening" | "night"
+  year: string;       // "2026"
+  promptLine: string; // ready-to-inject single sentence
+}
+
+/**
+ * Returns a rich TimeContext for a given IANA timezone.
+ * Used to inject accurate, real-time temporal awareness into the companion's
+ * system prompt so she can greet, reference moments, and timestamp correctly.
+ */
+export function getTimeContext(tz: string): TimeContext {
+  const now = new Date();
+
+  // Validate timezone — fall back to UTC on any error
+  const safeZone = (() => {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: tz }).format(now);
+      return tz;
+    } catch {
+      return "UTC";
+    }
+  })();
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: safeZone,
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(now);
+
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+
+  const dayOfWeek = get("weekday");
+  const month     = get("month");
+  const day       = get("day");
+  const year      = get("year");
+  const hour      = get("hour");
+  const minute    = get("minute");
+  const ampm      = get("dayPeriod");
+
+  // 24-hour reading for part-of-day classification
+  const hour24 = parseInt(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: safeZone,
+      hour: "numeric",
+      hour12: false,
+    }).format(now),
+    10,
+  );
+
+  const partOfDay =
+    hour24 >= 4  && hour24 < 9  ? "early morning" :
+    hour24 >= 9  && hour24 < 12 ? "morning"        :
+    hour24 >= 12 && hour24 < 17 ? "afternoon"      :
+    hour24 >= 17 && hour24 < 21 ? "evening"        : "night";
+
+  const shortDate = todayInTimezone(safeZone);
+  const fullDate  = `${month} ${day}, ${year}`;
+  const time12    = `${hour}:${minute} ${ampm}`;
+
+  return {
+    dayOfWeek,
+    fullDate,
+    shortDate,
+    time12,
+    partOfDay,
+    year,
+    promptLine: `Today is ${dayOfWeek}, ${fullDate}. Local time: ${time12} (${partOfDay}).`,
+  };
+}
+
+// ─── Stage calculation ────────────────────────────────────────────────────────
+
 export async function calculateStage(profile: Profile): Promise<number> {
   const daysSinceStart = Math.floor(
     (Date.now() - profile.createdAt.getTime()) / (1000 * 60 * 60 * 24),

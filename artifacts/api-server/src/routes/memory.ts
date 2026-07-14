@@ -7,6 +7,7 @@ import {
   winsTable,
   habitsTable,
   habitCompletionsTable,
+  profileTable,
 } from "@workspace/db";
 import {
   GetMemoryFactsResponse,
@@ -23,7 +24,12 @@ import {
   CompleteHabitParams,
   CompleteHabitResponse,
 } from "@workspace/api-zod";
-import { todayString, formatDate } from "../services/stage.js";
+import { todayInTimezone, formatDate } from "../services/stage.js";
+
+async function getProfileTimezone(): Promise<string> {
+  const profiles = await db.select({ timezone: profileTable.timezone }).from(profileTable).limit(1);
+  return (profiles[0] as any)?.timezone ?? "UTC";
+}
 
 const router: IRouter = Router();
 
@@ -186,7 +192,8 @@ router.post("/memory/habits/:id/complete", async (req, res): Promise<void> => {
   }
 
   const habitId = params.data.id;
-  const today = todayString();
+  const tz = await getProfileTimezone();
+  const today = todayInTimezone(tz);
 
   const [habit] = await db
     .select()
@@ -228,9 +235,7 @@ router.post("/memory/habits/:id/complete", async (req, res): Promise<void> => {
 
   // Walk backwards counting consecutive days (forgiving: today or yesterday is the anchor)
   if (!completedDates.has(today)) {
-    const yesterdayDate = new Date(today);
-    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-    const yesterday = formatDate(yesterdayDate);
+    const yesterday = formatDate(new Date(new Date(today + "T12:00:00").getTime() - 86_400_000));
     if (!completedDates.has(yesterday)) {
       streak = 0;
     } else {
