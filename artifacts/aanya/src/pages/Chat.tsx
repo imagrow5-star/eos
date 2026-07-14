@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download } from "lucide-react";
+import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -506,6 +506,32 @@ export default function Chat() {
 
   const [isExportingHtml, setIsExportingHtml] = useState(false);
 
+  // In-app report viewer — reads the same HTML report inside a full-screen
+  // overlay so users can read their history without downloading anything.
+  const [showReport, setShowReport] = useState(false);
+  const [reportHtml, setReportHtml] = useState<string | null>(null);
+  const [isLoadingReport, setIsLoadingReport] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+
+  const handleViewReport = async () => {
+    setShowReport(true);
+    setIsLoadingReport(true);
+    setReportError(null);
+    setReportHtml(null);
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}api/account/report`);
+      if (!res.ok) {
+        setReportError("Could not load your report. Please try again.");
+        return;
+      }
+      setReportHtml(await res.text());
+    } catch {
+      setReportError("Could not load your report. Please try again.");
+    } finally {
+      setIsLoadingReport(false);
+    }
+  };
+
   const handleExport = async (format: "json" | "html" = "json") => {
     const isHtml = format === "html";
     if (isHtml) setIsExportingHtml(true);
@@ -743,6 +769,80 @@ export default function Chat() {
       "flex flex-col h-full w-full relative bg-background",
       isBereavement && "gentle-mode",
     )}>
+      {/* ── Full report overlay — read the report in-app, no download ──────── */}
+      <AnimatePresence>
+        {showReport && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="fixed inset-0 z-50 flex flex-col bg-background"
+          >
+            <header className="h-14 flex items-center justify-between px-5 border-b border-primary/20 bg-background/98 backdrop-blur-xl shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="w-4 h-4 text-primary/70 shrink-0" />
+                <span className="text-[11px] text-muted-foreground/80 tracking-widest uppercase font-medium truncate">
+                  Your full report
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleExport("html")}
+                  disabled={isExportingHtml}
+                  className="text-[11px] text-muted-foreground/60 hover:text-primary tracking-wider uppercase gap-1.5"
+                  title="Download this report"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowReport(false)}
+                  className="rounded-full w-9 h-9 text-muted-foreground/60 hover:text-foreground"
+                  title="Close report"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            </header>
+
+            <div className="flex-1 min-h-0 relative">
+              {isLoadingReport ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground/50">
+                  <motion.div
+                    className="w-5 h-5 border-2 border-primary/40 border-t-transparent rounded-full"
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
+                  />
+                  <span className="text-[12px] tracking-wide">Loading your report…</span>
+                </div>
+              ) : reportError ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
+                  <p className="text-[13px] text-destructive/80">{reportError}</p>
+                  <button
+                    onClick={handleViewReport}
+                    className="text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : reportHtml ? (
+                <iframe
+                  title="Your full report"
+                  srcDoc={reportHtml}
+                  className="w-full h-full border-0 bg-white"
+                  sandbox=""
+                />
+              ) : null}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="h-16 flex items-center justify-between px-5 border-b border-primary/20 bg-background/98 backdrop-blur-xl z-20 shrink-0 relative">
         {/* Companion presence — left */}
@@ -1101,6 +1201,16 @@ export default function Chat() {
                   </button>
                 </div>
               ) : null}
+
+              {/* View full report — read everything in-app, no download needed */}
+              <button
+                onClick={handleViewReport}
+                className="flex items-center justify-center gap-2 w-full text-[12px] text-primary tracking-wider uppercase font-medium rounded-xl border border-primary/30 bg-primary/8 hover:bg-primary/15 hover:border-primary/45 transition-all py-2.5"
+                title="Read your full report inside the app"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                View full report
+              </button>
 
               {/* Download options — link straight from the summary above */}
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-0.5">

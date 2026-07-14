@@ -373,6 +373,89 @@ function buildHtmlReport(data: {
 </html>`;
 }
 
+// ─── Shared export-data loader ────────────────────────────────────────────────
+// Fetches every user-owned record used by both the downloadable export and the
+// in-app readable report. Keeping this in one place means the report and the
+// export can never drift apart.
+
+async function fetchExportPayload(userId: number) {
+  const [
+    messagesResult,
+    memoryResult,
+    winsResult,
+    habitsResult,
+    habitCompletionsResult,
+    goalsResult,
+    moodResult,
+    profileResult,
+    commitmentsResult,
+    remindersResult,
+    personalitySignalsResult,
+  ] = await Promise.all([
+    pool.query(
+      `SELECT role, content, is_morning_note, created_at FROM messages WHERE user_id = $1 ORDER BY created_at ASC`,
+      [userId],
+    ),
+    pool.query(
+      `SELECT fact, created_at FROM memory_facts WHERE user_id = $1 ORDER BY created_at ASC`,
+      [userId],
+    ),
+    pool.query(
+      `SELECT content, created_at FROM wins WHERE user_id = $1 ORDER BY created_at ASC`,
+      [userId],
+    ),
+    pool.query(
+      `SELECT id, name, when_then, created_at FROM habits WHERE user_id = $1 ORDER BY created_at ASC`,
+      [userId],
+    ),
+    pool.query(
+      `SELECT h.name AS habit_name, hc.completed_date FROM habit_completions hc
+       JOIN habits h ON h.id = hc.habit_id
+       WHERE h.user_id = $1 ORDER BY hc.completed_date ASC`,
+      [userId],
+    ),
+    pool.query(
+      `SELECT title, description, is_complete, created_at FROM goals WHERE user_id = $1 ORDER BY created_at ASC`,
+      [userId],
+    ),
+    pool.query(
+      `SELECT score, date FROM mood_scores WHERE user_id = $1 ORDER BY date ASC`,
+      [userId],
+    ),
+    pool.query(
+      `SELECT companion_name, user_path, companion_gender, country, age_band, timezone, created_at FROM profile WHERE user_id = $1`,
+      [userId],
+    ),
+    pool.query(
+      `SELECT content, cue, state, created_at FROM commitments WHERE user_id = $1 ORDER BY created_at ASC`,
+      [userId],
+    ),
+    pool.query(
+      `SELECT content, due_date, is_done, scheduled_time, is_recurring, created_at FROM reminders WHERE user_id = $1 ORDER BY created_at ASC`,
+      [userId],
+    ),
+    pool.query(
+      `SELECT signal, observed_count, is_active, created_at FROM personality_signals WHERE user_id = $1 ORDER BY created_at ASC`,
+      [userId],
+    ),
+  ]);
+
+  return {
+    exportedAt: new Date().toISOString(),
+    profile: profileResult.rows[0] ?? null,
+    messages: messagesResult.rows,
+    memoryFacts: memoryResult.rows,
+    wins: winsResult.rows,
+    habits: habitsResult.rows,
+    habitCompletions: habitCompletionsResult.rows,
+    goals: goalsResult.rows,
+    moodScores: moodResult.rows,
+    commitments: commitmentsResult.rows,
+    reminders: remindersResult.rows,
+    personalitySignals: personalitySignalsResult.rows,
+  };
+}
+
 // ─── GET /account/export ──────────────────────────────────────────────────────
 // Returns either a JSON file or a styled HTML report depending on ?format=html.
 // Both cover all user data for download (GDPR Art. 20).
@@ -382,81 +465,7 @@ router.get("/account/export", async (req, res): Promise<void> => {
   const format = (req.query.format as string | undefined)?.toLowerCase();
 
   try {
-    const [
-      messagesResult,
-      memoryResult,
-      winsResult,
-      habitsResult,
-      habitCompletionsResult,
-      goalsResult,
-      moodResult,
-      profileResult,
-      commitmentsResult,
-      remindersResult,
-      personalitySignalsResult,
-    ] = await Promise.all([
-      pool.query(
-        `SELECT role, content, is_morning_note, created_at FROM messages WHERE user_id = $1 ORDER BY created_at ASC`,
-        [userId],
-      ),
-      pool.query(
-        `SELECT fact, created_at FROM memory_facts WHERE user_id = $1 ORDER BY created_at ASC`,
-        [userId],
-      ),
-      pool.query(
-        `SELECT content, created_at FROM wins WHERE user_id = $1 ORDER BY created_at ASC`,
-        [userId],
-      ),
-      pool.query(
-        `SELECT id, name, when_then, created_at FROM habits WHERE user_id = $1 ORDER BY created_at ASC`,
-        [userId],
-      ),
-      pool.query(
-        `SELECT h.name AS habit_name, hc.completed_date FROM habit_completions hc
-         JOIN habits h ON h.id = hc.habit_id
-         WHERE h.user_id = $1 ORDER BY hc.completed_date ASC`,
-        [userId],
-      ),
-      pool.query(
-        `SELECT title, description, is_complete, created_at FROM goals WHERE user_id = $1 ORDER BY created_at ASC`,
-        [userId],
-      ),
-      pool.query(
-        `SELECT score, date FROM mood_scores WHERE user_id = $1 ORDER BY date ASC`,
-        [userId],
-      ),
-      pool.query(
-        `SELECT companion_name, user_path, companion_gender, country, age_band, timezone, created_at FROM profile WHERE user_id = $1`,
-        [userId],
-      ),
-      pool.query(
-        `SELECT content, cue, state, created_at FROM commitments WHERE user_id = $1 ORDER BY created_at ASC`,
-        [userId],
-      ),
-      pool.query(
-        `SELECT content, due_date, is_done, scheduled_time, is_recurring, created_at FROM reminders WHERE user_id = $1 ORDER BY created_at ASC`,
-        [userId],
-      ),
-      pool.query(
-        `SELECT signal, observed_count, is_active, created_at FROM personality_signals WHERE user_id = $1 ORDER BY created_at ASC`,
-        [userId],
-      ),
-    ]);
-
-    const exportPayload = {
-      exportedAt: new Date().toISOString(),
-      profile: profileResult.rows[0] ?? null,
-      messages: messagesResult.rows,
-      memoryFacts: memoryResult.rows,
-      wins: winsResult.rows,
-      habits: habitsResult.rows,
-      habitCompletions: habitCompletionsResult.rows,
-      goals: goalsResult.rows,
-      moodScores: moodResult.rows,
-      commitments: commitmentsResult.rows,
-      reminders: remindersResult.rows,
-      personalitySignals: personalitySignalsResult.rows,
-    };
+    const exportPayload = await fetchExportPayload(userId);
 
     const dateSlug = new Date().toISOString().slice(0, 10);
 
@@ -475,6 +484,26 @@ router.get("/account/export", async (req, res): Promise<void> => {
   } catch (err) {
     logger.error({ err, userId }, "Failed to export account data");
     res.status(500).json({ error: "Failed to export your data. Please try again." });
+  }
+});
+
+// ─── GET /account/report ──────────────────────────────────────────────────────
+// Returns the same styled HTML report as ?format=html, but served inline (no
+// download prompt) so it can be rendered directly inside the app — e.g. in an
+// iframe overlay. Content is identical to the downloadable report.
+
+router.get("/account/report", async (req, res): Promise<void> => {
+  const userId = (req as any).userId as number;
+
+  try {
+    const exportPayload = await fetchExportPayload(userId);
+    const html = buildHtmlReport(exportPayload);
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(html);
+    logger.info({ userId }, "Account report viewed in-app");
+  } catch (err) {
+    logger.error({ err, userId }, "Failed to render account report");
+    res.status(500).json({ error: "Failed to load your report. Please try again." });
   }
 });
 
