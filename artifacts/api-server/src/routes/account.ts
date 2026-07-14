@@ -52,6 +52,7 @@ interface ExportRow { [key: string]: unknown }
 
 function buildHtmlReport(data: {
   exportedAt: string;
+  range?: { from: string | null; to: string | null } | null;
   profile: ExportRow | null;
   messages: ExportRow[];
   memoryFacts: ExportRow[];
@@ -64,9 +65,15 @@ function buildHtmlReport(data: {
   reminders: ExportRow[];
   personalitySignals: ExportRow[];
 }): string {
-  const { exportedAt, profile, messages, memoryFacts, wins, habits, habitCompletions, goals, moodScores, commitments, reminders, personalitySignals } = data;
+  const { exportedAt, range, profile, messages, memoryFacts, wins, habits, habitCompletions, goals, moodScores, commitments, reminders, personalitySignals } = data;
   const companionName = esc(profile?.companion_name ?? "Asha");
   const userPath = pathLabel(profile?.user_path as string);
+
+  // When a date range is applied, spell it out on the cover so the reader knows
+  // this is a filtered slice of their history rather than the whole thing.
+  const rangeLabel = range && (range.from || range.to)
+    ? `Range: ${range.from ? fmtDate(range.from) : "the beginning"} – ${range.to ? fmtDate(range.to) : "today"}`
+    : null;
 
   // ── Conversation thread ──────────────────────────────────────────────────────
   const conversationHtml = messages.length === 0
@@ -341,6 +348,7 @@ function buildHtmlReport(data: {
     <div class="wordmark">A S H <span>A</span></div>
     <h1>Your personal report — with ${companionName}</h1>
     <p class="meta">Journey: ${esc(userPath)} &nbsp;·&nbsp; Exported ${fmtDate(exportedAt)}</p>
+    ${rangeLabel ? `<p class="meta">${esc(rangeLabel)}</p>` : ""}
   </div>
 
   <div class="section">
@@ -398,7 +406,61 @@ function buildHtmlReport(data: {
 // in-app readable report. Keeping this in one place means the report and the
 // export can never drift apart.
 
-async function fetchExportPayload(userId: number) {
+// Builds an extra SQL fragment + params that restricts a query to an optional
+// [from, to] date range. `column` is the date/timestamp column to filter on.
+// `isDateType` true → the column is a DATE (compare inclusively); false → it's a
+// TIMESTAMP, so `to` is treated as end-of-day (< to + 1 day) to include the
+// whole final day. Params start at $startIndex so callers can slot them after
+// the existing user_id placeholder.
+function buildRangeClause(
+  column: string,
+  isDateType: boolean,
+  range: DateRange,
+  startIndex: number,
+): { clause: string; params: string[] } {
+  const clauses: string[] = [];
+  const params: string[] = [];
+  let idx = startIndex;
+
+  if (range.from) {
+    const p = "$" + idx; // positional placeholder, e.g. "$2"
+    clauses.push(`${column} >= ${p}`);
+    params.push(range.from);
+    idx++;
+  }
+  if (range.to) {
+    const p = "$" + idx;
+    if (isDateType) {
+      clauses.push(`${column} <= ${p}`);
+    } else {
+      clauses.push(`${column} < (${p}::date + interval '1 day')`);
+    }
+    params.push(range.to);
+    idx++;
+  }
+
+  return { clause: clauses.length ? ` AND ${clauses.join(" AND ")}` : "", params };
+}
+
+interface DateRange {
+  from?: string; // YYYY-MM-DD, inclusive
+  to?: string;   // YYYY-MM-DD, inclusive
+}
+
+async function fetchExportPayload(userId: number, range: DateRange = {}) {
+  // Each dataset filters on its own natural date column. The profile is the
+  // user's single settings record and is always included regardless of range.
+  const messagesRange = buildRangeClause("created_at", false, range, 2);
+  const memoryRange = buildRangeClause("created_at", false, range, 2);
+  const winsRange = buildRangeClause("created_at", false, range, 2);
+  const habitsRange = buildRangeClause("created_at", false, range, 2);
+  const habitCompletionsRange = buildRangeClause("hc.completed_date", true, range, 2);
+  const goalsRange = buildRangeClause("created_at", false, range, 2);
+  const moodRange = buildRangeClause("date", true, range, 2);
+  const commitmentsRange = buildRangeClause("created_at", false, range, 2);
+  const remindersRange = buildRangeClause("created_at", false, range, 2);
+  const signalsRange = buildRangeClause("created_at", false, range, 2);
+
   const [
     messagesResult,
     memoryResult,
@@ -413,55 +475,56 @@ async function fetchExportPayload(userId: number) {
     personalitySignalsResult,
   ] = await Promise.all([
     pool.query(
-      `SELECT role, content, is_morning_note, created_at FROM messages WHERE user_id = $1 ORDER BY created_at ASC`,
-      [userId],
+      `SELECT role, content, is_morning_note, created_at FROM messages WHERE user_id = $1${messagesRange.clause} ORDER BY created_at ASC`,
+      [userId, ...messagesRange.params],
     ),
     pool.query(
-      `SELECT fact, created_at FROM memory_facts WHERE user_id = $1 ORDER BY created_at ASC`,
-      [userId],
+      `SELECT fact, created_at FROM memory_facts WHERE user_id = $1${memoryRange.clause} ORDER BY created_at ASC`,
+      [userId, ...memoryRange.params],
     ),
     pool.query(
-      `SELECT content, created_at FROM wins WHERE user_id = $1 ORDER BY created_at ASC`,
-      [userId],
+      `SELECT content, created_at FROM wins WHERE user_id = $1${winsRange.clause} ORDER BY created_at ASC`,
+      [userId, ...winsRange.params],
     ),
     pool.query(
-      `SELECT id, name, when_then, created_at FROM habits WHERE user_id = $1 ORDER BY created_at ASC`,
-      [userId],
+      `SELECT id, name, when_then, created_at FROM habits WHERE user_id = $1${habitsRange.clause} ORDER BY created_at ASC`,
+      [userId, ...habitsRange.params],
     ),
     pool.query(
       `SELECT h.name AS habit_name, hc.completed_date FROM habit_completions hc
        JOIN habits h ON h.id = hc.habit_id
-       WHERE h.user_id = $1 ORDER BY hc.completed_date ASC`,
-      [userId],
+       WHERE h.user_id = $1${habitCompletionsRange.clause} ORDER BY hc.completed_date ASC`,
+      [userId, ...habitCompletionsRange.params],
     ),
     pool.query(
-      `SELECT title, description, is_complete, created_at FROM goals WHERE user_id = $1 ORDER BY created_at ASC`,
-      [userId],
+      `SELECT title, description, is_complete, created_at FROM goals WHERE user_id = $1${goalsRange.clause} ORDER BY created_at ASC`,
+      [userId, ...goalsRange.params],
     ),
     pool.query(
-      `SELECT score, date FROM mood_scores WHERE user_id = $1 ORDER BY date ASC`,
-      [userId],
+      `SELECT score, date FROM mood_scores WHERE user_id = $1${moodRange.clause} ORDER BY date ASC`,
+      [userId, ...moodRange.params],
     ),
     pool.query(
       `SELECT companion_name, user_path, companion_gender, country, age_band, timezone, created_at FROM profile WHERE user_id = $1`,
       [userId],
     ),
     pool.query(
-      `SELECT content, cue, state, created_at FROM commitments WHERE user_id = $1 ORDER BY created_at ASC`,
-      [userId],
+      `SELECT content, cue, state, created_at FROM commitments WHERE user_id = $1${commitmentsRange.clause} ORDER BY created_at ASC`,
+      [userId, ...commitmentsRange.params],
     ),
     pool.query(
-      `SELECT content, due_date, is_done, scheduled_time, is_recurring, created_at FROM reminders WHERE user_id = $1 ORDER BY created_at ASC`,
-      [userId],
+      `SELECT content, due_date, is_done, scheduled_time, is_recurring, created_at FROM reminders WHERE user_id = $1${remindersRange.clause} ORDER BY created_at ASC`,
+      [userId, ...remindersRange.params],
     ),
     pool.query(
-      `SELECT signal, observed_count, is_active, created_at FROM personality_signals WHERE user_id = $1 ORDER BY created_at ASC`,
-      [userId],
+      `SELECT signal, observed_count, is_active, created_at FROM personality_signals WHERE user_id = $1${signalsRange.clause} ORDER BY created_at ASC`,
+      [userId, ...signalsRange.params],
     ),
   ]);
 
   return {
     exportedAt: new Date().toISOString(),
+    range: range.from || range.to ? { from: range.from ?? null, to: range.to ?? null } : null,
     profile: profileResult.rows[0] ?? null,
     messages: messagesResult.rows,
     memoryFacts: memoryResult.rows,
@@ -480,12 +543,43 @@ async function fetchExportPayload(userId: number) {
 // Returns either a JSON file or a styled HTML report depending on ?format=html.
 // Both cover all user data for download (GDPR Art. 20).
 
+// Accepts only YYYY-MM-DD; anything else is rejected so a bad value can never
+// reach a query or silently return the full history.
+function parseRangeParam(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined; // not provided
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null; // wrong shape
+  const d = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  // Reject impossible calendar dates (e.g. 2026-02-30): JS rolls them over to
+  // the next month, so require the parsed date to round-trip back to the input.
+  if (d.toISOString().slice(0, 10) !== value) return null;
+  return value;
+}
+
+function readRange(req: { query: Record<string, unknown> }): DateRange | { error: string } {
+  const from = parseRangeParam(req.query.from);
+  const to = parseRangeParam(req.query.to);
+  if (from === null || to === null) {
+    return { error: "Invalid date range. Use YYYY-MM-DD for 'from' and 'to'." };
+  }
+  if (from && to && from > to) {
+    return { error: "The 'from' date must be on or before the 'to' date." };
+  }
+  return { from: from ?? undefined, to: to ?? undefined };
+}
+
 router.get("/account/export", async (req, res): Promise<void> => {
   const userId = (req as any).userId as number;
   const format = (req.query.format as string | undefined)?.toLowerCase();
 
+  const range = readRange(req);
+  if ("error" in range) {
+    res.status(400).json({ error: range.error });
+    return;
+  }
+
   try {
-    const exportPayload = await fetchExportPayload(userId);
+    const exportPayload = await fetchExportPayload(userId, range);
 
     const dateSlug = new Date().toISOString().slice(0, 10);
 
@@ -515,8 +609,14 @@ router.get("/account/export", async (req, res): Promise<void> => {
 router.get("/account/report", async (req, res): Promise<void> => {
   const userId = (req as any).userId as number;
 
+  const range = readRange(req);
+  if ("error" in range) {
+    res.status(400).json({ error: range.error });
+    return;
+  }
+
   try {
-    const exportPayload = await fetchExportPayload(userId);
+    const exportPayload = await fetchExportPayload(userId, range);
     const html = buildHtmlReport(exportPayload);
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(html);

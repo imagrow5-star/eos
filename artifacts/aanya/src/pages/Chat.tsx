@@ -475,6 +475,11 @@ export default function Chat() {
   const [exportSummary, setExportSummary] = useState<ExportSummary | null>(null);
   const [isFetchingSummary, setIsFetchingSummary] = useState(false);
 
+  // Optional date-range filter for exports. Empty string = unbounded on that end.
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
+  const rangeError = !!exportFrom && !!exportTo && exportFrom > exportTo;
+
   const handlePreviewExport = async () => {
     setIsFetchingSummary(true);
     setExportError(null);
@@ -519,7 +524,11 @@ export default function Chat() {
     setReportError(null);
     setReportHtml(null);
     try {
-      const res = await fetch(`${import.meta.env.BASE_URL}api/account/report`);
+      const params = new URLSearchParams();
+      if (exportFrom) params.set("from", exportFrom);
+      if (exportTo) params.set("to", exportTo);
+      const qs = params.toString();
+      const res = await fetch(`${import.meta.env.BASE_URL}api/account/report${qs ? `?${qs}` : ""}`);
       if (!res.ok) {
         setReportError("Could not load your report. Please try again.");
         return;
@@ -533,12 +542,21 @@ export default function Chat() {
   };
 
   const handleExport = async (format: "json" | "html" = "json") => {
+    if (exportFrom && exportTo && exportFrom > exportTo) {
+      setExportError("The 'from' date must be on or before the 'to' date.");
+      return;
+    }
     const isHtml = format === "html";
     if (isHtml) setIsExportingHtml(true);
     else setIsExporting(true);
     setExportError(null);
     try {
-      const url = `${import.meta.env.BASE_URL}api/account/export${isHtml ? "?format=html" : ""}`;
+      const params = new URLSearchParams();
+      if (isHtml) params.set("format", "html");
+      if (exportFrom) params.set("from", exportFrom);
+      if (exportTo) params.set("to", exportTo);
+      const qs = params.toString();
+      const url = `${import.meta.env.BASE_URL}api/account/export${qs ? `?${qs}` : ""}`;
       const res = await fetch(url);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -1202,6 +1220,45 @@ export default function Chat() {
                 </div>
               ) : null}
 
+              {/* Date-range filter — optional; leave blank to include everything */}
+              <div className="space-y-2">
+                <p className="text-[10px] text-muted-foreground/45 tracking-wider uppercase">
+                  Date range <span className="normal-case tracking-normal text-muted-foreground/35">(optional)</span>
+                </p>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 space-y-1">
+                    <label className="text-[9.5px] text-muted-foreground/40 tracking-wider uppercase block">From</label>
+                    <input
+                      type="date"
+                      value={exportFrom}
+                      max={exportTo || undefined}
+                      onChange={(e) => setExportFrom(e.target.value)}
+                      className="w-full bg-background/60 border border-primary/20 rounded-lg text-[12px] text-foreground/80 px-2.5 py-1.5 focus:outline-none focus:border-primary/45 transition-colors [color-scheme:dark]"
+                    />
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <label className="text-[9.5px] text-muted-foreground/40 tracking-wider uppercase block">To</label>
+                    <input
+                      type="date"
+                      value={exportTo}
+                      min={exportFrom || undefined}
+                      onChange={(e) => setExportTo(e.target.value)}
+                      className="w-full bg-background/60 border border-primary/20 rounded-lg text-[12px] text-foreground/80 px-2.5 py-1.5 focus:outline-none focus:border-primary/45 transition-colors [color-scheme:dark]"
+                    />
+                  </div>
+                </div>
+                {rangeError ? (
+                  <p className="text-[10.5px] text-destructive/70">The “from” date must be on or before the “to” date.</p>
+                ) : (exportFrom || exportTo) ? (
+                  <button
+                    onClick={() => { setExportFrom(""); setExportTo(""); }}
+                    className="text-[10px] text-muted-foreground/45 hover:text-muted-foreground/75 tracking-wider uppercase transition-colors"
+                  >
+                    Clear range
+                  </button>
+                ) : null}
+              </div>
+
               {/* View full report — read everything in-app, no download needed */}
               <button
                 onClick={handleViewReport}
@@ -1220,7 +1277,7 @@ export default function Chat() {
                 {/* Readable HTML report */}
                 <button
                   onClick={() => handleExport("html")}
-                  disabled={isExportingHtml || isExporting}
+                  disabled={isExportingHtml || isExporting || rangeError}
                   className="flex items-center gap-1.5 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors disabled:opacity-40 font-medium"
                   title="Human-readable report you can open in any browser"
                 >
@@ -1239,7 +1296,7 @@ export default function Chat() {
                 {/* Raw JSON for developers / data tools */}
                 <button
                   onClick={() => handleExport("json")}
-                  disabled={isExporting || isExportingHtml}
+                  disabled={isExporting || isExportingHtml || rangeError}
                   className="flex items-center gap-1.5 text-[11px] text-muted-foreground/50 hover:text-muted-foreground/75 tracking-wider uppercase transition-colors disabled:opacity-40"
                   title="Raw JSON for developers and data tools"
                 >
