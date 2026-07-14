@@ -479,28 +479,35 @@ export default function Chat() {
     }
   };
 
-  const handleExport = async () => {
-    setIsExporting(true);
+  const [isExportingHtml, setIsExportingHtml] = useState(false);
+
+  const handleExport = async (format: "json" | "html" = "json") => {
+    const isHtml = format === "html";
+    if (isHtml) setIsExportingHtml(true);
+    else setIsExporting(true);
     setExportError(null);
     try {
-      const res = await fetch(`${import.meta.env.BASE_URL}api/account/export`);
+      const url = `${import.meta.env.BASE_URL}api/account/export${isHtml ? "?format=html" : ""}`;
+      const res = await fetch(url);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setExportError((body as any)?.error ?? "Export failed. Please try again.");
         return;
       }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
-      a.download = `asha-export-${new Date().toISOString().slice(0, 10)}.json`;
+      a.href = objectUrl;
+      const dateSlug = new Date().toISOString().slice(0, 10);
+      a.download = isHtml ? `asha-report-${dateSlug}.html` : `asha-export-${dateSlug}.json`;
       a.click();
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(objectUrl);
       setExportSummary(null);
     } catch {
       setExportError("Export failed. Please try again.");
     } finally {
-      setIsExporting(false);
+      if (isHtml) setIsExportingHtml(false);
+      else setIsExporting(false);
     }
   };
 
@@ -1037,13 +1044,15 @@ export default function Chat() {
                         {new Date(exportSummary.lastMessageAt!).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
                       </p>
                     )}
-                    <div className="flex items-center gap-2 pt-0.5">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-0.5">
+                      {/* Readable HTML report */}
                       <button
-                        onClick={handleExport}
-                        disabled={isExporting}
-                        className="flex items-center gap-1.5 text-[11px] text-primary/70 hover:text-primary tracking-wider uppercase transition-colors disabled:opacity-40"
+                        onClick={() => handleExport("html")}
+                        disabled={isExportingHtml || isExporting}
+                        className="flex items-center gap-1.5 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors disabled:opacity-40 font-medium"
+                        title="Human-readable report you can open in any browser"
                       >
-                        {isExporting ? (
+                        {isExportingHtml ? (
                           <motion.div
                             className="w-3 h-3 border border-primary/40 border-t-transparent rounded-full"
                             animate={{ rotate: 360 }}
@@ -1052,7 +1061,26 @@ export default function Chat() {
                         ) : (
                           <Download className="w-3 h-3" />
                         )}
-                        {isExporting ? "Preparing…" : "Download JSON"}
+                        {isExportingHtml ? "Preparing…" : "Readable report"}
+                      </button>
+                      <span className="text-muted-foreground/25 text-[11px]">·</span>
+                      {/* Raw JSON for developers / data tools */}
+                      <button
+                        onClick={() => handleExport("json")}
+                        disabled={isExporting || isExportingHtml}
+                        className="flex items-center gap-1.5 text-[11px] text-muted-foreground/50 hover:text-muted-foreground/75 tracking-wider uppercase transition-colors disabled:opacity-40"
+                        title="Raw JSON for developers and data tools"
+                      >
+                        {isExporting ? (
+                          <motion.div
+                            className="w-3 h-3 border border-muted-foreground/30 border-t-transparent rounded-full"
+                            animate={{ rotate: 360 }}
+                            transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
+                          />
+                        ) : (
+                          <Download className="w-3 h-3" />
+                        )}
+                        {isExporting ? "Preparing…" : "JSON (raw data)"}
                       </button>
                       <span className="text-muted-foreground/25 text-[11px]">·</span>
                       <button
