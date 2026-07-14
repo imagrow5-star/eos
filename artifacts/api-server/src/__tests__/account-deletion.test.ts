@@ -223,13 +223,13 @@ describe("DELETE /api/auth/account", () => {
     // habits
     expect(await rowCount("habits", "user_id = $1", [userId])).toBe(0);
 
-    // goal_tasks (cascaded from goals)
+    // goal_tasks (cascaded from goals). Assert directly against the captured
+    // goalId — NOT via a sub-select through `goals`. Once the goals row is
+    // deleted, `goal_id IN (SELECT id FROM goals WHERE user_id = $1)` returns
+    // nothing and would pass even if the goal_tasks rows were orphaned. Using
+    // the literal goalId means this fails if ON DELETE CASCADE is ever removed.
     expect(
-      await rowCount(
-        "goal_tasks",
-        "goal_id IN (SELECT id FROM goals WHERE user_id = $1)",
-        [userId],
-      ),
+      await rowCount("goal_tasks", "goal_id = $1", [goalId]),
     ).toBe(0);
 
     // goals
