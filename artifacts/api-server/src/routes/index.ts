@@ -7,6 +7,7 @@ import memoryRouter from "./memory";
 import journeyRouter from "./journey";
 import ttsRouter from "./tts";
 import goalsRouter from "./goals";
+import commitmentsRouter from "./commitments";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(memoryRouter);
 router.use(journeyRouter);
 router.use(ttsRouter);
 router.use(goalsRouter);
+router.use(commitmentsRouter);
 
 export default router;

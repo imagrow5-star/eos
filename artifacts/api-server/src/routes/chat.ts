@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, asc, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { messagesTable, profileTable } from "@workspace/db";
+import { messagesTable, profileTable, commitmentsTable } from "@workspace/db";
 import {
   GetMessagesResponse,
   SendMessageBody,
@@ -9,7 +9,12 @@ import {
   GenerateMorningNoteResponse,
 } from "@workspace/api-zod";
 import { buildSystemPrompt } from "../services/systemPrompt.js";
-import { getCompanionReply, extractMemory, generateMorningNoteContent } from "../services/ai.js";
+import {
+  getCompanionReply,
+  extractMemory,
+  extractCommitments,
+  generateMorningNoteContent,
+} from "../services/ai.js";
 import { calculateStage, todayString } from "../services/stage.js";
 import { logger } from "../lib/logger.js";
 
@@ -20,7 +25,7 @@ async function getOrCreateProfile() {
   if (profiles.length > 0) return profiles[0]!;
   const [profile] = await db
     .insert(profileTable)
-    .values({ userName: "", companionName: "Aanya" })
+    .values({ userName: "", companionName: "Asha" })
     .returning();
   return profile!;
 }
@@ -57,7 +62,7 @@ router.post("/chat/send", async (req, res): Promise<void> => {
     .where(eq(messagesTable.role, "user"));
   const userMsgCount = Number(countRow?.count ?? "0");
 
-  // Build system prompt and get context
+  // Build system prompt and calculate stage (in parallel)
   const [systemPrompt, stage] = await Promise.all([
     buildSystemPrompt(profile),
     calculateStage(profile),
@@ -70,7 +75,6 @@ router.post("/chat/send", async (req, res): Promise<void> => {
     .orderBy(desc(messagesTable.createdAt))
     .limit(21);
 
-  // Reverse and exclude the most recent (which is the user's message we just saved)
   const contextMessages = recentMessages.reverse().slice(0, -1);
 
   // Get AI reply
@@ -82,7 +86,21 @@ router.post("/chat/send", async (req, res): Promise<void> => {
     .values({ role: "assistant", content: aiContent, isMorningNote: false })
     .returning();
 
-  // Trigger memory extraction every 4 user messages (background)
+  // ── Background extractions ─────────────────────────────────────────────────
+  // Run commitment extraction after EVERY message (fast, Haiku, small context).
+  // Run memory extraction every 4 user messages (broader context sweep).
+
+  // Fetch open commitments for the extraction pass
+  const openCommitments = await db
+    .select({ id: commitmentsTable.id, content: commitmentsTable.content, cue: commitmentsTable.cue })
+    .from(commitmentsTable)
+    .where(sql`${commitmentsTable.state} = 'open'`)
+    .limit(10);
+
+  extractCommitments(profile, content, aiContent, openCommitments).catch((err) =>
+    logger.error({ err }, "Background commitment extraction failed"),
+  );
+
   let memoryExtracted = false;
   if (userMsgCount % 4 === 0 && userMsgCount > 0) {
     memoryExtracted = true;
@@ -111,9 +129,7 @@ router.post("/chat/morning-note", async (req, res): Promise<void> => {
   const profile = await getOrCreateProfile();
   const today = todayString();
 
-  // Check if already generated today
   if (profile.morningNoteDate === today) {
-    // Return existing morning note
     const existing = await db
       .select()
       .from(messagesTable)
@@ -127,7 +143,6 @@ router.post("/chat/morning-note", async (req, res): Promise<void> => {
     }
   }
 
-  // Generate new morning note
   const stage = await calculateStage(profile);
   const noteContent = await generateMorningNoteContent(profile, stage);
 
@@ -136,14 +151,12 @@ router.post("/chat/morning-note", async (req, res): Promise<void> => {
     .values({ role: "assistant", content: noteContent, isMorningNote: true })
     .returning();
 
-  // Mark that morning note was generated today
   await db
     .update(profileTable)
     .set({ morningNoteDate: today })
     .where(eq(profileTable.id, profile.id));
 
   req.log.info("Morning note generated");
-
   res.json(GenerateMorningNoteResponse.parse(noteMsg));
 });
 

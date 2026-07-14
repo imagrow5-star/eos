@@ -3,7 +3,9 @@ import { format, parseISO } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Flame, Check, Plus, Trophy, Lock, Heart, Star, Map, Target, Trash2, ChevronDown, ChevronUp,
+  Flame, Check, Plus, Trophy, Lock, Heart, Star, Map, Target,
+  Trash2, ChevronDown, ChevronUp, CircleDot, CheckCircle2,
+  XCircle, Clock, TrendingUp,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip as RechartsTooltip,
@@ -26,12 +28,224 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-// ─── Goals types ──────────────────────────────────────────────────────────────
+// ─── Commitment types ─────────────────────────────────────────────────────────
+
+interface Commitment {
+  id: number;
+  content: string;
+  cue: string;
+  state: "open" | "done" | "partial" | "missed";
+  missCount: number;
+  qualityNote: string | null;
+  scheduledFollowupDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const STATE_META = {
+  open:    { label: "In progress",  icon: CircleDot,    color: "text-secondary/70",  bg: "bg-secondary/8 border-secondary/20" },
+  done:    { label: "Done",         icon: CheckCircle2, color: "text-emerald-400/80", bg: "bg-emerald-500/8 border-emerald-500/20" },
+  partial: { label: "Partial",      icon: Clock,        color: "text-primary/80",     bg: "bg-primary/8 border-primary/20" },
+  missed:  { label: "Missed",       icon: XCircle,      color: "text-foreground/30",  bg: "bg-foreground/5 border-foreground/10" },
+};
+
+// ─── Commitments section ──────────────────────────────────────────────────────
+
+function CommitmentsSection() {
+  const queryClient = useQueryClient();
+
+  const { data: commitments = [], isLoading } = useQuery<Commitment[]>({
+    queryKey: ["commitments"],
+    queryFn: () => fetch("/api/commitments").then((r) => r.json()),
+    refetchInterval: 30_000, // poll every 30s — extraction updates in background
+  });
+
+  const updateCommitment = useMutation({
+    mutationFn: ({ id, state }: { id: number; state: string }) =>
+      fetch(`/api/commitments/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state }),
+      }).then((r) => r.json()),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["commitments"] }),
+  });
+
+  const deleteCommitment = useMutation({
+    mutationFn: (id: number) =>
+      fetch(`/api/commitments/${id}`, { method: "DELETE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["commitments"] }),
+  });
+
+  const total = commitments.length;
+  const done = commitments.filter((c) => c.state === "done").length;
+  const partial = commitments.filter((c) => c.state === "partial").length;
+  const missed = commitments.filter((c) => c.state === "missed").length;
+  const open = commitments.filter((c) => c.state === "open");
+  const closed = commitments.filter((c) => c.state !== "open");
+
+  // Score: done=1 pt, partial=0.5 pt
+  const rate = total > 0 ? Math.round(((done + partial * 0.5) / total) * 100) : null;
+
+  if (isLoading) {
+    return (
+      <section className="space-y-4">
+        <h2 className="font-serif text-xl text-foreground/85">Follow-through</h2>
+        <div className="h-20 flex items-center justify-center">
+          <div className="w-5 h-5 rounded-full border border-primary/40 border-t-transparent animate-spin" />
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="font-serif text-xl text-foreground/85">Follow-through</h2>
+        {rate !== null && (
+          <span className="text-[11px] text-primary/80 font-medium tracking-wide">
+            {rate}% rate
+          </span>
+        )}
+      </div>
+
+      {total === 0 ? (
+        <div className="bg-card/40 border border-primary/10 rounded-2xl p-5 text-center">
+          <TrendingUp className="w-7 h-7 text-primary/30 mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground/60 font-serif italic">
+            No commitments yet. When you and your companion agree on a next step in chat, it'll show up here.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {/* ── Completion rate bar ─────────────────────────────────────── */}
+          {total >= 2 && (
+            <div className="bg-card border border-primary/15 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground/70">
+                <span className="uppercase tracking-[0.15em]">Completion rate</span>
+                <span className="font-serif text-lg text-foreground/80">{rate}%</span>
+              </div>
+              <div className="h-1.5 bg-foreground/8 rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-primary/60 rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${rate}%` }}
+                  transition={{ duration: 0.8, ease: "easeOut" }}
+                />
+              </div>
+              <div className="flex gap-4 text-[10px] text-muted-foreground/60 uppercase tracking-wider">
+                <span>{done} done</span>
+                {partial > 0 && <span>{partial} partial</span>}
+                {missed > 0 && <span>{missed} missed</span>}
+                {open.length > 0 && <span>{open.length} open</span>}
+              </div>
+            </div>
+          )}
+
+          {/* ── Open commitments ──────────────────────────────────────── */}
+          {open.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[10px] text-muted-foreground/50 uppercase tracking-[0.2em] pl-1">In progress</p>
+              {open.map((c) => {
+                const meta = STATE_META[c.state];
+                const Icon = meta.icon;
+
+                return (
+                  <motion.div
+                    key={c.id}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={cn("bg-card border rounded-xl p-4 flex items-start gap-3", meta.bg)}
+                  >
+                    <Icon className={cn("w-4 h-4 mt-0.5 shrink-0", meta.color)} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-foreground/85 leading-snug">{c.content}</p>
+                      {c.cue && (
+                        <p className="text-[11px] text-muted-foreground/55 mt-0.5">
+                          {c.cue}
+                        </p>
+                      )}
+                      {c.scheduledFollowupDate && (
+                        <p className="text-[10px] text-primary/60 mt-1 uppercase tracking-wide">
+                          Follow-up {format(parseISO(c.scheduledFollowupDate), "MMM d")}
+                        </p>
+                      )}
+                      {c.missCount > 0 && (
+                        <p className="text-[10px] text-foreground/35 mt-0.5">
+                          {c.missCount === 1 ? "Missed once" : `Missed ${c.missCount}×`} — your companion will suggest something smaller
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="w-7 h-7 text-emerald-400/60 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-full"
+                        onClick={() => updateCommitment.mutate({ id: c.id, state: "done" })}
+                        title="Mark done"
+                      >
+                        <Check className="w-3.5 h-3.5" strokeWidth={3} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="w-7 h-7 text-muted-foreground/40 hover:text-red-400/70 hover:bg-red-500/8 rounded-full"
+                        onClick={() => deleteCommitment.mutate(c.id)}
+                        title="Remove"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── Closed commitments ────────────────────────────────────── */}
+          {closed.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[10px] text-muted-foreground/50 uppercase tracking-[0.2em] pl-1 mt-4">History</p>
+              {closed.slice(0, 6).map((c) => {
+                const meta = STATE_META[c.state];
+                const Icon = meta.icon;
+
+                return (
+                  <div
+                    key={c.id}
+                    className={cn(
+                      "border rounded-xl px-4 py-3 flex items-start gap-3",
+                      c.state === "done" ? "bg-emerald-500/5 border-emerald-500/15" : "bg-foreground/3 border-foreground/8 opacity-55",
+                    )}
+                  >
+                    <Icon className={cn("w-3.5 h-3.5 mt-0.5 shrink-0", meta.color)} />
+                    <div className="min-w-0">
+                      <p className={cn(
+                        "text-sm leading-snug",
+                        c.state === "done" ? "text-foreground/75" : "text-foreground/40 line-through",
+                      )}>
+                        {c.content}
+                      </p>
+                      {c.qualityNote && (
+                        <p className="text-[11px] text-muted-foreground/55 mt-1 italic">
+                          "{c.qualityNote}"
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Goals section ────────────────────────────────────────────────────────────
 
 interface GoalTask { id: number; content: string; isComplete: boolean; order: number; }
 interface Goal { id: number; title: string; description: string; isComplete: boolean; tasks: GoalTask[]; createdAt: string; }
-
-// ─── Goals section ────────────────────────────────────────────────────────────
 
 function GoalsSection() {
   const queryClient = useQueryClient();
@@ -61,8 +275,7 @@ function GoalsSection() {
   });
 
   const deleteGoal = useMutation({
-    mutationFn: (id: number) =>
-      fetch(`/api/goals/${id}`, { method: "DELETE" }),
+    mutationFn: (id: number) => fetch(`/api/goals/${id}`, { method: "DELETE" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["goals"] }),
   });
 
@@ -95,7 +308,6 @@ function GoalsSection() {
 
             return (
               <div key={goal.id} className="bg-card border border-primary/15 rounded-2xl overflow-hidden">
-                {/* Goal header */}
                 <div className="flex items-center gap-3 p-4">
                   <div className="w-7 h-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
                     <Target className="w-3.5 h-3.5 text-primary/60" />
@@ -109,70 +321,41 @@ function GoalsSection() {
                     )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="w-7 h-7 text-muted-foreground/50 hover:text-foreground rounded-full"
-                      onClick={() => setExpandedId(isExpanded ? null : goal.id)}
-                    >
+                    <Button variant="ghost" size="icon" className="w-7 h-7 text-muted-foreground/50 hover:text-foreground rounded-full"
+                      onClick={() => setExpandedId(isExpanded ? null : goal.id)}>
                       {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="w-7 h-7 text-muted-foreground/50 hover:text-red-400 rounded-full"
-                      onClick={() => deleteGoal.mutate(goal.id)}
-                    >
+                    <Button variant="ghost" size="icon" className="w-7 h-7 text-muted-foreground/50 hover:text-red-400 rounded-full"
+                      onClick={() => deleteGoal.mutate(goal.id)}>
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>
                   </div>
                 </div>
 
-                {/* Progress bar */}
                 {goal.tasks.length > 0 && (
                   <div className="mx-4 mb-2 h-0.5 bg-foreground/5 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary/50 rounded-full transition-all duration-500"
-                      style={{ width: `${(doneCount / goal.tasks.length) * 100}%` }}
-                    />
+                    <div className="h-full bg-primary/50 rounded-full transition-all duration-500"
+                      style={{ width: `${(doneCount / goal.tasks.length) * 100}%` }} />
                   </div>
                 )}
 
-                {/* Sub-tasks */}
                 <AnimatePresence>
                   {isExpanded && goal.tasks.length > 0 && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="border-t border-primary/10 overflow-hidden"
-                    >
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }} className="border-t border-primary/10 overflow-hidden">
                       {goal.tasks.sort((a, b) => a.order - b.order).map((task) => (
-                        <div
-                          key={task.id}
-                          className="flex items-start gap-3 px-4 py-2.5 hover:bg-primary/5 transition-colors"
-                        >
+                        <div key={task.id} className="flex items-start gap-3 px-4 py-2.5 hover:bg-primary/5 transition-colors">
                           <button
-                            onClick={() =>
-                              toggleTask.mutate({
-                                goalId: goal.id,
-                                taskId: task.id,
-                                isComplete: !task.isComplete,
-                              })
-                            }
+                            onClick={() => toggleTask.mutate({ goalId: goal.id, taskId: task.id, isComplete: !task.isComplete })}
                             className={cn(
                               "mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-all",
-                              task.isComplete
-                                ? "bg-primary/20 border-primary/50"
-                                : "border-foreground/20 hover:border-primary/50",
+                              task.isComplete ? "bg-primary/20 border-primary/50" : "border-foreground/20 hover:border-primary/50",
                             )}
                           >
                             {task.isComplete && <Check className="w-2.5 h-2.5 text-primary" strokeWidth={3} />}
                           </button>
-                          <p className={cn(
-                            "text-[13px] leading-relaxed",
-                            task.isComplete ? "text-muted-foreground/50 line-through" : "text-foreground/75",
-                          )}>
+                          <p className={cn("text-[13px] leading-relaxed",
+                            task.isComplete ? "text-muted-foreground/50 line-through" : "text-foreground/75")}>
                             {task.content}
                           </p>
                         </div>
@@ -184,7 +367,6 @@ function GoalsSection() {
             );
           })}
 
-          {/* Completed goals (collapsed) */}
           {doneGoals.length > 0 && (
             <div className="space-y-2">
               <p className="text-[10px] text-muted-foreground/50 uppercase tracking-[0.2em] pl-1">Completed</p>
@@ -197,50 +379,28 @@ function GoalsSection() {
             </div>
           )}
 
-          {/* Add goal */}
           {addOpen ? (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              className="bg-card/60 border border-primary/15 rounded-xl p-4 space-y-3"
-            >
-              <Input
-                placeholder="What's your goal?"
-                value={goalTitle}
-                onChange={(e) => setGoalTitle(e.target.value)}
-                className="bg-background/50 border-primary/15 text-sm text-foreground/80 placeholder:text-muted-foreground/50"
-                autoFocus
-              />
-              <Input
-                placeholder="A bit more context (optional)"
-                value={goalDesc}
-                onChange={(e) => setGoalDesc(e.target.value)}
-                className="bg-background/50 border-primary/15 text-sm text-foreground/80 placeholder:text-muted-foreground/50"
-              />
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
+              className="bg-card/60 border border-primary/15 rounded-xl p-4 space-y-3">
+              <Input placeholder="What's your goal?" value={goalTitle} onChange={(e) => setGoalTitle(e.target.value)}
+                className="bg-background/50 border-primary/15 text-sm text-foreground/80 placeholder:text-muted-foreground/50" autoFocus />
+              <Input placeholder="A bit more context (optional)" value={goalDesc} onChange={(e) => setGoalDesc(e.target.value)}
+                className="bg-background/50 border-primary/15 text-sm text-foreground/80 placeholder:text-muted-foreground/50" />
               <div className="flex justify-end gap-2">
-                <Button variant="ghost" size="sm" className="text-muted-foreground h-8 text-xs" onClick={() => setAddOpen(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  className="h-8 text-xs bg-primary/15 text-primary hover:bg-primary/25 border border-primary/25"
+                <Button variant="ghost" size="sm" className="text-muted-foreground h-8 text-xs" onClick={() => setAddOpen(false)}>Cancel</Button>
+                <Button size="sm" className="h-8 text-xs bg-primary/15 text-primary hover:bg-primary/25 border border-primary/25"
                   disabled={!goalTitle.trim() || createGoal.isPending}
-                  onClick={() => createGoal.mutate({ title: goalTitle, description: goalDesc })}
-                >
+                  onClick={() => createGoal.mutate({ title: goalTitle, description: goalDesc })}>
                   {createGoal.isPending ? "Breaking it down…" : "Set goal"}
                 </Button>
               </div>
               {createGoal.isPending && (
-                <p className="text-[11px] text-muted-foreground/60 italic text-center">
-                  Breaking your goal into steps…
-                </p>
+                <p className="text-[11px] text-muted-foreground/60 italic text-center">Breaking your goal into steps…</p>
               )}
             </motion.div>
           ) : (
-            <button
-              onClick={() => setAddOpen(true)}
-              className="w-full py-4 rounded-xl border border-dashed border-primary/20 text-muted-foreground hover:text-secondary hover:border-secondary/30 hover:bg-secondary/5 transition-all flex items-center justify-center gap-2 text-sm"
-            >
+            <button onClick={() => setAddOpen(true)}
+              className="w-full py-4 rounded-xl border border-dashed border-primary/20 text-muted-foreground hover:text-secondary hover:border-secondary/30 hover:bg-secondary/5 transition-all flex items-center justify-center gap-2 text-sm">
               <Plus className="w-4 h-4" />
               Set a new goal
             </button>
@@ -264,23 +424,18 @@ function AddHabitCard() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !whenThen.trim() || !reason.trim()) return;
-    createHabit.mutate(
-      { data: { name, whenThen, reason } },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetHabitsQueryKey() });
-          setIsOpen(false); setName(""); setWhenThen(""); setReason("");
-        },
+    createHabit.mutate({ data: { name, whenThen, reason } }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetHabitsQueryKey() });
+        setIsOpen(false); setName(""); setWhenThen(""); setReason("");
       },
-    );
+    });
   };
 
   if (!isOpen) {
     return (
-      <button
-        onClick={() => setIsOpen(true)}
-        className="w-full py-4 rounded-xl border border-dashed border-primary/20 text-muted-foreground hover:text-secondary hover:border-secondary/30 hover:bg-secondary/5 transition-all flex items-center justify-center gap-2 text-sm"
-      >
+      <button onClick={() => setIsOpen(true)}
+        className="w-full py-4 rounded-xl border border-dashed border-primary/20 text-muted-foreground hover:text-secondary hover:border-secondary/30 hover:bg-secondary/5 transition-all flex items-center justify-center gap-2 text-sm">
         <Plus className="w-4 h-4" />
         Begin a new small routine
       </button>
@@ -288,12 +443,8 @@ function AddHabitCard() {
   }
 
   return (
-    <motion.form
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: "auto" }}
-      onSubmit={handleSubmit}
-      className="bg-card/60 border border-primary/15 rounded-xl p-4 space-y-3"
-    >
+    <motion.form initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
+      onSubmit={handleSubmit} className="bg-card/60 border border-primary/15 rounded-xl p-4 space-y-3">
       <Input placeholder="Routine name" value={name} onChange={(e) => setName(e.target.value)}
         className="bg-background/50 border-primary/15 text-sm h-9 text-foreground/80 placeholder:text-muted-foreground/50" />
       <Input placeholder="When/Then (After waking up, I will…)" value={whenThen} onChange={(e) => setWhenThen(e.target.value)}
@@ -321,24 +472,19 @@ function AddWinCard() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim()) return;
-    createWin.mutate(
-      { data: { content } },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetWinsQueryKey() });
-          queryClient.invalidateQueries({ queryKey: getGetJourneyQueryKey() });
-          setIsOpen(false); setContent("");
-        },
+    createWin.mutate({ data: { content } }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetWinsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetJourneyQueryKey() });
+        setIsOpen(false); setContent("");
       },
-    );
+    });
   };
 
   if (!isOpen) {
     return (
-      <button
-        onClick={() => setIsOpen(true)}
-        className="w-full py-4 rounded-xl border border-dashed border-primary/20 text-muted-foreground hover:text-secondary hover:border-secondary/30 hover:bg-secondary/5 transition-all flex items-center justify-center gap-2 text-sm"
-      >
+      <button onClick={() => setIsOpen(true)}
+        className="w-full py-4 rounded-xl border border-dashed border-primary/20 text-muted-foreground hover:text-secondary hover:border-secondary/30 hover:bg-secondary/5 transition-all flex items-center justify-center gap-2 text-sm">
         <Plus className="w-4 h-4" />
         Note a win
       </button>
@@ -346,12 +492,8 @@ function AddWinCard() {
   }
 
   return (
-    <motion.form
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: "auto" }}
-      onSubmit={handleSubmit}
-      className="bg-card/60 border border-primary/15 rounded-xl p-4 flex gap-2 items-start"
-    >
+    <motion.form initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
+      onSubmit={handleSubmit} className="bg-card/60 border border-primary/15 rounded-xl p-4 flex gap-2 items-start">
       <Input placeholder="What small thing did you do or feel today?" value={content} onChange={(e) => setContent(e.target.value)}
         className="bg-background/50 border-primary/15 text-sm text-foreground/80 placeholder:text-muted-foreground/50" />
       <Button type="submit" className="bg-primary/15 text-primary hover:bg-primary/25 border border-primary/25 shrink-0" disabled={createWin.isPending}>
@@ -372,15 +514,12 @@ export default function Journey() {
   const completeHabit = useCompleteHabit();
 
   const handleCompleteHabit = (id: number) => {
-    completeHabit.mutate(
-      { id },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetHabitsQueryKey() });
-          queryClient.invalidateQueries({ queryKey: getGetJourneyQueryKey() });
-        },
+    completeHabit.mutate({ id }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetHabitsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetJourneyQueryKey() });
       },
-    );
+    });
   };
 
   if (journeyLoading || !journey) {
@@ -454,6 +593,11 @@ export default function Journey() {
 
       <div className="h-px bg-primary/12" />
 
+      {/* ── Follow-through / Commitments ───────────────────────────────────── */}
+      <CommitmentsSection />
+
+      <div className="h-px bg-primary/12" />
+
       {/* ── Goals ──────────────────────────────────────────────────────────── */}
       <GoalsSection />
 
@@ -483,21 +627,16 @@ export default function Journey() {
                     {Array.from({ length: 7 }).map((_, i) => {
                       const dateStr = format(new Date(Date.now() - (6 - i) * 86400000), "yyyy-MM-dd");
                       const done = habit.recentCompletions.some((c) => c.startsWith(dateStr));
-                      return (
-                        <div key={i} className={cn("w-1.5 h-1.5 rounded-full transition-all", done ? "bg-primary/70" : "bg-foreground/10")} />
-                      );
+                      return <div key={i} className={cn("w-1.5 h-1.5 rounded-full transition-all", done ? "bg-primary/70" : "bg-foreground/10")} />;
                     })}
                   </div>
                 </div>
-                <Button
-                  size="icon"
-                  className={cn(
-                    "rounded-full w-10 h-10 shrink-0 transition-all",
+                <Button size="icon"
+                  className={cn("rounded-full w-10 h-10 shrink-0 transition-all",
                     isCompletedToday ? "bg-primary/15 text-primary border border-primary/30" : "bg-card border border-primary/20 text-muted-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/30",
                   )}
                   onClick={() => !isCompletedToday && handleCompleteHabit(habit.id)}
-                  disabled={!!isCompletedToday || completeHabit.isPending}
-                >
+                  disabled={!!isCompletedToday || completeHabit.isPending}>
                   <Check className="w-4 h-4" strokeWidth={isCompletedToday ? 3 : 2} />
                 </Button>
               </div>

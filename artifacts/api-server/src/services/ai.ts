@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, lte, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   memoryFactsTable,
@@ -7,6 +7,7 @@ import {
   moodScoresTable,
   profileTable,
   messagesTable,
+  commitmentsTable,
   type Profile,
 } from "@workspace/db";
 import { logger } from "../lib/logger.js";
@@ -18,7 +19,6 @@ let _anthropic: import("@anthropic-ai/sdk").Anthropic | null = null;
 function getAnthropic(): import("@anthropic-ai/sdk").Anthropic | null {
   if (!process.env.ANTHROPIC_API_KEY) return null;
   if (!_anthropic) {
-    // Dynamic import to avoid crashing when key is absent
     const Anthropic =
       require("@anthropic-ai/sdk").default ||
       require("@anthropic-ai/sdk").Anthropic;
@@ -27,7 +27,7 @@ function getAnthropic(): import("@anthropic-ai/sdk").Anthropic | null {
   return _anthropic;
 }
 
-// ─── Mock mode responses by stage ───────────────────────────────────────────
+// ─── Mock mode responses by stage ────────────────────────────────────────────
 
 const MOCK_RESPONSES: Record<number, string[]> = {
   1: [
@@ -77,7 +77,6 @@ export async function getCompanionReply(
 
   if (!anthropic) {
     logger.warn("ANTHROPIC_API_KEY not set — using mock response");
-    // Simulate a short delay so typing indicator feels realistic
     await new Promise((r) => setTimeout(r, 1200 + Math.random() * 800));
     return getMockResponse(stage);
   }
@@ -112,17 +111,21 @@ export async function generateMorningNoteContent(
   profile: Profile,
   stage: number,
 ): Promise<string> {
-  const facts = await db
-    .select()
-    .from(memoryFactsTable)
-    .orderBy(desc(memoryFactsTable.createdAt))
-    .limit(10);
+  const today = todayString();
 
-  const wins = await db
-    .select()
-    .from(winsTable)
-    .orderBy(desc(winsTable.createdAt))
-    .limit(3);
+  const [facts, wins, pendingFollowUps] = await Promise.all([
+    db.select().from(memoryFactsTable).orderBy(desc(memoryFactsTable.createdAt)).limit(10),
+    db.select().from(winsTable).orderBy(desc(winsTable.createdAt)).limit(3),
+    stage >= 3
+      ? db
+          .select()
+          .from(commitmentsTable)
+          .where(
+            sql`${commitmentsTable.state} = 'open' AND ${commitmentsTable.scheduledFollowupDate} <= ${today}`,
+          )
+          .limit(2)
+      : Promise.resolve([]),
+  ]);
 
   const daysSinceStart = Math.floor(
     (Date.now() - profile.createdAt.getTime()) / (1000 * 60 * 60 * 24),
@@ -138,24 +141,25 @@ export async function generateMorningNoteContent(
   }
 
   const factsText =
-    facts.length > 0
-      ? facts.map((f) => f.fact).join("; ")
-      : "still getting to know each other";
+    facts.length > 0 ? facts.map((f) => f.fact).join("; ") : "still getting to know each other";
 
   const winsText =
-    wins.length > 0
-      ? wins.map((w) => w.content).join("; ")
-      : "no wins logged yet";
+    wins.length > 0 ? wins.map((w) => w.content).join("; ") : "no wins logged yet";
+
+  const followUpText =
+    pendingFollowUps.length > 0
+      ? `\nThere are pending commitments to gently and warmly check in on (ONLY if the note's tone allows — never robotic, never guilt-inducing): ${pendingFollowUps.map((c) => `"${c.content}"${c.cue ? ` (cue: ${c.cue})` : ""}`).join("; ")}`
+      : "";
 
   const prompt =
     stage <= 2
-      ? `Write a short, warm morning note (3–5 sentences) from ${profile.companionName} to ${profile.userName || "them"}. Pure warmth — no advice, no suggestions. Reference their real life naturally: ${factsText}. Day ${daysSinceStart} of their journey. Not a wellness lecture. Human and personal.`
-      : `Write a short morning note (4–6 sentences) from ${profile.companionName} to ${profile.userName || "them"}. Warm and personal. Reference their real life: ${factsText}. Acknowledge their wins: ${winsText}. Day ${daysSinceStart}. Include one tiny real-world nudge for today. No emojis. No buzzwords.`;
+      ? `Write a short, warm morning note (3–5 sentences) from ${profile.companionName} to ${profile.userName || "them"}. Pure warmth — no advice, no suggestions, absolutely no task-talk. Reference their real life naturally: ${factsText}. Day ${daysSinceStart} of their journey. Not a wellness lecture. Human and personal.`
+      : `Write a short morning note (4–6 sentences) from ${profile.companionName} to ${profile.userName || "them"}. Warm and personal. Reference their real life: ${factsText}. Acknowledge their wins: ${winsText}. Day ${daysSinceStart}.${followUpText} If checking in on a commitment: do it warmly in one sentence, never mechanically. No emojis. No buzzwords. Plain, human prose.`;
 
   try {
     const response = await anthropic.messages.create({
       model: "claude-opus-4-5",
-      max_tokens: 300,
+      max_tokens: 350,
       messages: [{ role: "user", content: prompt }],
     });
     const textBlock = response.content.find((b) => b.type === "text");
@@ -224,7 +228,6 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
 
     let extracted: ExtractedMemory;
     try {
-      // Strip markdown code fences if present
       const raw = textBlock.text.replace(/```(?:json)?\n?/g, "").trim();
       extracted = JSON.parse(raw) as ExtractedMemory;
     } catch {
@@ -232,7 +235,6 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
       return;
     }
 
-    // Store facts (deduplicate by checking for very similar existing facts)
     if (extracted.facts && extracted.facts.length > 0) {
       const existingFacts = await db.select().from(memoryFactsTable);
       for (const f of extracted.facts) {
@@ -243,15 +245,11 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
             f.fact.toLowerCase().includes(e.fact.toLowerCase().slice(0, 20)),
         );
         if (!isDuplicate) {
-          await db.insert(memoryFactsTable).values({
-            fact: f.fact,
-            category: f.category || "life",
-          });
+          await db.insert(memoryFactsTable).values({ fact: f.fact, category: f.category || "life" });
         }
       }
     }
 
-    // Store/update personality signals
     if (extracted.signals && extracted.signals.length > 0) {
       for (const signal of extracted.signals) {
         if (!signal || signal.length < 5) continue;
@@ -267,22 +265,14 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
           const newCount = current.observedCount + 1;
           await db
             .update(personalitySignalsTable)
-            .set({
-              observedCount: newCount,
-              isActive: newCount >= 3,
-            })
+            .set({ observedCount: newCount, isActive: newCount >= 3 })
             .where(eq(personalitySignalsTable.id, current.id));
         } else {
-          await db.insert(personalitySignalsTable).values({
-            signal,
-            observedCount: 1,
-            isActive: false,
-          });
+          await db.insert(personalitySignalsTable).values({ signal, observedCount: 1, isActive: false });
         }
       }
     }
 
-    // Store wins
     if (extracted.wins && extracted.wins.length > 0) {
       for (const win of extracted.wins) {
         if (!win || win.length < 5) continue;
@@ -290,24 +280,12 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
       }
     }
 
-    // Store mood score
-    if (
-      extracted.moodScore &&
-      extracted.moodScore >= 1 &&
-      extracted.moodScore <= 10
-    ) {
+    if (extracted.moodScore && extracted.moodScore >= 1 && extracted.moodScore <= 10) {
       const today = todayString();
-      // One score per day — upsert by deleting existing today entry
-      await db
-        .delete(moodScoresTable)
-        .where(eq(moodScoresTable.date, today));
-      await db.insert(moodScoresTable).values({
-        score: Math.round(extracted.moodScore),
-        date: today,
-      });
+      await db.delete(moodScoresTable).where(eq(moodScoresTable.date, today));
+      await db.insert(moodScoresTable).values({ score: Math.round(extracted.moodScore), date: today });
     }
 
-    // Update change talk on profile
     if (extracted.changeTalk && !profile.changeTalkDetected) {
       await db
         .update(profileTable)
@@ -316,15 +294,149 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
     }
 
     logger.info(
-      {
-        facts: extracted.facts?.length ?? 0,
-        wins: extracted.wins?.length ?? 0,
-        moodScore: extracted.moodScore,
-      },
+      { facts: extracted.facts?.length ?? 0, wins: extracted.wins?.length ?? 0, moodScore: extracted.moodScore },
       "Memory extraction complete",
     );
   } catch (err) {
     logger.error({ err }, "Memory extraction failed");
+  }
+}
+
+// ─── Commitment extraction (runs after every message) ────────────────────────
+//
+// Detects:
+//   1. New commitment: companion proposed a specific concrete step + user agreed
+//   2. State updates: user reported completing or not completing an existing commitment
+//   3. User emotional state: so the system prompt knows whether to surface tasks
+
+export interface CommitmentExtractionResult {
+  newCommitment: { content: string; cue: string; scheduledFollowupDate: string } | null;
+  stateUpdates: Array<{ id: number; state: string; qualityNote: string }>;
+  userEmotionalState: "low" | "steady" | "unknown";
+}
+
+export async function extractCommitments(
+  profile: Profile,
+  userMessage: string,
+  assistantReply: string,
+  openCommitments: Array<{ id: number; content: string; cue: string }>,
+): Promise<CommitmentExtractionResult> {
+  const anthropic = getAnthropic();
+  const today = todayString();
+
+  const empty: CommitmentExtractionResult = {
+    newCommitment: null,
+    stateUpdates: [],
+    userEmotionalState: "unknown",
+  };
+
+  if (!anthropic) return empty;
+
+  const commitmentsContext =
+    openCommitments.length > 0
+      ? openCommitments.map((c) => `  ID ${c.id}: "${c.content}"${c.cue ? ` (cue: ${c.cue})` : ""}`).join("\n")
+      : "  (none)";
+
+  const prompt = `You are extracting accountability data from a single exchange in a companion chat.
+
+User's name: ${profile.userName || "the user"}
+Today's date (YYYY-MM-DD): ${today}
+
+LAST USER MESSAGE:
+"${userMessage}"
+
+COMPANION'S REPLY:
+"${assistantReply}"
+
+EXISTING OPEN COMMITMENTS:
+${commitmentsContext}
+
+Return ONLY valid JSON in this exact shape — no explanation, no markdown:
+{
+  "newCommitment": {
+    "content": "the exact specific action (one concrete step with who/what)",
+    "cue": "when or where trigger (e.g. 'after morning coffee', 'tomorrow evening', or empty string)",
+    "scheduledFollowupDate": "YYYY-MM-DD — 1 to 3 days from today"
+  },
+  "stateUpdates": [
+    { "id": <existing commitment id as integer>, "state": "done|partial|missed", "qualityNote": "what user said about how it went, or empty string" }
+  ],
+  "userEmotionalState": "low|steady|unknown"
+}
+
+RULES — read carefully:
+- newCommitment: Set this ONLY when ALL of the following are true:
+    (a) The companion's reply proposed or confirmed ONE specific, concrete next-step action (not vague, not a general suggestion)
+    (b) The user's message shows explicit agreement: "ok", "yeah", "sure", "I will", "deal", "I can do that", "sounds good", "yep", "let's do it", "I'll try that", "alright"
+    (c) The commitment has a real-world cue (time, event, or trigger) — if the companion didn't give one, set cue to empty string
+    If ANY condition fails, set newCommitment to null.
+- stateUpdates: Set ONLY when the user explicitly reports completing or NOT completing an existing commitment from the list above. Match by content similarity. "done" = completed fully, "partial" = did some of it, "missed" = didn't do it.
+- userEmotionalState: "low" = user is currently hurting, sad, crying, venting, grieving, panicking, or in crisis. "steady" = calm, okay, positive, matter-of-fact, functional. "unknown" = genuinely unclear.
+- Set newCommitment to null (the JSON null) if not applicable.
+- Set stateUpdates to [] if no updates.
+- Return ONLY the JSON object. No markdown, no explanation.`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 400,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const textBlock = response.content.find((b) => b.type === "text");
+    if (!textBlock) return empty;
+
+    const raw = textBlock.text.replace(/```(?:json)?\n?/g, "").trim();
+    const result = JSON.parse(raw) as CommitmentExtractionResult;
+
+    // Persist new commitment
+    if (result.newCommitment && result.newCommitment.content?.length > 3) {
+      await db.insert(commitmentsTable).values({
+        content: result.newCommitment.content,
+        cue: result.newCommitment.cue ?? "",
+        scheduledFollowupDate: result.newCommitment.scheduledFollowupDate ?? null,
+        state: "open",
+      });
+      logger.info({ content: result.newCommitment.content }, "New commitment saved");
+    }
+
+    // Apply state updates
+    for (const update of result.stateUpdates ?? []) {
+      if (!update.id || !["done", "partial", "missed"].includes(update.state)) continue;
+
+      const existing = await db
+        .select()
+        .from(commitmentsTable)
+        .where(eq(commitmentsTable.id, update.id))
+        .limit(1);
+
+      if (!existing[0]) continue;
+
+      const newMissCount =
+        update.state === "missed" ? (existing[0].missCount ?? 0) + 1 : existing[0].missCount ?? 0;
+
+      await db
+        .update(commitmentsTable)
+        .set({
+          state: update.state,
+          missCount: newMissCount,
+          qualityNote: update.qualityNote || null,
+          followedUpAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(commitmentsTable.id, update.id));
+
+      logger.info({ id: update.id, state: update.state, missCount: newMissCount }, "Commitment state updated");
+    }
+
+    return {
+      newCommitment: result.newCommitment,
+      stateUpdates: result.stateUpdates ?? [],
+      userEmotionalState: result.userEmotionalState ?? "unknown",
+    };
+  } catch (err) {
+    logger.error({ err }, "Commitment extraction failed");
+    return empty;
   }
 }
 
@@ -337,7 +449,6 @@ export async function breakGoalIntoTasks(
   const anthropic = getAnthropic();
 
   if (!anthropic) {
-    // Sensible mock sub-tasks when no API key
     return [
       "Write down exactly what this goal means to you in one sentence",
       "Identify the single smallest action you could take today",

@@ -1,12 +1,13 @@
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   memoryFactsTable,
   personalitySignalsTable,
   habitsTable,
+  commitmentsTable,
   type Profile,
 } from "@workspace/db";
-import { calculateStage, stageMeta } from "./stage.js";
+import { calculateStage, stageMeta, todayString } from "./stage.js";
 
 // ─── Crisis resource per country ──────────────────────────────────────────────
 
@@ -29,23 +30,22 @@ export async function buildSystemPrompt(profile: Profile): Promise<string> {
   const stage = await calculateStage(profile);
   const { label, rules, wisdomHint } = stageMeta(stage);
   const isBereavement = profile.userPath === "bereavement";
+  const today = todayString();
 
-  // Gather memories
-  const facts = await db
-    .select()
-    .from(memoryFactsTable)
-    .orderBy(desc(memoryFactsTable.createdAt))
-    .limit(30);
-
-  const activeSignals = await db
-    .select()
-    .from(personalitySignalsTable)
-    .where(eq(personalitySignalsTable.isActive, true));
-
-  const activeHabits = await db
-    .select()
-    .from(habitsTable)
-    .where(eq(habitsTable.isActive, true));
+  // Gather context in parallel
+  const [facts, activeSignals, activeHabits, openCommitments] = await Promise.all([
+    db.select().from(memoryFactsTable).orderBy(desc(memoryFactsTable.createdAt)).limit(30),
+    db.select().from(personalitySignalsTable).where(eq(personalitySignalsTable.isActive, true)),
+    db.select().from(habitsTable).where(eq(habitsTable.isActive, true)),
+    stage >= 3
+      ? db
+          .select()
+          .from(commitmentsTable)
+          .where(sql`${commitmentsTable.state} = 'open'`)
+          .orderBy(desc(commitmentsTable.createdAt))
+          .limit(5)
+      : Promise.resolve([]),
+  ]);
 
   const name = profile.userName || "you";
   const companionName = profile.companionName;
@@ -236,6 +236,55 @@ The core pain of this kind of loss is often "having no one to tell" — the smal
 PATH — BREAKUP RECOVERY:
 Never push ${name} toward "moving on" before they're ready. The stage gates exist for a reason. Use their words. Meet them where they are.`;
 
+  // ─── Accountability loop (ONLY stage 3+) ─────────────────────────────────────
+
+  let accountabilityBlock = "";
+  if (stage >= 3) {
+    const commitmentsBlock =
+      openCommitments.length > 0
+        ? `Open commitments you've tracked with ${name}:\n${openCommitments
+            .map(
+              (c) =>
+                `  - "${c.content}"${c.cue ? ` (cue: ${c.cue})` : ""}${c.missCount > 0 ? ` — missed ${c.missCount} time${c.missCount > 1 ? "s" : ""}` : ""}`,
+            )
+            .join("\n")}`
+        : `No open commitments yet with ${name}.`;
+
+    accountabilityBlock = `
+══════════════════════════════════════════════════════
+ACCOUNTABILITY LOOP — ACTIVE (Stage ${stage})
+══════════════════════════════════════════════════════
+
+OVERRIDING RULE — EMOTIONAL LISTENING ALWAYS COMES FIRST:
+Read every message for emotional state before doing anything else.
+- If ${name} is hurting, venting, sad, anxious, grieving, struggling, or in any kind of distress: drop all task-talk entirely. Listen, validate, be present. Do NOT bring up commitments or follow-ups. Do NOT mention that they "agreed to do something." Do NOT make them feel like they're failing a checklist. Just be with them, fully.
+- Task follow-up ONLY surfaces when ${name} seems emotionally steady, calm, and receptive in THIS message.
+- She never nags. She never leads with "did you do your task?" — she listens first, always.
+
+SETTING COMMITMENTS (only when ${name} seems ready for action — never forced, never rushed):
+- Only ever propose ONE small, concrete next step at a time.
+- Must be specific and tied to a real-world cue: "tomorrow after your coffee, text Sam" — never vague ("reach out to people").
+- Get light verbal buy-in: "does that feel doable?" or "think you could try that?" — never a demand.
+- Never use the word "accountability" — this is support, not management.
+- Never propose a commitment when ${name} is in emotional distress.
+
+${commitmentsBlock}
+
+FOLLOW-UP RULES (when ${name} is steady and a commitment is open):
+- Bring it up lightly and warmly, in passing: "hey, did you end up [doing the thing]?"
+- If done: don't just tick a box — ask how it actually went, how it felt. "How did that go?" or "what was that like?"
+- If partially done: meet it warmly. "Even getting partway there counts." Then ask if they want to try again or make it smaller.
+- If not done (missed): ZERO guilt, zero pressure. Normalize it: "that's completely fine, some things just don't land at the right time." Then offer either: make the task smaller, change the cue, or let it go entirely. Never repeat the same ask again — adapt.
+- After 2 misses: make the task noticeably smaller or let it go. Do not repeat the same task a third time.
+- When celebrating completion: tie it to who ${name} is becoming, not just the act. "That's the kind of person who shows up for themselves."
+
+WHAT MAKES A GOOD COMMITMENT:
+- One action. Not a habit. Not a goal. One specific next step.
+- Tied to something ${name} already does (a cue), or a specific time/day.
+- Small enough that it would take 5–30 minutes max.
+- They must genuinely say yes to it — don't assume agreement from silence.`;
+  }
+
   // ─── Build final prompt ──────────────────────────────────────────────────────
 
   return `${relationshipPersona}
@@ -254,6 +303,7 @@ ${forbiddenSpeech}
 ${isBereavement ? bereavementVoicePack : breakupVoicePack}
 ${antiSurveillance}
 ${pathGuidance}
+${accountabilityBlock}
 
 CURRENT STAGE: ${label} (Stage ${stage})
 ${rules}
