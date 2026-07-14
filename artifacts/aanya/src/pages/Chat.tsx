@@ -29,22 +29,22 @@ import { cn } from "@/lib/utils";
 // All times accent + feel labels so the user can choose by character, not ID.
 
 const FEMALE_VOICES = [
-  { id: "21m00Tcm4TlvDq8ikWAM", label: "Rachel",  accent: "American", feel: "calm & warm" },
-  { id: "EXAVITQu4vr4xnSDxMaL", label: "Bella",   accent: "American", feel: "soft & friendly" },
-  { id: "piTKgcLEGmPE4e6mEKli", label: "Nicole",  accent: "American", feel: "soft & intimate" },
-  { id: "MF3mGyEYCl7XYWbV9V6O", label: "Elli",    accent: "American", feel: "emotional & expressive" },
-  { id: "XrExE9yKIg1WjnnlVkGX", label: "Matilda", accent: "American", feel: "warm & friendly" },
-  { id: "pFZP5JQG7iQjIQuC4Bku", label: "Lily",    accent: "British",  feel: "gentle & soothing" },
-  { id: "Xb7hH8MSUJpSbSDYk0k2", label: "Alice",   accent: "British",  feel: "confident & clear" },
+  { id: "21m00Tcm4TlvDq8ikWAM", label: "Rachel",  accent: "American",   feel: "calm & warm",           age: "middle"  },
+  { id: "EXAVITQu4vr4xnSDxMaL", label: "Bella",   accent: "American",   feel: "soft & friendly",       age: "younger" },
+  { id: "piTKgcLEGmPE4e6mEKli", label: "Nicole",  accent: "American",   feel: "soft & intimate",       age: "younger" },
+  { id: "MF3mGyEYCl7XYWbV9V6O", label: "Elli",    accent: "American",   feel: "expressive & warm",     age: "younger" },
+  { id: "XrExE9yKIg1WjnnlVkGX", label: "Matilda", accent: "American",   feel: "warm & friendly",       age: "middle"  },
+  { id: "pFZP5JQG7iQjIQuC4Bku", label: "Lily",    accent: "British",    feel: "gentle & soothing",     age: "middle"  },
+  { id: "Xb7hH8MSUJpSbSDYk0k2", label: "Alice",   accent: "British",    feel: "confident & clear",     age: "middle"  },
 ];
 
 const MALE_VOICES = [
-  { id: "ErXwobaYiN019PkySvjV", label: "Antoni",  accent: "American",   feel: "warm & easy" },
-  { id: "pNInz6obpgDQGcFmaJgB", label: "Adam",    accent: "American",   feel: "deep & warm" },
-  { id: "nPczCjzI2devNBz1zQrb", label: "Brian",   accent: "American",   feel: "deep & comforting" },
-  { id: "TX3LPaxmHKxFdv7VOQHJ", label: "Liam",    accent: "American",   feel: "natural & grounded" },
-  { id: "JBFqnCBsd6RMkjVDRZzb", label: "George",  accent: "British",    feel: "warm & refined" },
-  { id: "IKne3meq5aSn9XLyUdCD", label: "Charlie", accent: "Australian", feel: "casual & relaxed" },
+  { id: "ErXwobaYiN019PkySvjV", label: "Antoni",  accent: "American",   feel: "warm & natural",        age: "younger" },
+  { id: "pNInz6obpgDQGcFmaJgB", label: "Adam",    accent: "American",   feel: "deep & grounded",       age: "middle"  },
+  { id: "nPczCjzI2devNBz1zQrb", label: "Brian",   accent: "American",   feel: "deep & comforting",     age: "middle"  },
+  { id: "TX3LPaxmHKxFdv7VOQHJ", label: "Liam",    accent: "American",   feel: "natural & relaxed",     age: "younger" },
+  { id: "JBFqnCBsd6RMkjVDRZzb", label: "George",  accent: "British",    feel: "warm & refined",        age: "mature"  },
+  { id: "IKne3meq5aSn9XLyUdCD", label: "Charlie", accent: "Australian", feel: "casual & easygoing",    age: "younger" },
 ];
 
 // Romantic voices are community voices added to the account at startup.
@@ -216,6 +216,10 @@ export default function Chat() {
   // Voice call mode state
   const [voiceCallPhase, setVoiceCallPhase] = useState<"listening" | "thinking" | "speaking">("listening");
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  // Voice picker filters
+  const [voiceGenderFilter, setVoiceGenderFilter] = useState<"all" | "female" | "male">("all");
+  const [voiceAccentFilter, setVoiceAccentFilter] = useState<"all" | "American" | "British" | "Australian">("all");
+  const [voiceAgeFilter, setVoiceAgeFilter] = useState<"all" | "younger" | "middle" | "mature">("all");
   const morningNoteTriggered = useRef(false);
   // Ref so async TTS callbacks always read the latest continuousVoice value
   const continuousVoiceRef = useRef(false);
@@ -248,13 +252,20 @@ export default function Chat() {
   const accountEmail = authMe?.user.email ?? "";
   const [showChangeEmail, setShowChangeEmail] = useState(false);
 
-  // Build ordered voice sections: match companion gender first, then opposite, then romantic
-  const femaleSec = { label: "Female voices", kind: "standard" as const, voices: FEMALE_VOICES };
-  const maleSec   = { label: "Male voices",   kind: "standard" as const, voices: MALE_VOICES };
-  const romanticSec = { label: "Romantic & intimate", kind: "romantic" as const, voices: romanticVoices };
-  const voiceSections = companionGender === "man"
-    ? [maleSec, femaleSec, romanticSec]
-    : [femaleSec, maleSec, romanticSec];
+  // Build filtered voice list for picker
+  // Standard voices — companion's own gender shown first
+  const orderedStandard = companionGender === "man"
+    ? [...MALE_VOICES, ...FEMALE_VOICES]
+    : [...FEMALE_VOICES, ...MALE_VOICES];
+
+  const filteredStandardVoices = orderedStandard.filter((v) => {
+    const isFemale = FEMALE_VOICES.some((f) => f.id === v.id);
+    if (voiceGenderFilter === "female" && !isFemale) return false;
+    if (voiceGenderFilter === "male"   &&  isFemale) return false;
+    if (voiceAccentFilter !== "all" && v.accent !== voiceAccentFilter) return false;
+    if (voiceAgeFilter    !== "all" && v.age    !== voiceAgeFilter)    return false;
+    return true;
+  });
 
   // Sync rename input with loaded profile
   useEffect(() => {
@@ -944,19 +955,20 @@ export default function Chat() {
         <div className="flex items-center gap-1">
           {/* Settings */}
           {onboarding?.isComplete && (
-            <Button
-              variant="ghost"
-              size="icon"
+            <button
               onClick={() => setShowSettings((s) => !s)}
               className={cn(
-                "rounded-full w-9 h-9 transition-all",
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium tracking-wider uppercase transition-all",
                 showSettings
-                  ? "bg-primary/15 text-primary"
-                  : "text-muted-foreground hover:text-primary hover:bg-primary/10",
+                  ? "bg-primary/20 text-primary"
+                  : "text-primary/70 hover:text-primary hover:bg-primary/10 border border-primary/25",
               )}
             >
-              {showSettings ? <X className="w-4 h-4" /> : <Settings className="w-4 h-4" />}
-            </Button>
+              {showSettings
+                ? <><X className="w-3.5 h-3.5" /> Close</>
+                : <><Settings className="w-3.5 h-3.5" /> Settings</>
+              }
+            </button>
           )}
         </div>
       </header>
@@ -1030,154 +1042,138 @@ export default function Chat() {
               <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
                 Companion voice
               </p>
-              <div className="max-h-72 overflow-y-auto space-y-4 pr-0.5">
-                {voiceSections.map((section) => (
-                  <div key={section.label}>
-                    {/* Section heading */}
-                    <p className="text-[9.5px] text-muted-foreground/40 tracking-[0.15em] uppercase mb-1.5 sticky top-0 bg-card/95 py-0.5 flex items-center gap-1.5">
-                      {section.kind === "romantic" && (
-                        <Sparkles className="w-2.5 h-2.5 text-secondary/50" />
-                      )}
-                      {section.label}
-                    </p>
 
-                    <div className="space-y-1.5">
-                      {section.kind === "romantic" ? (
-                        /* ── Romantic voices ── */
-                        romanticVoices.length === 0 ? (
-                          <p className="text-[11px] text-muted-foreground/35 px-3 py-2">
-                            Setting up — check back shortly
-                          </p>
-                        ) : (
-                          romanticVoices.map((v) => {
-                            const voiceId = v.accountVoiceId;
-                            const isAvailable = v.resolved && !!voiceId;
-                            const isSelected = !!voiceId && activeVoiceId === voiceId;
-                            const isPreviewing = !!voiceId && previewingVoiceId === voiceId;
-                            return (
-                              <div
-                                key={v.libraryId}
-                                className={cn(
-                                  "flex items-center gap-3 px-3 py-2 rounded-xl border transition-all",
-                                  isAvailable ? "cursor-pointer" : "cursor-default opacity-50",
-                                  isSelected
-                                    ? "bg-secondary/10 border-secondary/40"
-                                    : isAvailable
-                                      ? "bg-background/50 border-primary/12 hover:border-secondary/25 hover:bg-secondary/5"
-                                      : "bg-background/30 border-primary/8",
-                                )}
-                                onClick={() => isAvailable && voiceId && handleVoiceSelect(voiceId)}
-                              >
-                                <div className={cn(
-                                  "w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
-                                  isSelected ? "border-secondary bg-secondary/30" : "border-foreground/20",
-                                )}>
-                                  {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-secondary" />}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <span className={cn(
-                                    "text-[13px] font-medium",
-                                    isSelected ? "text-foreground/90" : "text-foreground/60",
-                                  )}>
-                                    {v.label}
-                                  </span>
-                                  <span className={cn(
-                                    "text-[11px] ml-1.5",
-                                    isSelected ? "text-secondary/70" : "text-muted-foreground/50",
-                                  )}>
-                                    — {v.desc}
-                                  </span>
-                                  {!isAvailable && (
-                                    <span className="text-[10px] ml-2 text-muted-foreground/30 italic">
-                                      unavailable
-                                    </span>
-                                  )}
-                                </div>
-                                {isAvailable && voiceId && (
-                                  <button
-                                    className={cn(
-                                      "w-6 h-6 rounded-full border flex items-center justify-center shrink-0 transition-all",
-                                      isPreviewing
-                                        ? "border-secondary/60 bg-secondary/15 text-secondary"
-                                        : "border-foreground/15 text-muted-foreground/50 hover:border-secondary/30 hover:text-secondary/70",
-                                    )}
-                                    onClick={(e) => { e.stopPropagation(); handleVoicePreview(voiceId); }}
-                                    title="Preview voice"
-                                  >
-                                    {isPreviewing
-                                      ? <Pause className="w-2.5 h-2.5" />
-                                      : <Play className="w-2.5 h-2.5 ml-px" />
-                                    }
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })
-                        )
-                      ) : (
-                        /* ── Standard premade voices ── */
-                        section.voices.map((v) => {
-                          const isSelected = activeVoiceId === v.id;
-                          const isPreviewing = previewingVoiceId === v.id;
-                          return (
-                            <div
-                              key={v.id}
-                              className={cn(
-                                "flex items-center gap-3 px-3 py-2 rounded-xl border cursor-pointer transition-all",
-                                isSelected
-                                  ? "bg-primary/10 border-primary/40"
-                                  : "bg-background/50 border-primary/12 hover:border-primary/25 hover:bg-primary/5",
-                              )}
-                              onClick={() => handleVoiceSelect(v.id)}
-                            >
-                              <div className={cn(
-                                "w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
-                                isSelected ? "border-primary bg-primary/30" : "border-foreground/20",
-                              )}>
-                                {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-primary" />}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <span className={cn(
-                                  "text-[13px] font-medium",
-                                  isSelected ? "text-foreground/90" : "text-foreground/60",
-                                )}>
-                                  {v.label}
-                                </span>
-                                <span className="text-[10px] ml-1.5 text-muted-foreground/35">
-                                  {v.accent}
-                                </span>
-                                <span className={cn(
-                                  "text-[11px] ml-1",
-                                  isSelected ? "text-secondary/60" : "text-muted-foreground/45",
-                                )}>
-                                  · {v.feel}
-                                </span>
-                              </div>
-                              <button
-                                className={cn(
-                                  "w-6 h-6 rounded-full border flex items-center justify-center shrink-0 transition-all",
-                                  isPreviewing
-                                    ? "border-primary/60 bg-primary/15 text-primary"
-                                    : "border-foreground/15 text-muted-foreground/50 hover:border-primary/30 hover:text-primary/70 hover:bg-primary/8",
-                                )}
-                                onClick={(e) => { e.stopPropagation(); handleVoicePreview(v.id); }}
-                                title="Preview voice"
-                              >
-                                {isPreviewing
-                                  ? <Pause className="w-2.5 h-2.5" />
-                                  : <Play className="w-2.5 h-2.5 ml-px" />
-                                }
-                              </button>
-                            </div>
-                          );
-                        })
+              {/* ── Filter chips ── */}
+              <div className="space-y-2 mb-3">
+                {/* Gender */}
+                <div className="flex gap-1.5 flex-wrap">
+                  {(["all", "female", "male"] as const).map((g) => (
+                    <button
+                      key={g}
+                      onClick={() => setVoiceGenderFilter(g)}
+                      className={cn(
+                        "px-3 py-1 rounded-full text-[10.5px] font-medium tracking-wide transition-all border",
+                        voiceGenderFilter === g
+                          ? "bg-primary/20 border-primary/50 text-primary"
+                          : "border-primary/15 text-muted-foreground/55 hover:border-primary/30 hover:text-foreground/70",
                       )}
-                    </div>
-                  </div>
-                ))}
+                    >
+                      {g === "all" ? "All genders" : g === "female" ? "Female" : "Male"}
+                    </button>
+                  ))}
+                </div>
+                {/* Accent */}
+                <div className="flex gap-1.5 flex-wrap">
+                  {(["all", "American", "British", "Australian"] as const).map((a) => (
+                    <button
+                      key={a}
+                      onClick={() => setVoiceAccentFilter(a)}
+                      className={cn(
+                        "px-3 py-1 rounded-full text-[10.5px] font-medium tracking-wide transition-all border",
+                        voiceAccentFilter === a
+                          ? "bg-primary/20 border-primary/50 text-primary"
+                          : "border-primary/15 text-muted-foreground/55 hover:border-primary/30 hover:text-foreground/70",
+                      )}
+                    >
+                      {a === "all" ? "Any accent" : a}
+                    </button>
+                  ))}
+                </div>
+                {/* Age / feel */}
+                <div className="flex gap-1.5 flex-wrap">
+                  {(["all", "younger", "middle", "mature"] as const).map((ag) => (
+                    <button
+                      key={ag}
+                      onClick={() => setVoiceAgeFilter(ag)}
+                      className={cn(
+                        "px-3 py-1 rounded-full text-[10.5px] font-medium tracking-wide transition-all border",
+                        voiceAgeFilter === ag
+                          ? "bg-primary/20 border-primary/50 text-primary"
+                          : "border-primary/15 text-muted-foreground/55 hover:border-primary/30 hover:text-foreground/70",
+                      )}
+                    >
+                      {ag === "all" ? "Any age" : ag === "younger" ? "Younger" : ag === "middle" ? "Mid-aged" : "Mature"}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <p className="text-[10px] text-muted-foreground/40 mt-2.5 text-center">
-                Press ▶ to hear a sample · any voice, any gender
+
+              {/* ── Voice list ── */}
+              <div className="max-h-64 overflow-y-auto space-y-1.5 pr-0.5">
+                {filteredStandardVoices.length === 0 ? (
+                  <p className="text-[12px] text-muted-foreground/40 text-center py-4">
+                    No voices match — try adjusting the filters above
+                  </p>
+                ) : (
+                  filteredStandardVoices.map((v) => {
+                    const isSelected = activeVoiceId === v.id;
+                    const isPreviewing = previewingVoiceId === v.id;
+                    const isFemale = FEMALE_VOICES.some((f) => f.id === v.id);
+                    return (
+                      <div
+                        key={v.id}
+                        className={cn(
+                          "flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-pointer transition-all active:scale-[0.98]",
+                          isSelected
+                            ? "bg-primary/12 border-primary/45 shadow-[0_0_0_1px_hsl(40_56%_50%/0.15)]"
+                            : "bg-background/50 border-primary/12 hover:border-primary/30 hover:bg-primary/6",
+                        )}
+                        onClick={() => handleVoiceSelect(v.id)}
+                      >
+                        {/* Selection dot */}
+                        <div className={cn(
+                          "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
+                          isSelected ? "border-primary bg-primary/30" : "border-foreground/20",
+                        )}>
+                          {isSelected && <div className="w-2 h-2 rounded-full bg-primary" />}
+                        </div>
+
+                        {/* Labels */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={cn(
+                              "text-[14px] font-medium",
+                              isSelected ? "text-foreground" : "text-foreground/70",
+                            )}>
+                              {v.label}
+                            </span>
+                            <span className={cn(
+                              "text-[10px] px-1.5 py-0.5 rounded-full border",
+                              isFemale
+                                ? "border-rose-400/20 text-rose-300/60"
+                                : "border-sky-400/20 text-sky-300/60",
+                            )}>
+                              {isFemale ? "F" : "M"}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground/50 mt-0.5">
+                            {v.accent} · {v.feel}
+                          </p>
+                        </div>
+
+                        {/* Preview button */}
+                        <button
+                          className={cn(
+                            "w-8 h-8 rounded-full border flex items-center justify-center shrink-0 transition-all",
+                            isPreviewing
+                              ? "border-primary/60 bg-primary/20 text-primary"
+                              : "border-foreground/15 text-muted-foreground/50 hover:border-primary/40 hover:text-primary hover:bg-primary/10",
+                          )}
+                          onClick={(e) => { e.stopPropagation(); handleVoicePreview(v.id); }}
+                          title={isPreviewing ? "Stop preview" : "Preview voice"}
+                        >
+                          {isPreviewing
+                            ? <Pause className="w-3 h-3" />
+                            : <Play className="w-3 h-3 ml-px" />
+                          }
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <p className="text-[10px] text-muted-foreground/35 mt-2 text-center">
+                Tap ▶ to hear a sample before choosing
               </p>
             </div>
 
@@ -1633,16 +1629,21 @@ export default function Chat() {
                   )}
                 </AnimatePresence>
 
-                {/* ── Talk button — starts continuous voice conversation ── */}
+                {/* ── Talk button — prominent gold call button ── */}
                 {onboarding?.isComplete && (
                   <div className="max-w-3xl mx-auto mt-3">
                     <button
                       onClick={toggleContinuousVoice}
-                      className="flex items-center justify-center gap-2 w-full py-2.5 rounded-full border border-primary/20 text-[12px] text-muted-foreground/55 hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-all tracking-wider uppercase font-medium"
+                      className="flex items-center justify-center gap-2.5 w-full py-3.5 rounded-full bg-primary text-background text-[13px] font-semibold tracking-[0.12em] uppercase shadow-[0_4px_20px_hsl(40_56%_50%/0.35)] hover:shadow-[0_4px_28px_hsl(40_56%_50%/0.5)] hover:bg-primary/90 active:scale-[0.97] transition-all duration-200"
                     >
-                      <Phone className="w-3.5 h-3.5" />
-                      Talk to her
+                      <Phone className="w-4 h-4" strokeWidth={2.2} />
+                      Start Voice Call
                     </button>
+                    {voiceError && (
+                      <p className="text-center text-[12px] text-amber-400/75 mt-2 leading-relaxed px-2">
+                        {voiceError}
+                      </p>
+                    )}
                   </div>
                 )}
               </>
