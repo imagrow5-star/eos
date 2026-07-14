@@ -309,7 +309,9 @@ export const GetJourneyResponse = zod.object({
   "isUnlocked": zod.boolean(),
   "unlockedAt": zod.coerce.date().nullish()
 })),
-  "moodCaption": zod.string().nullish()
+  "moodCaption": zod.string().nullish(),
+  "growthScore": zod.number().describe('0-99 compounding growth score, never decreases'),
+  "habitMoodInsight": zod.string().nullish().describe('e.g. on days you walked, mood averaged 6.8 vs 4.2')
 })
 
 
