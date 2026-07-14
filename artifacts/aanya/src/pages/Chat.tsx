@@ -494,6 +494,16 @@ export default function Chat() {
     }
   };
 
+  // Auto-load the data summary whenever the settings panel opens, so the
+  // "Your data" block is populated without any user action. Keeps the existing
+  // summary visible while it refreshes, so there's no flash of a spinner.
+  useEffect(() => {
+    if (showSettings) {
+      handlePreviewExport();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showSettings]);
+
   const [isExportingHtml, setIsExportingHtml] = useState(false);
 
   const handleExport = async (format: "json" | "html" = "json") => {
@@ -517,7 +527,6 @@ export default function Chat() {
       a.download = isHtml ? `asha-report-${dateSlug}.html` : `asha-export-${dateSlug}.json`;
       a.click();
       URL.revokeObjectURL(objectUrl);
-      setExportSummary(null);
     } catch {
       setExportError("Export failed. Please try again.");
     } finally {
@@ -1036,112 +1045,113 @@ export default function Chat() {
               </p>
             </div>
 
-            {/* ── Export + Delete account ─────────────────────────────── */}
-            <div className="pt-2 border-t border-destructive/10 space-y-3">
-              {/* Download my data — preview then download */}
-              <div className="space-y-2">
-                {!exportSummary ? (
+            {/* ── Your data ───────────────────────────────────────────── */}
+            <div className="pt-2 border-t border-primary/10 space-y-3">
+              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase">
+                Your data
+              </p>
+
+              {exportSummary ? (
+                <motion.div
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, ease: "easeOut" }}
+                  className="rounded-xl border border-primary/20 bg-background/50 px-4 py-3 space-y-3"
+                >
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+                    {[
+                      { label: "Messages",  value: exportSummary.messageCount },
+                      { label: "Habits",    value: exportSummary.habitCount },
+                      { label: "Mood logs", value: exportSummary.moodCount },
+                      { label: "Memories",  value: exportSummary.memoryCount },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="flex items-baseline gap-1.5">
+                        <span className="text-[15px] font-medium text-foreground/80 tabular-nums">
+                          {value.toLocaleString()}
+                        </span>
+                        <span className="text-[10.5px] text-muted-foreground/50">{label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {exportSummary.firstMessageAt && (
+                    <p className="text-[10px] text-muted-foreground/40">
+                      {new Date(exportSummary.firstMessageAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                      {" · "}
+                      {new Date(exportSummary.lastMessageAt!).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                    </p>
+                  )}
+                </motion.div>
+              ) : isFetchingSummary ? (
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground/50 px-1 py-2">
+                  <motion.div
+                    className="w-3 h-3 border border-muted-foreground/40 border-t-transparent rounded-full"
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
+                  />
+                  Loading your data…
+                </div>
+              ) : exportError ? (
+                <div className="space-y-1.5">
+                  <p className="text-[11px] text-destructive/70">{exportError}</p>
                   <button
                     onClick={handlePreviewExport}
-                    disabled={isFetchingSummary}
-                    className="flex items-center gap-2 text-[11px] text-muted-foreground/50 hover:text-primary/70 tracking-wider uppercase transition-colors disabled:opacity-40"
+                    className="text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors"
                   >
-                    {isFetchingSummary ? (
-                      <motion.div
-                        className="w-3 h-3 border border-muted-foreground/40 border-t-transparent rounded-full"
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
-                      />
-                    ) : (
-                      <Download className="w-3 h-3" />
-                    )}
-                    {isFetchingSummary ? "Loading summary…" : "Download my data"}
+                    Retry
                   </button>
-                ) : (
-                  <motion.div
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, ease: "easeOut" }}
-                    className="rounded-xl border border-primary/20 bg-background/50 px-4 py-3 space-y-3"
-                  >
-                    <p className="text-[10px] text-muted-foreground/60 tracking-[0.18em] uppercase">
-                      Your data snapshot
-                    </p>
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
-                      {[
-                        { label: "Messages",  value: exportSummary.messageCount },
-                        { label: "Habits",    value: exportSummary.habitCount },
-                        { label: "Mood logs", value: exportSummary.moodCount },
-                        { label: "Memories",  value: exportSummary.memoryCount },
-                      ].map(({ label, value }) => (
-                        <div key={label} className="flex items-baseline gap-1.5">
-                          <span className="text-[15px] font-medium text-foreground/80 tabular-nums">
-                            {value.toLocaleString()}
-                          </span>
-                          <span className="text-[10.5px] text-muted-foreground/50">{label}</span>
-                        </div>
-                      ))}
-                    </div>
-                    {exportSummary.firstMessageAt && (
-                      <p className="text-[10px] text-muted-foreground/40">
-                        {new Date(exportSummary.firstMessageAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                        {" · "}
-                        {new Date(exportSummary.lastMessageAt!).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                      </p>
-                    )}
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-0.5">
-                      {/* Readable HTML report */}
-                      <button
-                        onClick={() => handleExport("html")}
-                        disabled={isExportingHtml || isExporting}
-                        className="flex items-center gap-1.5 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors disabled:opacity-40 font-medium"
-                        title="Human-readable report you can open in any browser"
-                      >
-                        {isExportingHtml ? (
-                          <motion.div
-                            className="w-3 h-3 border border-primary/40 border-t-transparent rounded-full"
-                            animate={{ rotate: 360 }}
-                            transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
-                          />
-                        ) : (
-                          <Download className="w-3 h-3" />
-                        )}
-                        {isExportingHtml ? "Preparing…" : "Readable report"}
-                      </button>
-                      <span className="text-muted-foreground/25 text-[11px]">·</span>
-                      {/* Raw JSON for developers / data tools */}
-                      <button
-                        onClick={() => handleExport("json")}
-                        disabled={isExporting || isExportingHtml}
-                        className="flex items-center gap-1.5 text-[11px] text-muted-foreground/50 hover:text-muted-foreground/75 tracking-wider uppercase transition-colors disabled:opacity-40"
-                        title="Raw JSON for developers and data tools"
-                      >
-                        {isExporting ? (
-                          <motion.div
-                            className="w-3 h-3 border border-muted-foreground/30 border-t-transparent rounded-full"
-                            animate={{ rotate: 360 }}
-                            transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
-                          />
-                        ) : (
-                          <Download className="w-3 h-3" />
-                        )}
-                        {isExporting ? "Preparing…" : "JSON (raw data)"}
-                      </button>
-                      <span className="text-muted-foreground/25 text-[11px]">·</span>
-                      <button
-                        onClick={() => { setExportSummary(null); setExportError(null); }}
-                        className="text-[11px] text-muted-foreground/35 hover:text-muted-foreground/60 tracking-wider uppercase transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-                {exportError && (
-                  <p className="text-[11px] text-destructive/70">{exportError}</p>
-                )}
-              </div>
+                </div>
+              ) : null}
 
+              {/* Download options — link straight from the summary above */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-0.5">
+                <span className="text-[10px] text-muted-foreground/45 tracking-wider uppercase mr-0.5">
+                  Download
+                </span>
+                {/* Readable HTML report */}
+                <button
+                  onClick={() => handleExport("html")}
+                  disabled={isExportingHtml || isExporting}
+                  className="flex items-center gap-1.5 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors disabled:opacity-40 font-medium"
+                  title="Human-readable report you can open in any browser"
+                >
+                  {isExportingHtml ? (
+                    <motion.div
+                      className="w-3 h-3 border border-primary/40 border-t-transparent rounded-full"
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
+                    />
+                  ) : (
+                    <Download className="w-3 h-3" />
+                  )}
+                  {isExportingHtml ? "Preparing…" : "Readable report"}
+                </button>
+                <span className="text-muted-foreground/25 text-[11px]">·</span>
+                {/* Raw JSON for developers / data tools */}
+                <button
+                  onClick={() => handleExport("json")}
+                  disabled={isExporting || isExportingHtml}
+                  className="flex items-center gap-1.5 text-[11px] text-muted-foreground/50 hover:text-muted-foreground/75 tracking-wider uppercase transition-colors disabled:opacity-40"
+                  title="Raw JSON for developers and data tools"
+                >
+                  {isExporting ? (
+                    <motion.div
+                      className="w-3 h-3 border border-muted-foreground/30 border-t-transparent rounded-full"
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
+                    />
+                  ) : (
+                    <Download className="w-3 h-3" />
+                  )}
+                  {isExporting ? "Preparing…" : "JSON (raw data)"}
+                </button>
+              </div>
+              {exportError && exportSummary && (
+                <p className="text-[11px] text-destructive/70">{exportError}</p>
+              )}
+            </div>
+
+            {/* ── Delete account ──────────────────────────────────────── */}
+            <div className="pt-2 border-t border-destructive/10 space-y-3">
               {!showDeleteConfirm ? (
                 <button
                   onClick={() => setShowDeleteConfirm(true)}
