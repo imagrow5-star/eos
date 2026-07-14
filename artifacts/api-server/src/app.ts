@@ -26,6 +26,26 @@ pool
   `)
   .catch((err) => logger.error({ err }, "Failed to ensure user_sessions table"));
 
+// ─── Periodic cleanup: expired and used password reset tokens ─────────────────
+async function cleanExpiredPasswordResetTokens() {
+  try {
+    const result = await pool.query(`
+      DELETE FROM password_reset_tokens
+      WHERE expires_at < NOW()
+         OR (used_at IS NOT NULL AND used_at < NOW() - INTERVAL '7 days')
+    `);
+    if (result.rowCount && result.rowCount > 0) {
+      logger.info({ deleted: result.rowCount }, "Cleaned up expired/used password reset tokens");
+    }
+  } catch (err) {
+    logger.error({ err }, "Failed to clean up password reset tokens");
+  }
+}
+
+// Run once at startup, then every 24 hours
+cleanExpiredPasswordResetTokens();
+setInterval(cleanExpiredPasswordResetTokens, 24 * 60 * 60 * 1000);
+
 const app: Express = express();
 
 // Trust Replit's reverse proxy so cookie secure-flag and X-Forwarded-* work
