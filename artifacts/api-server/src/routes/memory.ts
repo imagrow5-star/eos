@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, asc } from "drizzle-orm";
+import { eq, desc, asc, and } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   memoryFactsTable,
@@ -26,19 +26,27 @@ import {
 } from "@workspace/api-zod";
 import { todayInTimezone, formatDate } from "../services/stage.js";
 
-async function getProfileTimezone(): Promise<string> {
-  const profiles = await db.select({ timezone: profileTable.timezone }).from(profileTable).limit(1);
-  return (profiles[0] as any)?.timezone ?? "UTC";
-}
-
 const router: IRouter = Router();
+
+// ─── Timezone helper ──────────────────────────────────────────────────────────
+
+async function getUserTimezone(userId: number): Promise<string> {
+  const [row] = await db
+    .select({ timezone: profileTable.timezone })
+    .from(profileTable)
+    .where(eq(profileTable.userId, userId))
+    .limit(1);
+  return (row as any)?.timezone ?? "UTC";
+}
 
 // ─── Facts ───────────────────────────────────────────────────────────────────
 
 router.get("/memory/facts", async (req, res): Promise<void> => {
+  const userId = req.userId;
   const facts = await db
     .select()
     .from(memoryFactsTable)
+    .where(eq(memoryFactsTable.userId, userId))
     .orderBy(desc(memoryFactsTable.createdAt));
   res.json(GetMemoryFactsResponse.parse(facts));
 });
@@ -46,9 +54,11 @@ router.get("/memory/facts", async (req, res): Promise<void> => {
 // ─── Personality signals ─────────────────────────────────────────────────────
 
 router.get("/memory/signals", async (req, res): Promise<void> => {
+  const userId = req.userId;
   const signals = await db
     .select()
     .from(personalitySignalsTable)
+    .where(eq(personalitySignalsTable.userId, userId))
     .orderBy(desc(personalitySignalsTable.observedCount));
   res.json(GetPersonalitySignalsResponse.parse(signals));
 });
@@ -56,14 +66,17 @@ router.get("/memory/signals", async (req, res): Promise<void> => {
 // ─── Wins ─────────────────────────────────────────────────────────────────────
 
 router.get("/memory/wins", async (req, res): Promise<void> => {
+  const userId = req.userId;
   const wins = await db
     .select()
     .from(winsTable)
+    .where(eq(winsTable.userId, userId))
     .orderBy(desc(winsTable.createdAt));
   res.json(GetWinsResponse.parse(wins));
 });
 
 router.post("/memory/wins", async (req, res): Promise<void> => {
+  const userId = req.userId;
   const parsed = CreateWinBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -71,18 +84,18 @@ router.post("/memory/wins", async (req, res): Promise<void> => {
   }
   const [win] = await db
     .insert(winsTable)
-    .values({ content: parsed.data.content })
+    .values({ userId, content: parsed.data.content })
     .returning();
   res.status(201).json(CreateWinResponse.parse(win));
 });
 
 // ─── Habits ──────────────────────────────────────────────────────────────────
 
-async function buildHabitWithCompletions(habitId: number) {
+async function buildHabitWithCompletions(habitId: number, userId: number) {
   const [habit] = await db
     .select()
     .from(habitsTable)
-    .where(eq(habitsTable.id, habitId));
+    .where(and(eq(habitsTable.id, habitId), eq(habitsTable.userId, userId)));
   if (!habit) return null;
 
   // Get last 7 days of completions
@@ -110,22 +123,22 @@ async function buildHabitWithCompletions(habitId: number) {
 }
 
 router.get("/memory/habits", async (req, res): Promise<void> => {
+  const userId = req.userId;
   const habits = await db
     .select()
     .from(habitsTable)
-    .where(eq(habitsTable.isActive, true))
+    .where(and(eq(habitsTable.isActive, true), eq(habitsTable.userId, userId)))
     .orderBy(asc(habitsTable.createdAt));
 
   const habitsWithCompletions = await Promise.all(
-    habits.map((h) => buildHabitWithCompletions(h.id)),
+    habits.map((h) => buildHabitWithCompletions(h.id, userId)),
   );
 
-  res.json(
-    GetHabitsResponse.parse(habitsWithCompletions.filter(Boolean)),
-  );
+  res.json(GetHabitsResponse.parse(habitsWithCompletions.filter(Boolean)));
 });
 
 router.post("/memory/habits", async (req, res): Promise<void> => {
+  const userId = req.userId;
   const parsed = CreateHabitBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -135,6 +148,7 @@ router.post("/memory/habits", async (req, res): Promise<void> => {
   const [habit] = await db
     .insert(habitsTable)
     .values({
+      userId,
       name: parsed.data.name,
       whenThen: parsed.data.whenThen,
       reason: parsed.data.reason,
@@ -143,11 +157,12 @@ router.post("/memory/habits", async (req, res): Promise<void> => {
     })
     .returning();
 
-  const withCompletions = await buildHabitWithCompletions(habit!.id);
+  const withCompletions = await buildHabitWithCompletions(habit!.id, userId);
   res.status(201).json(CreateHabitResponse.parse(withCompletions));
 });
 
 router.put("/memory/habits/:id", async (req, res): Promise<void> => {
+  const userId = req.userId;
   const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = UpdateHabitParams.safeParse({ id: rawId });
   if (!params.success) {
@@ -171,7 +186,7 @@ router.put("/memory/habits/:id", async (req, res): Promise<void> => {
   const [updated] = await db
     .update(habitsTable)
     .set(updates)
-    .where(eq(habitsTable.id, params.data.id))
+    .where(and(eq(habitsTable.id, params.data.id), eq(habitsTable.userId, userId)))
     .returning();
 
   if (!updated) {
@@ -179,11 +194,12 @@ router.put("/memory/habits/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const withCompletions = await buildHabitWithCompletions(updated.id);
+  const withCompletions = await buildHabitWithCompletions(updated.id, userId);
   res.json(UpdateHabitResponse.parse(withCompletions));
 });
 
 router.post("/memory/habits/:id/complete", async (req, res): Promise<void> => {
+  const userId = req.userId;
   const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const params = CompleteHabitParams.safeParse({ id: rawId });
   if (!params.success) {
@@ -192,13 +208,13 @@ router.post("/memory/habits/:id/complete", async (req, res): Promise<void> => {
   }
 
   const habitId = params.data.id;
-  const tz = await getProfileTimezone();
+  const tz = await getUserTimezone(userId);
   const today = todayInTimezone(tz);
 
   const [habit] = await db
     .select()
     .from(habitsTable)
-    .where(eq(habitsTable.id, habitId));
+    .where(and(eq(habitsTable.id, habitId), eq(habitsTable.userId, userId)));
 
   if (!habit) {
     res.status(404).json({ error: "Habit not found" });
@@ -211,12 +227,11 @@ router.post("/memory/habits/:id/complete", async (req, res): Promise<void> => {
     .from(habitCompletionsTable)
     .where(eq(habitCompletionsTable.habitId, habitId));
 
-  const alreadyCompletedToday = todayCompletions.some(
-    (c) => c.completedDate === today,
-  );
+  const alreadyCompletedToday = todayCompletions.some((c) => c.completedDate === today);
 
   if (!alreadyCompletedToday) {
     await db.insert(habitCompletionsTable).values({
+      userId,
       habitId,
       completedDate: today,
     });
@@ -233,7 +248,6 @@ router.post("/memory/habits/:id/complete", async (req, res): Promise<void> => {
   let streak = 0;
   let checkDate = today;
 
-  // Walk backwards counting consecutive days (forgiving: today or yesterday is the anchor)
   if (!completedDates.has(today)) {
     const yesterday = formatDate(new Date(new Date(today + "T12:00:00").getTime() - 86_400_000));
     if (!completedDates.has(yesterday)) {
@@ -255,9 +269,9 @@ router.post("/memory/habits/:id/complete", async (req, res): Promise<void> => {
   await db
     .update(habitsTable)
     .set({ streak, lastCompleted: today })
-    .where(eq(habitsTable.id, habitId));
+    .where(and(eq(habitsTable.id, habitId), eq(habitsTable.userId, userId)));
 
-  const withCompletions = await buildHabitWithCompletions(habitId);
+  const withCompletions = await buildHabitWithCompletions(habitId, userId);
   res.json(CompleteHabitResponse.parse(withCompletions));
 });
 

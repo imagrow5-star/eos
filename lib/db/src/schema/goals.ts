@@ -1,7 +1,9 @@
 import { pgTable, serial, text, boolean, timestamp, integer } from "drizzle-orm/pg-core";
+import { usersTable } from "./users";
 
 export const goalsTable = pgTable("goals", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => usersTable.id),
   title: text("title").notNull(),
   description: text("description").notNull().default(""),
   isComplete: boolean("is_complete").notNull().default(false),

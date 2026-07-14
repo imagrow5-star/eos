@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, asc, sql } from "drizzle-orm";
+import { eq, desc, asc, sql, and } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   profileTable,
@@ -11,18 +11,9 @@ import {
 } from "@workspace/db";
 import { GetJourneyResponse, GetMoodHistoryResponse } from "@workspace/api-zod";
 import { calculateStage, stageMeta, todayString, formatDate } from "../services/stage.js";
+import { getOrCreateProfileForUser } from "./profile.js";
 
 const router: IRouter = Router();
-
-async function getOrCreateProfile() {
-  const profiles = await db.select().from(profileTable).limit(1);
-  if (profiles.length > 0) return profiles[0]!;
-  const [profile] = await db
-    .insert(profileTable)
-    .values({ userName: "", companionName: "Aanya" })
-    .returning();
-  return profile!;
-}
 
 function calculateStreak(visitDates: string[]): number {
   if (visitDates.length === 0) return 0;
@@ -70,27 +61,15 @@ const MILESTONE_DEFINITIONS: MilestoneCheck[] = [
   { id: "thirty_days", label: "30 days", check: ({ daysSinceStart }) => daysSinceStart >= 30 },
 ];
 
-// ─── Growth score ──────────────────────────────────────────────────────────────
-// Compounds gently with each habit completion, win, and mood check-in.
-// NEVER decreases on missed days — just plateaus. Framed as "1% better."
-// Formula gives a curve: 1% at start, approaches 99% asymptotically so it
-// always has room to grow and never feels punitive.
-
 function computeGrowthScore(
   totalHabitCompletions: number,
   winCount: number,
   moodDayCount: number,
 ): number {
-  // Each completion = 2pts, each win = 3pts, each mood check-in = 1pt
   const raw = totalHabitCompletions * 2 + winCount * 3 + moodDayCount;
   if (raw === 0) return 1;
-  // Smooth S-curve capped at 99 — always room to grow
   return Math.min(99, Math.round(1 + (raw / (raw + 40)) * 98));
 }
-
-// ─── Habit-mood insight ────────────────────────────────────────────────────────
-// Finds the habit with the clearest mood-lift correlation in historical data.
-// Returns a gentle one-liner the Journey view can display.
 
 async function computeHabitMoodInsight(
   habits: Array<{ id: number; name: string }>,
@@ -132,7 +111,8 @@ async function computeHabitMoodInsight(
 }
 
 router.get("/journey", async (req, res): Promise<void> => {
-  const profile = await getOrCreateProfile();
+  const userId = req.userId;
+  const profile = await getOrCreateProfileForUser(userId);
   const stage = await calculateStage(profile);
   const { label } = stageMeta(stage);
 
@@ -141,7 +121,6 @@ router.get("/journey", async (req, res): Promise<void> => {
   );
   const streak = calculateStreak(profile.visitDates);
 
-  // Fetch all counts in parallel
   const [
     winCountRow,
     habitCountRow,
@@ -152,28 +131,26 @@ router.get("/journey", async (req, res): Promise<void> => {
     allHabits,
     allMoodHistory,
   ] = await Promise.all([
-    db.select({ count: sql<string>`count(*)` }).from(winsTable).then((r) => r[0]),
-    db.select({ count: sql<string>`count(*)` }).from(habitsTable).where(eq(habitsTable.isActive, true)).then((r) => r[0]),
-    db.select({ count: sql<string>`count(*)` }).from(messagesTable).then((r) => r[0]),
-    db.select().from(moodScoresTable).orderBy(desc(moodScoresTable.createdAt)).limit(5),
-    db.select({ date: habitCompletionsTable.completedDate }).from(habitCompletionsTable),
-    db.select({ date: moodScoresTable.date }).from(moodScoresTable),
-    db.select({ id: habitsTable.id, name: habitsTable.name }).from(habitsTable).where(eq(habitsTable.isActive, true)),
-    db.select().from(moodScoresTable).orderBy(asc(moodScoresTable.date)),
+    db.select({ count: sql<string>`count(*)` }).from(winsTable).where(eq(winsTable.userId, userId)).then((r) => r[0]),
+    db.select({ count: sql<string>`count(*)` }).from(habitsTable).where(and(eq(habitsTable.isActive, true), eq(habitsTable.userId, userId))).then((r) => r[0]),
+    db.select({ count: sql<string>`count(*)` }).from(messagesTable).where(eq(messagesTable.userId, userId)).then((r) => r[0]),
+    db.select().from(moodScoresTable).where(eq(moodScoresTable.userId, userId)).orderBy(desc(moodScoresTable.createdAt)).limit(5),
+    db.select({ date: habitCompletionsTable.completedDate }).from(habitCompletionsTable).where(eq(habitCompletionsTable.userId, userId)),
+    db.select({ date: moodScoresTable.date }).from(moodScoresTable).where(eq(moodScoresTable.userId, userId)),
+    db.select({ id: habitsTable.id, name: habitsTable.name }).from(habitsTable).where(and(eq(habitsTable.isActive, true), eq(habitsTable.userId, userId))),
+    db.select().from(moodScoresTable).where(eq(moodScoresTable.userId, userId)).orderBy(asc(moodScoresTable.date)),
   ]);
 
   const winCount = Number(winCountRow?.count ?? "0");
   const habitCount = Number(habitCountRow?.count ?? "0");
   const messageCount = Number(msgCountRow?.count ?? "0");
 
-  // Growth score — compounds with every completion, never drops
   const growthScore = computeGrowthScore(
     allHabitCompletions.length,
     winCount,
     allMoodDays.length,
   );
 
-  // Mood caption
   const oldestMood = recentMoods.length > 0 ? recentMoods[recentMoods.length - 1]?.score : null;
   const newestMood = recentMoods.length > 0 ? recentMoods[0]?.score : null;
   const avgMoodRecent =
@@ -193,11 +170,9 @@ router.get("/journey", async (req, res): Promise<void> => {
     }
   }
 
-  // Habit-mood insight (async, doesn't block other data)
   const moodByDate = new Map<string, number>(allMoodHistory.map((m) => [m.date, m.score]));
   const habitMoodInsight = await computeHabitMoodInsight(allHabits, moodByDate);
 
-  // Milestones
   const params = { messageCount, winCount, streak, daysSinceStart, visitDates: profile.visitDates };
   const milestones = MILESTONE_DEFINITIONS.map((m) => ({
     id: m.id,
@@ -224,9 +199,11 @@ router.get("/journey", async (req, res): Promise<void> => {
 });
 
 router.get("/journey/mood", async (req, res): Promise<void> => {
+  const userId = req.userId;
   const moods = await db
     .select()
     .from(moodScoresTable)
+    .where(eq(moodScoresTable.userId, userId))
     .orderBy(asc(moodScoresTable.date));
   res.json(GetMoodHistoryResponse.parse(moods));
 });

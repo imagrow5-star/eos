@@ -1,9 +1,11 @@
-import { pgTable, serial, text, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, timestamp, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { usersTable } from "./users";
 
 export const profileTable = pgTable("profile", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => usersTable.id),
   userName: text("user_name").notNull().default(""),
   companionName: text("companion_name").notNull().default("Asha"),
   relationshipType: text("relationship_type").notNull().default("friend"), // friend | romantic

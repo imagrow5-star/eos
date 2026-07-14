@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, asc, desc } from "drizzle-orm";
+import { eq, asc, desc, and } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { goalsTable, goalTasksTable } from "@workspace/db";
 import { breakGoalIntoTasks } from "../services/ai.js";
@@ -10,9 +10,11 @@ const router: IRouter = Router();
 // ─── GET /goals ───────────────────────────────────────────────────────────────
 
 router.get("/goals", async (req, res): Promise<void> => {
+  const userId = req.userId;
   const goals = await db
     .select()
     .from(goalsTable)
+    .where(eq(goalsTable.userId, userId))
     .orderBy(desc(goalsTable.createdAt));
 
   const goalsWithTasks = await Promise.all(
@@ -32,6 +34,7 @@ router.get("/goals", async (req, res): Promise<void> => {
 // ─── POST /goals ──────────────────────────────────────────────────────────────
 
 router.post("/goals", async (req, res): Promise<void> => {
+  const userId = req.userId;
   const { title, description } = req.body ?? {};
 
   if (!title || typeof title !== "string" || title.trim().length === 0) {
@@ -48,7 +51,7 @@ router.post("/goals", async (req, res): Promise<void> => {
 
   const [goal] = await db
     .insert(goalsTable)
-    .values({ title: cleanTitle, description: cleanDesc })
+    .values({ userId, title: cleanTitle, description: cleanDesc })
     .returning();
 
   if (!goal) {
@@ -56,7 +59,6 @@ router.post("/goals", async (req, res): Promise<void> => {
     return;
   }
 
-  // Ask Claude to break this goal into concrete sub-tasks
   const taskStrings = await breakGoalIntoTasks(cleanTitle, cleanDesc);
 
   const tasks = await Promise.all(
@@ -70,26 +72,27 @@ router.post("/goals", async (req, res): Promise<void> => {
   );
 
   logger.info({ goalId: goal.id, taskCount: tasks.length }, "Goal created with AI sub-tasks");
-
   res.status(201).json({ ...goal, tasks });
 });
 
 // ─── DELETE /goals/:id ────────────────────────────────────────────────────────
 
 router.delete("/goals/:id", async (req, res): Promise<void> => {
+  const userId = req.userId;
   const id = parseInt(req.params.id ?? "0", 10);
   if (!id) {
     res.status(400).json({ error: "Invalid goal id" });
     return;
   }
 
-  await db.delete(goalsTable).where(eq(goalsTable.id, id));
+  await db.delete(goalsTable).where(and(eq(goalsTable.id, id), eq(goalsTable.userId, userId)));
   res.status(204).send();
 });
 
 // ─── PUT /goals/:id/tasks/:taskId ─────────────────────────────────────────────
 
 router.put("/goals/:id/tasks/:taskId", async (req, res): Promise<void> => {
+  const userId = req.userId;
   const goalId = parseInt(req.params.id ?? "0", 10);
   const taskId = parseInt(req.params.taskId ?? "0", 10);
   if (!goalId || !taskId) {
@@ -100,6 +103,18 @@ router.put("/goals/:id/tasks/:taskId", async (req, res): Promise<void> => {
   const { isComplete } = req.body ?? {};
   if (typeof isComplete !== "boolean") {
     res.status(400).json({ error: "isComplete must be a boolean" });
+    return;
+  }
+
+  // Verify goal belongs to this user
+  const [goal] = await db
+    .select({ id: goalsTable.id })
+    .from(goalsTable)
+    .where(and(eq(goalsTable.id, goalId), eq(goalsTable.userId, userId)))
+    .limit(1);
+
+  if (!goal) {
+    res.status(404).json({ error: "Goal not found" });
     return;
   }
 
@@ -114,7 +129,7 @@ router.put("/goals/:id/tasks/:taskId", async (req, res): Promise<void> => {
     return;
   }
 
-  // Auto-complete the goal when all tasks are done
+  // Auto-complete goal when all tasks are done
   const allTasks = await db
     .select()
     .from(goalTasksTable)
@@ -124,7 +139,7 @@ router.put("/goals/:id/tasks/:taskId", async (req, res): Promise<void> => {
     await db
       .update(goalsTable)
       .set({ isComplete: true })
-      .where(eq(goalsTable.id, goalId));
+      .where(and(eq(goalsTable.id, goalId), eq(goalsTable.userId, userId)));
   }
 
   res.json(task);

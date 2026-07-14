@@ -133,11 +133,16 @@ export async function calculateStage(profile: Profile): Promise<number> {
     (Date.now() - profile.createdAt.getTime()) / (1000 * 60 * 60 * 24),
   );
 
+  // All queries MUST be scoped to this user — never let one user's data
+  // influence another user's stage calculation.
+  const userId = (profile as any).userId as number | null;
+
   // Stage 4: any active habit with streak >= 14 AND >= 5 completions total
-  const activeHabits = await db
-    .select()
-    .from(habitsTable)
-    .where(and(eq(habitsTable.isActive, true), gte(habitsTable.streak, 14)));
+  const habitsWhere = userId != null
+    ? and(eq(habitsTable.isActive, true), gte(habitsTable.streak, 14), eq(habitsTable.userId, userId))
+    : and(eq(habitsTable.isActive, true), gte(habitsTable.streak, 14));
+
+  const activeHabits = await db.select().from(habitsTable).where(habitsWhere);
 
   for (const habit of activeHabits) {
     const [countRow] = await db
@@ -149,9 +154,13 @@ export async function calculateStage(profile: Profile): Promise<number> {
 
   // Stage 3: change talk + avg recent mood >= 4, OR 14+ days
   if (profile.changeTalkDetected) {
+    const moodsWhere = userId != null
+      ? eq(moodScoresTable.userId, userId)
+      : undefined;
     const recentMoods = await db
       .select()
       .from(moodScoresTable)
+      .where(moodsWhere)
       .orderBy(desc(moodScoresTable.createdAt))
       .limit(5);
     if (recentMoods.length > 0) {
@@ -164,9 +173,11 @@ export async function calculateStage(profile: Profile): Promise<number> {
 
   // Stage 2: 3+ unique visit days AND 8+ memory facts
   const returnDays = profile.visitDates.length;
+  const factsWhere = userId != null ? eq(memoryFactsTable.userId, userId) : undefined;
   const [factCountRow] = await db
     .select({ count: sql<string>`count(*)` })
-    .from(memoryFactsTable);
+    .from(memoryFactsTable)
+    .where(factsWhere);
   if (returnDays >= 3 && Number(factCountRow?.count ?? "0") >= 8) return 2;
 
   return 1;

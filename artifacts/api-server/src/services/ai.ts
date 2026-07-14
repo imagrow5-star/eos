@@ -192,15 +192,19 @@ export async function generateMorningNoteContent(
 ): Promise<string> {
   const today = todayInTimezone((profile as any).timezone ?? "UTC");
 
+  const userId = (profile as any).userId as number;
   const [facts, wins, pendingFollowUps] = await Promise.all([
-    db.select().from(memoryFactsTable).orderBy(desc(memoryFactsTable.createdAt)).limit(10),
-    db.select().from(winsTable).orderBy(desc(winsTable.createdAt)).limit(3),
+    db.select().from(memoryFactsTable).where(eq(memoryFactsTable.userId, userId)).orderBy(desc(memoryFactsTable.createdAt)).limit(10),
+    db.select().from(winsTable).where(eq(winsTable.userId, userId)).orderBy(desc(winsTable.createdAt)).limit(3),
     stage >= 3
       ? db
           .select()
           .from(commitmentsTable)
           .where(
-            sql`${commitmentsTable.state} = 'open' AND ${commitmentsTable.scheduledFollowupDate} <= ${today}`,
+            and(
+              eq(commitmentsTable.userId, userId),
+              sql`${commitmentsTable.state} = 'open' AND ${commitmentsTable.scheduledFollowupDate} <= ${today}`,
+            ),
           )
           .limit(2)
       : Promise.resolve([]),
@@ -314,8 +318,9 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
       return;
     }
 
+    const userId = (profile as any).userId as number;
     if (extracted.facts && extracted.facts.length > 0) {
-      const existingFacts = await db.select().from(memoryFactsTable);
+      const existingFacts = await db.select().from(memoryFactsTable).where(eq(memoryFactsTable.userId, userId));
       for (const f of extracted.facts) {
         if (!f.fact || f.fact.length < 5) continue;
         const isDuplicate = existingFacts.some(
@@ -324,7 +329,7 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
             f.fact.toLowerCase().includes(e.fact.toLowerCase().slice(0, 20)),
         );
         if (!isDuplicate) {
-          await db.insert(memoryFactsTable).values({ fact: f.fact, category: f.category || "life" });
+          await db.insert(memoryFactsTable).values({ fact: f.fact, category: f.category || "life", userId });
         }
       }
     }
@@ -336,7 +341,10 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
           .select()
           .from(personalitySignalsTable)
           .where(
-            sql`lower(${personalitySignalsTable.signal}) like ${"%" + signal.toLowerCase().slice(0, 15) + "%"}`,
+            and(
+              eq(personalitySignalsTable.userId, userId),
+              sql`lower(${personalitySignalsTable.signal}) like ${"%" + signal.toLowerCase().slice(0, 15) + "%"}`,
+            ),
           );
 
         if (existing.length > 0) {
@@ -347,7 +355,7 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
             .set({ observedCount: newCount, isActive: newCount >= 3 })
             .where(eq(personalitySignalsTable.id, current.id));
         } else {
-          await db.insert(personalitySignalsTable).values({ signal, observedCount: 1, isActive: false });
+          await db.insert(personalitySignalsTable).values({ signal, observedCount: 1, isActive: false, userId });
         }
       }
     }
@@ -355,14 +363,14 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
     if (extracted.wins && extracted.wins.length > 0) {
       for (const win of extracted.wins) {
         if (!win || win.length < 5) continue;
-        await db.insert(winsTable).values({ content: win });
+        await db.insert(winsTable).values({ content: win, userId });
       }
     }
 
     if (extracted.moodScore && extracted.moodScore >= 1 && extracted.moodScore <= 10) {
       const today = todayInTimezone((profile as any).timezone ?? "UTC");
-      await db.delete(moodScoresTable).where(eq(moodScoresTable.date, today));
-      await db.insert(moodScoresTable).values({ score: Math.round(extracted.moodScore), date: today });
+      await db.delete(moodScoresTable).where(and(eq(moodScoresTable.date, today), eq(moodScoresTable.userId, userId)));
+      await db.insert(moodScoresTable).values({ score: Math.round(extracted.moodScore), date: today, userId });
     }
 
     if (extracted.changeTalk && !profile.changeTalkDetected) {
@@ -469,8 +477,10 @@ RULES — read carefully:
     const result = JSON.parse(raw) as CommitmentExtractionResult;
 
     // Persist new commitment
+    const userId = (profile as any).userId as number;
     if (result.newCommitment && result.newCommitment.content?.length > 3) {
       await db.insert(commitmentsTable).values({
+        userId,
         content: result.newCommitment.content,
         cue: result.newCommitment.cue ?? "",
         scheduledFollowupDate: result.newCommitment.scheduledFollowupDate ?? null,
@@ -486,7 +496,7 @@ RULES — read carefully:
       const existing = await db
         .select()
         .from(commitmentsTable)
-        .where(eq(commitmentsTable.id, update.id))
+        .where(and(eq(commitmentsTable.id, update.id), eq(commitmentsTable.userId, userId)))
         .limit(1);
 
       if (!existing[0]) continue;
@@ -583,6 +593,7 @@ export async function detectHabitMentions(
       : "  (no habits yet)";
 
   const today = todayInTimezone((profile as any).timezone ?? "UTC");
+  const userId = (profile as any).userId as number;
 
   const prompt = `You are detecting habit mentions in a companion chat message.
 
@@ -646,7 +657,7 @@ RULES:
           );
 
         if (existing.length === 0) {
-          await db.insert(habitCompletionsTable).values({ habitId, completedDate: today });
+          await db.insert(habitCompletionsTable).values({ userId, habitId, completedDate: today });
           await recalcHabitStreak(habitId, today);
           logger.info({ habitId }, "Habit auto-completed from chat mention");
         }
@@ -656,6 +667,7 @@ RULES:
     // Create new habit if agreed upon
     if (result.newHabit && result.newHabit.name?.length > 2 && result.newHabit.whenThen?.length > 5) {
       await db.insert(habitsTable).values({
+        userId,
         name: result.newHabit.name,
         whenThen: result.newHabit.whenThen,
         reason: result.newHabit.reason || "agreed in conversation",

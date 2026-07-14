@@ -1,15 +1,26 @@
 import { Link, useLocation } from "wouter";
-import { MessageSquare, Sparkles, Map } from "lucide-react";
+import { MessageSquare, Sparkles, Map, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+  const queryClient = useQueryClient();
 
   const navItems = [
     { href: "/", icon: MessageSquare, label: "Chat" },
     { href: "/journey", icon: Map, label: "Journey" },
     { href: "/memory", icon: Sparkles, label: "Memory" },
   ];
+
+  const handleLogout = async () => {
+    try {
+      await fetch(`${import.meta.env.BASE_URL}api/auth/logout`, { method: "POST" });
+    } catch {}
+    // Invalidate auth query — AuthGate will redirect to login screen
+    queryClient.setQueryData(["/api/auth/me"], null);
+    await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+  };
 
   return (
     <div className="flex flex-col h-[100dvh] w-full bg-background overflow-hidden relative">
@@ -18,7 +29,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Bottom Navigation — gold hairline top border, deep navy base */}
-      <nav className="absolute bottom-0 left-0 right-0 h-[72px] bg-card/90 backdrop-blur-xl border-t border-primary/20 z-20 px-6 flex items-center justify-around pb-safe">
+      <nav className="absolute bottom-0 left-0 right-0 h-[72px] bg-card/90 backdrop-blur-xl border-t border-primary/20 z-20 px-4 flex items-center justify-around pb-safe">
         {navItems.map((item) => {
           const isActive = location === item.href;
           return (
@@ -44,6 +55,21 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </Link>
           );
         })}
+
+        {/* Log out — subtle, far right */}
+        <button
+          onClick={handleLogout}
+          className="flex flex-col items-center justify-center w-16 h-full gap-1 group"
+          title="Sign out"
+          aria-label="Sign out"
+        >
+          <div className="p-2 rounded-full transition-all duration-300 text-muted-foreground/50 group-hover:text-muted-foreground">
+            <LogOut className="w-4 h-4" strokeWidth={1.5} />
+          </div>
+          <span className="text-[9px] tracking-widest uppercase text-muted-foreground/40 group-hover:text-muted-foreground/70 transition-colors">
+            Out
+          </span>
+        </button>
       </nav>
     </div>
   );

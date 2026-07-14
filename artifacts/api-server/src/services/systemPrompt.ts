@@ -1,4 +1,4 @@
-import { eq, desc, gte, sql } from "drizzle-orm";
+import { eq, and, desc, gte, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   memoryFactsTable,
@@ -43,23 +43,26 @@ export async function buildSystemPrompt(profile: Profile): Promise<string> {
   const today = todayInTimezone(userTimezone);
   const sevenDaysAgo = last7Dates()[0]!;
 
+  // Scope every query to the profile's owner — multi-user isolation
+  const userId = (profile as any).userId as number;
+
   // Gather all context in parallel — two passes so habit completions don't
   // depend on knowing how many habits exist first
   const [facts, activeSignals, activeHabits, openCommitments, recentMoods, habitCompletionsLast7] =
     await Promise.all([
-      db.select().from(memoryFactsTable).orderBy(desc(memoryFactsTable.createdAt)).limit(30),
-      db.select().from(personalitySignalsTable).where(eq(personalitySignalsTable.isActive, true)),
-      db.select().from(habitsTable).where(eq(habitsTable.isActive, true)),
+      db.select().from(memoryFactsTable).where(eq(memoryFactsTable.userId, userId)).orderBy(desc(memoryFactsTable.createdAt)).limit(30),
+      db.select().from(personalitySignalsTable).where(and(eq(personalitySignalsTable.userId, userId), eq(personalitySignalsTable.isActive, true))),
+      db.select().from(habitsTable).where(and(eq(habitsTable.userId, userId), eq(habitsTable.isActive, true))),
       stage >= 3
         ? db.select().from(commitmentsTable)
-            .where(sql`${commitmentsTable.state} = 'open'`)
+            .where(and(eq(commitmentsTable.userId, userId), sql`${commitmentsTable.state} = 'open'`))
             .orderBy(desc(commitmentsTable.createdAt)).limit(5)
         : Promise.resolve([]),
-      db.select().from(moodScoresTable).orderBy(desc(moodScoresTable.createdAt)).limit(10),
+      db.select().from(moodScoresTable).where(eq(moodScoresTable.userId, userId)).orderBy(desc(moodScoresTable.createdAt)).limit(10),
       // Always fetch completions — cheap query even if table is empty
       db.select({ habitId: habitCompletionsTable.habitId, date: habitCompletionsTable.completedDate })
         .from(habitCompletionsTable)
-        .where(gte(habitCompletionsTable.completedDate, sevenDaysAgo)),
+        .where(and(eq(habitCompletionsTable.userId, userId), gte(habitCompletionsTable.completedDate, sevenDaysAgo))),
     ]);
 
   const name = profile.userName || "you";

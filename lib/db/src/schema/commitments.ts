@@ -1,4 +1,5 @@
 import { pgTable, serial, text, integer, timestamp } from "drizzle-orm/pg-core";
+import { usersTable } from "./users";
 
 // ─── Tracked commitments (accountability loop) ────────────────────────────────
 //
@@ -9,6 +10,7 @@ import { pgTable, serial, text, integer, timestamp } from "drizzle-orm/pg-core";
 
 export const commitmentsTable = pgTable("commitments", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => usersTable.id),
 
   // The specific action: "text Sam tomorrow after your coffee"
   content: text("content").notNull(),

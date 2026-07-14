@@ -1,5 +1,7 @@
 import { Router, type IRouter } from "express";
+import { requireAuth } from "../middleware/auth.js";
 import healthRouter from "./health";
+import authRouter from "./auth";
 import onboardingRouter from "./onboarding";
 import profileRouter from "./profile";
 import chatRouter from "./chat";
@@ -12,7 +14,13 @@ import commitmentsRouter from "./commitments";
 
 const router: IRouter = Router();
 
+// ─── Public routes — no authentication required ───────────────────────────────
 router.use(healthRouter);
+router.use(authRouter);
+
+// ─── Protected routes — valid session required ────────────────────────────────
+// requireAuth sets req.userId on every request that passes through.
+router.use(requireAuth as any);
 router.use(onboardingRouter);
 router.use(profileRouter);
 router.use(chatRouter);

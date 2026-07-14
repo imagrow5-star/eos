@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { profileTable, messagesTable } from "@workspace/db";
 import {
@@ -9,6 +9,7 @@ import {
 } from "@workspace/api-zod";
 import { logger } from "../lib/logger.js";
 import type { Profile } from "@workspace/db";
+import { getOrCreateProfileForUser } from "./profile.js";
 
 const router: IRouter = Router();
 
@@ -44,17 +45,10 @@ function extractName(raw: string, maxWords = 2): string {
     }
   }
 
-  // Strip leading punctuation
   cleaned = cleaned.replace(/^[,!.?\s]+/, "").trim();
-
-  // Take first N words
   const words = cleaned.split(/\s+/).filter(Boolean).slice(0, maxWords);
-  if (words.length === 0) return trimmed; // fallback: use raw
-
-  // Capitalize each word
-  return words
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(" ");
+  if (words.length === 0) return trimmed;
+  return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
 }
 
 // ─── Step question generator ──────────────────────────────────────────────────
@@ -63,7 +57,6 @@ function getStepQuestion(step: string, profile: Profile): string {
   const isBereavement = profile.userPath === "bereavement";
 
   switch (step) {
-    // "purpose" is the new first step; "path" is the legacy name (same question)
     case "purpose":
     case "path":
       return "Hello. I'm really glad you're here. What brought you today?";
@@ -97,14 +90,13 @@ function getStepQuestion(step: string, profile: Profile): string {
       return "And roughly how old are you? It helps me get the tone right.";
 
     case "userGender":
-      return "One last thing — and this is completely optional, so feel free to skip. Knowing a little about you helps me get the tone right. What's your gender?";
+      return "One last thing — and this is completely optional, so feel free to skip. What's your gender?";
 
-    // Legacy steps — kept for any existing in-progress profiles
     case "relationshipType":
-      return "How would you like me to be with you — as a warm close friend, or something a little more tender? Just say 'friend' or 'romantic', whatever feels natural.";
+      return "How would you like me to be with you — as a warm close friend, or something a little more tender? Just say 'friend' or 'romantic'.";
 
     case "energy":
-      return "What kind of energy feels right — warm and light, calm and steady, or deep and thoughtful? Just say 'playful', 'calm', or 'deep'.";
+      return "What kind of energy feels right — warm and light, calm and steady, or deep and thoughtful?";
 
     default:
       return "";
@@ -123,29 +115,16 @@ function getNextStep(currentStep: string, _profile: Profile): string {
     case "country":         return "ageBand";
     case "ageBand":         return "userGender";
     case "userGender":      return "done";
-    // Legacy flow compat
     case "relationshipType": return "energy";
     case "energy":          return "companionName";
     default:                return "done";
   }
 }
 
-// ─── Profile bootstrap ────────────────────────────────────────────────────────
-
-async function getOrCreateProfile(): Promise<Profile> {
-  const profiles = await db.select().from(profileTable).limit(1);
-  if (profiles.length > 0) return profiles[0]!;
-  const [profile] = await db
-    .insert(profileTable)
-    .values({ userName: "", companionName: "Asha" })
-    .returning();
-  return profile!;
-}
-
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 router.get("/onboarding/status", async (req, res): Promise<void> => {
-  const profile = await getOrCreateProfile();
+  const profile = await getOrCreateProfileForUser(req.userId);
   const question = getStepQuestion(profile.onboardingStep, profile);
 
   res.json(
@@ -158,6 +137,7 @@ router.get("/onboarding/status", async (req, res): Promise<void> => {
 });
 
 router.post("/onboarding/answer", async (req, res): Promise<void> => {
+  const userId = req.userId;
   const parsed = SubmitOnboardingAnswerBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -165,7 +145,7 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
   }
 
   const { step, answer } = parsed.data;
-  const profile = await getOrCreateProfile();
+  const profile = await getOrCreateProfileForUser(userId);
 
   if (profile.isOnboardingComplete) {
     res.json(
@@ -181,26 +161,15 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
   let updates: Partial<typeof profileTable.$inferInsert> = {};
 
   switch (step) {
-    // ── Purpose (new first step, also handles legacy "path") ─────────────────
     case "purpose":
     case "path": {
       const lower = answer.toLowerCase();
       const isBereavement =
-        lower.includes("bereav") ||
-        lower.includes("loss") ||
-        lower.includes("lost") ||
-        lower.includes("grief") ||
-        lower.includes("widow") ||
-        lower.includes("passed") ||
+        lower.includes("bereav") || lower.includes("loss") || lower.includes("lost") ||
+        lower.includes("grief") || lower.includes("widow") || lower.includes("passed") ||
         lower === "bereavement";
-      const isLonely =
-        lower.includes("lone") ||
-        lower.includes("lonely") ||
-        lower === "lonely";
-      const isSupport =
-        lower.includes("support") ||
-        lower.includes("emotional") ||
-        lower === "support";
+      const isLonely = lower.includes("lone") || lower.includes("lonely") || lower === "lonely";
+      const isSupport = lower.includes("support") || lower.includes("emotional") || lower === "support";
 
       if (isBereavement) {
         updates.userPath = "bereavement";
@@ -210,44 +179,38 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
       } else if (isSupport) {
         updates.userPath = "support";
       } else {
-        // default: breakup
         updates.userPath = "breakup";
       }
       break;
     }
 
-    // ── Companion gender ──────────────────────────────────────────────────────
     case "companionGender": {
       const lower = answer.toLowerCase().trim();
       if (lower === "man" || lower === "male" || lower.includes("he/him") || (lower.includes("man") && !lower.includes("woman"))) {
         updates.companionGender = "man";
-        updates.voiceId = "pNInz6obpgDQGcFmaJgB"; // Adam — deep & warm (default male)
+        updates.voiceId = "pNInz6obpgDQGcFmaJgB";
       } else if (lower.includes("non") || lower.includes("neutral") || lower.includes("they") || lower === "nonbinary" || lower.includes("no preference")) {
         updates.companionGender = "nonbinary";
-        updates.voiceId = "21m00Tcm4TlvDq8ikWAM"; // Rachel — calm & warm (neutral default)
+        updates.voiceId = "21m00Tcm4TlvDq8ikWAM";
       } else {
         updates.companionGender = "woman";
-        updates.voiceId = "21m00Tcm4TlvDq8ikWAM"; // Rachel — calm & warm (default female)
+        updates.voiceId = "21m00Tcm4TlvDq8ikWAM";
       }
       break;
     }
 
-    // ── Name ─────────────────────────────────────────────────────────────────
     case "name": {
       const cleaned = extractName(answer, 2);
       updates.userName = cleaned || answer.trim().slice(0, 40);
       break;
     }
 
-    // ── Companion name ────────────────────────────────────────────────────────
     case "companionName": {
       const cleaned = extractName(answer, 3);
-      updates.companionName =
-        cleaned.length > 0 && cleaned.length <= 30 ? cleaned : "Asha";
+      updates.companionName = cleaned.length > 0 && cleaned.length <= 30 ? cleaned : "Asha";
       break;
     }
 
-    // ── Country ───────────────────────────────────────────────────────────────
     case "country": {
       const lower = answer.toLowerCase();
       updates.country =
@@ -261,7 +224,6 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
       break;
     }
 
-    // ── Age band ──────────────────────────────────────────────────────────────
     case "ageBand": {
       const lower = answer.toLowerCase().replace(/\s/g, "");
       updates.ageBand =
@@ -272,18 +234,12 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
             : lower.includes("26") || lower.includes("30") || lower.includes("35")
               ? "26-35"
               : "18-25";
-      // Next step is userGender (optional) — onboarding not complete yet
       break;
     }
 
-    // ── User gender (optional / skippable — final step) ───────────────────────
     case "userGender": {
       const lower = answer.toLowerCase().trim();
-      const isSkip =
-        lower === "skip" ||
-        lower.includes("prefer not") ||
-        lower.includes("not to say") ||
-        lower.includes("skip this");
+      const isSkip = lower === "skip" || lower.includes("prefer not") || lower.includes("not to say") || lower.includes("skip this");
       if (!isSkip) {
         updates.userGender =
           lower.includes("woman") || lower.includes("female") ? "woman"
@@ -294,29 +250,20 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
       break;
     }
 
-    // ── Legacy steps (existing profiles mid-flow) ─────────────────────────────
     case "relationshipType": {
       const lower = answer.toLowerCase();
-      updates.relationshipType =
-        lower.includes("romantic") || lower.includes("tender")
-          ? "romantic"
-          : "friend";
+      updates.relationshipType = lower.includes("romantic") || lower.includes("tender") ? "romantic" : "friend";
       break;
     }
 
     case "energy": {
       const lower = answer.toLowerCase();
       updates.energy =
-        lower.includes("playful") || lower.includes("light")
-          ? "playful"
-          : lower.includes("deep") || lower.includes("reflective")
-            ? "deep"
-            : "calm";
+        lower.includes("playful") || lower.includes("light") ? "playful"
+        : lower.includes("deep") || lower.includes("reflective") ? "deep"
+        : "calm";
       break;
     }
-
-    // ── Legacy companionName (old flow ended here) ────────────────────────────
-    // handled above by the new "companionName" case which is shared
 
     default:
       res.status(400).json({ error: `Unknown step: ${step}` });
@@ -330,12 +277,11 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
   const [updated] = await db
     .update(profileTable)
     .set(updates)
-    .where(eq(profileTable.id, profile.id))
+    .where(and(eq(profileTable.id, profile.id), eq(profileTable.userId, userId)))
     .returning();
 
   logger.info({ step, nextStep }, "Onboarding step saved");
 
-  // ─── First greeting on completion ─────────────────────────────────────────
   let firstGreeting: string | null = null;
 
   if (updated?.isOnboardingComplete) {
@@ -350,25 +296,20 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
     } else if (path === "support") {
       firstGreeting = `${name}. I'm really glad you reached out. I'm ${companionName}, and I'm here to listen — properly listen, not just wait for my turn. Whatever you're carrying, you can put some of it down here. What's going on?`;
     } else {
-      // breakup (default)
       firstGreeting = `${name}. I'm ${companionName} — and I'm going to be here with you, completely on your side. You don't need to have anything figured out right now. I'm just really glad you're here. What's on your mind?`;
     }
 
     await db.insert(messagesTable).values({
+      userId,
       role: "assistant",
       content: firstGreeting,
       isMorningNote: false,
     });
 
-    logger.info(
-      { companionName, name, userPath: updated.userPath },
-      "Onboarding complete — first greeting saved",
-    );
+    logger.info({ companionName, name, userPath: updated.userPath }, "Onboarding complete — first greeting saved");
   }
 
-  const nextQuestion = updated
-    ? getStepQuestion(updated.onboardingStep, updated as Profile)
-    : null;
+  const nextQuestion = updated ? getStepQuestion(updated.onboardingStep, updated as Profile) : null;
 
   res.json(
     SubmitOnboardingAnswerResponse.parse({

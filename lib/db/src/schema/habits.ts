@@ -1,9 +1,11 @@
 import { pgTable, serial, text, boolean, timestamp, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { usersTable } from "./users";
 
 export const habitsTable = pgTable("habits", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => usersTable.id),
   name: text("name").notNull(),
   whenThen: text("when_then").notNull(),
   reason: text("reason").notNull(),
@@ -15,6 +17,7 @@ export const habitsTable = pgTable("habits", {
 
 export const habitCompletionsTable = pgTable("habit_completions", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => usersTable.id),
   habitId: integer("habit_id").notNull(),
   completedDate: text("completed_date").notNull(), // YYYY-MM-DD
   createdAt: timestamp("created_at").notNull().defaultNow(),
