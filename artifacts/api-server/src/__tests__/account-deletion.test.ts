@@ -45,6 +45,7 @@ async function cleanupUser(email: string): Promise<void> {
     BEGIN;
     DELETE FROM user_sessions WHERE sess::jsonb->>'userId' = '${uid}';
     DELETE FROM password_reset_tokens WHERE user_id = ${uid};
+    DELETE FROM email_verification_tokens WHERE user_id = ${uid};
     DELETE FROM messages          WHERE user_id = ${uid};
     DELETE FROM memory_facts      WHERE user_id = ${uid};
     DELETE FROM personality_signals WHERE user_id = ${uid};
@@ -241,6 +242,11 @@ describe("DELETE /api/auth/account", () => {
       await rowCount("password_reset_tokens", "user_id = $1", [userId]),
     ).toBe(0);
 
+    // email_verification_tokens
+    expect(
+      await rowCount("email_verification_tokens", "user_id = $1", [userId]),
+    ).toBe(0);
+
     // user_sessions
     expect(
       await rowCount(
@@ -253,5 +259,92 @@ describe("DELETE /api/auth/account", () => {
     // ── 6. Session cleared — /api/auth/me must return 401 ─────────────────
     const meRes = await agent.get("/api/auth/me");
     expect(meRes.status).toBe(401);
+  });
+
+  it("deletion handler covers every table with a user_id column", async () => {
+    /**
+     * This test acts as a schema-coverage guard.
+     *
+     * When a developer adds a new table that has a `user_id` foreign key they
+     * MUST also:
+     *   1. Add a DELETE statement for it in the DELETE /auth/account handler
+     *      (artifacts/api-server/src/routes/auth.ts).
+     *   2. Add the table name to HANDLER_COVERED_TABLES below.
+     *
+     * Tables that legitimately lack a direct `user_id` column (e.g. they join
+     * through another table or embed the ID in a JSON column) should be
+     * documented in INTENTIONAL_EXCEPTIONS with a comment explaining how they
+     * are handled instead.
+     */
+
+    // Every table that has a `user_id` column AND is explicitly handled by
+    // DELETE /auth/account. Add a new table here whenever you add a DELETE
+    // statement to the handler for a table with a user_id FK.
+    //
+    // Note: the `users` table itself is deleted via `WHERE id = $1` (its own
+    // PK), so it has no `user_id` column and is intentionally absent here.
+    //
+    // Note: `user_sessions` stores the user id inside a jsonb column (`sess`),
+    // not as a typed `user_id` column — it is handled separately.
+    //
+    // Note: `goal_tasks` has no `user_id` column; rows cascade-delete when the
+    // parent `goals` row is deleted.
+    const HANDLER_COVERED_TABLES = new Set([
+      "profile",
+      "messages",
+      "memory_facts",
+      "personality_signals",
+      "wins",
+      "mood_scores",
+      "reminders",
+      "habit_completions", // has user_id column; also deleted via habit_id sub-select
+      "habits",
+      "goals",
+      "commitments",
+      "password_reset_tokens",
+      "email_verification_tokens",
+    ]);
+
+    // Tables that have a `user_id` column but are intentionally handled
+    // through a different mechanism in the deletion handler. Document *why*
+    // for each entry. Keep this list empty unless there is a genuine
+    // architectural reason.
+    const INTENTIONAL_EXCEPTIONS: Record<string, string> = {
+      // (none currently)
+    };
+
+    const result = await pool.query<{ table_name: string }>(`
+      SELECT table_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND column_name = 'user_id'
+      ORDER BY table_name
+    `);
+
+    const tablesWithUserId = result.rows.map((r) => r.table_name);
+
+    const uncovered = tablesWithUserId.filter(
+      (t) => !HANDLER_COVERED_TABLES.has(t) && !(t in INTENTIONAL_EXCEPTIONS),
+    );
+
+    expect(
+      uncovered,
+      `The following tables have a user_id column but are NOT in the ` +
+        `DELETE /auth/account handler:\n  ${uncovered.join("\n  ")}\n\n` +
+        `Add DELETE statements for them in auth.ts and add their names to ` +
+        `HANDLER_COVERED_TABLES in this test file.`,
+    ).toEqual([]);
+
+    // Inverse check: catch stale entries in HANDLER_COVERED_TABLES that no
+    // longer exist in the DB (e.g. after a table is renamed or dropped).
+    const schemaSet = new Set(tablesWithUserId);
+    const stale = [...HANDLER_COVERED_TABLES].filter((t) => !schemaSet.has(t));
+
+    expect(
+      stale,
+      `HANDLER_COVERED_TABLES references tables that no longer have a ` +
+        `user_id column in the schema:\n  ${stale.join("\n  ")}\n\n` +
+        `Remove or update these entries in this test file.`,
+    ).toEqual([]);
   });
 });
