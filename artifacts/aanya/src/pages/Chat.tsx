@@ -190,7 +190,7 @@ export default function Chat() {
   const { data: onboarding } = useGetOnboardingStatus();
   const { data: profile } = useGetProfile();
   const { data: messages = [] } = useGetMessages({
-    query: { enabled: !!onboarding?.isComplete },
+    query: { queryKey: getGetMessagesQueryKey(), enabled: !!onboarding?.isComplete },
   });
 
   const generateMorningNote = useGenerateMorningNote();
@@ -213,7 +213,13 @@ export default function Chat() {
   // Live-caption state: which message is currently being spoken, and how many words revealed
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [revealedWords, setRevealedWords] = useState(0);
+  // Voice call mode state
+  const [voiceCallPhase, setVoiceCallPhase] = useState<"listening" | "thinking" | "speaking">("listening");
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const morningNoteTriggered = useRef(false);
+  // Ref so async TTS callbacks always read the latest continuousVoice value
+  const continuousVoiceRef = useRef(false);
+  useEffect(() => { continuousVoiceRef.current = continuousVoice; }, [continuousVoice]);
 
   const isBereavement = profile?.userPath === "bereavement";
   const companionGender = (profile as any)?.companionGender ?? "woman";
@@ -292,12 +298,18 @@ export default function Chat() {
     }
     speakText(text, {
       voiceId: activeVoiceId,
-      onStart: () => setIsSpeaking(true),
+      onStart: () => {
+        setIsSpeaking(true);
+        if (continuousVoiceRef.current) setVoiceCallPhase("speaking");
+      },
       onEnd: () => {
         setIsSpeaking(false);
         setSpeakingMessageId(null);
         setRevealedWords(0);
-        if (continuousVoice) voice.startListening();
+        if (continuousVoiceRef.current) {
+          setVoiceCallPhase("listening");
+          voice.startListening();
+        }
       },
       onWordReveal: messageId
         ? (count, total) => {
@@ -421,19 +433,42 @@ export default function Chat() {
     }
   };
 
+  // Talk mode: auto-send. Mic mode: fill input for user review.
   const handleVoiceResult = (text: string) => {
-    form.setValue("content", text);
-    handleSend({ content: text });
+    if (continuousVoiceRef.current) {
+      setVoiceCallPhase("thinking");
+      handleSend({ content: text });
+    } else {
+      form.setValue("content", text);
+    }
   };
 
-  const voice = useSpeechRecognition(handleVoiceResult);
+  // Live interim results: fill the input as the user is still speaking
+  const handleVoiceInterim = (text: string) => {
+    if (!continuousVoiceRef.current) {
+      form.setValue("content", text);
+    }
+  };
+
+  const voice = useSpeechRecognition(handleVoiceResult, { onInterimResult: handleVoiceInterim });
 
   const toggleContinuousVoice = () => {
     if (continuousVoice) {
       setContinuousVoice(false);
       voice.stopListening();
+      stopSpeaking();
+      setVoiceCallPhase("listening");
     } else {
+      if (!voice.isSupported) {
+        setVoiceError(
+          "Voice input isn't available in this browser — try Chrome or Safari, or type instead.",
+        );
+        return;
+      }
+      setVoiceError(null);
+      voice.clearError();
       setContinuousVoice(true);
+      setVoiceCallPhase("listening");
       voice.startListening();
     }
   };
@@ -907,23 +942,6 @@ export default function Chat() {
 
         {/* Right actions */}
         <div className="flex items-center gap-1">
-          {/* Voice toggle */}
-          {onboarding?.isComplete && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleContinuousVoice}
-              className={cn(
-                "rounded-full w-9 h-9 transition-all duration-500",
-                continuousVoice
-                  ? "bg-primary/15 text-primary"
-                  : "text-muted-foreground hover:text-primary hover:bg-primary/10",
-              )}
-            >
-              {continuousVoice ? <Phone className="w-4 h-4" /> : <PhoneOff className="w-4 h-4" />}
-            </Button>
-          )}
-
           {/* Settings */}
           {onboarding?.isComplete && (
             <Button
@@ -1430,109 +1448,246 @@ export default function Chat() {
       </AnimatePresence>
 
       {/* ── Input area ─────────────────────────────────────────────────────── */}
-      <div className="px-4 sm:px-6 pb-5 pt-3 bg-background shrink-0 relative z-10">
-        <div className="h-px bg-primary/15 mb-4" />
+      <AnimatePresence mode="wait">
+        {continuousVoice ? (
+          /* ── Voice call overlay (replaces input bar while in talk mode) ── */
+          <motion.div
+            key="voice-call"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="px-4 sm:px-6 pb-5 pt-3 bg-background shrink-0 z-10"
+          >
+            <div className="h-px bg-primary/15 mb-4" />
+            <div className="max-w-3xl mx-auto bg-card border border-primary/20 rounded-2xl px-5 py-5 flex flex-col items-center gap-4">
 
-        {showTextInput && (
-          <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(handleSend)}
-              className="flex items-center gap-2 max-w-3xl mx-auto bg-card border border-primary/20 rounded-full pl-5 pr-2 py-1.5 shadow-sm"
-            >
-              <FormField
-                control={form.control}
-                name="content"
-                render={({ field }) => (
-                  <FormItem className="flex-1">
-                    <FormControl>
-                      <Input
-                        {...field}
-                        placeholder={
-                          continuousVoice ? "Listening..." : "Tell me what's on your mind..."
-                        }
-                        className="border-0 bg-transparent shadow-none focus-visible:ring-0 px-0 placeholder:text-muted-foreground/40 text-[14.5px] h-auto py-1.5 text-foreground/85"
-                        disabled={isTyping || continuousVoice || isStreaming}
-                        autoComplete="off"
-                      />
-                    </FormControl>
-                  </FormItem>
+              {/* Companion avatar with phase animation */}
+              <div className="relative">
+                <div className={cn(
+                  "w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500",
+                  voiceCallPhase === "speaking"
+                    ? "bg-primary/15 border-2 border-primary/50 shadow-[0_0_24px_hsl(40_56%_50%/0.3)]"
+                    : voiceCallPhase === "listening"
+                      ? "bg-primary/8 border-2 border-primary/25"
+                      : "bg-card border-2 border-primary/15",
+                )}>
+                  <span className="font-serif text-xl text-secondary/80">{companionInitials}</span>
+                </div>
+                {/* Listening pulse ring */}
+                {voiceCallPhase === "listening" && (
+                  <motion.div
+                    className="absolute inset-0 rounded-full border-2 border-primary/25"
+                    animate={{ scale: [1, 1.45, 1], opacity: [0.5, 0, 0.5] }}
+                    transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+                  />
                 )}
-              />
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className={cn(
-                    "rounded-full w-9 h-9 transition-colors shrink-0",
-                    voice.isListening
-                      ? "text-primary bg-primary/15"
-                      : "text-muted-foreground hover:text-primary hover:bg-primary/10",
-                  )}
-                  onClick={() => {
-                    if (voice.isListening) voice.stopListening();
-                    else voice.startListening();
-                  }}
-                  disabled={isTyping || continuousVoice || isStreaming}
-                >
-                  <Mic className="w-[17px] h-[17px]" strokeWidth={2} />
-                </Button>
-                <Button
-                  type="submit"
-                  size="icon"
-                  className="rounded-full w-9 h-9 bg-primary/15 text-primary hover:bg-primary/25 transition-all border border-primary/25 shrink-0"
-                  disabled={
-                    isTyping ||
-                    continuousVoice ||
-                    isStreaming ||
-                    !form.watch("content")
-                  }
-                >
-                  <Send className="w-[16px] h-[16px] ml-0.5" strokeWidth={2} />
-                </Button>
+                {/* Speaking pulse ring */}
+                {voiceCallPhase === "speaking" && (
+                  <motion.div
+                    className="absolute inset-0 rounded-full border-2 border-primary/40"
+                    animate={{ scale: [1, 1.25, 1], opacity: [0.7, 0.15, 0.7] }}
+                    transition={{ duration: 0.9, repeat: Infinity, ease: "easeInOut" }}
+                  />
+                )}
               </div>
-            </form>
-          </Form>
-        )}
 
-        {/* Show a subtle "or type your answer" hint when choice buttons are shown */}
-        {showChoiceButtons && !isTyping && (
-          <p className="text-center text-[11px] text-muted-foreground/40 mt-3 tracking-wide">
-            or type your own answer below
-          </p>
-        )}
-        {showChoiceButtons && (
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleSend)} className="flex gap-2 max-w-3xl mx-auto mt-2">
-              <FormField
-                control={form.control}
-                name="content"
-                render={({ field }) => (
-                  <FormItem className="flex-1">
-                    <FormControl>
-                      <Input
-                        {...field}
-                        placeholder="Or type your own answer..."
-                        className="bg-card border-primary/20 text-sm text-foreground/80 placeholder:text-muted-foreground/40 h-9"
-                        disabled={isTyping}
-                        autoComplete="off"
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-              <Button
-                type="submit"
-                size="sm"
-                className="h-9 bg-primary/15 text-primary hover:bg-primary/25 border border-primary/25"
-                disabled={isTyping || !form.watch("content")}
+              {/* Phase label + waveform when speaking */}
+              <div className="flex items-center gap-2">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground/60">
+                  {voiceCallPhase === "listening" ? "Listening…"
+                    : voiceCallPhase === "thinking" ? "Thinking…"
+                    : "Speaking…"}
+                </p>
+                {voiceCallPhase === "speaking" && <SpeakingBars />}
+              </div>
+
+              {/* End call button */}
+              <button
+                onClick={toggleContinuousVoice}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-red-500/10 border border-red-500/25 text-red-400/75 hover:bg-red-500/18 hover:text-red-400 text-[12px] font-medium tracking-widest uppercase transition-all"
               >
-                <Send className="w-4 h-4" />
-              </Button>
-            </form>
-          </Form>
+                <PhoneOff className="w-3.5 h-3.5" />
+                End call
+              </button>
+            </div>
+          </motion.div>
+        ) : (
+          /* ── Normal text input area ──────────────────────────────────── */
+          <motion.div
+            key="text-input"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="px-4 sm:px-6 pb-5 pt-3 bg-background shrink-0 relative z-10"
+          >
+            <div className="h-px bg-primary/15 mb-4" />
+
+            {showTextInput && (
+              <>
+                <Form {...form}>
+                  <form
+                    onSubmit={form.handleSubmit(handleSend)}
+                    className={cn(
+                      "flex items-center gap-2 max-w-3xl mx-auto bg-card border rounded-full pl-5 pr-2 py-1.5 shadow-sm transition-all",
+                      voice.isListening
+                        ? "border-primary/50 shadow-[0_0_0_3px_hsl(40_56%_50%/0.12)]"
+                        : "border-primary/20",
+                    )}
+                  >
+                    <FormField
+                      control={form.control}
+                      name="content"
+                      render={({ field }) => (
+                        <FormItem className="flex-1">
+                          <FormControl>
+                            <Input
+                              {...field}
+                              placeholder={
+                                voice.isListening
+                                  ? "Listening — speak now…"
+                                  : "Tell me what's on your mind…"
+                              }
+                              className="border-0 bg-transparent shadow-none focus-visible:ring-0 px-0 placeholder:text-muted-foreground/40 text-[14.5px] h-auto py-1.5 text-foreground/85"
+                              disabled={isTyping || isStreaming}
+                              autoComplete="off"
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <div className="flex items-center gap-1">
+                      {/* ── Mic button — tap to speak, fills the input ── */}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        title={
+                          !voice.isSupported
+                            ? "Voice not available in this browser"
+                            : voice.isListening
+                              ? "Stop listening"
+                              : "Tap to speak"
+                        }
+                        className={cn(
+                          "rounded-full w-10 h-10 transition-all shrink-0",
+                          voice.isListening
+                            ? "text-primary bg-primary/20 shadow-[0_0_0_3px_hsl(40_56%_50%/0.18),0_0_14px_hsl(40_56%_50%/0.18)]"
+                            : "text-muted-foreground/70 hover:text-primary hover:bg-primary/10",
+                        )}
+                        onClick={() => {
+                          if (!voice.isSupported) {
+                            setVoiceError(
+                              "Voice input isn't available in this browser — try Chrome or Safari, or just type.",
+                            );
+                            return;
+                          }
+                          if (voice.isListening) {
+                            voice.stopListening();
+                          } else {
+                            voice.clearError();
+                            setVoiceError(null);
+                            voice.startListening();
+                          }
+                        }}
+                        disabled={isTyping || isStreaming}
+                      >
+                        {voice.isListening ? (
+                          <motion.div
+                            animate={{ scale: [1, 1.2, 1] }}
+                            transition={{ duration: 0.7, repeat: Infinity, ease: "easeInOut" }}
+                          >
+                            <Mic className="w-[18px] h-[18px]" strokeWidth={2.5} />
+                          </motion.div>
+                        ) : (
+                          <Mic className="w-[18px] h-[18px]" strokeWidth={1.8} />
+                        )}
+                      </Button>
+
+                      {/* Send */}
+                      <Button
+                        type="submit"
+                        size="icon"
+                        className="rounded-full w-9 h-9 bg-primary/15 text-primary hover:bg-primary/25 transition-all border border-primary/25 shrink-0"
+                        disabled={isTyping || isStreaming || !form.watch("content")}
+                      >
+                        <Send className="w-[16px] h-[16px] ml-0.5" strokeWidth={2} />
+                      </Button>
+                    </div>
+                  </form>
+                </Form>
+
+                {/* Voice error / unsupported message */}
+                <AnimatePresence>
+                  {(voice.error || voiceError) && (
+                    <motion.p
+                      key="voice-err"
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      className="text-center text-[12px] text-amber-400/75 mt-2.5 leading-relaxed px-2"
+                    >
+                      {voice.error || voiceError}
+                    </motion.p>
+                  )}
+                </AnimatePresence>
+
+                {/* ── Talk button — starts continuous voice conversation ── */}
+                {onboarding?.isComplete && (
+                  <div className="max-w-3xl mx-auto mt-3">
+                    <button
+                      onClick={toggleContinuousVoice}
+                      className="flex items-center justify-center gap-2 w-full py-2.5 rounded-full border border-primary/20 text-[12px] text-muted-foreground/55 hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-all tracking-wider uppercase font-medium"
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                      Talk to her
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Show a subtle "or type your answer" hint when choice buttons are shown */}
+            {showChoiceButtons && !isTyping && (
+              <p className="text-center text-[11px] text-muted-foreground/40 mt-3 tracking-wide">
+                or type your own answer below
+              </p>
+            )}
+            {showChoiceButtons && (
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(handleSend)} className="flex gap-2 max-w-3xl mx-auto mt-2">
+                  <FormField
+                    control={form.control}
+                    name="content"
+                    render={({ field }) => (
+                      <FormItem className="flex-1">
+                        <FormControl>
+                          <Input
+                            {...field}
+                            placeholder="Or type your own answer..."
+                            className="bg-card border-primary/20 text-sm text-foreground/80 placeholder:text-muted-foreground/40 h-9"
+                            disabled={isTyping}
+                            autoComplete="off"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <Button
+                    type="submit"
+                    size="sm"
+                    className="h-9 bg-primary/15 text-primary hover:bg-primary/25 border border-primary/25"
+                    disabled={isTyping || !form.watch("content")}
+                  >
+                    <Send className="w-4 h-4" />
+                  </Button>
+                </form>
+              </Form>
+            )}
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
     </div>
   );
 }
