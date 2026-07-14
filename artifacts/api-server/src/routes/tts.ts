@@ -96,24 +96,30 @@ router.post("/tts", async (req, res): Promise<void> => {
   }
 
   // ── Resolve voice ID ────────────────────────────────────────────────────────
-  // Priority: request voiceId (if allowed) → env override → default
+  // Priority (strict): explicit request voiceId > env override > default.
+  // The env override (ELEVENLABS_VOICE_ID) is a global fallback ONLY — it must
+  // never override an explicit, allowlisted voiceId from the request, or every
+  // voice card in the picker would play the same voice regardless of selection.
   let voiceId = DEFAULT_VOICE_ID;
+  const envOverride = process.env.ELEVENLABS_VOICE_ID?.trim();
 
   if (requestedVoiceId) {
     const isPremade = PREMADE_VOICE_IDS.has(requestedVoiceId);
     const isRomantic = isResolvedRomanticVoiceId(requestedVoiceId);
     if (isPremade || isRomantic) {
+      // Explicit valid voice — use it; env override does NOT apply here
       voiceId = requestedVoiceId;
     } else {
+      // Unknown/unresolved voice — fall back: env override > default
       logger.warn(
         { requestedVoiceId },
-        "Requested voice ID is not in allowlist or not yet resolved — using default",
+        "Requested voice ID is not in allowlist or not yet resolved — using fallback",
       );
+      if (envOverride) voiceId = envOverride;
     }
-  }
-
-  if (process.env.ELEVENLABS_VOICE_ID?.trim()) {
-    voiceId = process.env.ELEVENLABS_VOICE_ID.trim();
+  } else if (envOverride) {
+    // No voiceId in request — env override applies
+    voiceId = envOverride;
   }
 
   // ── TTS call with graceful fallback ────────────────────────────────────────

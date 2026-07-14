@@ -22,7 +22,7 @@ import { chatMessageSchema, type ChatMessageFormValues } from "@/lib/schemas";
 import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useSpeechRecognition, speakText } from "@/lib/voice";
+import { useSpeechRecognition, speakText, stopSpeaking } from "@/lib/voice";
 import { cn } from "@/lib/utils";
 
 // ─── Voice catalogue ──────────────────────────────────────────────────────────
@@ -315,10 +315,17 @@ export default function Chat() {
   };
 
   const handleVoicePreview = (voiceId: string) => {
-    if (previewingVoiceId === voiceId) return; // already playing
+    // Clicking the same voice again → stop it
+    if (previewingVoiceId === voiceId) {
+      stopSpeaking();
+      setPreviewingVoiceId(null);
+      return;
+    }
+    // Clicking a different voice → stop previous immediately, then start new
+    stopSpeaking();
     setPreviewingVoiceId(voiceId);
     speakText(PREVIEW_SAMPLE, {
-      voiceId,
+      voiceId, // exact ID for THIS card — never the active companion voice
       onEnd: () => setPreviewingVoiceId(null),
     });
   };
