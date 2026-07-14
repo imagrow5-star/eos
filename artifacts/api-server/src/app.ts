@@ -43,6 +43,11 @@ pool
   `)
   .catch((err) => logger.error({ err }, "Failed to ensure email_verification_tokens table"));
 
+// Safety-net: ensure the new_email column exists (staging column for email changes).
+pool
+  .query(`ALTER TABLE email_verification_tokens ADD COLUMN IF NOT EXISTS new_email text;`)
+  .catch((err) => logger.error({ err }, "Failed to ensure new_email column"));
+
 // ─── Cleanup job health tracking ─────────────────────────────────────────────
 // Exported so the health route can expose it without a database query.
 export const cleanupJobState = {

@@ -17,6 +17,7 @@ import {
   getGetProfileQueryKey,
 } from "@workspace/api-client-react";
 
+import { ChangeEmailForm } from "@/components/ChangeEmailForm";
 import { chatMessageSchema, type ChatMessageFormValues } from "@/lib/schemas";
 import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -226,6 +227,20 @@ export default function Chat() {
     retry: false,
   });
   const romanticVoices = voicesStatus?.romantic ?? [];
+
+  // Current account email — reuse the auth/me cache the AuthGate already populated.
+  const { data: authMe } = useQuery<{ user: { id: number; email: string }; emailVerified: boolean }>({
+    queryKey: ["/api/auth/me"],
+    queryFn: async () => {
+      const r = await fetch(`${import.meta.env.BASE_URL}api/auth/me`);
+      if (!r.ok) throw new Error("Not authenticated");
+      return r.json();
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  const accountEmail = authMe?.user.email ?? "";
+  const [showChangeEmail, setShowChangeEmail] = useState(false);
 
   // Build ordered voice sections: match companion gender first, then opposite, then romantic
   const femaleSec = { label: "Female voices", kind: "standard" as const, voices: FEMALE_VOICES };
@@ -833,6 +848,36 @@ export default function Chat() {
                   <Check className="w-4 h-4" />
                 </Button>
               </div>
+            </div>
+
+            {/* ── Account email ───────────────────────────────────────────── */}
+            <div>
+              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
+                Account email
+              </p>
+              {!showChangeEmail ? (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[13px] text-foreground/70 break-all">
+                    {accountEmail || "—"}
+                  </span>
+                  <button
+                    onClick={() => setShowChangeEmail(true)}
+                    className="shrink-0 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors"
+                  >
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <ChangeEmailForm currentEmail={accountEmail} compact />
+                  <button
+                    onClick={() => setShowChangeEmail(false)}
+                    className="text-[11px] text-muted-foreground/50 hover:text-muted-foreground/80 tracking-wider uppercase transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* ── Voice picker ────────────────────────────────────────────── */}

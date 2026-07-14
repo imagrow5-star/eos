@@ -6,6 +6,9 @@ export const emailVerificationTokensTable = pgTable("email_verification_tokens",
   userId: integer("user_id")
     .notNull()
     .references(() => usersTable.id, { onDelete: "cascade" }),
+  // When set, this token confirms a pending change to a *new* email address.
+  // When null, it's an ordinary signup-verification token for the user's current email.
+  newEmail: text("new_email"),
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

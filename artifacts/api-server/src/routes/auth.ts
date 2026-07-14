@@ -95,6 +95,48 @@ async function sendVerificationEmail(
   }
 }
 
+async function sendChangeEmailVerification(
+  toEmail: string,
+  verifyUrl: string,
+): Promise<void> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    logger.warn({ verifyUrl }, "RESEND_API_KEY not set — change-email link logged for dev");
+    return;
+  }
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: process.env.RESEND_FROM_EMAIL ?? "ASHA <onboarding@resend.dev>",
+      to: [toEmail],
+      subject: "Confirm your new ASHA email address",
+      html: `
+        <div style="font-family:Georgia,serif;max-width:480px;margin:0 auto;padding:40px 24px;background:#fffff8;color:#1a1a2e;">
+          <h1 style="font-size:32px;letter-spacing:0.25em;text-align:center;color:#b8962e;margin-bottom:8px;">ASHA</h1>
+          <p style="text-align:center;font-size:12px;letter-spacing:0.2em;color:#888;text-transform:uppercase;margin-bottom:40px;">Your companion, your story</p>
+          <p style="font-size:16px;line-height:1.6;">Hi there,</p>
+          <p style="font-size:16px;line-height:1.6;">We received a request to change the email address on your ASHA account to this one. Click below to confirm this is your address. This link expires in 24 hours.</p>
+          <div style="text-align:center;margin:36px 0;">
+            <a href="${verifyUrl}" style="display:inline-block;background:#b8962e;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:14px;letter-spacing:0.1em;">Confirm New Email</a>
+          </div>
+          <p style="font-size:13px;color:#888;line-height:1.6;">If you didn't request this change, you can safely ignore this email — nothing will change until you confirm.</p>
+          <p style="font-size:13px;color:#888;line-height:1.6;">Or copy this link into your browser:<br><a href="${verifyUrl}" style="color:#b8962e;word-break:break-all;">${verifyUrl}</a></p>
+        </div>
+      `,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Resend API error ${res.status}: ${body}`);
+  }
+}
+
 /** Creates a verification token in the DB and fires off the email (no throw). */
 async function issueAndSendVerification(userId: number, email: string): Promise<void> {
   try {
@@ -279,6 +321,40 @@ router.get("/auth/verify-email", async (req, res): Promise<void> => {
       return;
     }
 
+    // ── Email-change confirmation ──
+    // A token with `newEmail` set stages a pending change. Confirming it swaps
+    // the account's email over to the new address atomically and marks it verified.
+    if (row.newEmail) {
+      try {
+        await db
+          .update(usersTable)
+          .set({ email: row.newEmail, emailVerifiedAt: now })
+          .where(eq(usersTable.id, row.userId));
+      } catch (err: any) {
+        if (err?.code === "23505") {
+          // Someone else claimed this address between request and confirmation.
+          // Drop the stale token so the user can start over.
+          await db
+            .delete(emailVerificationTokensTable)
+            .where(eq(emailVerificationTokensTable.token, token));
+          res.status(409).json({
+            error: "That email address is now in use by another account.",
+          });
+          return;
+        }
+        throw err;
+      }
+
+      await db
+        .delete(emailVerificationTokensTable)
+        .where(eq(emailVerificationTokensTable.userId, row.userId));
+
+      logger.info({ userId: row.userId }, "Email address changed and verified");
+      res.json({ ok: true, emailChanged: true });
+      return;
+    }
+
+    // ── Ordinary signup verification ──
     // Mark the user as verified
     await db
       .update(usersTable)
@@ -336,6 +412,103 @@ router.post("/auth/resend-verification", async (req, res): Promise<void> => {
   } catch (err) {
     logger.error({ err }, "resend-verification error");
     res.status(500).json({ error: "Something went wrong. Please try again." });
+  }
+});
+
+// ─── POST /auth/change-email ─────────────────────────────────────────────────
+// Authenticated users request a change to a new email address. The current
+// address (and its verified status) is kept until the user confirms the new one
+// via a link sent to that new address.
+
+router.post("/auth/change-email", async (req, res): Promise<void> => {
+  const userId = req.session?.userId;
+  if (!userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+
+  const { newEmail, password } = req.body ?? {};
+
+  if (!newEmail || typeof newEmail !== "string" || !newEmail.includes("@")) {
+    res.status(400).json({ error: "A valid email address is required." });
+    return;
+  }
+  const cleanEmail = newEmail.toLowerCase().trim();
+  if (cleanEmail.length > 254) {
+    res.status(400).json({ error: "Email address is too long." });
+    return;
+  }
+  if (!password || typeof password !== "string") {
+    res.status(400).json({ error: "Your current password is required to change your email." });
+    return;
+  }
+
+  try {
+    const [user] = await db
+      .select({ id: usersTable.id, email: usersTable.email, hashedPassword: usersTable.hashedPassword })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+
+    if (!user) {
+      res.status(401).json({ error: "Session invalid" });
+      return;
+    }
+
+    const valid = await bcrypt.compare(password, user.hashedPassword);
+    if (!valid) {
+      res.status(403).json({ error: "That password is incorrect." });
+      return;
+    }
+
+    if (cleanEmail === user.email) {
+      res.status(400).json({ error: "That's already your email address." });
+      return;
+    }
+
+    // Reject if another account already uses this address.
+    const [taken] = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(eq(usersTable.email, cleanEmail))
+      .limit(1);
+
+    if (taken) {
+      res.status(409).json({ error: "An account with that email already exists." });
+      return;
+    }
+
+    // Clear any prior pending verification/change tokens, then stage this change.
+    await db
+      .delete(emailVerificationTokensTable)
+      .where(eq(emailVerificationTokensTable.userId, userId));
+
+    const token = randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    await db
+      .insert(emailVerificationTokensTable)
+      .values({ token, userId, newEmail: cleanEmail, expiresAt });
+
+    const domain = process.env.REPLIT_DEV_DOMAIN
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+      : "http://localhost:3000";
+    const verifyUrl = `${domain}/?verifyToken=${token}`;
+
+    // Respond before sending so a slow email provider doesn't hang the request.
+    res.json({ ok: true, pendingEmail: cleanEmail });
+
+    try {
+      await sendChangeEmailVerification(cleanEmail, verifyUrl);
+      logger.info({ userId }, "Change-email verification sent");
+    } catch (err) {
+      logger.error({ err, userId }, "Failed to send change-email verification");
+    }
+  } catch (err) {
+    logger.error({ err }, "change-email error");
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Something went wrong. Please try again." });
+    }
   }
 });
 

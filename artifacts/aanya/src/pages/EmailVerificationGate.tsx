@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
+import { ChangeEmailForm } from "@/components/ChangeEmailForm";
 
 interface Props {
   email: string;
@@ -9,6 +10,7 @@ interface Props {
 export function EmailVerificationGate({ email, onVerified }: Props) {
   const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [showChangeEmail, setShowChangeEmail] = useState(false);
 
   const handleResend = async () => {
     setResendStatus("sending");
@@ -109,9 +111,32 @@ export function EmailVerificationGate({ email, onVerified }: Props) {
             {resendStatus === "sending" ? "Sending…" : resendStatus === "sent" ? "Email sent ✓" : "Resend verification email"}
           </button>
 
+          {/* Wrong email? Let the user change it — the core recovery path for
+              a mistyped signup address they can't receive mail on. */}
+          <div className="mt-4 pt-4 border-t border-primary/10">
+            {!showChangeEmail ? (
+              <button
+                onClick={() => setShowChangeEmail(true)}
+                className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors py-2"
+              >
+                Entered the wrong email? Change it
+              </button>
+            ) : (
+              <div className="space-y-3">
+                <ChangeEmailForm currentEmail={email} />
+                <button
+                  onClick={() => setShowChangeEmail(false)}
+                  className="w-full text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors py-1"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+
           <button
             onClick={handleLogout}
-            className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors py-2"
+            className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors py-2 mt-1"
           >
             Sign in with a different account
           </button>
