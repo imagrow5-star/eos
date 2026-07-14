@@ -410,34 +410,37 @@ describe("DELETE /api/auth/account", () => {
     expect(meResB.body.user.id).toBe(userBId);
   });
 
-  it("deletion handler covers every table with a user_id column", async () => {
+  it("deletion handler covers every table that links to a user — directly or indirectly", async () => {
     /**
-     * This test acts as a schema-coverage guard.
+     * Schema-coverage guard.
      *
-     * When a developer adds a new table that has a `user_id` foreign key they
-     * MUST also:
-     *   1. Add a DELETE statement for it in the DELETE /auth/account handler
-     *      (artifacts/api-server/src/routes/auth.ts).
-     *   2. Add the table name to HANDLER_COVERED_TABLES below.
+     * A user's data can be attached to the `users` row in three ways, and this
+     * test enforces ALL THREE so a newly added table cannot silently escape
+     * DELETE /auth/account:
      *
-     * Tables that legitimately lack a direct `user_id` column (e.g. they join
-     * through another table or embed the ID in a JSON column) should be
-     * documented in INTENTIONAL_EXCEPTIONS with a comment explaining how they
-     * are handled instead.
+     *   1. DIRECT   — the table has its own `user_id` column. Must be listed in
+     *                 HANDLER_COVERED_TABLES.
+     *   2. FK-CHAIN — no `user_id` column, but a foreign key that transitively
+     *                 references `users` (e.g. goal_tasks → goals → users).
+     *                 Discovered automatically by walking the FK graph below;
+     *                 must be listed in the INDIRECT_TABLES registry.
+     *   3. JSONB    — the id is embedded in a json/jsonb column, invisible to
+     *                 both checks above (e.g. user_sessions.sess->>'userId').
+     *                 Can't be auto-discovered, so it is registered by hand in
+     *                 INDIRECT_TABLES and asserted to be wiped by the handler.
+     *
+     * When you add a table, update the matching list AND the handler in
+     * artifacts/api-server/src/routes/auth.ts (see its "INDIRECT tables"
+     * comment). The two current indirect cases are goal_tasks (FK-CHAIN,
+     * cascade) and user_sessions (JSONB).
      */
 
-    // Every table that has a `user_id` column AND is explicitly handled by
-    // DELETE /auth/account. Add a new table here whenever you add a DELETE
-    // statement to the handler for a table with a user_id FK.
+    // ── (1) DIRECT tables: have a `user_id` column and get an explicit DELETE.
+    // Add a new table here whenever you add a DELETE statement to the handler
+    // for a table with a user_id column.
     //
     // Note: the `users` table itself is deleted via `WHERE id = $1` (its own
     // PK), so it has no `user_id` column and is intentionally absent here.
-    //
-    // Note: `user_sessions` stores the user id inside a jsonb column (`sess`),
-    // not as a typed `user_id` column — it is handled separately.
-    //
-    // Note: `goal_tasks` has no `user_id` column; rows cascade-delete when the
-    // parent `goals` row is deleted.
     const HANDLER_COVERED_TABLES = new Set([
       "profile",
       "messages",
@@ -454,46 +457,142 @@ describe("DELETE /api/auth/account", () => {
       "email_verification_tokens",
     ]);
 
-    // Tables that have a `user_id` column but are intentionally handled
-    // through a different mechanism in the deletion handler. Document *why*
-    // for each entry. Keep this list empty unless there is a genuine
-    // architectural reason.
-    const INTENTIONAL_EXCEPTIONS: Record<string, string> = {
-      // (none currently)
+    // ── INDIRECT tables: store the user's id WITHOUT a `user_id` column, so the
+    // DIRECT guard can't see them. Each entry documents HOW the handler removes
+    // the rows and is verified against the live schema below:
+    //   "cascade" — rows ON DELETE CASCADE from `via` (which the handler deletes
+    //               explicitly); the handler issues no DELETE for this table.
+    //               The FK edge's delete_rule is asserted to be CASCADE.
+    //   "jsonb"   — the user id lives in a jsonb column; the handler deletes via
+    //               a jsonb query. Not FK-discoverable, so listed by hand.
+    const INDIRECT_TABLES: Record<
+      string,
+      { strategy: "cascade" | "jsonb"; via: string; note: string }
+    > = {
+      goal_tasks: {
+        strategy: "cascade",
+        via: "goals",
+        note: "goal_tasks.goal_id → goals; ON DELETE CASCADE when the parent goals row is deleted",
+      },
+      user_sessions: {
+        strategy: "jsonb",
+        via: "users",
+        note: "user id embedded in sess->>'userId'; deleted by a jsonb query in the handler",
+      },
     };
 
-    const result = await pool.query<{ table_name: string }>(`
+    // ── Load the schema: user_id columns, all tables, and FK edges. ──────────
+    const userIdResult = await pool.query<{ table_name: string }>(`
       SELECT table_name
       FROM information_schema.columns
       WHERE table_schema = 'public'
         AND column_name = 'user_id'
       ORDER BY table_name
     `);
+    const tablesWithUserId = userIdResult.rows.map((r) => r.table_name);
+    const userIdSet = new Set(tablesWithUserId);
 
-    const tablesWithUserId = result.rows.map((r) => r.table_name);
+    const allTablesResult = await pool.query<{ table_name: string }>(`
+      SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'
+    `);
+    const allTables = new Set(allTablesResult.rows.map((r) => r.table_name));
 
-    const uncovered = tablesWithUserId.filter(
-      (t) => !HANDLER_COVERED_TABLES.has(t) && !(t in INTENTIONAL_EXCEPTIONS),
+    // child references parent; delete_rule is CASCADE / NO ACTION / etc.
+    const fkResult = await pool.query<{
+      child: string;
+      parent: string;
+      delete_rule: string;
+    }>(`
+      SELECT tc.table_name       AS child,
+             ccu.table_name      AS parent,
+             rc.delete_rule      AS delete_rule
+      FROM information_schema.table_constraints tc
+      JOIN information_schema.referential_constraints rc
+        ON rc.constraint_name = tc.constraint_name
+       AND rc.constraint_schema = tc.table_schema
+      JOIN information_schema.constraint_column_usage ccu
+        ON ccu.constraint_name = tc.constraint_name
+       AND ccu.table_schema = tc.table_schema
+      WHERE tc.constraint_type = 'FOREIGN KEY'
+        AND tc.table_schema = 'public'
+    `);
+    const edges = fkResult.rows;
+
+    // A table is "user-linked" if it can reach `users` by following FK edges.
+    const reachesUsers = (table: string, seen = new Set<string>()): boolean => {
+      if (table === "users") return true;
+      if (seen.has(table)) return false;
+      seen.add(table);
+      return edges.some(
+        (e) => e.child === table && e.parent !== table && reachesUsers(e.parent, seen),
+      );
+    };
+
+    // ── (1) DIRECT coverage: every table with a user_id column is handled. ───
+    const uncoveredDirect = tablesWithUserId.filter(
+      (t) => !HANDLER_COVERED_TABLES.has(t) && !(t in INDIRECT_TABLES),
     );
-
     expect(
-      uncovered,
+      uncoveredDirect,
       `The following tables have a user_id column but are NOT in the ` +
-        `DELETE /auth/account handler:\n  ${uncovered.join("\n  ")}\n\n` +
+        `DELETE /auth/account handler:\n  ${uncoveredDirect.join("\n  ")}\n\n` +
         `Add DELETE statements for them in auth.ts and add their names to ` +
         `HANDLER_COVERED_TABLES in this test file.`,
     ).toEqual([]);
 
-    // Inverse check: catch stale entries in HANDLER_COVERED_TABLES that no
-    // longer exist in the DB (e.g. after a table is renamed or dropped).
-    const schemaSet = new Set(tablesWithUserId);
-    const stale = [...HANDLER_COVERED_TABLES].filter((t) => !schemaSet.has(t));
-
+    // Stale check: HANDLER_COVERED_TABLES entries must still have a user_id column.
+    const staleDirect = [...HANDLER_COVERED_TABLES].filter((t) => !userIdSet.has(t));
     expect(
-      stale,
+      staleDirect,
       `HANDLER_COVERED_TABLES references tables that no longer have a ` +
-        `user_id column in the schema:\n  ${stale.join("\n  ")}\n\n` +
+        `user_id column in the schema:\n  ${staleDirect.join("\n  ")}\n\n` +
         `Remove or update these entries in this test file.`,
     ).toEqual([]);
+
+    // ── (2) FK-CHAIN coverage: every table that reaches `users` through a FK
+    // but has NO user_id column must be registered in INDIRECT_TABLES. This is
+    // the mechanism that catches an indirectly-linked table added in the future
+    // (e.g. a child of `goals` or `habits`) before it can escape deletion.
+    const fkChildTables = [...new Set(edges.map((e) => e.child))];
+    const fkChainTables = fkChildTables.filter(
+      (t) => t !== "users" && !userIdSet.has(t) && reachesUsers(t),
+    );
+    const missingIndirect = fkChainTables.filter((t) => !(t in INDIRECT_TABLES));
+    expect(
+      missingIndirect,
+      `The following tables reference a user INDIRECTLY through a foreign-key ` +
+        `chain but are NOT covered:\n  ${missingIndirect.join("\n  ")}\n\n` +
+        `Their rows can silently survive account deletion. Either ensure they ` +
+        `ON DELETE CASCADE from a covered parent (and add them to ` +
+        `INDIRECT_TABLES with strategy "cascade"), or delete them explicitly ` +
+        `in the DELETE /auth/account handler.`,
+    ).toEqual([]);
+
+    // ── (3) Verify each INDIRECT_TABLES entry actually holds up. ─────────────
+    for (const [table, meta] of Object.entries(INDIRECT_TABLES)) {
+      // The registered table must still exist.
+      expect(
+        allTables.has(table),
+        `INDIRECT_TABLES lists "${table}" but no such table exists — remove it.`,
+      ).toBe(true);
+
+      if (meta.strategy === "cascade") {
+        // There must be a real FK from this table to its declared `via` parent,
+        // and it must be ON DELETE CASCADE — otherwise the "we don't delete it
+        // explicitly" assumption is false and rows would be orphaned.
+        const edge = edges.find((e) => e.child === table && e.parent === meta.via);
+        expect(
+          edge,
+          `INDIRECT_TABLES["${table}"] claims cascade from "${meta.via}" but no ` +
+            `such foreign key exists.`,
+        ).toBeDefined();
+        expect(
+          edge?.delete_rule,
+          `${table} → ${meta.via} must be ON DELETE CASCADE for the cascade ` +
+            `strategy to hold, but it is "${edge?.delete_rule}". Either restore ` +
+            `the cascade or delete ${table} explicitly in the handler.`,
+        ).toBe("CASCADE");
+      }
+    }
   });
 });

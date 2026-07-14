@@ -762,7 +762,27 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
   const client = await pool.connect();
   try {
     // Delete all user-owned data in a single transaction, ordered to respect FK constraints.
-    // goal_tasks cascade from goals, so we only need to delete goals explicitly.
+    //
+    // ── DIRECT tables (have a typed `user_id` column, deleted by `user_id = $1`) ──
+    //   password_reset_tokens, email_verification_tokens, messages, memory_facts,
+    //   personality_signals, wins, mood_scores, reminders, habit_completions,
+    //   habits, goals, commitments, profile.
+    //   The `users` row itself is deleted last, by its own PK (`id = $1`).
+    //
+    // ── INDIRECT tables (store the user's ID some other way) ─────────────────────
+    // These do NOT have a `user_id` column, so a naive "delete every table with
+    // a user_id column" sweep would miss them. Each must be handled here AND
+    // registered in the INDIRECT_TABLES map in account-deletion.test.ts, whose
+    // FK-graph guard fails the build if a new indirect table is added without
+    // coverage. When you add a new indirect table, update BOTH places.
+    //
+    //   1. user_sessions — the user id lives inside the `sess` jsonb column
+    //      (`sess->>'userId'`), not as a typed column. Deleted via the jsonb
+    //      query below. (Registered with strategy "jsonb".)
+    //   2. goal_tasks — has only a `goal_id` FK to `goals` (no `user_id`). Its
+    //      rows ON DELETE CASCADE when the parent `goals` row is deleted, so we
+    //      do NOT delete it explicitly; deleting `goals` clears it. (Registered
+    //      with strategy "cascade".)
     await client.query("BEGIN");
     await client.query(`DELETE FROM user_sessions WHERE sess::jsonb->>'userId' = $1::text`, [String(userId)]);
     await client.query(`DELETE FROM password_reset_tokens WHERE user_id = $1`, [userId]);
