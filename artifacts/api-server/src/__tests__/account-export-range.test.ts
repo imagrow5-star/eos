@@ -204,3 +204,124 @@ describe("GET /api/account/export — date range filter", () => {
     expect(res.status).toBe(400);
   });
 });
+
+// ─── Boundary precision at the `to` edge ────────────────────────────────────────
+// The plan calls out the exact off-by-one risk: the final day (`to`) must be
+// included and the very next day must be excluded — separately for TIMESTAMP
+// columns (end-of-day handling) and DATE columns (inclusive `<=`).
+
+const BOUNDARY_EMAIL = `export-boundary-${TS}@example.invalid`;
+
+/**
+ * Seed data straddling a single boundary day (2026-06-15). For each of a
+ * TIMESTAMP column (messages) and a DATE column (mood_scores) we place one row
+ * on the boundary day itself and one row on the day after, so a range ending on
+ * the boundary must keep the former and drop the latter.
+ */
+async function signupWithBoundaryData(
+  agent: ReturnType<typeof request.agent>,
+  email: string,
+): Promise<number> {
+  const signupRes = await agent
+    .post("/api/auth/signup")
+    .send({ email, password: "Test1234!" });
+  expect(signupRes.status).toBe(201);
+  const userId: number = signupRes.body.user.id;
+
+  await pool.query(`UPDATE users SET email_verified_at = NOW() WHERE id = $1`, [userId]);
+  await pool.query(
+    `INSERT INTO profile (user_id, user_name, companion_name, user_path)
+     VALUES ($1, 'Boundary User', 'Asha', 'breakup')
+     ON CONFLICT DO NOTHING`,
+    [userId],
+  );
+
+  // Messages (timestamp): one late on the boundary day, one just after midnight
+  // the next day. A correct end-of-day rule keeps 'msg-on-to' and drops
+  // 'msg-day-after'.
+  await pool.query(
+    `INSERT INTO messages (user_id, role, content, created_at) VALUES
+       ($1, 'user', 'msg-day-before', '2026-06-14T23:30:00Z'),
+       ($1, 'user', 'msg-on-to',      '2026-06-15T23:30:00Z'),
+       ($1, 'user', 'msg-day-after',  '2026-06-16T00:30:00Z')`,
+    [userId],
+  );
+
+  // Mood scores (date): one on each of the three calendar days.
+  await pool.query(
+    `INSERT INTO mood_scores (user_id, score, date) VALUES
+       ($1, 4, '2026-06-14'),
+       ($1, 6, '2026-06-15'),
+       ($1, 9, '2026-06-16')`,
+    [userId],
+  );
+
+  return userId;
+}
+
+interface BoundaryBody {
+  messages: { content: string }[];
+  moodScores: { score: number }[];
+}
+
+describe("GET /api/account/export — `to` boundary precision", () => {
+  afterEach(async () => {
+    await cleanupUser(BOUNDARY_EMAIL);
+  });
+
+  it("includes the whole final day and excludes the day after, for a TIMESTAMP column", async () => {
+    const agent = request.agent(app);
+    await signupWithBoundaryData(agent, BOUNDARY_EMAIL);
+
+    const res = await agent.get("/api/account/export?to=2026-06-15");
+    expect(res.status).toBe(200);
+    const contents = (res.body as BoundaryBody).messages.map((m) => m.content);
+
+    // A 23:30 message on the `to` date is kept (end-of-day, not midnight)...
+    expect(contents).toContain("msg-on-to");
+    expect(contents).toContain("msg-day-before");
+    // ...but a message just after midnight the next day is dropped.
+    expect(contents).not.toContain("msg-day-after");
+  });
+
+  it("includes the final day and excludes the day after, for a DATE column", async () => {
+    const agent = request.agent(app);
+    await signupWithBoundaryData(agent, BOUNDARY_EMAIL);
+
+    const res = await agent.get("/api/account/export?to=2026-06-15");
+    expect(res.status).toBe(200);
+    const scores = (res.body as BoundaryBody).moodScores.map((m) => m.score).sort((a, b) => a - b);
+
+    // Mood on 06-14 and 06-15 kept; mood on 06-16 (day after `to`) dropped.
+    expect(scores).toEqual([4, 6]);
+  });
+
+  it("`from` includes the boundary day itself, across both column types", async () => {
+    const agent = request.agent(app);
+    await signupWithBoundaryData(agent, BOUNDARY_EMAIL);
+
+    const res = await agent.get("/api/account/export?from=2026-06-15");
+    expect(res.status).toBe(200);
+    const body = res.body as BoundaryBody;
+
+    const contents = body.messages.map((m) => m.content);
+    expect(contents).toContain("msg-on-to");
+    expect(contents).toContain("msg-day-after");
+    expect(contents).not.toContain("msg-day-before");
+
+    const scores = body.moodScores.map((m) => m.score).sort((a, b) => a - b);
+    expect(scores).toEqual([6, 9]);
+  });
+
+  it("a single-day window (from === to) returns only that day", async () => {
+    const agent = request.agent(app);
+    await signupWithBoundaryData(agent, BOUNDARY_EMAIL);
+
+    const res = await agent.get("/api/account/export?from=2026-06-15&to=2026-06-15");
+    expect(res.status).toBe(200);
+    const body = res.body as BoundaryBody;
+
+    expect(body.messages.map((m) => m.content)).toEqual(["msg-on-to"]);
+    expect(body.moodScores.map((m) => m.score)).toEqual([6]);
+  });
+});
