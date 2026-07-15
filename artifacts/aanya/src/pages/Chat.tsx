@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2 } from "lucide-react";
@@ -214,16 +214,19 @@ export default function Chat() {
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [revealedWords, setRevealedWords] = useState(0);
   // Voice call mode state
-  const [voiceCallPhase, setVoiceCallPhase] = useState<"listening" | "thinking" | "speaking">("listening");
+  const [voiceCallPhase, setVoiceCallPhase] = useState<"listening" | "thinking" | "speaking" | "error">("listening");
+  const [voiceCallMessage, setVoiceCallMessage] = useState<string | null>(null); // sub-label / error text
   const [voiceError, setVoiceError] = useState<string | null>(null);
   // Voice picker filters
   const [voiceGenderFilter, setVoiceGenderFilter] = useState<"all" | "female" | "male">("all");
   const [voiceAccentFilter, setVoiceAccentFilter] = useState<"all" | "American" | "British" | "Australian">("all");
   const [voiceAgeFilter, setVoiceAgeFilter] = useState<"all" | "younger" | "middle" | "mature">("all");
   const morningNoteTriggered = useRef(false);
-  // Ref so async TTS callbacks always read the latest continuousVoice value
+  // Refs so async TTS / recognition callbacks always read the latest values
   const continuousVoiceRef = useRef(false);
+  const voiceCallPhaseRef  = useRef<"listening" | "thinking" | "speaking" | "error">("listening");
   useEffect(() => { continuousVoiceRef.current = continuousVoice; }, [continuousVoice]);
+  useEffect(() => { voiceCallPhaseRef.current  = voiceCallPhase;  }, [voiceCallPhase]);
 
   const isBereavement = profile?.userPath === "bereavement";
   const companionGender = (profile as any)?.companionGender ?? "woman";
@@ -317,6 +320,7 @@ export default function Chat() {
         setIsSpeaking(false);
         setSpeakingMessageId(null);
         setRevealedWords(0);
+        setVoiceCallMessage(null);
         if (continuousVoiceRef.current) {
           setVoiceCallPhase("listening");
           voice.startListening();
@@ -351,6 +355,7 @@ export default function Chat() {
       const response = await fetch(`${import.meta.env.BASE_URL}api/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ content }),
       });
 
@@ -398,6 +403,17 @@ export default function Chat() {
     } catch (err) {
       console.error("[stream] Error:", err);
       setStreamError("Something went wrong. Please try sending again.");
+      // In voice call mode: revert to listening so the user isn't stuck on "Thinking…"
+      if (continuousVoiceRef.current) {
+        setVoiceCallMessage("Something went wrong — listening again…");
+        setVoiceCallPhase("listening");
+        setTimeout(() => {
+          if (continuousVoiceRef.current) {
+            setVoiceCallMessage(null);
+            voice.startListening();
+          }
+        }, 2000);
+      }
     }
 
     setIsStreaming(false);
@@ -448,6 +464,7 @@ export default function Chat() {
   const handleVoiceResult = (text: string) => {
     if (continuousVoiceRef.current) {
       setVoiceCallPhase("thinking");
+      setVoiceCallMessage(null);
       handleSend({ content: text });
     } else {
       form.setValue("content", text);
@@ -461,7 +478,52 @@ export default function Chat() {
     }
   };
 
-  const voice = useSpeechRecognition(handleVoiceResult, { onInterimResult: handleVoiceInterim });
+  // ── Voice call: recognition ended (fires after EVERY session — result, no-speech, stop, error) ──
+  // Only restart when we're still in listening phase; other phases (thinking/speaking/error)
+  // manage their own transitions back to listening.
+  const handleRecognitionEnd = useCallback(() => {
+    if (!continuousVoiceRef.current) return;
+    if (voiceCallPhaseRef.current !== "listening") return;
+    // Brief pause before restart to avoid hammering the browser
+    setTimeout(() => {
+      if (continuousVoiceRef.current && voiceCallPhaseRef.current === "listening") {
+        voice.startListening();
+      }
+    }, 350);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Voice call: recognition error ──
+  const handleRecognitionError = useCallback((errorType: string) => {
+    if (!continuousVoiceRef.current) return;
+
+    if (errorType === "not-allowed" || errorType === "service-not-allowed") {
+      // Hard failure — mic blocked (common inside embedded iframes)
+      setVoiceCallPhase("error");
+      setVoiceCallMessage(
+        "I can't hear you — microphone access was blocked.\n\n" +
+        "Try: open the app in its own browser tab (mic doesn't work inside " +
+        "the embedded preview), then allow mic access when the browser asks.",
+      );
+    } else if (errorType === "no-speech") {
+      // Soft failure — nothing heard; show a transient note, loop restarts via onEnd
+      setVoiceCallMessage("Didn't catch that — listening again…");
+      setTimeout(() => {
+        if (continuousVoiceRef.current) setVoiceCallMessage(null);
+      }, 2500);
+    } else if (errorType === "network") {
+      setVoiceCallMessage("Network issue — reconnecting…");
+    } else if (errorType !== "aborted") {
+      // Unknown error — show it but let onEnd handle the restart
+      setVoiceCallMessage(`Recognition issue (${errorType}) — try speaking again.`);
+    }
+    // "aborted" is fired when we call stop() ourselves — ignore it completely
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const voice = useSpeechRecognition(handleVoiceResult, {
+    onInterimResult: handleVoiceInterim,
+    onEnd: handleRecognitionEnd,
+    onRecognitionError: handleRecognitionError,
+  });
 
   const toggleContinuousVoice = () => {
     if (continuousVoice) {
@@ -1494,7 +1556,9 @@ export default function Chat() {
                     ? "bg-primary/15 border-2 border-primary/50 shadow-[0_0_24px_hsl(40_56%_50%/0.3)]"
                     : voiceCallPhase === "listening"
                       ? "bg-primary/8 border-2 border-primary/25"
-                      : "bg-card border-2 border-primary/15",
+                      : voiceCallPhase === "error"
+                        ? "bg-red-500/8 border-2 border-red-400/25"
+                        : "bg-card border-2 border-primary/15",
                 )}>
                   <span className="font-serif text-xl text-secondary/80">{companionInitials}</span>
                 </div>
@@ -1517,14 +1581,58 @@ export default function Chat() {
               </div>
 
               {/* Phase label + waveform when speaking */}
-              <div className="flex items-center gap-2">
-                <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground/60">
-                  {voiceCallPhase === "listening" ? "Listening…"
-                    : voiceCallPhase === "thinking" ? "Thinking…"
-                    : "Speaking…"}
-                </p>
-                {voiceCallPhase === "speaking" && <SpeakingBars />}
+              <div className="flex flex-col items-center gap-1.5">
+                <div className="flex items-center gap-2">
+                  <p className={cn(
+                    "text-[11px] uppercase tracking-[0.22em]",
+                    voiceCallPhase === "error"
+                      ? "text-red-400/80"
+                      : "text-muted-foreground/60",
+                  )}>
+                    {voiceCallPhase === "listening" ? "Listening…"
+                      : voiceCallPhase === "thinking" ? "Thinking…"
+                      : voiceCallPhase === "speaking" ? "Speaking…"
+                      : "Microphone blocked"}
+                  </p>
+                  {voiceCallPhase === "speaking" && <SpeakingBars />}
+                </div>
+
+                {/* Sub-label: transient status messages (no-speech hint, error detail, etc.) */}
+                <AnimatePresence>
+                  {voiceCallMessage && (
+                    <motion.p
+                      key={voiceCallMessage}
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.2 }}
+                      className={cn(
+                        "text-center text-[12px] leading-relaxed px-2 max-w-xs",
+                        voiceCallPhase === "error"
+                          ? "text-red-400/70"
+                          : "text-muted-foreground/55",
+                      )}
+                    >
+                      {voiceCallMessage}
+                    </motion.p>
+                  )}
+                </AnimatePresence>
               </div>
+
+              {/* Retry button — only shown in error phase so user can tap to try again */}
+              {voiceCallPhase === "error" && (
+                <button
+                  onClick={() => {
+                    setVoiceCallPhase("listening");
+                    setVoiceCallMessage(null);
+                    voice.clearError();
+                    voice.startListening();
+                  }}
+                  className="flex items-center gap-2 px-5 py-2 rounded-full bg-primary/15 border border-primary/30 text-primary/80 hover:bg-primary/25 text-[12px] font-medium tracking-wider uppercase transition-all"
+                >
+                  Try again
+                </button>
+              )}
 
               {/* End call button */}
               <button

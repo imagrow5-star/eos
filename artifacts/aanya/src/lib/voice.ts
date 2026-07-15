@@ -6,30 +6,40 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 export function useSpeechRecognition(
   onResult: (text: string) => void,
-  options: { onInterimResult?: (text: string) => void } = {},
+  options: {
+    onInterimResult?: (text: string) => void;
+    /** Called whenever a recognition session ends (result, no-speech, stop, error). */
+    onEnd?: () => void;
+    /** Called with the error type string from SpeechRecognitionErrorEvent.error. */
+    onRecognitionError?: (errorType: string) => void;
+  } = {},
 ) {
   const [isListening, setIsListening] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const recognitionRef = useRef<any>(null);
-  const onResultRef    = useRef(onResult);
-  const onInterimRef   = useRef(options.onInterimResult);
+  const recognitionRef   = useRef<any>(null);
+  const onResultRef      = useRef(onResult);
+  const onInterimRef     = useRef(options.onInterimResult);
+  const onEndRef         = useRef(options.onEnd);
+  const onRecoErrorRef   = useRef(options.onRecognitionError);
 
-  // Always keep the latest callbacks in refs — no re-subscription needed
-  useEffect(() => { onResultRef.current = onResult; });
-  useEffect(() => { onInterimRef.current = options.onInterimResult; });
+  // Keep latest callbacks in refs on every render — safe direct assignment, no extra hooks
+  onResultRef.current    = onResult;
+  onInterimRef.current   = options.onInterimResult;
+  onEndRef.current       = options.onEnd;
+  onRecoErrorRef.current = options.onRecognitionError;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     // @ts-ignore
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return; // isSupported stays false — caller can show a message
+    if (!SR) return;
 
     const reco = new SR();
-    reco.continuous    = false;
-    reco.interimResults = true;   // give live interim results for real-time transcription
-    reco.lang          = "en-US";
+    reco.continuous      = false;
+    reco.interimResults  = true;
+    reco.lang            = "en-US";
     reco.maxAlternatives = 1;
 
     reco.onresult = (event: any) => {
@@ -37,8 +47,8 @@ export function useSpeechRecognition(
       let final   = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const text = event.results[i][0].transcript;
-        if (event.results[i].isFinal) final   += text;
-        else                          interim  += text;
+        if (event.results[i].isFinal) final  += text;
+        else                          interim += text;
       }
       if (interim) onInterimRef.current?.(interim);
       if (final)   onResultRef.current(final.trim());
@@ -46,31 +56,36 @@ export function useSpeechRecognition(
 
     reco.onerror = (e: any) => {
       setIsListening(false);
-      if (e.error === "not-allowed") {
+      const errorType: string = e.error ?? "unknown";
+      onRecoErrorRef.current?.(errorType);          // ← always notify caller
+
+      if (errorType === "not-allowed" || errorType === "service-not-allowed") {
         setError(
-          "Microphone access was denied — please allow it in your browser settings and try again.",
+          "Microphone access was denied — please allow it in your browser settings.",
         );
-      } else if (e.error === "no-speech") {
-        // Nothing said — stop silently, no error shown
-      } else if (e.error !== "aborted") {
-        setError("Voice input isn't available right now — try again or type instead.");
+      } else if (errorType === "no-speech" || errorType === "aborted") {
+        // caller handles these; no generic error banner
+      } else {
+        setError("Voice recognition error — try again or type instead.");
       }
     };
 
-    reco.onend = () => setIsListening(false);
+    reco.onend = () => {
+      setIsListening(false);
+      onEndRef.current?.();                         // ← notify caller every time
+    };
 
     recognitionRef.current = reco;
     setIsSupported(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Stable functions — ref-based so they never go stale in async closures
   const startListening = useCallback(() => {
     const reco = recognitionRef.current;
     if (!reco) return;
     setError(null);
     try { reco.start(); setIsListening(true); }
-    catch { /* already running — ignore */ }
+    catch { /* already running */ }
   }, []);
 
   const stopListening = useCallback(() => {
