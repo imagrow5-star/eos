@@ -80,7 +80,7 @@ function getStepQuestion(step: string, profile: Profile): string {
           : gender === "nonbinary"
             ? "River, Sky, Sam, Sage — or any name you like"
             : "Mia, Sofia, Luna, Aria — or any name you like";
-      return `${userName}. What would you like to call me? You can keep Asha, or choose something that feels right — ${suggestions}. It's entirely yours.`;
+      return `${userName}. What would you like to call me? You can keep Eos, or choose something that feels right — ${suggestions}. It's entirely yours.`;
     }
 
     case "country":
@@ -207,7 +207,7 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
 
     case "companionName": {
       const cleaned = extractName(answer, 3);
-      updates.companionName = cleaned.length > 0 && cleaned.length <= 30 ? cleaned : "Asha";
+      updates.companionName = cleaned.length > 0 && cleaned.length <= 30 ? cleaned : "Eos";
       break;
     }
 

@@ -66,7 +66,7 @@ function buildHtmlReport(data: {
   personalitySignals: ExportRow[];
 }): string {
   const { exportedAt, range, profile, messages, memoryFacts, wins, habits, habitCompletions, goals, moodScores, commitments, reminders, personalitySignals } = data;
-  const companionName = esc(profile?.companion_name ?? "Asha");
+  const companionName = esc(profile?.companion_name ?? "Eos");
   const userPath = pathLabel(profile?.user_path as string);
 
   // When a date range is applied, spell it out on the cover so the reader knows
@@ -162,7 +162,7 @@ function buildHtmlReport(data: {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Your ASHA Report</title>
+  <title>Your Eos Report</title>
   <style>
     /* Fonts are embedded as base64 woff2 data URIs (see report-fonts.ts) so the
        report renders with its intended typography even when opened offline. */
@@ -586,11 +586,11 @@ router.get("/account/export", async (req, res): Promise<void> => {
     if (format === "html") {
       const html = buildHtmlReport(exportPayload);
       res.setHeader("Content-Type", "text/html; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="asha-report-${dateSlug}.html"`);
+      res.setHeader("Content-Disposition", `attachment; filename="eos-report-${dateSlug}.html"`);
       res.send(html);
     } else {
       res.setHeader("Content-Type", "application/json");
-      res.setHeader("Content-Disposition", `attachment; filename="asha-export-${dateSlug}.json"`);
+      res.setHeader("Content-Disposition", `attachment; filename="eos-export-${dateSlug}.json"`);
       res.json(exportPayload);
     }
 

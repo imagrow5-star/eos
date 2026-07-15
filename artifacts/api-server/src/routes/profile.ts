@@ -25,7 +25,7 @@ export async function getOrCreateProfileForUser(userId: number): Promise<Profile
 
   const [created] = await db
     .insert(profileTable)
-    .values({ userId, userName: "", companionName: "Asha" })
+    .values({ userId, userName: "", companionName: "Eos" })
     .returning();
   return created!;
 }
