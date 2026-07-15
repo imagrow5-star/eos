@@ -225,6 +225,10 @@ export default function Chat() {
   // Refs so async TTS / recognition callbacks always read the latest values
   const continuousVoiceRef = useRef(false);
   const voiceCallPhaseRef  = useRef<"listening" | "thinking" | "speaking" | "error">("listening");
+  // Voice early-TTS coordination: lets the first-sentence TTS and the stream-done
+  // handler share state without race conditions.
+  const voicePendingRemainderRef = useRef<{ text: string; id: string | null } | null>(null);
+  const voiceEarlyTTSEndedRef    = useRef(false);
   useEffect(() => { continuousVoiceRef.current = continuousVoice; }, [continuousVoice]);
   useEffect(() => { voiceCallPhaseRef.current  = voiceCallPhase;  }, [voiceCallPhase]);
 
@@ -348,6 +352,12 @@ export default function Chat() {
     setStreamingContent("");
     setStreamError(null);
 
+    // Reset voice early-TTS coordination state for this message
+    voicePendingRemainderRef.current = null;
+    voiceEarlyTTSEndedRef.current    = false;
+    let voiceEarlyFired = false;   // fired TTS on first sentence already?
+    let voiceEarlyText  = "";      // the sentence we started TTS with
+
     let finalContent = "";
     let finalMessageId: string | null = null;
 
@@ -392,6 +402,44 @@ export default function Chat() {
             const chunk = data.text as string;
             setStreamingContent((prev) => prev + chunk);
             finalContent += chunk;
+
+            // ── Voice early TTS ────────────────────────────────────────────
+            // In voice call mode, start TTS on the first complete sentence
+            // rather than waiting for the entire reply to finish streaming.
+            // Sentence = ≥8 chars ending in . ! or ? followed by a space or end.
+            if (continuousVoiceRef.current && !voiceEarlyFired) {
+              const m = finalContent.match(/^(.{8,}?[.!?])(?=\s|$)/);
+              if (m?.[1]) {
+                voiceEarlyText  = m[1];
+                voiceEarlyFired = true;
+                setVoiceCallPhase("speaking");
+                speakText(voiceEarlyText, {
+                  voiceId: activeVoiceId,
+                  onStart: () => setIsSpeaking(true),
+                  onEnd: () => {
+                    // Mark the early TTS as done
+                    voiceEarlyTTSEndedRef.current = true;
+                    const pending = voicePendingRemainderRef.current;
+                    if (pending !== null) {
+                      // Stream already finished — speak the remainder now
+                      voicePendingRemainderRef.current = null;
+                      if (pending.text.length > 2) {
+                        handleSpeak(pending.text);
+                      } else {
+                        // Nothing left to say — restart listening directly
+                        setIsSpeaking(false);
+                        if (continuousVoiceRef.current) {
+                          setVoiceCallPhase("listening");
+                          voice.startListening();
+                        }
+                      }
+                    }
+                    // If pending is null, stream hasn't ended yet; the done
+                    // handler will pick it up via voiceEarlyTTSEndedRef.
+                  },
+                });
+              }
+            }
           } else if (eventName === "done") {
             finalMessageId = String(data.messageId);
             finalContent = data.content as string;
@@ -420,12 +468,35 @@ export default function Chat() {
     setStreamingContent("");
 
     if (finalMessageId && finalContent) {
-      // Prime the caption state before the query re-fetch lands, so the bubble
-      // enters LiveCaption mode immediately (no flash of full text).
-      setSpeakingMessageId(finalMessageId);
-      setRevealedWords(0);
       queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
-      handleSpeak(finalContent, finalMessageId);
+
+      if (continuousVoiceRef.current && voiceEarlyFired) {
+        // Early TTS already started on sentence 1.  Compute the remainder.
+        const remainder = finalContent.slice(voiceEarlyText.length).trim();
+
+        if (voiceEarlyTTSEndedRef.current) {
+          // Sentence 1 TTS already finished while the stream was still running —
+          // speak the remainder immediately.
+          voicePendingRemainderRef.current = null;
+          if (remainder.length > 2) {
+            handleSpeak(remainder);
+          } else {
+            setIsSpeaking(false);
+            setVoiceCallPhase("listening");
+            voice.startListening();
+          }
+        } else {
+          // Sentence 1 TTS is still playing — store remainder for its onEnd to pick up.
+          voicePendingRemainderRef.current = { text: remainder, id: finalMessageId };
+        }
+      } else {
+        // Normal (non-voice or no early TTS fired): speak the full reply.
+        // Prime the caption state before the query re-fetch lands, so the bubble
+        // enters LiveCaption mode immediately (no flash of full text).
+        setSpeakingMessageId(finalMessageId);
+        setRevealedWords(0);
+        handleSpeak(finalContent, finalMessageId);
+      }
     } else {
       queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
     }

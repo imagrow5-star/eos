@@ -62,20 +62,17 @@ router.post("/chat/stream", async (req, res): Promise<void> => {
   try {
     const profile = await getOrCreateProfileForUser(userId);
 
-    // Save user message (scoped to this user)
-    await db.insert(messagesTable).values({ userId, role: "user", content, isMorningNote: false });
-
-    // Count user messages for memory extraction trigger
-    const [countRow] = await db
-      .select({ count: sql<string>`count(*)` })
-      .from(messagesTable)
-      .where(and(eq(messagesTable.userId, userId), eq(messagesTable.role, "user")));
-    const userMsgCount = Number(countRow?.count ?? "0");
-
-    // Build system prompt, stage, and context window in parallel
-    const [systemPrompt, stage, recentMessages] = await Promise.all([
-      buildSystemPrompt(profile),
+    // Insert the user message and compute stage in parallel — system prompt
+    // doesn't depend on the insert, so these two round-trips overlap.
+    const [stage] = await Promise.all([
       calculateStage(profile),
+      db.insert(messagesTable).values({ userId, role: "user", content, isMorningNote: false }),
+    ]);
+
+    // Build system prompt (stage already known — no redundant DB call inside)
+    // and fetch the context window in parallel.
+    const [systemPrompt, recentMessages] = await Promise.all([
+      buildSystemPrompt(profile, stage),
       db
         .select()
         .from(messagesTable)
@@ -104,12 +101,17 @@ router.post("/chat/stream", async (req, res): Promise<void> => {
       .returning();
 
     sendEvent("done", { messageId: assistantMsg!.id, content: aiContent });
-    req.log.info({ userMsgCount }, "Message streamed");
     res.end();
 
     // ── Background extractions — fire-and-forget after response is sent ─────
+    // The message count query is also here (moved out of the critical path).
     (async () => {
-      const [openCommitments, activeHabits] = await Promise.all([
+      const [countRow, openCommitments, activeHabits] = await Promise.all([
+        // Count used only to decide whether to trigger memory extraction
+        db
+          .select({ count: sql<string>`count(*)` })
+          .from(messagesTable)
+          .where(and(eq(messagesTable.userId, userId), eq(messagesTable.role, "user"))),
         db
           .select({ id: commitmentsTable.id, content: commitmentsTable.content, cue: commitmentsTable.cue })
           .from(commitmentsTable)
@@ -121,6 +123,7 @@ router.post("/chat/stream", async (req, res): Promise<void> => {
           .where(and(eq(habitsTable.isActive, true), eq(habitsTable.userId, userId)))
           .limit(20),
       ]);
+      const userMsgCount = Number(countRow[0]?.count ?? "0");
 
       extractCommitments(profile, content, aiContent, openCommitments).catch((err) =>
         logger.error({ err }, "Background commitment extraction failed"),
@@ -140,6 +143,8 @@ router.post("/chat/stream", async (req, res): Promise<void> => {
           logger.error({ err }, "Background memory extraction failed"),
         );
       }
+
+      logger.info({ userMsgCount }, "Message streamed");
     })().catch((err) => logger.error({ err }, "Background extraction wrapper failed"));
 
   } catch (err) {

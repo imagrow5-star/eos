@@ -34,8 +34,10 @@ function last7Dates(): string[] {
 
 // ─── System prompt builder ────────────────────────────────────────────────────
 
-export async function buildSystemPrompt(profile: Profile): Promise<string> {
-  const stage = await calculateStage(profile);
+export async function buildSystemPrompt(profile: Profile, precomputedStage?: number): Promise<string> {
+  // Accept a pre-computed stage to avoid a redundant DB round-trip when the
+  // caller already has it (e.g. the streaming chat route computes it in parallel).
+  const stage = precomputedStage ?? await calculateStage(profile);
   const { label, rules } = stageMeta(stage);
   const isBereavement = profile.userPath === "bereavement";
   const userTimezone = (profile as any).timezone ?? "UTC";
