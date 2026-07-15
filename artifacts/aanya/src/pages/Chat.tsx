@@ -809,7 +809,7 @@ export default function Chat() {
       const a = document.createElement("a");
       a.href = objectUrl;
       const dateSlug = new Date().toISOString().slice(0, 10);
-      a.download = isHtml ? `asha-report-${dateSlug}.html` : `asha-export-${dateSlug}.json`;
+      a.download = isHtml ? `eos-report-${dateSlug}.html` : `eos-export-${dateSlug}.json`;
       a.click();
       URL.revokeObjectURL(objectUrl);
     } catch {
@@ -1157,12 +1157,13 @@ export default function Chat() {
           </div>
         </div>
 
-        {/* ASHA wordmark — centered */}
-        <div className="absolute left-1/2 -translate-x-1/2 select-none pointer-events-none">
-          <span className="font-serif text-[13px] font-medium tracking-[0.48em] text-foreground/70">
-            A S H{" "}
-          </span>
-          <span className="font-serif text-[13px] font-medium text-primary">A</span>
+        {/* Eos wordmark — centered */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center select-none pointer-events-none">
+          <div>
+            <span className="font-serif text-[13px] font-medium tracking-[0.48em] text-foreground/70">E O</span>
+            <span className="font-serif text-[13px] font-medium tracking-[0.48em] text-primary"> S</span>
+          </div>
+          <p className="font-serif italic text-[9px] tracking-[0.18em] text-primary/55 -mt-0.5">a new dawn</p>
         </div>
 
         {/* Right actions */}

@@ -46,11 +46,11 @@ export function EmailVerificationGate({ email, onVerified }: Props) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, ease: "easeOut" }}
       >
-        <h1 className="font-serif text-5xl text-primary tracking-[0.25em] uppercase mb-2">
-          ASHA
+        <h1 className="font-serif text-5xl text-primary tracking-[0.3em] uppercase mb-2">
+          EOS
         </h1>
-        <p className="text-muted-foreground text-sm tracking-widest uppercase">
-          Your companion, your story
+        <p className="font-serif italic text-primary/60 text-sm tracking-wider">
+          a new dawn
         </p>
       </motion.div>
 
