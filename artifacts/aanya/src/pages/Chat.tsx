@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText } from "lucide-react";
+import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -775,6 +775,23 @@ export default function Chat() {
                     </span>
                   )}
                 </div>
+
+                {/* ── Per-message speaker button ── */}
+                {isCompanion && (
+                  <button
+                    onClick={() => handleSpeak(msg.content, String(msg.id))}
+                    title={speakingMessageId === String(msg.id) ? "Playing…" : "Hear this message"}
+                    className={cn(
+                      "mt-1 ml-1 flex items-center gap-1 px-2.5 py-1 rounded-full text-[10.5px] font-medium transition-all",
+                      speakingMessageId === String(msg.id)
+                        ? "bg-primary/20 text-primary border border-primary/35"
+                        : "text-muted-foreground/45 hover:text-primary/80 hover:bg-primary/10 border border-transparent hover:border-primary/20",
+                    )}
+                  >
+                    <Volume2 className="w-3 h-3 shrink-0" />
+                    {speakingMessageId === String(msg.id) ? "Playing…" : "Listen"}
+                  </button>
+                )}
               </motion.div>
             );
           })}
@@ -960,23 +977,21 @@ export default function Chat() {
 
         {/* Right actions */}
         <div className="flex items-center gap-1">
-          {/* Settings */}
-          {onboarding?.isComplete && (
-            <button
-              onClick={() => setShowSettings((s) => !s)}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium tracking-wider uppercase transition-all",
-                showSettings
-                  ? "bg-primary/20 text-primary"
-                  : "text-primary/70 hover:text-primary hover:bg-primary/10 border border-primary/25",
-              )}
-            >
-              {showSettings
-                ? <><X className="w-3.5 h-3.5" /> Close</>
-                : <><Settings className="w-3.5 h-3.5" /> Settings</>
-              }
-            </button>
-          )}
+          {/* Settings — always visible once app loads */}
+          <button
+            onClick={() => setShowSettings((s) => !s)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold tracking-wider uppercase transition-all",
+              showSettings
+                ? "bg-primary/25 text-primary border border-primary/40"
+                : "text-primary border border-primary/40 bg-primary/10 hover:bg-primary/20",
+            )}
+          >
+            {showSettings
+              ? <><X className="w-3.5 h-3.5" /> Close</>
+              : <><Settings className="w-3.5 h-3.5" /> Settings</>
+            }
+          </button>
         </div>
       </header>
 
@@ -1567,6 +1582,17 @@ export default function Chat() {
                       )}
                     />
                     <div className="flex items-center gap-1">
+                      {/* ── Voice Call button — always in the bar ── */}
+                      <button
+                        type="button"
+                        onClick={toggleContinuousVoice}
+                        title="Start voice call"
+                        className="flex items-center gap-1.5 pl-3 pr-3.5 py-2 rounded-full bg-primary text-background text-[11.5px] font-bold tracking-widest uppercase shrink-0 shadow-[0_2px_14px_hsl(40_56%_50%/0.45)] hover:bg-primary/85 active:scale-95 transition-all"
+                      >
+                        <Phone className="w-3.5 h-3.5" strokeWidth={2.5} />
+                        Voice
+                      </button>
+
                       {/* ── Mic button — tap to speak, fills the input ── */}
                       <Button
                         type="button"
@@ -1642,23 +1668,7 @@ export default function Chat() {
                   )}
                 </AnimatePresence>
 
-                {/* ── Talk button — prominent gold call button ── */}
-                {onboarding?.isComplete && (
-                  <div className="max-w-3xl mx-auto mt-3">
-                    <button
-                      onClick={toggleContinuousVoice}
-                      className="flex items-center justify-center gap-2.5 w-full py-3.5 rounded-full bg-primary text-background text-[13px] font-semibold tracking-[0.12em] uppercase shadow-[0_4px_20px_hsl(40_56%_50%/0.35)] hover:shadow-[0_4px_28px_hsl(40_56%_50%/0.5)] hover:bg-primary/90 active:scale-[0.97] transition-all duration-200"
-                    >
-                      <Phone className="w-4 h-4" strokeWidth={2.2} />
-                      Start Voice Call
-                    </button>
-                    {voiceError && (
-                      <p className="text-center text-[12px] text-amber-400/75 mt-2 leading-relaxed px-2">
-                        {voiceError}
-                      </p>
-                    )}
-                  </div>
-                )}
+                {/* voiceError shown inline above */}
               </>
             )}
 
