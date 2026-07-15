@@ -143,15 +143,28 @@ describe("change-email warns the old address and its cancel link works", () => {
     expect(res.status).toBe(200);
     expect(res.body.pendingEmail).toBe(EMAIL_C);
 
-    // Emails are sent fire-and-forget after the response — wait for both.
-    await waitFor(() => fetchCalls.length >= 2);
+    // Emails are sent fire-and-forget after the response — wait for both the
+    // security alert (to the old address) and the confirmation (to the new one).
+    // Waiting on these specific mails rather than a raw count avoids racing with
+    // signup's own verification email, which can also land in `fetchCalls`.
+    await waitFor(
+      () =>
+        fetchCalls.some(
+          (c) => c.to.includes(EMAIL_A) && /security alert/i.test(c.subject),
+        ) && fetchCalls.some((c) => c.to.includes(EMAIL_C)),
+    );
 
     const token = await pendingChangeToken(userId);
     expect(token).not.toBeNull();
 
-    // Find the notice that went to the OLD (current) address.
-    const alert = fetchCalls.find((c) => c.to.includes(EMAIL_A));
-    expect(alert, "a notice should be sent to the old address").toBeTruthy();
+    // Find the notice that went to the OLD (current) address. Select by subject
+    // too: under load, signup's fire-and-forget verification email to EMAIL_A can
+    // resolve after the fetch stub is installed and land in `fetchCalls`, so match
+    // the security alert explicitly rather than the first mail to EMAIL_A.
+    const alert = fetchCalls.find(
+      (c) => c.to.includes(EMAIL_A) && /security alert/i.test(c.subject),
+    );
+    expect(alert, "a security notice should be sent to the old address").toBeTruthy();
     expect(alert!.subject).toMatch(/security alert/i);
 
     // The new address must appear ONLY in masked form, never in full.
