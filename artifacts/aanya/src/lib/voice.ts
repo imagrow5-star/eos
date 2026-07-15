@@ -183,6 +183,31 @@ export function stopSpeaking(): void {
   }
 }
 
+/**
+ * Call this once inside a user-gesture handler (e.g. a button click) BEFORE
+ * the first async TTS fetch.  It plays a tiny silent audio and queues + cancels
+ * a speech-synthesis utterance so both APIs are unlocked for the rest of the
+ * session — even after the gesture stack has unwound.
+ */
+export function unlockAudioOnGesture(): void {
+  // 1. Unlock HTMLAudioElement.play()
+  try {
+    const silence = new Audio(
+      "data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjQ1LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU4LjkxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA",
+    );
+    silence.volume = 0;
+    silence.play().catch(() => { /* already unlocked or blocked — both fine */ });
+  } catch { /* ignore */ }
+
+  // 2. Unlock Web Speech API
+  if (typeof window !== "undefined" && window.speechSynthesis) {
+    const u = new SpeechSynthesisUtterance("");
+    u.volume = 0;
+    window.speechSynthesis.speak(u);
+    window.speechSynthesis.cancel();
+  }
+}
+
 export async function speakText(text: string, options?: SpeakOptions): Promise<void> {
   const { onStart, onEnd, voiceId, signal: externalSignal, onWordReveal } = options ?? {};
 
@@ -210,6 +235,7 @@ export async function speakText(text: string, options?: SpeakOptions): Promise<v
     const response = await fetch(`${import.meta.env.BASE_URL}api/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify(body),
       signal,
     });

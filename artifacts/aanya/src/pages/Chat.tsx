@@ -22,7 +22,7 @@ import { chatMessageSchema, type ChatMessageFormValues } from "@/lib/schemas";
 import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useSpeechRecognition, speakText, stopSpeaking } from "@/lib/voice";
+import { useSpeechRecognition, speakText, stopSpeaking, unlockAudioOnGesture } from "@/lib/voice";
 import { cn } from "@/lib/utils";
 
 // ─── Voice catalogue ──────────────────────────────────────────────────────────
@@ -478,6 +478,7 @@ export default function Chat() {
       }
       setVoiceError(null);
       voice.clearError();
+      unlockAudioOnGesture(); // unlock Audio.play() + speechSynthesis in this gesture context
       setContinuousVoice(true);
       setVoiceCallPhase("listening");
       voice.startListening();
