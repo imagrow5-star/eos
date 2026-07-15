@@ -167,10 +167,11 @@ export function AuthScreen() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, ease: "easeOut" }}
       >
-        <h1 className="font-serif text-5xl text-primary tracking-[0.3em] uppercase mb-2">
+        <h1 className="font-serif text-5xl text-foreground tracking-[0.3em] uppercase mb-3">
           EOS
         </h1>
-        <p className="font-serif italic text-primary/60 text-sm tracking-wider">
+        <div className="h-px w-10 bg-primary/55 mx-auto mb-2.5" />
+        <p className="font-serif italic text-muted-foreground text-sm tracking-wider">
           a new dawn
         </p>
       </motion.div>

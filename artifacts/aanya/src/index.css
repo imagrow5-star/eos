@@ -35,11 +35,6 @@
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
 
-  /* ── Eos palette extensions ───────────────────────────────────────────────── */
-  /* Dawn Blush #D69C8A — first light of dawn; warm/emotional accents */
-  --color-dawn-blush: hsl(var(--dawn-blush));
-  --color-dawn-blush-foreground: hsl(var(--dawn-blush-foreground));
-
   --font-sans: 'Inter', sans-serif;
   --font-serif: 'Cormorant Garamond', serif;
 
@@ -53,97 +48,91 @@
 
 :root {
   /* ─────────────────────────────────────────────────────────────────────────
-     EOS — Goddess of Dawn
-     The palette mirrors the sky from deepest night through to the first light.
+     INTIMATE DUSK
+     A quiet, warm room lit by a single candle — the user speaks from the
+     dark; the companion answers in the light.
      ───────────────────────────────────────────────────────────────────────── */
 
-  /* Midnight Navy #0F172A — the night sky, main background */
-  --background: 220 47% 11%;
-  /* Daybreak Ivory #F4EADE — primary text, the new day arriving */
-  --foreground: 37 47% 91%;
+  /* Deep warm charcoal #1B1922 — the night, the room */
+  --background: 253 15% 12%;
+  /* Warm cream #EFE6D6 — the light she speaks in */
+  --foreground: 38 44% 89%;
 
-  /* Deep Indigo #1B2545 — twilight panels, card surfaces */
-  --card: 226 44% 19%;
-  --card-foreground: 37 47% 91%;
-  /* warm gold hairline */
-  --card-border: 40 30% 28%;
+  /* #2B2735 — her message card surfaces (twilight panels) */
+  --card: 257 15% 18%;
+  --card-foreground: 38 44% 89%;
+  --card-border: 35 20% 32%;
 
-  /* Deep Indigo — popovers match cards */
-  --popover: 226 44% 19%;
-  --popover-foreground: 37 47% 91%;
-  --popover-border: 40 30% 28%;
+  /* #252230 — lifted surfaces (input bar, popovers) */
+  --popover: 253 20% 16%;
+  --popover-foreground: 38 44% 89%;
+  --popover-border: 35 12% 28%;
 
-  /* Eos Gold #C69B3C — the sun breaking the horizon */
-  --primary: 40 56% 50%;
-  /* dark navy on gold */
-  --primary-foreground: 220 50% 8%;
+  /* Candlelit antique gold #C79A5B — wordmark, send button, active states only */
+  --primary: 35 49% 57%;
+  --primary-foreground: 253 15% 10%;
 
-  /* Champagne #EBDAB0 — warm highlights, stats, key labels */
-  --secondary: 43 50% 80%;
-  --secondary-foreground: 220 50% 11%;
+  /* Dimmer cream #C8BEAC — user-message text, secondary labels */
+  --secondary: 39 24% 73%;
+  --secondary-foreground: 253 15% 12%;
 
-  /* slightly deeper indigo panel */
-  --muted: 224 40% 16%;
-  /* soft ivory-gray for supporting text */
-  --muted-foreground: 37 22% 58%;
+  /* #211E2B — header/muted panel surfaces */
+  --muted: 254 18% 14%;
+  /* #8A8194 — supporting text, labels, placeholders */
+  --muted-foreground: 268 8% 54%;
 
-  /* lighter indigo for hover states */
-  --accent: 225 42% 22%;
-  --accent-foreground: 37 47% 91%;
+  /* Slightly lifted hover/active surface */
+  --accent: 253 18% 20%;
+  --accent-foreground: 38 44% 89%;
 
-  /* Dawn Blush #D69C8A — the first blush of light at the horizon */
-  --dawn-blush: 14 48% 69%;
-  --dawn-blush-foreground: 220 47% 11%;
+  /* Soft crimson — rarely used */
+  --destructive: 0 42% 32%;
+  --destructive-foreground: 38 44% 89%;
 
-  /* dark crimson — rarely used */
-  --destructive: 0 55% 28%;
-  --destructive-foreground: 37 47% 91%;
+  /* Warm hairline — rgba(200,180,150,0.12) approximated */
+  --border: 35 14% 26%;
+  /* Input surface */
+  --input: 253 20% 16%;
+  --ring: 35 49% 57%;
 
-  /* gold hairline borders — very subtle */
-  --border: 40 25% 22%;
-  --input: 226 35% 22%;
-  --ring: 40 56% 50%;
-
-  /* chart colors */
-  --chart-1: 40 56% 50%;   /* Eos Gold — primary metric line */
-  --chart-2: 43 50% 80%;   /* Champagne — secondary line */
-  --chart-3: 14 48% 69%;   /* Dawn Blush — mood / emotional data */
-  --chart-4: 220 35% 52%;  /* twilight blue */
-  --chart-5: 220 25% 40%;  /* muted navy */
+  /* Chart */
+  --chart-1: 35 49% 57%;    /* candlelit gold */
+  --chart-2: 38 44% 89%;    /* warm cream */
+  --chart-3: 39 24% 73%;    /* dimmer cream */
+  --chart-4: 268 8% 54%;    /* muted purple-gray */
+  --chart-5: 253 20% 16%;   /* deep surface */
 
   --radius: 0.75rem;
 }
 
-/* Force dark mode always — Eos has one intentional palette */
+/* Single palette — no dark-mode toggle needed */
 .dark {
-  --background: 220 47% 11%;
-  --foreground: 37 47% 91%;
-  --card: 226 44% 19%;
-  --card-foreground: 37 47% 91%;
-  --card-border: 40 30% 28%;
-  --popover: 226 44% 19%;
-  --popover-foreground: 37 47% 91%;
-  --popover-border: 40 30% 28%;
-  --primary: 40 56% 50%;
-  --primary-foreground: 220 50% 8%;
-  --secondary: 43 50% 80%;
-  --secondary-foreground: 220 50% 11%;
-  --muted: 224 40% 16%;
-  --muted-foreground: 37 22% 58%;
-  --accent: 225 42% 22%;
-  --accent-foreground: 37 47% 91%;
-  --dawn-blush: 14 48% 69%;
-  --dawn-blush-foreground: 220 47% 11%;
-  --destructive: 0 55% 28%;
-  --destructive-foreground: 37 47% 91%;
-  --border: 40 25% 22%;
-  --input: 226 35% 22%;
-  --ring: 40 56% 50%;
-  --chart-1: 40 56% 50%;
-  --chart-2: 43 50% 80%;
-  --chart-3: 14 48% 69%;
-  --chart-4: 220 35% 52%;
-  --chart-5: 220 25% 40%;
+  --background: 253 15% 12%;
+  --foreground: 38 44% 89%;
+  --card: 257 15% 18%;
+  --card-foreground: 38 44% 89%;
+  --card-border: 35 20% 32%;
+  --popover: 253 20% 16%;
+  --popover-foreground: 38 44% 89%;
+  --popover-border: 35 12% 28%;
+  --primary: 35 49% 57%;
+  --primary-foreground: 253 15% 10%;
+  --secondary: 39 24% 73%;
+  --secondary-foreground: 253 15% 12%;
+  --muted: 254 18% 14%;
+  --muted-foreground: 268 8% 54%;
+  --accent: 253 18% 20%;
+  --accent-foreground: 38 44% 89%;
+  --destructive: 0 42% 32%;
+  --destructive-foreground: 38 44% 89%;
+  --border: 35 14% 26%;
+  --input: 253 20% 16%;
+  --ring: 35 49% 57%;
+  --chart-1: 35 49% 57%;
+  --chart-2: 38 44% 89%;
+  --chart-3: 39 24% 73%;
+  --chart-4: 268 8% 54%;
+  --chart-5: 253 20% 16%;
 }
 
 @layer base {
@@ -154,21 +143,10 @@
   body {
     @apply font-sans antialiased text-foreground;
     /*
-     * Dawn gradient — the sky just before sunrise.
-     * Midnight navy fills most of the screen (the night).
-     * Low on the canvas a soft radial warmth rises from the horizon:
-     *   first the rose blush of first light, then a breath of gold.
-     * Kept deliberately faint so text stays perfectly readable.
+     * Intimate Dusk: flat warm charcoal. No gradients, no glows.
+     * The warmth comes from the typography and the gold accent alone.
      */
-    background-color: #0F172A;
-    background-image:
-      /* Eos Gold horizon breath — the sun's rim just below */
-      radial-gradient(ellipse 75% 28% at 50% 102%, rgba(198, 155, 60, 0.10) 0%, transparent 70%),
-      /* Dawn Blush — rose first-light spread */
-      radial-gradient(ellipse 100% 42% at 50% 105%, rgba(214, 156, 138, 0.11) 0%, transparent 65%),
-      /* Deep Indigo horizon band — twilight just above ground */
-      radial-gradient(ellipse 120% 55% at 50% 115%, rgba(27, 37, 69, 0.55) 0%, transparent 60%);
-    background-attachment: fixed;
+    background-color: #1B1922;
   }
 
   /* Companion messages always render in serif */
@@ -177,7 +155,7 @@
   }
 }
 
-/* ── Scrollbar — matches deep indigo palette ────────────────────────────────── */
+/* ── Scrollbar — warm charcoal palette ─────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
@@ -186,38 +164,58 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted));
+  background: hsl(var(--accent));
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--primary) / 0.4);
+  background: hsl(var(--primary) / 0.35);
 }
 
-/* ── Gold hairline divider utility ──────────────────────────────────────────── */
+/* ── Companion message bubble ─────────────────────────────────────────────────
+   Her card: card surface, subtle shadow, 2px antique-gold left border.
+   The left border is the "candle edge" — light entering from one side.
+─────────────────────────────────────────────────────────────────────────────── */
+.companion-bubble {
+  background-color: hsl(var(--card));
+  border-top: 1px solid rgba(200, 180, 150, 0.07);
+  border-right: 1px solid rgba(200, 180, 150, 0.07);
+  border-bottom: 1px solid rgba(200, 180, 150, 0.07);
+  border-left: 2px solid hsl(var(--primary) / 0.65);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.28), 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+
+/* ── User message bubble ──────────────────────────────────────────────────────
+   Recessed dark: the user speaks from the darkness.
+   Dimmer cream text so the contrast hierarchy is preserved.
+─────────────────────────────────────────────────────────────────────────────── */
+.user-bubble {
+  background-color: #141219;
+  border: 1px solid rgba(200, 180, 150, 0.07);
+}
+
+/* ── Hairline divider utility ───────────────────────────────────────────────── */
 .hairline {
-  border-color: hsl(var(--primary) / 0.18);
+  border-color: rgba(200, 180, 150, 0.10);
 }
 
-/* ── Dawn Blush highlight utility — for mood/emotional surfaces ─────────────── */
-.dawn-accent {
-  color: hsl(var(--dawn-blush));
-}
-.dawn-surface {
-  background-color: hsl(var(--dawn-blush) / 0.10);
-  border-color: hsl(var(--dawn-blush) / 0.25);
+/* ── Warm hairline hr ───────────────────────────────────────────────────────── */
+.warm-rule {
+  background-color: rgba(200, 180, 150, 0.10);
+  height: 1px;
+  border: none;
 }
 
 /* ── Voice mode pulse — gold variant ────────────────────────────────────────── */
 @keyframes voice-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(198, 155, 60, 0.35); }
-  70%  { box-shadow: 0 0 0 14px rgba(198, 155, 60, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(198, 155, 60, 0); }
+  0%   { box-shadow: 0 0 0 0 rgba(199, 154, 91, 0.35); }
+  70%  { box-shadow: 0 0 0 14px rgba(199, 154, 91, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(199, 154, 91, 0); }
 }
 .voice-active {
   animation: voice-pulse 2s infinite;
 }
 
-/* ── Gentle mode: slightly enlarged text for bereavement path ─────────────── */
+/* ── Gentle mode: enlarged type for bereavement path ───────────────────────── */
 .gentle-mode .companion-message {
   font-size: 1.0625rem;
   line-height: 1.75;

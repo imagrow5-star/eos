@@ -892,9 +892,9 @@ export default function Chat() {
             transition={{ duration: 0.4, ease: "easeOut" }}
             className="flex items-end gap-2 max-w-[85%]"
           >
-            <div className="bg-card border border-primary/15 px-5 py-3.5 rounded-2xl rounded-bl-sm shadow-sm">
+            <div className="companion-bubble px-5 py-3.5 rounded-2xl rounded-bl-sm">
               <p className={cn(
-                "companion-message leading-relaxed text-foreground/88",
+                "companion-message leading-relaxed text-foreground/90",
                 isBereavement ? "text-[17px]" : "text-[16px]",
               )}>
                 {onboarding?.companionFirstMessage || "Hello. What brought you here today?"}
@@ -931,10 +931,10 @@ export default function Chat() {
                 )}
                 <div
                   className={cn(
-                    "px-[18px] py-3 leading-relaxed shadow-sm relative",
+                    "px-[18px] py-3 leading-relaxed relative",
                     isCompanion
-                      ? "bg-card border border-primary/15 rounded-2xl rounded-tl-sm"
-                      : "bg-muted/60 border border-white/5 rounded-2xl rounded-tr-sm",
+                      ? "companion-bubble rounded-2xl rounded-tl-sm"
+                      : "user-bubble rounded-2xl rounded-tr-sm",
                   )}
                 >
                   {isCompanion && speakingMessageId === String(msg.id) ? (
@@ -952,7 +952,7 @@ export default function Chat() {
                     <p className={cn(
                       isCompanion
                         ? cn("companion-message text-foreground/90", isBereavement ? "text-[17px]" : "text-[16px]")
-                        : "font-sans text-[14.5px] text-foreground/70",
+                        : "font-sans text-[14.5px] text-secondary/85",
                     )}>
                       {msg.content}
                     </p>
@@ -1016,7 +1016,7 @@ export default function Chat() {
               <span className="text-[10px] text-muted-foreground/60 tracking-widests uppercase mb-1.5 ml-1">
                 {companionName}
               </span>
-              <div className="px-[18px] py-3 leading-relaxed shadow-sm bg-card border border-primary/15 rounded-2xl rounded-tl-sm">
+              <div className="px-[18px] py-3 leading-relaxed companion-bubble rounded-2xl rounded-tl-sm">
                 <p className={cn(
                   "companion-message text-foreground/90",
                   isBereavement ? "text-[17px]" : "text-[16px]",
@@ -1122,13 +1122,13 @@ export default function Chat() {
       </AnimatePresence>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <header className="h-16 flex items-center justify-between px-5 border-b border-primary/20 bg-background/98 backdrop-blur-xl z-20 shrink-0 relative">
+      <header className="h-16 flex items-center justify-between px-5 border-b border-[rgba(200,180,150,0.09)] bg-muted/95 backdrop-blur-xl z-20 shrink-0 relative">
         {/* Companion presence — left */}
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="relative shrink-0">
             <div className={cn(
               "w-8 h-8 rounded-full bg-card border flex items-center justify-center transition-all",
-              isSpeaking ? "border-primary/60 shadow-[0_0_8px_hsl(40_56%_50%/0.35)]" : "border-primary/25",
+              isSpeaking ? "border-primary/60 shadow-[0_0_8px_hsl(35_49%_57%/0.35)]" : "border-primary/25",
             )}>
               <span className="font-serif text-[11px] text-secondary/80 tracking-wider">
                 {companionInitials}
@@ -1158,12 +1158,10 @@ export default function Chat() {
         </div>
 
         {/* Eos wordmark — centered */}
-        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center select-none pointer-events-none">
-          <div>
-            <span className="font-serif text-[13px] font-medium tracking-[0.48em] text-foreground/70">E O</span>
-            <span className="font-serif text-[13px] font-medium tracking-[0.48em] text-primary"> S</span>
-          </div>
-          <p className="font-serif italic text-[9px] tracking-[0.18em] text-primary/55 -mt-0.5">a new dawn</p>
+        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center select-none pointer-events-none gap-0">
+          <span className="font-serif text-[13px] font-medium tracking-[0.46em] text-foreground/80">E O S</span>
+          <div className="h-px w-6 bg-primary/50 my-[3px]" />
+          <p className="font-serif italic text-[9px] tracking-[0.16em] text-muted-foreground/70">a new dawn</p>
         </div>
 
         {/* Right actions */}
@@ -1172,10 +1170,10 @@ export default function Chat() {
           <button
             onClick={() => setShowSettings((s) => !s)}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold tracking-wider uppercase transition-all",
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium tracking-wider uppercase transition-all duration-200",
               showSettings
-                ? "bg-primary/25 text-primary border border-primary/40"
-                : "text-primary border border-primary/40 bg-primary/10 hover:bg-primary/20",
+                ? "bg-primary/15 text-primary border border-primary/30"
+                : "text-foreground/45 border border-[rgba(200,180,150,0.14)] hover:text-foreground/70 hover:border-[rgba(200,180,150,0.24)]",
             )}
           >
             {showSettings
@@ -1193,7 +1191,7 @@ export default function Chat() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="bg-card/95 border-b border-primary/20 px-5 py-5 backdrop-blur-xl z-10 shrink-0 space-y-6 overflow-hidden"
+            className="bg-muted/95 border-b border-[rgba(200,180,150,0.09)] px-5 py-5 backdrop-blur-xl z-10 shrink-0 space-y-6 overflow-hidden"
           >
             {/* ── Companion name ─────────────────────────────────────────── */}
             <div>
@@ -1675,14 +1673,14 @@ export default function Chat() {
             className="px-4 sm:px-6 pb-5 pt-3 bg-background shrink-0 z-10"
           >
             <div className="h-px bg-primary/15 mb-4" />
-            <div className="max-w-3xl mx-auto bg-card border border-primary/20 rounded-2xl px-5 py-5 flex flex-col items-center gap-4">
+            <div className="max-w-3xl mx-auto bg-card border border-[rgba(200,180,150,0.09)] rounded-2xl px-5 py-5 flex flex-col items-center gap-4">
 
               {/* Companion avatar with phase animation */}
               <div className="relative">
                 <div className={cn(
                   "w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500",
                   voiceCallPhase === "speaking"
-                    ? "bg-primary/15 border-2 border-primary/50 shadow-[0_0_24px_hsl(40_56%_50%/0.3)]"
+                    ? "bg-primary/15 border-2 border-primary/50 shadow-[0_0_24px_hsl(35_49%_57%/0.28)]"
                     : voiceCallPhase === "listening"
                       ? "bg-primary/8 border-2 border-primary/25"
                       : voiceCallPhase === "error"
@@ -1762,7 +1760,7 @@ export default function Chat() {
                     transition={{ duration: 0.25, ease: "easeOut" }}
                     className="w-full px-1"
                   >
-                    <div className="bg-background/50 border border-primary/15 rounded-xl px-4 py-3 text-center">
+                    <div className="bg-[#141219]/90 border border-[rgba(200,180,150,0.09)] rounded-xl px-4 py-3 text-center">
                       <p className="companion-message text-[15px] leading-relaxed text-foreground/85 min-h-[1.5em]">
                         <LiveCaption
                           text={voiceCallCaptionText}
@@ -1809,7 +1807,7 @@ export default function Chat() {
             transition={{ duration: 0.2 }}
             className="px-4 sm:px-6 pb-5 pt-3 bg-background shrink-0 relative z-10"
           >
-            <div className="h-px bg-primary/15 mb-4" />
+            <div className="h-px bg-[rgba(200,180,150,0.10)] mb-4" />
 
             {showTextInput && (
               <>
@@ -1817,10 +1815,10 @@ export default function Chat() {
                   <form
                     onSubmit={form.handleSubmit(handleSend)}
                     className={cn(
-                      "flex items-center gap-2 max-w-3xl mx-auto bg-card border rounded-full pl-5 pr-2 py-1.5 shadow-sm transition-all",
+                      "flex items-center gap-2 max-w-3xl mx-auto bg-popover border rounded-full pl-5 pr-2 py-1.5 shadow-sm transition-all",
                       voice.isListening
-                        ? "border-primary/50 shadow-[0_0_0_3px_hsl(40_56%_50%/0.12)]"
-                        : "border-primary/20",
+                        ? "border-primary/45 shadow-[0_0_0_3px_hsl(35_49%_57%/0.10)]"
+                        : "border-[rgba(200,180,150,0.12)]",
                     )}
                   >
                     <FormField
@@ -1850,7 +1848,7 @@ export default function Chat() {
                         type="button"
                         onClick={toggleContinuousVoice}
                         title="Start voice call"
-                        className="flex items-center gap-1.5 pl-3 pr-3.5 py-2 rounded-full bg-primary text-background text-[11.5px] font-bold tracking-widest uppercase shrink-0 shadow-[0_2px_14px_hsl(40_56%_50%/0.45)] hover:bg-primary/85 active:scale-95 transition-all"
+                        className="flex items-center gap-1.5 pl-3 pr-3.5 py-2 rounded-full bg-primary/12 text-primary/80 border border-primary/20 text-[11.5px] font-medium tracking-widest uppercase shrink-0 hover:bg-primary/18 hover:text-primary active:scale-95 transition-all"
                       >
                         <Phone className="w-3.5 h-3.5" strokeWidth={2.5} />
                         Voice
@@ -1871,7 +1869,7 @@ export default function Chat() {
                         className={cn(
                           "rounded-full w-10 h-10 transition-all shrink-0",
                           voice.isListening
-                            ? "text-primary bg-primary/20 shadow-[0_0_0_3px_hsl(40_56%_50%/0.18),0_0_14px_hsl(40_56%_50%/0.18)]"
+                            ? "text-primary bg-primary/18 shadow-[0_0_0_3px_hsl(35_49%_57%/0.14),0_0_12px_hsl(35_49%_57%/0.14)]"
                             : "text-muted-foreground/70 hover:text-primary hover:bg-primary/10",
                         )}
                         onClick={() => {
@@ -1907,7 +1905,7 @@ export default function Chat() {
                       <Button
                         type="submit"
                         size="icon"
-                        className="rounded-full w-9 h-9 bg-primary/15 text-primary hover:bg-primary/25 transition-all border border-primary/25 shrink-0"
+                        className="rounded-full w-9 h-9 bg-primary text-primary-foreground hover:bg-primary/85 transition-all shrink-0 shadow-[0_2px_10px_hsl(35_49%_57%/0.30)]"
                         disabled={isTyping || isStreaming || !form.watch("content")}
                       >
                         <Send className="w-[16px] h-[16px] ml-0.5" strokeWidth={2} />

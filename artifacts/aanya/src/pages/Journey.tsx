@@ -776,13 +776,13 @@ export default function Journey() {
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "hsl(37 20% 50%)", fontSize: 10 }} dy={8} />
                 <YAxis domain={[1, 10]} axisLine={false} tickLine={false} tick={{ fill: "hsl(37 20% 50%)", fontSize: 10 }} />
                 <RechartsTooltip
-                  contentStyle={{ backgroundColor: "hsl(222 47% 14%)", border: "1px solid hsl(40 30% 28%)", borderRadius: "8px", fontSize: "12px" }}
-                  itemStyle={{ color: "hsl(43 50% 80%)" }}
-                  labelStyle={{ color: "hsl(37 20% 58%)", marginBottom: "3px" }}
+                  contentStyle={{ backgroundColor: "hsl(257 15% 18%)", border: "1px solid rgba(200,180,150,0.15)", borderRadius: "8px", fontSize: "12px" }}
+                  itemStyle={{ color: "hsl(38 44% 89%)" }}
+                  labelStyle={{ color: "hsl(268 8% 54%)", marginBottom: "3px" }}
                 />
-                <Line type="monotone" dataKey="score" stroke="hsl(40 56% 50%)" strokeWidth={1.5}
-                  dot={{ fill: "hsl(220 50% 11%)", stroke: "hsl(40 56% 50%)", strokeWidth: 1.5, r: 3 }}
-                  activeDot={{ r: 5, fill: "hsl(40 56% 50%)" }} />
+                <Line type="monotone" dataKey="score" stroke="hsl(35 49% 57%)" strokeWidth={1.5}
+                  dot={{ fill: "hsl(253 15% 12%)", stroke: "hsl(35 49% 57%)", strokeWidth: 1.5, r: 3 }}
+                  activeDot={{ r: 5, fill: "hsl(35 49% 57%)" }} />
               </LineChart>
             </ResponsiveContainer>
           ) : (
