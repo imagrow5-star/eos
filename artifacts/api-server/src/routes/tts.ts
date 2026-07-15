@@ -82,7 +82,7 @@ async function attemptTTS(
       },
       body: JSON.stringify({
         text: text.slice(0, 5000),
-        model_id: "eleven_multilingual_v2",
+        model_id: "eleven_flash_v2_5",
         voice_settings: VOICE_SETTINGS,
       }),
     },

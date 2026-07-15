@@ -229,6 +229,12 @@ export default function Chat() {
   // handler share state without race conditions.
   const voicePendingRemainderRef = useRef<{ text: string; id: string | null } | null>(null);
   const voiceEarlyTTSEndedRef    = useRef(false);
+  // Tracks how many words were in the early (first-sentence) TTS chunk so the
+  // remainder's onWordReveal can offset its count correctly.
+  const earlyWordCountRef        = useRef(0);
+  // Voice call live-caption state — words revealed in sync with ElevenLabs audio.
+  const [voiceCallCaptionText,     setVoiceCallCaptionText]     = useState("");
+  const [voiceCallCaptionRevealed, setVoiceCallCaptionRevealed] = useState(0);
   useEffect(() => { continuousVoiceRef.current = continuousVoice; }, [continuousVoice]);
   useEffect(() => { voiceCallPhaseRef.current  = voiceCallPhase;  }, [voiceCallPhase]);
 
@@ -355,8 +361,15 @@ export default function Chat() {
     // Reset voice early-TTS coordination state for this message
     voicePendingRemainderRef.current = null;
     voiceEarlyTTSEndedRef.current    = false;
+    earlyWordCountRef.current        = 0;
     let voiceEarlyFired = false;   // fired TTS on first sentence already?
     let voiceEarlyText  = "";      // the sentence we started TTS with
+
+    // Clear voice-call caption for the new reply
+    if (continuousVoiceRef.current) {
+      setVoiceCallCaptionText("");
+      setVoiceCallCaptionRevealed(0);
+    }
 
     let finalContent = "";
     let finalMessageId: string | null = null;
@@ -412,6 +425,13 @@ export default function Chat() {
               if (m?.[1]) {
                 voiceEarlyText  = m[1];
                 voiceEarlyFired = true;
+                const earlyWC   = voiceEarlyText.trim().split(/\s+/).length;
+                earlyWordCountRef.current = earlyWC;
+                // Seed the caption with the early sentence so words start
+                // revealing immediately; the done event will expand it to the
+                // full reply so the remainder words are also available.
+                setVoiceCallCaptionText(voiceEarlyText);
+                setVoiceCallCaptionRevealed(0);
                 setVoiceCallPhase("speaking");
                 speakText(voiceEarlyText, {
                   voiceId: activeVoiceId,
@@ -423,19 +443,13 @@ export default function Chat() {
                     if (pending !== null) {
                       // Stream already finished — speak the remainder now
                       voicePendingRemainderRef.current = null;
-                      if (pending.text.length > 2) {
-                        handleSpeak(pending.text);
-                      } else {
-                        // Nothing left to say — restart listening directly
-                        setIsSpeaking(false);
-                        if (continuousVoiceRef.current) {
-                          setVoiceCallPhase("listening");
-                          voice.startListening();
-                        }
-                      }
+                      speakVoiceRemainder(pending.text, earlyWordCountRef.current);
                     }
                     // If pending is null, stream hasn't ended yet; the done
                     // handler will pick it up via voiceEarlyTTSEndedRef.
+                  },
+                  onWordReveal: (count, _total) => {
+                    setVoiceCallCaptionRevealed(count);
                   },
                 });
               }
@@ -443,6 +457,12 @@ export default function Chat() {
           } else if (eventName === "done") {
             finalMessageId = String(data.messageId);
             finalContent = data.content as string;
+            // In voice call mode: expand the caption text to the full reply so
+            // that when the remainder TTS fires, its word positions align with
+            // the full text and the overlay reveals correctly word-by-word.
+            if (continuousVoiceRef.current) {
+              setVoiceCallCaptionText(finalContent);
+            }
           } else if (eventName === "error") {
             throw new Error(data.error as string);
           }
@@ -470,28 +490,30 @@ export default function Chat() {
     if (finalMessageId && finalContent) {
       queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
 
-      if (continuousVoiceRef.current && voiceEarlyFired) {
-        // Early TTS already started on sentence 1.  Compute the remainder.
-        const remainder = finalContent.slice(voiceEarlyText.length).trim();
+      if (continuousVoiceRef.current) {
+        if (voiceEarlyFired) {
+          // Early TTS already started on sentence 1.  Compute the remainder.
+          const remainder = finalContent.slice(voiceEarlyText.length).trim();
 
-        if (voiceEarlyTTSEndedRef.current) {
-          // Sentence 1 TTS already finished while the stream was still running —
-          // speak the remainder immediately.
-          voicePendingRemainderRef.current = null;
-          if (remainder.length > 2) {
-            handleSpeak(remainder);
+          if (voiceEarlyTTSEndedRef.current) {
+            // Sentence 1 TTS already finished while the stream was still running —
+            // speak the remainder now with the correct word offset.
+            voicePendingRemainderRef.current = null;
+            speakVoiceRemainder(remainder, earlyWordCountRef.current);
           } else {
-            setIsSpeaking(false);
-            setVoiceCallPhase("listening");
-            voice.startListening();
+            // Sentence 1 TTS is still playing — store remainder for its onEnd to pick up.
+            voicePendingRemainderRef.current = { text: remainder, id: finalMessageId };
           }
         } else {
-          // Sentence 1 TTS is still playing — store remainder for its onEnd to pick up.
-          voicePendingRemainderRef.current = { text: remainder, id: finalMessageId };
+          // No early TTS fired (very short reply or no sentence-terminal punctuation).
+          // Speak the whole reply with word-synced caption, offset from word 0.
+          setVoiceCallCaptionText(finalContent);
+          setVoiceCallCaptionRevealed(0);
+          speakVoiceRemainder(finalContent, 0);
         }
       } else {
-        // Normal (non-voice or no early TTS fired): speak the full reply.
-        // Prime the caption state before the query re-fetch lands, so the bubble
+        // Normal text mode: drive bubble caption via speakingMessageId + revealedWords.
+        // Prime the caption state before the query re-fetch lands so the bubble
         // enters LiveCaption mode immediately (no flash of full text).
         setSpeakingMessageId(finalMessageId);
         setRevealedWords(0);
@@ -595,6 +617,39 @@ export default function Chat() {
     onEnd: handleRecognitionEnd,
     onRecognitionError: handleRecognitionError,
   });
+
+  // ─── Voice call: speak a chunk with word-synced caption in the overlay ────
+  // wordOffset: how many words from the FULL reply were already spoken before
+  // this chunk (0 for the first/only chunk; earlyWordCount for the remainder).
+  const speakVoiceRemainder = (text: string, wordOffset: number) => {
+    if (!text.trim() || text.length <= 2) {
+      setIsSpeaking(false);
+      setVoiceCallMessage(null);
+      if (continuousVoiceRef.current) {
+        setVoiceCallPhase("listening");
+        voice.startListening();
+      }
+      return;
+    }
+    speakText(text, {
+      voiceId: activeVoiceId,
+      onStart: () => {
+        setIsSpeaking(true);
+        setVoiceCallPhase("speaking");
+      },
+      onEnd: () => {
+        setIsSpeaking(false);
+        setVoiceCallMessage(null);
+        if (continuousVoiceRef.current) {
+          setVoiceCallPhase("listening");
+          voice.startListening();
+        }
+      },
+      onWordReveal: (count, _total) => {
+        setVoiceCallCaptionRevealed(wordOffset + count);
+      },
+    });
+  };
 
   const toggleContinuousVoice = () => {
     if (continuousVoice) {
@@ -966,8 +1021,10 @@ export default function Chat() {
                   "companion-message text-foreground/90",
                   isBereavement ? "text-[17px]" : "text-[16px]",
                 )}>
-                  {streamingContent || (
-                    /* Pulsing dot while waiting for first token */
+                  {/* In voice call mode: never show streaming text — the caption
+                      overlay in the call panel is the only live text surface. */}
+                  {(!continuousVoice && streamingContent) || (
+                    /* Pulsing dot while waiting for first token (or always in voice mode) */
                     <motion.span
                       animate={{ opacity: [0.2, 0.65, 0.2] }}
                       transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
@@ -1689,6 +1746,32 @@ export default function Chat() {
                   )}
                 </AnimatePresence>
               </div>
+
+              {/* ── Live caption — words appear in sync with her voice ─────────
+                  Shows only as many words as have been spoken so far, driven by
+                  the ElevenLabs character-alignment timestamps.  The text is
+                  the full reply; revealedWords controls how much is visible. */}
+              <AnimatePresence>
+                {voiceCallCaptionText.trim().length > 0 && (
+                  <motion.div
+                    key="voice-caption"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.25, ease: "easeOut" }}
+                    className="w-full px-1"
+                  >
+                    <div className="bg-background/50 border border-primary/15 rounded-xl px-4 py-3 text-center">
+                      <p className="companion-message text-[15px] leading-relaxed text-foreground/85 min-h-[1.5em]">
+                        <LiveCaption
+                          text={voiceCallCaptionText}
+                          revealedWords={voiceCallCaptionRevealed}
+                        />
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Retry button — only shown in error phase so user can tap to try again */}
               {voiceCallPhase === "error" && (
