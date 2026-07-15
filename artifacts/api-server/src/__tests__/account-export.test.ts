@@ -570,4 +570,110 @@ describe("GET /api/account/export?format=html", () => {
     // The escaped form should be present instead
     expect(html).toContain("&lt;script&gt;");
   });
+
+  it("HTML report renders a section for every data category in the export payload", async () => {
+    /**
+     * Section-coverage guard (payload-derived) — the HTML twin of the JSON
+     * "export payload covers every table that has a user_id column" guard above.
+     *
+     * The downloadable/printable HTML report renders a HARDCODED list of
+     * sections. A newly added table can flow into the JSON export payload yet
+     * never get a section in the report, so the printed report silently omits
+     * that category. This guard reads the ACTUAL export payload keys and asserts
+     * that each one either maps to a rendered report section or is explicitly
+     * documented as intentionally report-excluded.
+     *
+     * It fails in both directions:
+     *   • a new category is added to the export payload but no report section is
+     *     added (its key appears in neither map below), and
+     *   • an existing report section is removed from buildHtmlReport (its mapped
+     *     title no longer appears in the rendered HTML).
+     */
+
+    // Payload keys that map to a rendered report section. Each value is a
+    // substring that MUST appear in the rendered report when the category is
+    // covered. If you add a data category to the export, add its section here
+    // (and render it in buildHtmlReport in account.ts).
+    const REPORT_SECTIONS: Record<string, string> = {
+      messages: "Conversation history",
+      wins: "Wins &amp; victories",
+      habits: "Habits",
+      goals: "Goals",
+      moodScores: "Mood journal",
+      memoryFacts: "knows about you",
+      commitments: "Commitments",
+      reminders: "Reminders",
+      personalitySignals: "Personality insights",
+    };
+
+    // Payload keys that are intentionally NOT their own report section, with the
+    // reason why. Keeps the report honest without forcing a section for metadata
+    // or data folded into another section.
+    const REPORT_EXCLUDED: Record<string, string> = {
+      exportedAt: "Export timestamp metadata — rendered in the cover, not a data category.",
+      range: "Optional date-range metadata — rendered in the cover, not a data category.",
+      profile: "Rendered in the report cover (companion name, journey) rather than a standalone section.",
+      habitCompletions: "Folded into the Habits section as per-habit completion counts, not a standalone section.",
+    };
+
+    const agentA = request.agent(app);
+    const a = await signupAndPopulate(agentA, HTML_EMAIL_A, "H");
+
+    // Read the live export payload keys — coverage is derived from the real
+    // response, not a static list, so this tracks the export route exactly.
+    const jsonRes = await agentA.get("/api/account/export");
+    expect(jsonRes.status).toBe(200);
+    const payloadKeys = Object.keys(jsonRes.body as Record<string, unknown>);
+
+    // Render the report for the same populated user.
+    const htmlRes = await agentA.get("/api/account/export?format=html");
+    expect(htmlRes.status).toBe(200);
+    const html = htmlRes.text;
+
+    // Sanity: A's real data must be present so we know the report actually
+    // rendered rather than returning an error page.
+    expect(html).toContain(a.messageContent);
+
+    // ── Every payload key must map to a report section or be a documented
+    // exclusion. A brand-new export category with no section lands here.
+    const uncovered = payloadKeys.filter(
+      (k) => !(k in REPORT_SECTIONS) && !(k in REPORT_EXCLUDED),
+    );
+    expect(
+      uncovered,
+      `The following export payload categories have NO section in the HTML ` +
+        `report and are not documented as report-excluded:\n  ${uncovered.join("\n  ")}\n\n` +
+        `Add a section for each in buildHtmlReport (account.ts) and map its ` +
+        `payload key to a section-title substring in REPORT_SECTIONS in this ` +
+        `test, or add it to REPORT_EXCLUDED with a reason it should stay out of ` +
+        `the printable report.`,
+    ).toEqual([]);
+
+    // ── Each mapped section must actually be rendered. Removing a section from
+    // buildHtmlReport while its key still lives in the payload lands here.
+    for (const [key, marker] of Object.entries(REPORT_SECTIONS)) {
+      if (!payloadKeys.includes(key)) continue;
+      expect(
+        html.includes(marker),
+        `Export payload includes "${key}" but its report section ` +
+          `("${marker}") is missing from the rendered HTML report. Restore the ` +
+          `section in buildHtmlReport (account.ts) so this category is not ` +
+          `silently dropped from the printable report.`,
+      ).toBe(true);
+    }
+
+    // ── Inverse guard: a REPORT_SECTIONS / REPORT_EXCLUDED entry must still be a
+    // real payload key, so stale mappings get cleaned up after a rename/removal.
+    const payloadKeySet = new Set(payloadKeys);
+    const staleMappings = [
+      ...Object.keys(REPORT_SECTIONS),
+      ...Object.keys(REPORT_EXCLUDED),
+    ].filter((k) => !payloadKeySet.has(k));
+    expect(
+      staleMappings,
+      `REPORT_SECTIONS / REPORT_EXCLUDED reference payload keys that no longer ` +
+        `exist in the export:\n  ${staleMappings.join("\n  ")}\n\n` +
+        `Remove or update these entries in this test file.`,
+    ).toEqual([]);
+  });
 });
