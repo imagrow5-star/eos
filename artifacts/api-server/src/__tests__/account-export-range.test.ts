@@ -14,6 +14,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
 import pg from "pg";
+import bcrypt from "bcryptjs";
 import app from "../app.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -323,5 +324,172 @@ describe("GET /api/account/export — `to` boundary precision", () => {
 
     expect(body.messages.map((m) => m.content)).toEqual(["msg-on-to"]);
     expect(body.moodScores.map((m) => m.score)).toEqual([6]);
+  });
+});
+
+// ─── Every remaining range-filtered category ────────────────────────────────────
+// messages (TIMESTAMP) and mood_scores (DATE) are exercised above. `buildRangeClause`
+// is also applied to eight other datasets — wins, memory_facts, habits, goals,
+// commitments, reminders, personality_signals (all on the `created_at` TIMESTAMP)
+// and habit_completions (on the `completed_date` DATE). A regression that leaked
+// out-of-window rows, or dropped in-window rows, in any of these would otherwise
+// ship untested. These tests seed each category around a single boundary day and
+// assert the same inclusive-`to` / exclusive-day-after behaviour end-to-end.
+
+const CATEGORY_EMAIL = `export-categories-${TS}@example.invalid`;
+
+/**
+ * Seed one dated row per category the day before the boundary (2026-06-14), on
+ * the boundary day (2026-06-15), and the day after (2026-06-16). TIMESTAMP
+ * categories get a late 23:30 time on their day so the end-of-day handling is
+ * genuinely exercised; the DATE-based habit_completions get plain calendar days.
+ */
+async function seedCategoryData(
+  agent: ReturnType<typeof request.agent>,
+  email: string,
+): Promise<number> {
+  // Create the user directly and log in, rather than going through
+  // POST /api/auth/signup. Signup sends a real verification email as a
+  // background (fire-and-forget) fetch; piling more of those onto the suite can
+  // tip timing-sensitive tests elsewhere. Login authenticates with no email.
+  const hashed = await bcrypt.hash("Test1234!", 12);
+  const inserted = await pool.query<{ id: number }>(
+    `INSERT INTO users (email, hashed_password, email_verified_at)
+     VALUES ($1, $2, NOW()) RETURNING id`,
+    [email, hashed],
+  );
+  const userId: number = inserted.rows[0]!.id;
+
+  const loginRes = await agent
+    .post("/api/auth/login")
+    .send({ email, password: "Test1234!" });
+  expect(loginRes.status).toBe(200);
+
+  await pool.query(
+    `INSERT INTO profile (user_id, user_name, companion_name, user_path)
+     VALUES ($1, 'Category User', 'Asha', 'breakup')
+     ON CONFLICT DO NOTHING`,
+    [userId],
+  );
+
+  const BEFORE = "2026-06-14T23:30:00Z";
+  const ON = "2026-06-15T23:30:00Z";
+  const AFTER = "2026-06-16T00:30:00Z";
+
+  await pool.query(
+    `INSERT INTO wins (user_id, content, created_at) VALUES
+       ($1, 'win-before', $2), ($1, 'win-on', $3), ($1, 'win-after', $4)`,
+    [userId, BEFORE, ON, AFTER],
+  );
+  await pool.query(
+    `INSERT INTO memory_facts (user_id, fact, created_at) VALUES
+       ($1, 'fact-before', $2), ($1, 'fact-on', $3), ($1, 'fact-after', $4)`,
+    [userId, BEFORE, ON, AFTER],
+  );
+  await pool.query(
+    `INSERT INTO habits (user_id, name, when_then, reason, created_at) VALUES
+       ($1, 'habit-before', 'when-then', 'reason', $2),
+       ($1, 'habit-on',     'when-then', 'reason', $3),
+       ($1, 'habit-after',  'when-then', 'reason', $4)`,
+    [userId, BEFORE, ON, AFTER],
+  );
+  await pool.query(
+    `INSERT INTO goals (user_id, title, created_at) VALUES
+       ($1, 'goal-before', $2), ($1, 'goal-on', $3), ($1, 'goal-after', $4)`,
+    [userId, BEFORE, ON, AFTER],
+  );
+  await pool.query(
+    `INSERT INTO commitments (user_id, content, created_at) VALUES
+       ($1, 'commit-before', $2), ($1, 'commit-on', $3), ($1, 'commit-after', $4)`,
+    [userId, BEFORE, ON, AFTER],
+  );
+  await pool.query(
+    `INSERT INTO reminders (user_id, content, created_at) VALUES
+       ($1, 'remind-before', $2), ($1, 'remind-on', $3), ($1, 'remind-after', $4)`,
+    [userId, BEFORE, ON, AFTER],
+  );
+  await pool.query(
+    `INSERT INTO personality_signals (user_id, signal, created_at) VALUES
+       ($1, 'signal-before', $2), ($1, 'signal-on', $3), ($1, 'signal-after', $4)`,
+    [userId, BEFORE, ON, AFTER],
+  );
+
+  // habit_completions filter on their own `completed_date` (DATE), independently
+  // of the parent habit. The parent habit is created well outside every test
+  // window so it never appears in the habits result and can't skew that
+  // assertion, while its completions are still filtered on completed_date.
+  const compHabit = await pool.query<{ id: number }>(
+    `INSERT INTO habits (user_id, name, when_then, reason, created_at)
+     VALUES ($1, 'comp-habit', 'when-then', 'reason', '2026-01-01T00:00:00Z') RETURNING id`,
+    [userId],
+  );
+  const habitId = compHabit.rows[0]!.id;
+  await pool.query(
+    `INSERT INTO habit_completions (user_id, habit_id, completed_date) VALUES
+       ($1, $2, '2026-06-14'), ($1, $2, '2026-06-15'), ($1, $2, '2026-06-16')`,
+    [userId, habitId],
+  );
+
+  return userId;
+}
+
+interface CategoryBody {
+  wins: { content: string }[];
+  memoryFacts: { fact: string }[];
+  habits: { name: string }[];
+  goals: { title: string }[];
+  commitments: { content: string }[];
+  reminders: { content: string }[];
+  personalitySignals: { signal: string }[];
+  habitCompletions: { completed_date: string; habit_name: string }[];
+}
+
+describe("GET /api/account/export — every category honors the date filter", () => {
+  afterEach(async () => {
+    await cleanupUser(CATEGORY_EMAIL);
+  });
+
+  it("a single-day window returns only the on-boundary row for every category", async () => {
+    const agent = request.agent(app);
+    await seedCategoryData(agent, CATEGORY_EMAIL);
+
+    const res = await agent.get("/api/account/export?from=2026-06-15&to=2026-06-15");
+    expect(res.status).toBe(200);
+    const body = res.body as CategoryBody;
+
+    // Each category drops the day-before AND day-after rows, keeping only the
+    // one on the boundary day — proving `from`/`to` inclusion and both-sided
+    // exclusion simultaneously.
+    expect(body.wins.map((w) => w.content)).toEqual(["win-on"]);
+    expect(body.memoryFacts.map((f) => f.fact)).toEqual(["fact-on"]);
+    expect(body.habits.map((h) => h.name)).toEqual(["habit-on"]);
+    expect(body.goals.map((g) => g.title)).toEqual(["goal-on"]);
+    expect(body.commitments.map((c) => c.content)).toEqual(["commit-on"]);
+    expect(body.reminders.map((r) => r.content)).toEqual(["remind-on"]);
+    expect(body.personalitySignals.map((s) => s.signal)).toEqual(["signal-on"]);
+    expect(body.habitCompletions.map((hc) => hc.completed_date)).toEqual(["2026-06-15"]);
+  });
+
+  it("a window ending on the boundary includes the `to` day and excludes the day after, for every category", async () => {
+    const agent = request.agent(app);
+    await seedCategoryData(agent, CATEGORY_EMAIL);
+
+    const res = await agent.get("/api/account/export?from=2026-06-01&to=2026-06-15");
+    expect(res.status).toBe(200);
+    const body = res.body as CategoryBody;
+
+    // The `to` day (2026-06-15) is kept and the day after (2026-06-16) is
+    // dropped across every range-filtered category (ordered by their date column).
+    expect(body.wins.map((w) => w.content)).toEqual(["win-before", "win-on"]);
+    expect(body.memoryFacts.map((f) => f.fact)).toEqual(["fact-before", "fact-on"]);
+    expect(body.habits.map((h) => h.name)).toEqual(["habit-before", "habit-on"]);
+    expect(body.goals.map((g) => g.title)).toEqual(["goal-before", "goal-on"]);
+    expect(body.commitments.map((c) => c.content)).toEqual(["commit-before", "commit-on"]);
+    expect(body.reminders.map((r) => r.content)).toEqual(["remind-before", "remind-on"]);
+    expect(body.personalitySignals.map((s) => s.signal)).toEqual(["signal-before", "signal-on"]);
+    expect(body.habitCompletions.map((hc) => hc.completed_date)).toEqual([
+      "2026-06-14",
+      "2026-06-15",
+    ]);
   });
 });
