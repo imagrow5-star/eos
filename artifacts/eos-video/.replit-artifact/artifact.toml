@@ -1,0 +1,27 @@
+kind = "video"
+previewPath = "/eos-video/"
+title = "Eos — A New Dawn"
+version = "1.0.0"
+id = "artifacts/eos-video"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/eos-video/" ]
+localPort = 25399
+
+[services.development]
+run = "pnpm --filter @workspace/eos-video run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/eos-video", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/eos-video/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25399"
+BASE_PATH = "/eos-video/"
