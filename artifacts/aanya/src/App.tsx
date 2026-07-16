@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AnimatePresence } from "framer-motion";
 import { Route, Switch, Router as WouterRouter } from "wouter";
 import { Shell } from "@/components/layout/Shell";
 import Chat from "@/pages/Chat";
@@ -7,6 +8,7 @@ import Journey from "@/pages/Journey";
 import Memory from "@/pages/Memory";
 import { AuthScreen } from "@/pages/AuthScreen";
 import { EmailVerificationGate } from "@/pages/EmailVerificationGate";
+import { SplashScreen } from "@/components/SplashScreen";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -123,9 +125,38 @@ function AuthGate() {
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 function App() {
+  // Show splash once per browser session — sessionStorage resets when the tab
+  // is closed, so the user sees it again on a fresh visit but not on every
+  // in-app navigation.
+  const [showSplash, setShowSplash] = useState(() => {
+    try {
+      return !sessionStorage.getItem("eos-splash-shown");
+    } catch {
+      return false; // if storage is blocked, skip splash rather than block the user
+    }
+  });
+
+  const handleSplashDone = () => {
+    try {
+      sessionStorage.setItem("eos-splash-shown", "1");
+    } catch {}
+    setShowSplash(false);
+  };
+
   return (
     <QueryClientProvider client={queryClient}>
+      {/*
+       * AuthGate always renders — it fires /api/auth/me immediately so the
+       * auth check completes in the background during the splash animation.
+       * When the splash ends it's already gone and the correct screen
+       * (login or chat) is ready underneath.
+       */}
       <AuthGate />
+
+      {/* Splash overlay — sits on top via fixed z-50, removed after animation */}
+      <AnimatePresence>
+        {showSplash && <SplashScreen onDone={handleSplashDone} />}
+      </AnimatePresence>
     </QueryClientProvider>
   );
 }
