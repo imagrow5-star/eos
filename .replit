@@ -45,4 +45,4 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.shared]
-RESEND_FROM_EMAIL = "ASHA <noreply@itslexa.com>"
+RESEND_FROM_EMAIL = "Eos <noreply@itslexa.com>"
