@@ -108,6 +108,7 @@ export async function streamCompanionReply(
     const stream = await (anthropic.messages.create as any)({
       model: "claude-sonnet-4-5-20250929",
       max_tokens: 600,
+      temperature: 0.8,
       system: [
         {
           type: "text",
@@ -166,6 +167,7 @@ export async function getCompanionReply(
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-5-20250929",
       max_tokens: 600,
+      temperature: 0.8,
       system: [
         {
           type: "text",
@@ -234,24 +236,59 @@ export async function generateMorningNoteContent(
       ? `\nThere are pending commitments to gently and warmly check in on (ONLY if the note's tone allows — never robotic, never guilt-inducing): ${pendingFollowUps.map((c) => `"${c.content}"${c.cue ? ` (cue: ${c.cue})` : ""}`).join("; ")}`
       : "";
 
-  const prompt =
+  const contextLines: string[] = [];
+  if (facts.length > 0) {
+    contextLines.push(`About ${profile.userName || "them"}:\n${facts.map((f) => `• ${f.fact}`).join("\n")}`);
+  }
+  if (wins.length > 0) {
+    contextLines.push(`Recent wins:\n${wins.map((w) => `• ${w.content}`).join("\n")}`);
+  }
+  if (pendingFollowUps.length > 0) {
+    contextLines.push(
+      `Pending commitment(s) to gently check in on:\n${pendingFollowUps
+        .map((c) => `• "${c.content}"${c.cue ? ` (cue: ${c.cue})` : ""}`)
+        .join("\n")}`,
+    );
+  }
+  contextLines.push(`Day ${daysSinceStart} since they started.`);
+
+  const pathNote =
     stage <= 2
-      ? `Write a short, warm morning note (3–5 sentences) from ${profile.companionName} to ${profile.userName || "them"}. Pure warmth — no advice, no suggestions, absolutely no task-talk. Reference their real life naturally: ${factsText}. Day ${daysSinceStart} of their journey. Not a wellness lecture. Human and personal.`
-      : `Write a short morning note (4–6 sentences) from ${profile.companionName} to ${profile.userName || "them"}. Warm and personal. Reference their real life: ${factsText}. Acknowledge their wins: ${winsText}. Day ${daysSinceStart}.${followUpText} If checking in on a commitment: do it warmly in one sentence, never mechanically. No emojis. No buzzwords. Plain, human prose.`;
+      ? "\nThey are early in their healing — still in the raw stage. Pure presence only. No advice, no suggestions, no task-talk."
+      : "";
+
+  const prompt = `You are ${profile.companionName}. You're writing ${profile.userName || "them"} a short in-app morning note — 4 to 6 sentences, no more.
+
+This appears when they open the app in the morning. It should feel like it was written just for them, not generated.
+
+WHAT YOU KNOW:
+${contextLines.join("\n\n")}
+${pathNote}
+
+RULES:
+• Reference 1–2 SPECIFIC things from what you know about them. Not vague warmth — their actual wins, facts, or habits. Specificity is what makes it land.
+• ${stage <= 2 ? "Stage 1–2: pure warmth and presence only. No suggestions, no tasks. Just being with them." : "End with one low-stakes, optional nudge for today tied to their real life — not abstract."}
+• NEVER use: "I'm here for you" · "you've got this" · "be kind to yourself" · "one step at a time" · "proud of you" · "your journey" · "healing journey" · "self-care" · "self-love" · "stay strong" · "hang in there" · "keep going" · "you're doing amazing" · "it's okay to feel" · "give yourself grace" · "embrace" · "lean into" · "mindfulness" · any therapy buzzwords.
+• No greeting-card phrases. Plain, warm, human sentences.
+• No sign-off — it's in-app, not an email. Just the note itself.
+• Do NOT invent details not given above.
+
+Write only the note text.`;
 
   try {
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-5-20250929",
       max_tokens: 350,
+      temperature: 0.8,
       messages: [{ role: "user", content: prompt }],
     });
     const textBlock = response.content.find((b) => b.type === "text");
     return (
       textBlock?.text ??
-      `Good morning, ${profile.userName || ""}. I'm thinking of you today.`
+      `${profile.userName ? profile.userName + " — " : ""}thinking of you today.`
     );
   } catch {
-    return `Good morning, ${profile.userName || ""}. I'm here, thinking of you.`;
+    return `${profile.userName ? profile.userName + " — " : ""}I'm here with you today.`;
   }
 }
 

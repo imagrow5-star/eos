@@ -448,6 +448,31 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@25.9.4)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.0)(yaml@2.9.0)
 
+  artifacts/daily-email:
+    dependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^0.111.0
+        version: 0.111.0(zod@3.25.76)
+      '@workspace/db':
+        specifier: workspace:*
+        version: link:../../lib/db
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@types/pg@8.20.0)(pg@8.22.0)
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.9.4
+      esbuild:
+        specifier: 0.27.3
+        version: 0.27.3
+      pg:
+        specifier: ^8.22.0
+        version: 8.22.0
+      tsx:
+        specifier: 'catalog:'
+        version: 4.23.0
+
   artifacts/eos-video:
     devDependencies:
       '@react-spring/web':

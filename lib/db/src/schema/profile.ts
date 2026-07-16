@@ -24,6 +24,9 @@ export const profileTable = pgTable("profile", {
   companionGender: text("companion_gender").notNull().default("woman"), // woman | man | nonbinary
   userGender: text("user_gender"), // man | woman | other (nullable — optional onboarding step)
   timezone: text("timezone").notNull().default("UTC"), // IANA timezone e.g. "America/New_York"
+  // Daily email preferences
+  dailyEmailOptOut: boolean("daily_email_opt_out").notNull().default(false),
+  lastEmailDate: text("last_email_date"), // YYYY-MM-DD — last date we sent a daily email, per their timezone
 });
 
 export const insertProfileSchema = createInsertSchema(profileTable).omit({ id: true });

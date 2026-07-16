@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { requireAuth, requireVerified } from "../middleware/auth.js";
 import healthRouter from "./health";
 import authRouter from "./auth";
+import emailRouter from "./email";
 import onboardingRouter from "./onboarding";
 import profileRouter from "./profile";
 import chatRouter from "./chat";
@@ -18,6 +19,7 @@ const router: IRouter = Router();
 // ─── Public routes — no authentication required ───────────────────────────────
 router.use(healthRouter);
 router.use(authRouter);
+router.use(emailRouter);  // one-click unsubscribe — no auth
 
 // ─── Protected routes — valid session + verified email required ───────────────
 // requireAuth sets req.userId; requireVerified checks emailVerifiedAt in the DB.
