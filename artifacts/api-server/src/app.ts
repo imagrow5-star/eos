@@ -53,6 +53,7 @@ pool
   .query(`
     ALTER TABLE profile ADD COLUMN IF NOT EXISTS daily_email_opt_out boolean NOT NULL DEFAULT false;
     ALTER TABLE profile ADD COLUMN IF NOT EXISTS last_email_date text;
+    ALTER TABLE profile ADD COLUMN IF NOT EXISTS last_greeting_at timestamp;
   `)
   .catch((err) => logger.error({ err }, "Failed to ensure daily email columns"));
 

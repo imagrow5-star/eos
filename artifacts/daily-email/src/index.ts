@@ -262,9 +262,9 @@ async function generateNoteText(ctx: UserContext): Promise<string> {
     ? "\nThey are processing the end of a relationship."
     : "";
 
-  const prompt = `You are ${ctx.companionName}. You're writing ${ctx.name} a short morning note — 4 to 7 sentences, no more.
+  const prompt = `You are ${ctx.companionName}. You're writing ${ctx.name} a short morning note — 4 to 7 sentences.
 
-This lands in their inbox first thing. It should feel like it was written just for them this morning by someone who has genuinely been paying attention — not generated, not a wellness newsletter, not therapy.
+This is a close, loving person writing to someone they genuinely care about. It should feel personal, warm, and real — not generated, not a wellness newsletter, not therapy. Like it was written this morning by someone who has genuinely been thinking about them.
 
 WHAT YOU KNOW ABOUT ${ctx.name.toUpperCase()}:
 ${lines.join("\n\n")}
@@ -272,11 +272,13 @@ ${pathNote}
 
 HOW TO WRITE IT:
 • Pick 1–2 specific things from what you know and reference them directly. Not "you've been working hard" — their actual habit, their actual win, a real detail. Specificity is what makes it feel human.
-• End with one low-stakes, concrete, optional nudge for today tied to something real in their life. Not abstract. Not "do something nice for yourself." Something that fits them.
-• Plain human sentences. No bullet points, no lists, no em-dashes for effect.
+${ctx.pendingCommitment
+  ? `• They said they'd do something: "${ctx.pendingCommitment}". Weave in ONE warm, gentle check-in — "did you get that [thing] in?" or "hope [the thing] went well" — like a close friend who was actually thinking about them. Not a task reminder. Genuine care.`
+  : `• End with one small, concrete nudge tied to something real in their life — not abstract, not generic. Something that fits them specifically.`}
+• Plain human sentences. No bullet points, no lists.
 • Don't start with "Good morning" — that's a template opener.
-• No sign-off at the end (no "Warmly," "Love," etc.). The note just ends on its last thought.
-• Vary the tone day to day — sometimes observational, sometimes a bit playful, sometimes quieter.
+• No sign-off at the end. The note just ends on its last thought.
+• Vary the tone — sometimes observational, sometimes gently playful, sometimes quieter and more present.
 
 FORBIDDEN — never use these or close variants:
 "I'm here for you" · "you've got this" · "be kind to yourself" · "one step/day at a time" · "proud of you" · "your journey" · "healing journey" · "growth mindset" · "self-care" · "self-love" · "stay strong" · "hang in there" · "keep going" · "you're doing amazing" · "it's okay to feel" · "give yourself grace" · "show up for yourself" · "embrace" · "lean into" · "hold space" · "safe space" · "honor your feelings" · "check in with yourself" · "practice" · "mindfulness" · "intentional" · "gentle reminder" · any therapy jargon.

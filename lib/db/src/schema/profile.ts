@@ -27,6 +27,7 @@ export const profileTable = pgTable("profile", {
   // Daily email preferences
   dailyEmailOptOut: boolean("daily_email_opt_out").notNull().default(false),
   lastEmailDate: text("last_email_date"), // YYYY-MM-DD — last date we sent a daily email, per their timezone
+  lastGreetingAt: timestamp("last_greeting_at"), // when we last generated a contextual greeting (morning/evening/night)
 });
 
 export const insertProfileSchema = createInsertSchema(profileTable).omit({ id: true });

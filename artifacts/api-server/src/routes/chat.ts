@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, asc, sql, and } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { messagesTable, profileTable, commitmentsTable, habitsTable } from "@workspace/db";
+import { messagesTable, profileTable, commitmentsTable, habitsTable, moodScoresTable, habitCompletionsTable } from "@workspace/db";
 import {
   GetMessagesResponse,
   SendMessageBody,
@@ -16,8 +16,9 @@ import {
   extractCommitments,
   detectHabitMentions,
   generateMorningNoteContent,
+  generateContextualGreeting,
 } from "../services/ai.js";
-import { calculateStage, todayInTimezone } from "../services/stage.js";
+import { calculateStage, todayInTimezone, getTimeContext } from "../services/stage.js";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { logger } from "../lib/logger.js";
 
@@ -243,6 +244,110 @@ router.post("/chat/send", async (req, res): Promise<void> => {
       memoryExtracted,
     }),
   );
+});
+
+// ─── Contextual greeting (time-aware, slot-based proactive care) ─────────────
+// Returns { message: MessageObject } or { message: null } when no greeting is
+// needed right now (too recent, or it's midday and the user hasn't been absent).
+
+function getGreetingSlot(partOfDay: string): "morning" | "evening" | "night" | null {
+  switch (partOfDay) {
+    case "early morning":
+    case "morning":   return "morning";
+    case "evening":   return "evening";
+    case "night":     return "night";
+    default:          return null; // afternoon — no proactive greeting unless absent
+  }
+}
+
+router.post("/chat/contextual-greeting", async (req, res): Promise<void> => {
+  const userId = req.userId;
+  const profile = await getOrCreateProfileForUser(userId);
+  const tz = (profile as any).timezone ?? "UTC";
+  const timeCtx = getTimeContext(tz);
+  const today = todayInTimezone(tz);
+
+  const slot = getGreetingSlot(timeCtx.partOfDay);
+  const rawTs = (profile as any).lastGreetingAt;
+  const lastGreetingAt: Date | null = rawTs ? new Date(rawTs) : null;
+
+  const hoursSinceLast = lastGreetingAt
+    ? (Date.now() - lastGreetingAt.getTime()) / (1000 * 60 * 60)
+    : 999;
+  const daysSinceLast = hoursSinceLast / 24;
+
+  const isAbsent   = daysSinceLast >= 2;
+  const tooRecent  = hoursSinceLast < 6;
+
+  // Too recent: suppress regardless of time
+  if (tooRecent) { res.json({ message: null }); return; }
+  // No natural slot (afternoon) and not a comeback after absence: suppress
+  if (!slot && !isAbsent) { res.json({ message: null }); return; }
+
+  const effectiveSlot = isAbsent ? "absent" : slot!;
+  const stage = await calculateStage(profile);
+
+  // Fetch greeting context in parallel
+  const [pendingFollowUps, activeHabits, todayCompletions, recentMoods] = await Promise.all([
+    // Commitments overdue for follow-up
+    db.select({ id: commitmentsTable.id, content: commitmentsTable.content, cue: commitmentsTable.cue })
+      .from(commitmentsTable)
+      .where(and(
+        eq(commitmentsTable.userId, userId),
+        sql`${commitmentsTable.state} = 'open'`,
+        sql`${commitmentsTable.scheduledFollowupDate} IS NOT NULL
+            AND ${commitmentsTable.scheduledFollowupDate} <= ${today}`,
+      ))
+      .limit(2),
+    db.select({ id: habitsTable.id, name: habitsTable.name, streak: habitsTable.streak })
+      .from(habitsTable)
+      .where(and(eq(habitsTable.userId, userId), eq(habitsTable.isActive, true))),
+    db.select({ habitId: habitCompletionsTable.habitId })
+      .from(habitCompletionsTable)
+      .where(and(eq(habitCompletionsTable.userId, userId), eq(habitCompletionsTable.completedDate, today))),
+    db.select({ score: moodScoresTable.score })
+      .from(moodScoresTable)
+      .where(eq(moodScoresTable.userId, userId))
+      .orderBy(desc(moodScoresTable.createdAt))
+      .limit(5),
+  ]);
+
+  const completedToday = new Set(todayCompletions.map((c) => c.habitId));
+  const habitsForGreeting = activeHabits.map((h) => ({
+    name: h.name,
+    streak: h.streak ?? 0,
+    doneToday: completedToday.has(h.id),
+  }));
+
+  const avgMood = recentMoods.length > 0
+    ? recentMoods.reduce((s, m) => s + m.score, 0) / recentMoods.length
+    : null;
+  const moodSummary = avgMood !== null
+    ? avgMood >= 7 ? "doing well lately"
+    : avgMood >= 5 ? "somewhere in the middle"
+    : "going through a harder stretch"
+    : null;
+
+  const greetingContent = await generateContextualGreeting(profile, stage, {
+    slot: effectiveSlot,
+    absentDays: Math.round(daysSinceLast),
+    pendingFollowUp: pendingFollowUps.map((c) => ({ content: c.content, cue: c.cue ?? "" })),
+    habits: habitsForGreeting,
+    moodSummary,
+  });
+
+  const [greetingMsg] = await db
+    .insert(messagesTable)
+    .values({ userId, role: "assistant", content: greetingContent, isMorningNote: true })
+    .returning();
+
+  // Update last-greeting timestamp (as any until lib/db is rebuilt)
+  await db.update(profileTable)
+    .set({ lastGreetingAt: new Date() } as any)
+    .where(eq(profileTable.userId, userId));
+
+  req.log.info({ slot: effectiveSlot }, "Contextual greeting generated");
+  res.json({ message: greetingMsg });
 });
 
 router.post("/chat/morning-note", async (req, res): Promise<void> => {

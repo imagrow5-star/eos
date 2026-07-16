@@ -9,7 +9,6 @@ import {
   useGetOnboardingStatus,
   useSubmitOnboardingAnswer,
   useGetMessages,
-  useGenerateMorningNote,
   useGetProfile,
   useUpdateProfile,
   getGetOnboardingStatusQueryKey,
@@ -17,6 +16,7 @@ import {
   getGetProfileQueryKey,
 } from "@workspace/api-client-react";
 
+import { useContextualGreeting } from "@/api/contextualGreeting";
 import { ChangeEmailForm } from "@/components/ChangeEmailForm";
 import { chatMessageSchema, type ChatMessageFormValues } from "@/lib/schemas";
 import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
@@ -193,7 +193,7 @@ export default function Chat() {
     query: { queryKey: getGetMessagesQueryKey(), enabled: !!onboarding?.isComplete },
   });
 
-  const generateMorningNote = useGenerateMorningNote();
+  const contextualGreeting = useContextualGreeting();
   const submitAnswer = useSubmitOnboardingAnswer();
   const updateProfile = useUpdateProfile();
 
@@ -297,16 +297,14 @@ export default function Chat() {
     defaultValues: { content: "" },
   });
 
-  const generateMorningNoteMutate = generateMorningNote.mutate;
+  const contextualGreetingMutate = contextualGreeting.mutate;
 
-  // Morning Note — once per session on completion
+  // Contextual greeting — fires once per browser session; server decides whether to generate one
+  // based on time-of-day slot and how long since the last greeting.
   useEffect(() => {
     if (onboarding?.isComplete && !morningNoteTriggered.current) {
       morningNoteTriggered.current = true;
-      generateMorningNoteMutate(undefined, {
-        onSuccess: () =>
-          queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() }),
-      });
+      contextualGreetingMutate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onboarding?.isComplete]);

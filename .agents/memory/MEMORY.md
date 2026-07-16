@@ -13,3 +13,4 @@
 - [Drizzle error codes](drizzle-error-codes.md) — Drizzle wraps driver errors; pg SQLSTATE (e.g. 23505) is at err.cause.code, not err.code
 - [Multi-user auth architecture](multi-user-auth.md) — Sessions (express-session + connect-pg-simple + pg.Pool); bcryptjs for passwords; userId nullable FK on all tables; user_sessions table must be created manually or via pool.query on startup; getOrCreateProfileForUser(userId) exported from profile.ts and imported by chat/onboarding/journey
 - [Daily email job](daily-email-job.md) — @workspace/daily-email: hourly scheduled job, sends only in user's 6–9AM window; HMAC unsubscribe; temperature 0.8 anti-cliché Claude prompt; profile.dailyEmailOptOut + lastEmailDate added
+- [Supportive accountability model](supportive-accountability.md) — 9-rule system prompt; contextual greeting (morning/evening/night/absent slots); lastGreetingAt on profile; useContextualGreeting hook replaces useGenerateMorningNote

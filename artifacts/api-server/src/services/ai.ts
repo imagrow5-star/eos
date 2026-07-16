@@ -777,3 +777,165 @@ Rules:
     ];
   }
 }
+
+// ─── Contextual greeting (time-of-day aware, proactive care) ─────────────────
+
+export interface GreetingContext {
+  slot: "morning" | "evening" | "night" | "absent";
+  absentDays: number;
+  pendingFollowUp: Array<{ content: string; cue: string }>;
+  habits: Array<{ name: string; streak: number; doneToday: boolean }>;
+  moodSummary: string | null; // "doing well lately" | "somewhere in the middle" | "going through a harder stretch" | null
+}
+
+/**
+ * Generates a warm, time-aware greeting for when the user opens the app.
+ * Each slot has a different emotional register:
+ *   morning  — forward-looking, gentle follow-up on any pending commitment
+ *   evening  — "how was today?" with soft check-in on habits/commitments
+ *   night    — pure warmth, no tasks, sweet rest
+ *   absent   — warm welcome back, "I've been thinking about you"
+ */
+export async function generateContextualGreeting(
+  profile: Profile,
+  _stage: number,
+  ctx: GreetingContext,
+): Promise<string> {
+  const anthropic = getAnthropic();
+  const name = profile.userName || "you";
+  const companionName = profile.companionName;
+  const isBereavement = profile.userPath === "bereavement";
+
+  // Graceful fallback when no API key is available
+  if (!anthropic) {
+    const fallbacks: Record<GreetingContext["slot"], string> = {
+      morning: `Morning, ${name}. How are you feeling today?`,
+      evening: `Hey — how was today? Hope it treated you okay.`,
+      night:   `${name}. Get some rest tonight.`,
+      absent:  `${name} — I was thinking about you. Glad you're here.`,
+    };
+    return fallbacks[ctx.slot];
+  }
+
+  // ── Build context block ───────────────────────────────────────────────────
+  const contextLines: string[] = [];
+
+  if (ctx.pendingFollowUp.length > 0) {
+    contextLines.push(
+      `Something ${name} said they'd do:\n${ctx.pendingFollowUp
+        .map((c) => `• "${c.content}"${c.cue ? ` (cue: "${c.cue}")` : ""}`)
+        .join("\n")}`,
+    );
+  }
+  if (ctx.habits.length > 0) {
+    const habitLines = ctx.habits.map((h) => {
+      let line = `• ${h.name}${h.streak > 1 ? ` (${h.streak}-day streak)` : ""}`;
+      if (h.doneToday) line += " — done today";
+      return line;
+    });
+    contextLines.push(`Habits ${name} is building:\n${habitLines.join("\n")}`);
+  }
+  if (ctx.moodSummary) {
+    contextLines.push(`How ${name} has been feeling lately: ${ctx.moodSummary}.`);
+  }
+  if (ctx.slot === "absent") {
+    contextLines.push(
+      `${name} hasn't opened the app in ${ctx.absentDays} day${ctx.absentDays !== 1 ? "s" : ""}.`,
+    );
+  }
+
+  const contextBlock = contextLines.length > 0
+    ? contextLines.join("\n\n")
+    : "(Still early days — respond with genuine warmth even without much data yet.)";
+
+  const pathNote = isBereavement
+    ? "\nNote: They are grieving a loss. Presence and warmth only — never forward-push."
+    : "";
+
+  // ── Slot-specific prompts ─────────────────────────────────────────────────
+  const hasPendingFollowUp = ctx.pendingFollowUp.length > 0;
+  const hasDoneToday = ctx.habits.some((h) => h.doneToday);
+
+  const prompts: Record<GreetingContext["slot"], string> = {
+    morning: `You are ${companionName}. ${name} just opened the app — it's morning.
+
+${contextBlock}
+${pathNote}
+
+Write a SHORT morning greeting (2–4 sentences). This is the start of ${name}'s day.
+
+${hasPendingFollowUp
+  ? `There's something they said they'd do — if it fits naturally, weave in ONE warm, specific check-in: "did you get that [thing] in?" or "hey — how'd [the thing] go?" It should feel like a close friend who was actually thinking about them, not a system reminder. Only include this if the tone allows.`
+  : ""}
+
+Rules:
+• SHORT. 2–4 sentences. A greeting, not a speech.
+• Anchor to something real about them — even one small specific detail.
+• Warm and genuine — not saccharine, not formulaic.
+• No hollow opener like "Good morning, ${name}!" as the first line.
+• No clichés: "you've got this" · "be kind to yourself" · "I'm here for you" · "take it one day at a time" · therapy-speak.
+• Write only the greeting text — nothing else.`,
+
+    evening: `You are ${companionName}. ${name} just opened the app — it's evening.
+
+${contextBlock}
+${pathNote}
+
+Write a SHORT evening check-in (2–4 sentences). The natural thing to ask: how was today?
+
+${hasPendingFollowUp ? `They may have had something they were going to do today — if the tone allows, gently check in with ONE warm question. Curious and caring, never clinical.` : ""}
+${hasDoneToday ? "They completed a habit today — a brief, natural acknowledgment is welcome if it fits." : ""}
+
+Rules:
+• Conversational and warm. Like a close person saying "how was your day?"
+• ONE question max — never stack questions.
+• Short. This opens a conversation, doesn't close one.
+• No clichés.
+• Write only the greeting text — nothing else.`,
+
+    night: `You are ${companionName}. ${name} opened the app — it's late.
+
+${contextBlock}
+${pathNote}
+
+Write a SHORT, warm goodnight (2–3 sentences). Pure warmth and presence. Zero action items. Zero follow-up questions.
+
+The energy: a close person saying "get some rest" — sincere, brief, there.
+
+Rules:
+• SHORT. 2–3 sentences max.
+• Zero tasks or nudges — ever, at night.
+• A natural, varied ending: "sweet dreams" · "take care tonight" · "get some rest" · "sleep well" — whatever fits.
+• No clichés.
+• Write only the greeting text — nothing else.`,
+
+    absent: `You are ${companionName}. ${name} is back after ${ctx.absentDays} day${ctx.absentDays !== 1 ? "s" : ""} away.
+
+${contextBlock}
+${pathNote}
+
+Write a SHORT, warm welcome back (2–4 sentences). Energy: a close friend who has genuinely been thinking about them.
+
+Rules:
+• No guilt. No mention of the time away. No "where have you been?"
+• Reference something specific from what you know — don't be generic.
+• "I've been thinking about you" warmth — sincere, not dramatic.
+• End with something that gently invites them to share how they've been.
+• No clichés.
+• Write only the greeting text — nothing else.`,
+  };
+
+  try {
+    const response = await anthropic.messages.create({
+      model:       "claude-sonnet-4-5-20250929",
+      max_tokens:  250,
+      temperature: 0.85,
+      messages:    [{ role: "user", content: prompts[ctx.slot] }],
+    });
+    const textBlock = response.content.find((b) => b.type === "text");
+    return textBlock?.text?.trim() ?? `${name} — good to see you.`;
+  } catch (err) {
+    logger.error({ err }, "Contextual greeting generation failed");
+    return `${name} — good to see you.`;
+  }
+}
