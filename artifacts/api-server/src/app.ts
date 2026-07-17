@@ -183,9 +183,11 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: "lax",
-      // The Replit proxy handles TLS — Express itself sees HTTP internally.
-      // Setting secure:false ensures cookies are set correctly in this setup.
-      secure: false,
+      // In production (behind Replit's HTTPS proxy), trust proxy is set above so
+      // Express reads X-Forwarded-Proto and correctly marks cookies Secure.
+      // In development and test the server is hit directly over HTTP, so keep
+      // secure:false there or the browser / test runner never receives the cookie.
+      secure: process.env.NODE_ENV === "production",
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     },
   }),

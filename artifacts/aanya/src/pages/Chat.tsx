@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { apiFetch } from "@/lib/api";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2 } from "lucide-react";
@@ -250,7 +251,7 @@ export default function Chat() {
   // Fetch romantic voice availability from the server
   const { data: voicesStatus } = useQuery<{ romantic: RomanticVoiceStatus[] }>({
     queryKey: ["voices-status"],
-    queryFn: () => fetch(`${import.meta.env.BASE_URL}api/voices/status`).then((r) => r.json()),
+    queryFn: () => apiFetch(`${import.meta.env.BASE_URL}api/voices/status`).then((r) => r.json()),
     staleTime: 60_000,
     retry: false,
   });
@@ -260,7 +261,7 @@ export default function Chat() {
   const { data: authMe } = useQuery<{ user: { id: number; email: string }; emailVerified: boolean }>({
     queryKey: ["/api/auth/me"],
     queryFn: async () => {
-      const r = await fetch(`${import.meta.env.BASE_URL}api/auth/me`);
+      const r = await apiFetch(`${import.meta.env.BASE_URL}api/auth/me`);
       if (!r.ok) throw new Error("Not authenticated");
       return r.json();
     },
@@ -756,7 +757,7 @@ export default function Chat() {
     setIsFetchingSummary(true);
     setExportError(null);
     try {
-      const res = await fetch(`${import.meta.env.BASE_URL}api/account/export/summary`);
+      const res = await apiFetch(`${import.meta.env.BASE_URL}api/account/export/summary`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setExportError((body as any)?.error ?? "Could not load summary. Please try again.");
@@ -800,7 +801,7 @@ export default function Chat() {
       if (exportFrom) params.set("from", exportFrom);
       if (exportTo) params.set("to", exportTo);
       const qs = params.toString();
-      const res = await fetch(`${import.meta.env.BASE_URL}api/account/report${qs ? `?${qs}` : ""}`);
+      const res = await apiFetch(`${import.meta.env.BASE_URL}api/account/report${qs ? `?${qs}` : ""}`);
       if (!res.ok) {
         setReportError("Could not load your report. Please try again.");
         return;
@@ -829,7 +830,7 @@ export default function Chat() {
       if (exportTo) params.set("to", exportTo);
       const qs = params.toString();
       const url = `${import.meta.env.BASE_URL}api/account/export${qs ? `?${qs}` : ""}`;
-      const res = await fetch(url);
+      const res = await apiFetch(url);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setExportError((body as any)?.error ?? "Export failed. Please try again.");
@@ -856,7 +857,7 @@ export default function Chat() {
     setIsDeletingAccount(true);
     setDeleteError(null);
     try {
-      const res = await fetch(`${import.meta.env.BASE_URL}api/auth/account`, { method: "DELETE" });
+      const res = await apiFetch(`${import.meta.env.BASE_URL}api/auth/account`, { method: "DELETE" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setDeleteError((body as any)?.error ?? "Something went wrong. Please try again.");

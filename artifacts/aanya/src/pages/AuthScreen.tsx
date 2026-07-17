@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { apiFetch } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -39,7 +40,7 @@ export function AuthScreen() {
 
       // Fire cancel request
       setTab("cancelled");
-      fetch(`${import.meta.env.BASE_URL}api/auth/cancel-reset`, {
+      apiFetch(`${import.meta.env.BASE_URL}api/auth/cancel-reset`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: cancelToken }),
@@ -54,7 +55,7 @@ export function AuthScreen() {
 
       // Fire cancel request
       setTab("emailChangeCancelled");
-      fetch(`${import.meta.env.BASE_URL}api/auth/cancel-email-change`, {
+      apiFetch(`${import.meta.env.BASE_URL}api/auth/cancel-email-change`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: cancelEmailChangeToken }),
@@ -79,7 +80,7 @@ export function AuthScreen() {
 
     try {
       if (tab === "forgot") {
-        const r = await fetch(`${import.meta.env.BASE_URL}api/auth/forgot-password`, {
+        const r = await apiFetch(`${import.meta.env.BASE_URL}api/auth/forgot-password`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: email.trim() }),
@@ -101,7 +102,7 @@ export function AuthScreen() {
           setError("Passwords don't match.");
           return;
         }
-        const r = await fetch(`${import.meta.env.BASE_URL}api/auth/reset-password`, {
+        const r = await apiFetch(`${import.meta.env.BASE_URL}api/auth/reset-password`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token: resetToken, password }),
@@ -126,7 +127,7 @@ export function AuthScreen() {
 
       // login / signup
       const endpoint = tab === "signup" ? "signup" : "login";
-      const r = await fetch(`${import.meta.env.BASE_URL}api/auth/${endpoint}`, {
+      const r = await apiFetch(`${import.meta.env.BASE_URL}api/auth/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim(), password }),

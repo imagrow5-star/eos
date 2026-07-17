@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { apiFetch } from "@/lib/api";
 import { format, parseISO } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -70,13 +71,13 @@ function CommitmentsSection() {
 
   const { data: commitments = [], isLoading } = useQuery<Commitment[]>({
     queryKey: ["commitments"],
-    queryFn: () => fetch(`${import.meta.env.BASE_URL}api/commitments`).then((r) => r.json()),
+    queryFn: () => apiFetch(`${import.meta.env.BASE_URL}api/commitments`).then((r) => r.json()),
     refetchInterval: 30_000,
   });
 
   const updateCommitment = useMutation({
     mutationFn: ({ id, state }: { id: number; state: string }) =>
-      fetch(`${import.meta.env.BASE_URL}api/commitments/${id}`, {
+      apiFetch(`${import.meta.env.BASE_URL}api/commitments/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ state }),
@@ -86,7 +87,7 @@ function CommitmentsSection() {
 
   const deleteCommitment = useMutation({
     mutationFn: (id: number) =>
-      fetch(`${import.meta.env.BASE_URL}api/commitments/${id}`, { method: "DELETE" }),
+      apiFetch(`${import.meta.env.BASE_URL}api/commitments/${id}`, { method: "DELETE" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["commitments"] }),
   });
 
@@ -230,23 +231,23 @@ function GoalsSection() {
 
   const { data: goals = [], isLoading } = useQuery<Goal[]>({
     queryKey: ["goals"],
-    queryFn: () => fetch(`${import.meta.env.BASE_URL}api/goals`).then((r) => r.json()),
+    queryFn: () => apiFetch(`${import.meta.env.BASE_URL}api/goals`).then((r) => r.json()),
   });
 
   const createGoal = useMutation({
     mutationFn: (body: { title: string; description: string }) =>
-      fetch(`${import.meta.env.BASE_URL}api/goals`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json()),
+      apiFetch(`${import.meta.env.BASE_URL}api/goals`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json()),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["goals"] }); setAddOpen(false); setGoalTitle(""); setGoalDesc(""); },
   });
 
   const deleteGoal = useMutation({
-    mutationFn: (id: number) => fetch(`${import.meta.env.BASE_URL}api/goals/${id}`, { method: "DELETE" }),
+    mutationFn: (id: number) => apiFetch(`${import.meta.env.BASE_URL}api/goals/${id}`, { method: "DELETE" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["goals"] }),
   });
 
   const toggleTask = useMutation({
     mutationFn: ({ goalId, taskId, isComplete }: { goalId: number; taskId: number; isComplete: boolean }) =>
-      fetch(`${import.meta.env.BASE_URL}api/goals/${goalId}/tasks/${taskId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isComplete }) }).then((r) => r.json()),
+      apiFetch(`${import.meta.env.BASE_URL}api/goals/${goalId}/tasks/${taskId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isComplete }) }).then((r) => r.json()),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["goals"] }),
   });
 

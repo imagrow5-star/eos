@@ -1,4 +1,5 @@
 import { Link, useLocation } from "wouter";
+import { apiFetch } from "@/lib/api";
 import { MessageSquare, Sparkles, Map, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
@@ -15,7 +16,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   const handleLogout = async () => {
     try {
-      await fetch(`${import.meta.env.BASE_URL}api/auth/logout`, { method: "POST" });
+      await apiFetch(`${import.meta.env.BASE_URL}api/auth/logout`, { method: "POST" });
     } catch {}
     // Invalidate auth query — AuthGate will redirect to login screen
     queryClient.setQueryData(["/api/auth/me"], null);

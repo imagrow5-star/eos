@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { apiFetch } from "@/lib/api";
 import { motion } from "framer-motion";
 import { ChangeEmailForm } from "@/components/ChangeEmailForm";
 
@@ -16,7 +17,7 @@ export function EmailVerificationGate({ email, onVerified }: Props) {
     setResendStatus("sending");
     setError(null);
     try {
-      const r = await fetch(`${import.meta.env.BASE_URL}api/auth/resend-verification`, {
+      const r = await apiFetch(`${import.meta.env.BASE_URL}api/auth/resend-verification`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -34,7 +35,7 @@ export function EmailVerificationGate({ email, onVerified }: Props) {
   };
 
   const handleLogout = async () => {
-    await fetch(`${import.meta.env.BASE_URL}api/auth/logout`, { method: "POST" });
+    await apiFetch(`${import.meta.env.BASE_URL}api/auth/logout`, { method: "POST" });
     onVerified(); // triggers re-check of /auth/me → will show auth screen
   };
 

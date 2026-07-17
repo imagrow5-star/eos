@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { apiFetch } from "@/lib/api";
 
 interface Props {
   /** The account's current email address, shown for context. */
@@ -36,7 +37,7 @@ export function ChangeEmailForm({ currentEmail, compact }: Props) {
 
     setStatus("sending");
     try {
-      const r = await fetch(`${import.meta.env.BASE_URL}api/auth/change-email`, {
+      const r = await apiFetch(`${import.meta.env.BASE_URL}api/auth/change-email`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ newEmail: trimmed, password }),

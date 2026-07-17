@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence } from "framer-motion";
 import { Route, Switch, Router as WouterRouter } from "wouter";
@@ -24,7 +25,7 @@ function AppRouter() {
     try {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       if (!tz) return;
-      fetch(`${import.meta.env.BASE_URL}api/profile`, {
+      apiFetch(`${import.meta.env.BASE_URL}api/profile`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ timezone: tz }),
@@ -66,7 +67,7 @@ function AuthGate() {
     window.history.replaceState({}, "", url.toString());
 
     setVerifying(true);
-    fetch(`${import.meta.env.BASE_URL}api/auth/verify-email?token=${encodeURIComponent(token)}`)
+    apiFetch(`${import.meta.env.BASE_URL}api/auth/verify-email?token=${encodeURIComponent(token)}`)
       .then(async (r) => {
         if (r.ok) {
           // Invalidate /auth/me so the gate re-fetches and shows the app
@@ -82,7 +83,7 @@ function AuthGate() {
   const { data, isLoading } = useQuery({
     queryKey: ["/api/auth/me"],
     queryFn: async () => {
-      const r = await fetch(`${import.meta.env.BASE_URL}api/auth/me`);
+      const r = await apiFetch(`${import.meta.env.BASE_URL}api/auth/me`);
       if (!r.ok) throw new Error("Not authenticated");
       return r.json() as Promise<{ user: { id: number; email: string }; emailVerified: boolean }>;
     },
