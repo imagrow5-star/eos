@@ -604,6 +604,7 @@ describe("GET /api/account/export?format=html", () => {
       commitments: "Commitments",
       reminders: "Reminders",
       personalitySignals: "Personality insights",
+      personalizationState: "Personalization state",
     };
 
     // Payload keys that are intentionally NOT their own report section, with the

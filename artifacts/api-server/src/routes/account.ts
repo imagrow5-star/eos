@@ -64,8 +64,9 @@ function buildHtmlReport(data: {
   commitments: ExportRow[];
   reminders: ExportRow[];
   personalitySignals: ExportRow[];
+  personalizationState: ExportRow | null;
 }): string {
-  const { exportedAt, range, profile, messages, memoryFacts, wins, habits, habitCompletions, goals, moodScores, commitments, reminders, personalitySignals } = data;
+  const { exportedAt, range, profile, messages, memoryFacts, wins, habits, habitCompletions, goals, moodScores, commitments, reminders, personalitySignals, personalizationState } = data;
   const companionName = esc(profile?.companion_name ?? "Eos");
   const userPath = pathLabel(profile?.user_path as string);
 
@@ -396,6 +397,13 @@ function buildHtmlReport(data: {
     ${signalsHtml}
   </div>
 
+  <div class="section">
+    <div class="section-title">Personalization state</div>
+    ${personalizationState
+      ? `<p>${esc(JSON.stringify(personalizationState))}</p>`
+      : `<p class="empty">No personalization data recorded yet.</p>`}
+  </div>
+
 </div>
 </body>
 </html>`;
@@ -473,6 +481,7 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
     commitmentsResult,
     remindersResult,
     personalitySignalsResult,
+    personalizationStateResult,
   ] = await Promise.all([
     pool.query(
       `SELECT role, content, is_morning_note, created_at FROM messages WHERE user_id = $1${messagesRange.clause} ORDER BY created_at ASC`,
@@ -520,6 +529,10 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
       `SELECT signal, observed_count, is_active, created_at FROM personality_signals WHERE user_id = $1${signalsRange.clause} ORDER BY created_at ASC`,
       [userId, ...signalsRange.params],
     ),
+    pool.query(
+      `SELECT recent_phrases, updated_at FROM personalization_state WHERE user_id = $1`,
+      [userId],
+    ),
   ]);
 
   return {
@@ -536,6 +549,7 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
     commitments: commitmentsResult.rows,
     reminders: remindersResult.rows,
     personalitySignals: personalitySignalsResult.rows,
+    personalizationState: personalizationStateResult.rows[0] ?? null,
   };
 }
 
