@@ -15,3 +15,4 @@
 - [Daily email job](daily-email-job.md) — @workspace/daily-email: hourly scheduled job, sends only in user's 6–9AM window; HMAC unsubscribe; temperature 0.8 anti-cliché Claude prompt; profile.dailyEmailOptOut + lastEmailDate added
 - [Supportive accountability model](supportive-accountability.md) — 9-rule system prompt; contextual greeting (morning/evening/night/absent slots); lastGreetingAt on profile; useContextualGreeting hook replaces useGenerateMorningNote
 - [Personalization layer](personalization-layer.md) — anti-repetition (recentPhrases in personalization_state), discovery gap tracking (7 domains, pure computation from memoryFacts), go-deeper curiosity block, enhanced extractMemory categories (10 types)
+- [Email link base URL](email-link-base-url.md) — email links must use REPLIT_DOMAINS-first helper; REPLIT_DEV_DOMAIN is workspace-only, so old code sent localhost links from production

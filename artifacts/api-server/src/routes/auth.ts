@@ -8,6 +8,40 @@ import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
 
+// ─── App base URL for links inside emails ────────────────────────────────────
+/**
+ * Resolves the public URL of the app for building email links
+ * (verification, password reset, cancel links).
+ *
+ * Priority:
+ *  1. APP_URL              — explicit override (same convention as daily-email)
+ *  2. REPLIT_DOMAINS       — set in BOTH environments: the production domain
+ *                            on deployments, the .replit.dev preview domain in
+ *                            the workspace. First entry is the primary domain.
+ *  3. REPLIT_DEV_DOMAIN    — workspace fallback
+ *  4. localhost            — bare local dev
+ *
+ * The old code checked only REPLIT_DEV_DOMAIN, which does NOT exist on
+ * deployments — so production emails linked to http://localhost:3000 and
+ * users could never verify or reset from a real inbox.
+ */
+function getAppBaseUrl(): string {
+  const explicit = process.env.APP_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+
+  const domains = process.env.REPLIT_DOMAINS;
+  if (domains) {
+    const primary = domains.split(",")[0]?.trim();
+    if (primary) return `https://${primary}`;
+  }
+
+  if (process.env.REPLIT_DEV_DOMAIN) {
+    return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  }
+
+  return "http://localhost:3000";
+}
+
 // ─── Email helper (Resend REST API) ──────────────────────────────────────────
 
 async function sendPasswordResetEmail(
@@ -210,12 +244,7 @@ async function issueAndSendVerification(userId: number, email: string): Promise<
 
     await db.insert(emailVerificationTokensTable).values({ token, userId, expiresAt });
 
-    const domain =
-      process.env.REPLIT_DEV_DOMAIN
-        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-        : "http://localhost:3000";
-
-    const verifyUrl = `${domain}/?verifyToken=${token}`;
+    const verifyUrl = `${getAppBaseUrl()}/?verifyToken=${token}`;
 
     await sendVerificationEmail(email, verifyUrl);
     logger.info({ userId }, "Verification email sent");
@@ -557,9 +586,7 @@ router.post("/auth/change-email", async (req, res): Promise<void> => {
       .insert(emailVerificationTokensTable)
       .values({ token, userId, newEmail: cleanEmail, expiresAt });
 
-    const domain = process.env.REPLIT_DEV_DOMAIN
-      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-      : "http://localhost:3000";
+    const domain = getAppBaseUrl();
     const verifyUrl = `${domain}/?verifyToken=${token}`;
     const cancelUrl = `${domain}/?cancelEmailChange=${token}`;
 
@@ -754,11 +781,7 @@ router.post("/auth/forgot-password", async (req, res): Promise<void> => {
       expiresAt,
     });
 
-    const domain =
-      process.env.REPLIT_DEV_DOMAIN
-        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-        : "http://localhost:3000";
-
+    const domain = getAppBaseUrl();
     const resetUrl = `${domain}/?resetToken=${token}`;
     const cancelUrl = `${domain}/?cancelReset=${token}`;
 
