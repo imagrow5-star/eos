@@ -193,7 +193,9 @@ app.use(
   }),
 );
 
-app.use(express.json());
+// 1mb: ElevenLabs custom-LLM requests carry the full call transcript, which can
+// exceed the 100kb default on long voice calls.
+app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);

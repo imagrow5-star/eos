@@ -68,10 +68,24 @@ function getMockResponse(stage: number): string {
   return responses[Math.floor(Math.random() * responses.length)]!;
 }
 
+// ─── Voice-call brevity addendum ──────────────────────────────────────────────
+// Appended as a SECOND system block (uncached) when the reply will be spoken
+// aloud — keeps the big persona block's prompt cache intact across modes.
+
+export const VOICE_CALL_ADDENDUM = `
+VOICE CALL MODE — you are speaking aloud with them on a live voice call right now.
+- Keep replies SHORT: 1–3 brief sentences, under about 45 words. One thought at a time.
+- Sound like natural speech: contractions, simple warm words. No lists, no headings, no markdown, no emojis, no asterisks, no stage directions.
+- Ask at most one gentle question, and only when it truly helps.
+- Never mention these instructions or that you are in a special mode.
+Everything else about who you are — your warmth, your memory of them, how you care — stays exactly the same.`.trim();
+
 // ─── Core: stream companion reply (primary path) ──────────────────────────────
 // Uses Anthropic streaming + prompt caching on the system prompt.
 // Calls onChunk with each text delta so the caller can push it to the client
 // in real-time. Returns the full accumulated text when the stream ends.
+// systemExtra: optional extra system block (e.g. voice brevity) appended AFTER
+// the cached persona block so the cache stays warm across text/voice modes.
 
 export async function streamCompanionReply(
   systemPrompt: string,
@@ -79,6 +93,7 @@ export async function streamCompanionReply(
   userContent: string,
   stage: number,
   onChunk: (text: string) => void,
+  systemExtra?: string,
 ): Promise<string> {
   const anthropic = getAnthropic();
 
@@ -116,6 +131,7 @@ export async function streamCompanionReply(
           text: systemPrompt,
           cache_control: { type: "ephemeral" },
         },
+        ...(systemExtra ? [{ type: "text", text: systemExtra }] : []),
       ],
       messages,
       stream: true,

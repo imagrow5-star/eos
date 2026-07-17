@@ -18,6 +18,7 @@ import {
   generateMorningNoteContent,
   generateContextualGreeting,
   appendRecentPhrase,
+  VOICE_CALL_ADDENDUM,
 } from "../services/ai.js";
 import { calculateStage, todayInTimezone, getTimeContext } from "../services/stage.js";
 import { getOrCreateProfileForUser } from "./profile.js";
@@ -49,6 +50,9 @@ router.post("/chat/stream", async (req, res): Promise<void> => {
   }
 
   const { content } = parsed.data;
+  // Voice fallback mode: the client flags spoken turns so replies stay short
+  // enough to listen to (the realtime path handles this in voice-llm.ts).
+  const voiceMode = (req.body as { voice?: unknown } | undefined)?.voice === true;
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -94,6 +98,7 @@ router.post("/chat/stream", async (req, res): Promise<void> => {
       content,
       stage,
       (chunk) => sendEvent("delta", { text: chunk }),
+      voiceMode ? VOICE_CALL_ADDENDUM : undefined,
     );
 
     // Persist assistant message

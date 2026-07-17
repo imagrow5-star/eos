@@ -24,6 +24,7 @@ import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useSpeechRecognition, speakText, stopSpeaking, unlockAudioOnGesture } from "@/lib/voice";
+import { startRealtimeCall, type RealtimeConversation, type RealtimeSessionInfo } from "@/lib/realtimeVoice";
 import { cn } from "@/lib/utils";
 
 // ─── Voice catalogue ──────────────────────────────────────────────────────────
@@ -248,6 +249,21 @@ export default function Chat() {
   // Abort handle for the in-flight chat stream so a barge-in turn can cancel
   // the previous request instead of running two generations concurrently.
   const streamAbortRef   = useRef<AbortController | null>(null);
+  // ── Voice engine ──────────────────────────────────────────────────────────
+  // "realtime": ElevenLabs Conversational AI owns the audio loop — native
+  //             listening, turn-taking, and barge-in; Claude stays the brain
+  //             via our custom-LLM endpoint.
+  // "classic":  browser SpeechRecognition + sentence TTS (fallback mode).
+  const [voiceEngine, setVoiceEngine] = useState<"realtime" | "classic" | null>(null);
+  const voiceEngineRef   = useRef<"realtime" | "classic" | null>(null);
+  const realtimeConvoRef = useRef<RealtimeConversation | null>(null);
+  // Session identity for realtime calls — bumped at every call start AND end.
+  // Callbacks capture the value at registration; late events from a previous
+  // session (delayed onDisconnect, stale transcripts) compare and no-op, so
+  // they can never tear down or pollute a newer call.
+  const realtimeGenRef = useRef(0);
+  // One-line note shown in the call overlay when realtime isn't available.
+  const [realtimeNote, setRealtimeNote] = useState<string | null>(null);
   // Voice call live-caption state — words revealed in sync with ElevenLabs audio.
   const [voiceCallCaptionText,     setVoiceCallCaptionText]     = useState("");
   const [voiceCallCaptionRevealed, setVoiceCallCaptionRevealed] = useState(0);
@@ -335,6 +351,9 @@ export default function Chat() {
   // messageId: when provided, drives live captions for that message bubble.
 
   const handleSpeak = (text: string, messageId?: string) => {
+    // During a realtime call the ElevenLabs agent owns ALL audio — never start
+    // local TTS on top of it (speaker buttons, greetings, onboarding replies).
+    if (voiceEngineRef.current === "realtime") return;
     // Stale-guard for call-mode phase transitions (see speakVoiceRemainder).
     const gen = voiceTtsGenRef.current;
     if (messageId) {
@@ -415,7 +434,9 @@ export default function Chat() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ content }),
+        // voice:true → server appends the brevity addendum so replies stay
+        // short enough to listen to (classic voice-call mode only).
+        body: JSON.stringify({ content, voice: continuousVoiceRef.current || undefined }),
         signal: streamAbort.signal,
       });
 
@@ -775,6 +796,10 @@ export default function Chat() {
       if (continuousVoiceRef.current) {
         continuousVoiceRef.current = false;
         voiceTtsGenRef.current++;
+        realtimeGenRef.current++;
+        realtimeConvoRef.current?.endSession().catch(() => {});
+        realtimeConvoRef.current = null;
+        voiceEngineRef.current = null;
         stopSpeaking();
         voice.stopListening();
         micStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -840,6 +865,18 @@ export default function Chat() {
       continuousVoiceRef.current = false; // sync now — a late TTS onEnd must not re-arm the mic
       voiceTtsGenRef.current++;           // silence any reply TTS still in flight
       voicePendingRemainderRef.current = null;
+      realtimeGenRef.current++;           // stale-ify this session's realtime callbacks
+      // Realtime engine: close the ElevenLabs session and pull the persisted
+      // voice turns into the chat history view.
+      const convo = realtimeConvoRef.current;
+      realtimeConvoRef.current = null;
+      if (convo) {
+        convo.endSession().catch((err) => console.warn("[voice-call] endSession failed:", err));
+        queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
+      }
+      voiceEngineRef.current = null;
+      setVoiceEngine(null);
+      setRealtimeNote(null);
       voice.stopListening();
       stopSpeaking();
       micStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -849,21 +886,124 @@ export default function Chat() {
       setVoiceCallRecognizedText("");
       setVoiceCallMessage(null);
     } else {
-      if (!voice.isSupported) {
-        setVoiceError(
-          "Voice input isn't available in this browser — try Chrome or Safari, or type instead.",
-        );
-        return;
-      }
       setVoiceError(null);
       voice.clearError();
       unlockAudioOnGesture(); // unlock Audio.play() + speechSynthesis in this gesture context
       setContinuousVoice(true);
       continuousVoiceRef.current = true; // sync now — recognition callbacks may fire before the re-render
+      voiceEngineRef.current = null;
+      setVoiceEngine(null);
+      setRealtimeNote(null);
       voiceCallPhaseRef.current = "listening";
       setVoiceCallPhase("listening");
       setVoiceCallRecognizedText("");
+      setVoiceCallCaptionText("");
+      setVoiceCallCaptionRevealed(0);
+      setVoiceCallMessage("Connecting…");
+      // Identity for THIS call attempt — every realtime callback below
+      // captures it and no-ops if a newer call (or an end) has bumped it.
+      const rtGen = ++realtimeGenRef.current;
+
+      // ── 1) Realtime voice: ElevenLabs Conversational AI ─────────────────
+      // The agent handles mic streaming, transcription, turn-taking, and
+      // interruption natively; our custom-LLM endpoint keeps Claude + this
+      // user's memory as the brain. Any failure falls back to classic mode.
+      try {
+        const res = await fetch(`${import.meta.env.BASE_URL}api/voice-agent/session`, {
+          method: "POST",
+          credentials: "include",
+        });
+        const session: RealtimeSessionInfo | null = res.ok ? await res.json() : null;
+        if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) return; // ended/superseded while connecting
+
+        if (session?.available) {
+          const convo = await startRealtimeCall(session, activeVoiceId, {
+            onMode: (mode) => {
+              if (realtimeGenRef.current !== rtGen || !continuousVoiceRef.current) return;
+              voiceCallPhaseRef.current = mode;
+              setVoiceCallPhase(mode);
+              if (mode === "listening") setVoiceCallRecognizedText("");
+            },
+            onUserText: (text) => {
+              if (realtimeGenRef.current !== rtGen || !continuousVoiceRef.current) return;
+              setVoiceCallRecognizedText(text);
+            },
+            onAgentText: (text) => {
+              if (realtimeGenRef.current !== rtGen || !continuousVoiceRef.current) return;
+              setVoiceCallCaptionText(text);
+              setVoiceCallCaptionRevealed(999999); // audio is realtime — show the full line
+            },
+            onDisconnect: () => {
+              // Unexpected drop mid-call (network, agent hangup): close the
+              // call UI cleanly so the user can tap to reconnect. The engine
+              // check keeps a handshake-phase drop on the fallback path, and
+              // the gen check silences drops from superseded sessions.
+              if (
+                realtimeGenRef.current !== rtGen ||
+                !continuousVoiceRef.current ||
+                voiceEngineRef.current !== "realtime"
+              ) return;
+              realtimeGenRef.current++; // this session is over — mute any stragglers
+              realtimeConvoRef.current = null;
+              voiceEngineRef.current = null;
+              setVoiceEngine(null);
+              setContinuousVoice(false);
+              continuousVoiceRef.current = false;
+              voiceCallPhaseRef.current = "listening";
+              setVoiceCallPhase("listening");
+              setVoiceCallRecognizedText("");
+              setVoiceCallMessage(null);
+              setVoiceError("Voice call disconnected — tap Voice call to reconnect.");
+              queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
+            },
+            onError: (message) => {
+              if (realtimeGenRef.current !== rtGen) return;
+              console.warn("[voice-call] realtime error:", message);
+            },
+          });
+          if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) {
+            // Call ended — or a newer call started — while the WebSocket
+            // handshake was in flight. This session must not own anything.
+            convo.endSession().catch(() => {});
+            return;
+          }
+          realtimeConvoRef.current = convo;
+          voiceEngineRef.current = "realtime";
+          setVoiceEngine("realtime");
+          setVoiceCallMessage(null);
+          console.log("[voice-call] realtime engine connected");
+          return; // the agent owns mic + audio from here — no local recognition
+        }
+
+        if (session && !session.available) {
+          setRealtimeNote(
+            session.reason === "not_configured"
+              ? "Realtime voice isn't set up yet — using standard voice mode."
+              : "Realtime voice unavailable — using standard voice mode.",
+          );
+        } else if (!session) {
+          setRealtimeNote("Realtime voice unavailable — using standard voice mode.");
+        }
+      } catch (err) {
+        console.warn("[voice-call] realtime connect failed — falling back:", err);
+        setRealtimeNote("Realtime voice couldn't connect — using standard voice mode.");
+      }
+      if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) return; // ended/superseded during connect
+
+      // ── 2) Classic fallback: browser SpeechRecognition + sentence TTS ───
+      voiceEngineRef.current = "classic";
+      setVoiceEngine("classic");
       setVoiceCallMessage(null);
+      if (!voice.isSupported) {
+        setContinuousVoice(false);
+        continuousVoiceRef.current = false;
+        voiceEngineRef.current = null;
+        setVoiceEngine(null);
+        setVoiceError(
+          "Voice input isn't available in this browser — try Chrome or Safari, or type instead.",
+        );
+        return;
+      }
 
       // Best-effort echo cancellation + early, VISIBLE mic-permission check:
       // hold an echo-cancelled capture stream for the whole call so the
@@ -1958,10 +2098,25 @@ export default function Chat() {
                   {voiceCallPhase === "speaking" && <SpeakingBars />}
                 </div>
 
+                {/* Engine indicator — realtime calls have native interruption */}
+                {voiceEngine === "realtime" && (
+                  <p className="text-center text-[10px] uppercase tracking-[0.18em] text-primary/50">
+                    Realtime voice
+                  </p>
+                )}
+                {/* Fallback note — realtime not configured / couldn't connect */}
+                {realtimeNote && voiceEngine === "classic" && (
+                  <p className="text-center text-[11px] text-muted-foreground/50 px-2">
+                    {realtimeNote}
+                  </p>
+                )}
+
                 {/* Barge-in affordance — so users know they can cut in anytime */}
                 {voiceCallPhase === "speaking" && !voiceCallMessage && (
                   <p className="text-center text-[11px] text-muted-foreground/45 px-2">
-                    Start talking to interrupt — or tap the button below
+                    {voiceEngine === "realtime"
+                      ? "Just start talking — she'll stop and listen"
+                      : "Start talking to interrupt — or tap the button below"}
                   </p>
                 )}
 
@@ -2037,7 +2192,7 @@ export default function Chat() {
               {/* Tap-to-interrupt — the GUARANTEED way to cut her off mid-sentence.
                   Immediately stops her audio and hands the turn to the user.
                   (Voice barge-in — just start talking — also works best-effort.) */}
-              {voiceCallPhase === "speaking" && (
+              {voiceCallPhase === "speaking" && voiceEngine !== "realtime" && (
                 <button
                   onClick={() => interruptSpeech({ resumeListening: true })}
                   className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-primary/20 border-2 border-primary/50 text-primary hover:bg-primary/30 text-[12px] font-semibold tracking-wider uppercase transition-all shadow-[0_0_16px_hsl(35_49%_57%/0.18)]"
@@ -2049,7 +2204,7 @@ export default function Chat() {
 
               {/* Tap-to-speak — always visible in listening phase as a manual fallback
                   (auto-loop can stall; this lets the user trigger the turn explicitly) */}
-              {voiceCallPhase === "listening" && (
+              {voiceCallPhase === "listening" && voiceEngine !== "realtime" && (
                 <button
                   onClick={() => {
                     voice.stopListening();

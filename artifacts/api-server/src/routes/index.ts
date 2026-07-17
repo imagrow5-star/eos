@@ -13,6 +13,8 @@ import voicesRouter from "./voices";
 import goalsRouter from "./goals";
 import commitmentsRouter from "./commitments";
 import accountRouter from "./account";
+import voiceLlmRouter from "./voice-llm";
+import voiceAgentRouter from "./voice-agent";
 
 const router: IRouter = Router();
 
@@ -20,6 +22,9 @@ const router: IRouter = Router();
 router.use(healthRouter);
 router.use(authRouter);
 router.use(emailRouter);  // one-click unsubscribe — no auth
+// ElevenLabs Conversational AI custom-LLM callback — called by ElevenLabs
+// servers (no browser session); authenticated per-call via HMAC voice token.
+router.use(voiceLlmRouter);
 
 // ─── Protected routes — valid session + verified email required ───────────────
 // requireAuth sets req.userId; requireVerified checks emailVerifiedAt in the DB.
@@ -35,5 +40,6 @@ router.use(voicesRouter);
 router.use(goalsRouter);
 router.use(commitmentsRouter);
 router.use(accountRouter);
+router.use(voiceAgentRouter);
 
 export default router;

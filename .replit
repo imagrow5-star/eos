@@ -46,3 +46,5 @@ channel = "stable-25_05"
 
 [userenv.shared]
 RESEND_FROM_EMAIL = "Eos <noreply@itslexa.com>"
+
+[userenv.development]
