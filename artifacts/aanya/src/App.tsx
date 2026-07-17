@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AnimatePresence } from "framer-motion";
 import { Route, Switch, Router as WouterRouter } from "wouter";
 import { Shell } from "@/components/layout/Shell";
 import Chat from "@/pages/Chat";
@@ -70,11 +69,8 @@ function AuthGate() {
     apiFetch(`${import.meta.env.BASE_URL}api/auth/verify-email?token=${encodeURIComponent(token)}`)
       .then(async (r) => {
         if (r.ok) {
-          // Invalidate /auth/me so the gate re-fetches and shows the app
           await qc.invalidateQueries({ queryKey: ["/api/auth/me"] });
         }
-        // On failure we silently fall through — the AuthScreen will show an error
-        // if the user still isn't verified.
       })
       .catch(() => {})
       .finally(() => setVerifying(false));
@@ -127,17 +123,35 @@ function AuthGate() {
 
 function App() {
   // Show splash once per browser session — sessionStorage resets when the tab
-  // is closed, so the user sees it again on a fresh visit but not on every
-  // in-app navigation.
+  // is closed, so the user sees it on every fresh visit but not on in-app nav.
   const [showSplash, setShowSplash] = useState(() => {
     try {
       return !sessionStorage.getItem("eos-splash-shown");
     } catch {
-      return false; // if storage is blocked, skip splash rather than block the user
+      // If sessionStorage is blocked, skip the splash entirely rather than
+      // risk blocking the user.
+      return false;
     }
   });
 
+  // ── Hard kill-switch ────────────────────────────────────────────────────────
+  // This runs entirely at the App level — independent of SplashScreen's own
+  // timers.  Even if SplashScreen's useEffect, onDone callback, or Framer
+  // Motion internals stall (slow device, throttled RAF, JS error inside the
+  // component), the splash will be gone by 3 s.
+  const hardKillRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!showSplash) return; // already hidden, nothing to do
+    hardKillRef.current = setTimeout(() => {
+      setShowSplash(false);
+    }, 3000);
+    return () => {
+      if (hardKillRef.current) clearTimeout(hardKillRef.current);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSplashDone = () => {
+    if (hardKillRef.current) clearTimeout(hardKillRef.current);
     try {
       sessionStorage.setItem("eos-splash-shown", "1");
     } catch {}
@@ -148,16 +162,20 @@ function App() {
     <QueryClientProvider client={queryClient}>
       {/*
        * AuthGate always renders — it fires /api/auth/me immediately so the
-       * auth check completes in the background during the splash animation.
-       * When the splash ends it's already gone and the correct screen
-       * (login or chat) is ready underneath.
+       * auth check runs in the background while the splash plays.  By the
+       * time the splash is gone the correct screen (login or chat) is already
+       * ready underneath.
        */}
       <AuthGate />
 
-      {/* Splash overlay — sits on top via fixed z-50, removed after animation */}
-      <AnimatePresence>
-        {showSplash && <SplashScreen onDone={handleSplashDone} />}
-      </AnimatePresence>
+      {/*
+       * Splash overlay — fixed z-50, sits on top of AuthGate.
+       * We do NOT use AnimatePresence here: its exit transition relies on RAF
+       * and can stall on slow devices, leaving an invisible but pointer-events-
+       * blocking layer over the login screen.  SplashScreen itself handles the
+       * CSS fade and calls onDone() only after the fade completes.
+       */}
+      {showSplash && <SplashScreen onDone={handleSplashDone} />}
     </QueryClientProvider>
   );
 }

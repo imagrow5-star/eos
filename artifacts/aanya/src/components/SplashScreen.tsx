@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 
 interface SplashScreenProps {
@@ -6,45 +6,52 @@ interface SplashScreenProps {
 }
 
 /**
- * Full-screen intro splash — shown once per session.
- * Renders as a fixed overlay so AuthGate can prefetch /api/auth/me in the
- * background while the animation plays.  When it finishes (or the user taps
- * to skip), it simply calls onDone() and the parent unmounts it via
- * AnimatePresence which plays the exit fade.
+ * Bulletproof intro splash.
+ *
+ * Two-stage dismissal:
+ *  1. As soon as dismiss() fires we set pointer-events:none so the login
+ *     screen underneath is immediately interactive — the user is never blocked.
+ *  2. We play a short CSS opacity fade (400 ms) purely for aesthetics, then
+ *     call onDone() to let the parent remove us from the DOM entirely.
+ *
+ * We deliberately do NOT use Framer Motion's AnimatePresence exit transition
+ * for the container — if the browser throttles RAF (slow devices, background
+ * tabs) the exit animation can stall forever and leave a transparent z-50
+ * layer covering the login screen.  Plain CSS transitions are synchronous and
+ * always complete.
  */
 export function SplashScreen({ onDone }: SplashScreenProps) {
   const calledRef = useRef(false);
+  const [fading, setFading] = useState(false);
 
-  const finish = () => {
+  const dismiss = () => {
     if (calledRef.current) return;
     calledRef.current = true;
-    onDone();
+    // Step 1 — immediately stop blocking interaction
+    setFading(true);
+    // Step 2 — remove from DOM after fade
+    setTimeout(onDone, 450);
   };
 
   useEffect(() => {
-    // Auto-advance after 2.8 s (animation is ~1.4 s in + 1 s hold)
-    const auto = setTimeout(finish, 2800);
-    // Safety net: no matter what, unblock the user after 4.5 s
-    const safety = setTimeout(() => {
-      if (!calledRef.current) onDone();
-    }, 4500);
-
-    return () => {
-      clearTimeout(auto);
-      clearTimeout(safety);
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // Auto-dismiss after 2.2 s (covers the ~1.4 s animation + brief hold)
+    const auto = setTimeout(dismiss, 2200);
+    return () => clearTimeout(auto);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <motion.div
-      key="eos-splash"
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background cursor-pointer select-none"
-      initial={{ opacity: 1 }}
-      exit={{ opacity: 0, transition: { duration: 0.55, ease: "easeInOut" } }}
-      onClick={finish}
+    <div
+      onClick={dismiss}
       aria-label="Eos intro — tap to skip"
+      style={{
+        opacity: fading ? 0 : 1,
+        pointerEvents: fading ? "none" : "auto",
+        transition: "opacity 0.4s ease",
+      }}
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background cursor-pointer select-none"
     >
-      {/* ── Wordmark ────────────────────────────────────────────────────────── */}
+      {/* ── Wordmark ── */}
       <motion.h1
         className="font-serif text-6xl text-foreground tracking-[0.35em] uppercase"
         initial={{ opacity: 0, y: 14 }}
@@ -54,7 +61,7 @@ export function SplashScreen({ onDone }: SplashScreenProps) {
         EOS
       </motion.h1>
 
-      {/* ── Gold divider ────────────────────────────────────────────────────── */}
+      {/* ── Gold divider ── */}
       <motion.div
         className="h-px bg-primary/55 mt-4 mb-3"
         initial={{ width: 0 }}
@@ -62,7 +69,7 @@ export function SplashScreen({ onDone }: SplashScreenProps) {
         transition={{ duration: 0.45, ease: "easeOut", delay: 0.55 }}
       />
 
-      {/* ── Tagline ─────────────────────────────────────────────────────────── */}
+      {/* ── Tagline ── */}
       <motion.p
         className="font-serif italic text-muted-foreground text-sm tracking-wider"
         initial={{ opacity: 0 }}
@@ -72,15 +79,15 @@ export function SplashScreen({ onDone }: SplashScreenProps) {
         a new dawn
       </motion.p>
 
-      {/* ── Skip hint — appears after 1 s so it doesn't distract on first play ── */}
+      {/* ── Skip hint ── */}
       <motion.p
         className="absolute bottom-10 text-[10px] text-muted-foreground/30 tracking-widest uppercase"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: 1.1, duration: 0.4 }}
+        transition={{ delay: 1.0, duration: 0.4 }}
       >
         Tap to skip
       </motion.p>
-    </motion.div>
+    </div>
   );
 }
