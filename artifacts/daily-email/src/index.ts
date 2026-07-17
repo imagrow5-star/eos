@@ -26,6 +26,7 @@ import {
   habitsTable,
   habitCompletionsTable,
   commitmentsTable,
+  personalizationStateTable,
 } from "@workspace/db";
 import { eq, and, desc, sql, isNotNull } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
@@ -105,6 +106,7 @@ interface UserContext {
   habits: Array<{ name: string; streak: number; doneThisWeek: number; whenThen: string }>;
   moodSummary: string | null;
   pendingCommitment: string | null;
+  recentPhrases: string[];
 }
 
 async function gatherContext(
@@ -125,7 +127,7 @@ async function gatherContext(
   d7.setDate(d7.getDate() - 7);
   const sevenDaysAgo = d7.toISOString().slice(0, 10);
 
-  const [facts, wins, habits, moods, pending] = await Promise.all([
+  const [facts, wins, habits, moods, pending, personalizationRows] = await Promise.all([
     db.select({ fact: memoryFactsTable.fact })
       .from(memoryFactsTable)
       .where(eq(memoryFactsTable.userId, userId))
@@ -156,6 +158,10 @@ async function gatherContext(
         sql`${commitmentsTable.scheduledFollowupDate} IS NOT NULL AND ${commitmentsTable.scheduledFollowupDate} <= ${today}`,
       ))
       .limit(1),
+
+    db.select({ recentPhrases: personalizationStateTable.recentPhrases })
+      .from(personalizationStateTable)
+      .where(eq(personalizationStateTable.userId, userId)),
   ]);
 
   // Skip if no personal data at all — generic email would feel worse than nothing
@@ -214,6 +220,7 @@ async function gatherContext(
     pendingCommitment: pending[0]
       ? `${pending[0].content}${pending[0].cue ? ` (cue: "${pending[0].cue}")` : ""}`
       : null,
+    recentPhrases: personalizationRows[0]?.recentPhrases ?? [],
   };
 }
 
@@ -298,6 +305,9 @@ HARD BANNED — never use these or anything like them:
 "I'm here for you" · "you've got this" · "be kind to yourself" · "at least..." · "it could be worse" · "everything happens for a reason" · "stay positive" · "one day at a time" · "your journey" · "healing journey" · "growth mindset" · "self-care" · "self-love" · "stay strong" · "hang in there" · "keep going" · "you're doing amazing" · "it's okay to feel" · "give yourself grace" · "show up for yourself" · "embrace" · "lean into" · "hold space" · "safe space" · "honor your feelings" · "check in with yourself" · "mindfulness" · "intentional" · "gentle reminder" · any therapy jargon · any sentence that could be sent to any user by any app.
 
 CRITICAL: Do NOT invent people, places, events, or memories. Every specific detail must come from the data above.
+${ctx.recentPhrases.length > 0 ? `
+ANTI-REPETITION — these are opening lines from recent emails to ${ctx.name}. Do NOT start with any of these or similar phrasings — vary the structure, rhythm, and entry point completely each time:
+${ctx.recentPhrases.slice(-8).map((p) => `• "${p}"`).join("\n")}` : ""}
 
 Write only the note text itself — nothing else.`;
 
@@ -485,6 +495,30 @@ async function run(): Promise<void> {
 
       await sendEmail(user.email, subject, html);
       await markSent(user.userId, today);
+
+      // Track the email opening phrase for anti-repetition on future emails (non-fatal)
+      const emailOpener = noteText.split(/(?<=[.!?])\s+/)[0]?.trim()?.slice(0, 80) ?? "";
+      if (emailOpener.length >= 8) {
+        try {
+          const existingPs = await db
+            .select({ rp: personalizationStateTable.recentPhrases })
+            .from(personalizationStateTable)
+            .where(eq(personalizationStateTable.userId, user.userId));
+          const currentPs: string[] = existingPs[0]?.rp ?? [];
+          if (!currentPs.some((p) => p.startsWith(emailOpener.slice(0, 40)))) {
+            const updatedPs = [...currentPs, emailOpener].slice(-15);
+            await db
+              .insert(personalizationStateTable)
+              .values({ userId: user.userId, recentPhrases: updatedPs })
+              .onConflictDoUpdate({
+                target: personalizationStateTable.userId,
+                set: { recentPhrases: updatedPs, updatedAt: new Date() },
+              });
+          }
+        } catch {
+          // non-fatal — skip phrase tracking on error
+        }
+      }
 
       log("Email sent", { userId: user.userId, day: today });
       sent++;

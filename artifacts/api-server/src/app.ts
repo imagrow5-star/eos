@@ -57,6 +57,17 @@ pool
   `)
   .catch((err) => logger.error({ err }, "Failed to ensure daily email columns"));
 
+// Safety-net: per-user personalization state (anti-repetition phrase tracking).
+pool
+  .query(`
+    CREATE TABLE IF NOT EXISTS personalization_state (
+      user_id integer PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      recent_phrases text[] NOT NULL DEFAULT '{}',
+      updated_at timestamp NOT NULL DEFAULT now()
+    );
+  `)
+  .catch((err) => logger.error({ err }, "Failed to ensure personalization_state table"));
+
 // ─── Cleanup job health tracking ─────────────────────────────────────────────
 // Exported so the health route can expose it without a database query.
 export const cleanupJobState = {

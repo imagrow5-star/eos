@@ -10,6 +10,7 @@ import {
   commitmentsTable,
   habitsTable,
   habitCompletionsTable,
+  personalizationStateTable,
   type Profile,
 } from "@workspace/db";
 import { logger } from "../lib/logger.js";
@@ -292,6 +293,47 @@ Write only the note text.`;
   }
 }
 
+// ─── Recent phrase tracking (anti-repetition) ────────────────────────────────
+
+/**
+ * Extracts the opening phrase from an AI reply and appends it to the user's
+ * recentPhrases list in personalization_state, keeping the last 15.
+ * Fire-and-forget safe — never throws.
+ */
+export async function appendRecentPhrase(userId: number, aiContent: string): Promise<void> {
+  if (!aiContent?.trim()) return;
+
+  // First sentence (up to 80 chars) as the opener fingerprint
+  const raw =
+    aiContent.split(/(?<=[.!?])\s+/)[0]?.trim() ??
+    aiContent.split("\n")[0]?.trim() ??
+    aiContent.slice(0, 100);
+  const phrase = raw.slice(0, 80).trim();
+  if (phrase.length < 8) return;
+
+  try {
+    const existing = await db
+      .select({ recentPhrases: personalizationStateTable.recentPhrases })
+      .from(personalizationStateTable)
+      .where(eq(personalizationStateTable.userId, userId));
+
+    const current: string[] = existing[0]?.recentPhrases ?? [];
+    // Skip if near-duplicate already stored
+    if (current.some((p) => p.startsWith(phrase.slice(0, 40)))) return;
+    const updated = [...current, phrase].slice(-15);
+
+    await db
+      .insert(personalizationStateTable)
+      .values({ userId, recentPhrases: updated })
+      .onConflictDoUpdate({
+        target: personalizationStateTable.userId,
+        set: { recentPhrases: updated, updatedAt: new Date() },
+      });
+  } catch (err) {
+    logger.warn({ err, userId }, "appendRecentPhrase failed (non-fatal)");
+  }
+}
+
 // ─── Memory extraction (runs every 4 user messages in background) ─────────────
 
 interface ExtractedMemory {
@@ -320,7 +362,7 @@ ${conversation}
 
 Extract and return this JSON shape:
 {
-  "facts": [{"fact": "...", "category": "life|preference|event|person|goal"}],
+  "facts": [{"fact": "...", "category": "life|interest|routine|person|work|value|soother|preference|event|goal"}],
   "signals": ["personality/communication style observations about the user"],
   "wins": ["things the user reports doing or accomplishing in real life"],
   "moodScore": <1-10 estimate of user's current emotional state, 1=very low, 10=excellent>,
@@ -328,7 +370,17 @@ Extract and return this JSON shape:
 }
 
 Rules:
-- facts: concrete, durable things about the user's life (job, interests, people in their life, events)
+- facts: concrete, durable things about the user's life — use the MOST SPECIFIC category:
+  "interest"  — hobbies, activities, things they genuinely enjoy or love doing
+  "routine"   — daily patterns, morning/evening rituals, regular activities
+  "person"    — a specific NAMED person in their life (friend, family member, colleague — NOT their ex/late partner who is already known)
+  "work"      — their job, career, what they spend their days doing
+  "value"     — what matters most to them, what they believe in, their principles
+  "soother"   — what specifically helps or calms them when struggling — their actual coping
+  "preference"— what they like or dislike (food, places, things)
+  "event"     — a specific thing that happened to or around them
+  "goal"      — a specific future aspiration, dream, or plan they named
+  "life"      — general life fact that doesn't fit any category above
 - signals: ONLY communication style, humor level, openness, support needs — NOT facts about their life
 - wins: ONLY things they actually did in the real world (went to the gym, called a friend, cooked dinner, slept 8 hours)
 - moodScore: honest estimate, not inflated
@@ -786,6 +838,7 @@ export interface GreetingContext {
   pendingFollowUp: Array<{ content: string; cue: string }>;
   habits: Array<{ name: string; streak: number; doneToday: boolean }>;
   moodSummary: string | null; // "doing well lately" | "somewhere in the middle" | "going through a harder stretch" | null
+  recentPhrases?: string[]; // last N opening lines used with this user — for anti-repetition
 }
 
 /**
@@ -844,9 +897,16 @@ export async function generateContextualGreeting(
     );
   }
 
-  const contextBlock = contextLines.length > 0
-    ? contextLines.join("\n\n")
-    : "(Still early days — respond with genuine warmth even without much data yet.)";
+  // Anti-repetition: inject "phrases to avoid" when we have recent history with this user
+  const antiRepLine =
+    ctx.recentPhrases && ctx.recentPhrases.length > 0
+      ? `\n\nDo NOT open with any of these phrases you've recently used with ${name} — vary the wording completely:\n${ctx.recentPhrases.slice(-8).map((p) => `• "${p}"`).join("\n")}`
+      : "";
+
+  const contextBlock =
+    (contextLines.length > 0
+      ? contextLines.join("\n\n")
+      : "(Still early days — respond with genuine warmth even without much data yet.)") + antiRepLine;
 
   const pathNote = isBereavement
     ? "\nNote: They are grieving a loss. Presence and warmth only — never forward-push."

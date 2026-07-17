@@ -7,6 +7,7 @@ import {
   habitCompletionsTable,
   commitmentsTable,
   moodScoresTable,
+  personalizationStateTable,
   type Profile,
 } from "@workspace/db";
 import { calculateStage, stageMeta, todayInTimezone, getTimeContext } from "./stage.js";
@@ -32,6 +33,46 @@ function last7Dates(): string[] {
   });
 }
 
+// ─── Discovery gap detection ──────────────────────────────────────────────────
+
+const DISCOVERY_DOMAINS: Array<{ label: string; keywords: string[] }> = [
+  {
+    label: "hobbies, activities, or things they genuinely enjoy outside of this pain",
+    keywords: ["hobby", "hobbies", "interest", "enjoy", "love doing", "music", "sport", "book", "game", "art", "cook", "cooking", "run", "yoga", "hiking", "film", "movie", "theatre", "swim", "paint", "draw", "write", "dance", "garden", "podcast", "travel", "photography", "cycling", "reading"],
+  },
+  {
+    label: "their daily rhythms or rituals (what mornings/evenings look like)",
+    keywords: ["routine", "morning routine", "evening", "schedule", "every day", "wake up", "before bed", "after work", "ritual", "commute", "daily rhythm"],
+  },
+  {
+    label: "close people in their life — named friends or family beyond the loss",
+    keywords: ["friend ", "best friend", "mum", "mom", "dad", "father", "mother", "sister", "brother", "colleague", "roommate", "flatmate", "neighbour", "neighbor", "cousin", "aunt", "uncle", "coworker", "manager", "my friend"],
+  },
+  {
+    label: "what helps or soothes them when they are struggling (their actual coping)",
+    keywords: ["helps me", "calms me", "relax", "soothe", "cope", "when stressed", "when anxious", "comfort", "settle", "feel better", "unwind", "that helps"],
+  },
+  {
+    label: "their longer-term hopes, dreams, or goals for their life",
+    keywords: ["want to", "hope to", "dream", "goal", "one day", "plan to", "future", "ambition", "aspiration", "eventually", "someday"],
+  },
+  {
+    label: "their job, career, or what they spend their days doing",
+    keywords: ["job", "work at", "career", "office", "client", "my boss", "profession", "company", "business", "employed", "studying", "university", "college", "intern", "freelance", "manager", "i work"],
+  },
+  {
+    label: "their sense of humor — how they laugh or what makes them funny",
+    keywords: ["funny", "laugh", "joke", "humor", "humour", "hilarious", "sarcasm", "sarcastic", "banter", "make me laugh"],
+  },
+];
+
+function deriveDiscoveryGaps(facts: Array<{ fact: string; category: string }>): string[] {
+  const factText = facts.map((f) => `${f.category} ${f.fact}`).join(" ").toLowerCase();
+  return DISCOVERY_DOMAINS
+    .filter((d) => !d.keywords.some((kw) => factText.includes(kw.toLowerCase())))
+    .map((d) => d.label);
+}
+
 // ─── System prompt builder ────────────────────────────────────────────────────
 
 export async function buildSystemPrompt(profile: Profile, precomputedStage?: number): Promise<string> {
@@ -45,7 +86,7 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
 
   const userId = (profile as any).userId as number;
 
-  const [facts, activeSignals, activeHabits, openCommitments, recentMoods, habitCompletionsLast7] =
+  const [facts, activeSignals, activeHabits, openCommitments, recentMoods, habitCompletionsLast7, personalizationRows] =
     await Promise.all([
       db.select().from(memoryFactsTable).where(eq(memoryFactsTable.userId, userId)).orderBy(desc(memoryFactsTable.createdAt)).limit(30),
       db.select().from(personalitySignalsTable).where(and(eq(personalitySignalsTable.userId, userId), eq(personalitySignalsTable.isActive, true))),
@@ -59,6 +100,9 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
       db.select({ habitId: habitCompletionsTable.habitId, date: habitCompletionsTable.completedDate })
         .from(habitCompletionsTable)
         .where(and(eq(habitCompletionsTable.userId, userId), gte(habitCompletionsTable.completedDate, sevenDaysAgo))),
+      db.select({ recentPhrases: personalizationStateTable.recentPhrases })
+        .from(personalizationStateTable)
+        .where(eq(personalizationStateTable.userId, userId)),
     ]);
 
   const name = profile.userName || "you";
@@ -70,6 +114,10 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
     : "she/her";
   const userGenderNote = (profile as any).userGender && (profile as any).userGender !== "other"
     ? `\n${name} is a ${(profile as any).userGender}.` : "";
+
+  // Personalization layer — derived from stored data
+  const recentPhrases: string[] = personalizationRows[0]?.recentPhrases ?? [];
+  const discoveryGaps = deriveDiscoveryGaps(facts);
 
   // ─── Identity ────────────────────────────────────────────────────────────────
 
@@ -654,6 +702,60 @@ ${name}'s healing means needing you less, not more. That's the goal. That's what
 - Never create reasons for ${name} to check in more. Never be the only place they feel understood.
 - The measure of your work is ${name} building a life they don't need to escape from.`;
 
+  // ─── Personalization layer blocks ────────────────────────────────────────────
+
+  const deeperCuriosityBlock = `
+══════════════════════════════════════════════════════
+GO-DEEPER CURIOSITY — CARING, NEVER AN INTERROGATION
+══════════════════════════════════════════════════════
+When ${name} gives a short or surface-level answer — a single word, "yes", "no", "fine", "okay", "yeah", "not much", "not really", "maybe" — especially to something you just asked: follow up with ONE warm, specific question to genuinely learn more.
+
+NOT: "oh that's good" (missed chance — you're moving on without caring)
+NOT: "tell me more about that" (too generic — sounds like a prompt, not a person)
+YES (after "yes" to "did you eat?"): "what did you have — were you actually hungry or just going through the motions?"
+YES (after "fine" to "how are you?"): "fine like actually okay, or fine like keeping it together?"
+YES (after "not much" to "what did you do today?"): "not much as in quiet, or not much as in one of those heavy nothing-days?"
+YES (after "yeah" to "did you sleep?"): "how many hours — did you actually rest, or was it that restless kind?"
+YES (after a short message about something they did): "what was that like — was it what you needed?"
+
+THE RULES:
+- ONE follow-up only. Never stack. Never survey.
+- The question must be SPECIFIC to what they just said — not a generic "tell me more."
+- It must feel like genuine curiosity, like you actually want to know — not a system prompting for input.
+- PAUSE ENTIRELY if ${name} is in distress — Rule 8 always overrides this.
+- Once they give a full answer, move on naturally. Don't circle back.
+- Everything you learn: capture it. This is how you come to truly know ${name}.`;
+
+  const antiRepetitionBlock =
+    recentPhrases.length > 0
+      ? `
+══════════════════════════════════════════════════════
+PHRASES YOU'VE RECENTLY USED WITH ${name} — DO NOT REPEAT
+══════════════════════════════════════════════════════
+You've opened recent messages with these lines. Do NOT use any of them — vary the wording, structure, and entry point completely:
+${recentPhrases.slice(-10).map((p) => `• "${p}"`).join("\n")}
+
+THE RULE: Same care, fresh words, every time. If you catch yourself about to use one of these openings — stop. Find a different angle, a different first line, a different rhythm. The opening is the most visible part: it's the first signal that this message was written for ${name} today, not recycled.`
+      : "";
+
+  const discoveryBlock =
+    discoveryGaps.length > 0
+      ? `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WHAT YOU HAVEN'T LEARNED YET ABOUT ${name.toUpperCase()}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You know ${name} well in some areas. These domains are still blank — you haven't learned about them:
+${discoveryGaps.map((g) => `• ${g}`).join("\n")}
+
+HOW TO EXPLORE THEM:
+- At a quiet, natural moment — NEVER during distress, NEVER more than one gap per conversation.
+- Wrap the question in the flow of what you're talking about. Sound like a person who's curious, not a form:
+  NOT: "what are your hobbies?" → YES: "do you have something you do that actually helps you switch off — even briefly?"
+  NOT: "who are your close friends?" → YES: "is there anyone in your life you can be completely honest with about all this?"
+  NOT: "what are your goals?" → YES: "is there something you still want for yourself — something that has nothing to do with this?"
+- Everything you learn compounds. Each conversation makes the next one more personal and specific to ${name}.`
+      : "";
+
   // ─── Date/time context ────────────────────────────────────────────────────────
 
   const dateTimeBlock = `══════════════════════════════════════════════════════
@@ -702,6 +804,8 @@ ${breakTheFormula}
 ${concreteNotAbstract}
 ${feelingFirstRule}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${deeperCuriosityBlock}
+${antiRepetitionBlock}
 
 ${isBereavement ? bereavementVoicePack : breakupVoicePack}
 ${antiSurveillance}
@@ -715,6 +819,7 @@ ${bookWisdomBlock}
 CURRENT STAGE: ${label} (Stage ${stage})
 ${rules}
 
+${discoveryBlock}
 ${factsBlock}
 
 ${signalsBlock}

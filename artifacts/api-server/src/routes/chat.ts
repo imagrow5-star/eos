@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, asc, sql, and } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { messagesTable, profileTable, commitmentsTable, habitsTable, moodScoresTable, habitCompletionsTable } from "@workspace/db";
+import { messagesTable, profileTable, commitmentsTable, habitsTable, moodScoresTable, habitCompletionsTable, personalizationStateTable } from "@workspace/db";
 import {
   GetMessagesResponse,
   SendMessageBody,
@@ -17,6 +17,7 @@ import {
   detectHabitMentions,
   generateMorningNoteContent,
   generateContextualGreeting,
+  appendRecentPhrase,
 } from "../services/ai.js";
 import { calculateStage, todayInTimezone, getTimeContext } from "../services/stage.js";
 import { getOrCreateProfileForUser } from "./profile.js";
@@ -132,6 +133,9 @@ router.post("/chat/stream", async (req, res): Promise<void> => {
       detectHabitMentions(profile, content, aiContent, activeHabits).catch((err) =>
         logger.error({ err }, "Background habit detection failed"),
       );
+      appendRecentPhrase(userId, aiContent).catch((err) =>
+        logger.error({ err }, "Background phrase tracking failed"),
+      );
 
       if (userMsgCount % 4 === 0 && userMsgCount > 0) {
         const last8 = await db
@@ -195,6 +199,11 @@ router.post("/chat/send", async (req, res): Promise<void> => {
 
   const contextMessages = recentMessages.reverse().slice(0, -1);
   const aiContent = await getCompanionReply(systemPrompt, contextMessages, content, stage);
+
+  // Fire-and-forget phrase tracking (anti-repetition — non-blocking)
+  appendRecentPhrase(userId, aiContent).catch((err) =>
+    logger.error({ err }, "Phrase tracking failed"),
+  );
 
   const [assistantMsg] = await db
     .insert(messagesTable)
@@ -288,7 +297,7 @@ router.post("/chat/contextual-greeting", async (req, res): Promise<void> => {
   const stage = await calculateStage(profile);
 
   // Fetch greeting context in parallel
-  const [pendingFollowUps, activeHabits, todayCompletions, recentMoods] = await Promise.all([
+  const [pendingFollowUps, activeHabits, todayCompletions, recentMoods, greetingPersonalizationRows] = await Promise.all([
     // Commitments overdue for follow-up
     db.select({ id: commitmentsTable.id, content: commitmentsTable.content, cue: commitmentsTable.cue })
       .from(commitmentsTable)
@@ -310,7 +319,12 @@ router.post("/chat/contextual-greeting", async (req, res): Promise<void> => {
       .where(eq(moodScoresTable.userId, userId))
       .orderBy(desc(moodScoresTable.createdAt))
       .limit(5),
+    db.select({ recentPhrases: personalizationStateTable.recentPhrases })
+      .from(personalizationStateTable)
+      .where(eq(personalizationStateTable.userId, userId)),
   ]);
+
+  const greetingRecentPhrases = greetingPersonalizationRows[0]?.recentPhrases ?? [];
 
   const completedToday = new Set(todayCompletions.map((c) => c.habitId));
   const habitsForGreeting = activeHabits.map((h) => ({
@@ -334,6 +348,7 @@ router.post("/chat/contextual-greeting", async (req, res): Promise<void> => {
     pendingFollowUp: pendingFollowUps.map((c) => ({ content: c.content, cue: c.cue ?? "" })),
     habits: habitsForGreeting,
     moodSummary,
+    recentPhrases: greetingRecentPhrases,
   });
 
   const [greetingMsg] = await db

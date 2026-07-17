@@ -8,3 +8,4 @@ export * from "./commitments";
 export * from "./passwordResetTokens";
 export * from "./emailVerificationTokens";
 export * from "./userSessions";
+export * from "./personalizationState";
