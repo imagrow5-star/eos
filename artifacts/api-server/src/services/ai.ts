@@ -903,10 +903,12 @@ export async function generateContextualGreeting(
       ? `\n\nDo NOT open with any of these phrases you've recently used with ${name} — vary the wording completely:\n${ctx.recentPhrases.slice(-8).map((p) => `• "${p}"`).join("\n")}`
       : "";
 
+  const appreciationConstraint = `\n\nAPPRECIATION: Do NOT praise or appreciate ${name} by default. Give genuine appreciation ONLY when they've actually done something real and meaningful — took a hard step, followed through on a commitment, resisted an urge. Most of the time: just be present, warm, and curious. When appreciation IS given: make it specific and tied to their real situation, never generic ("amazing", "well done", "you've got this", "I'm so proud of you").`;
+
   const contextBlock =
     (contextLines.length > 0
       ? contextLines.join("\n\n")
-      : "(Still early days — respond with genuine warmth even without much data yet.)") + antiRepLine;
+      : "(Still early days — respond with genuine warmth even without much data yet.)") + antiRepLine + appreciationConstraint;
 
   const pathNote = isBereavement
     ? "\nNote: They are grieving a loss. Presence and warmth only — never forward-push."
