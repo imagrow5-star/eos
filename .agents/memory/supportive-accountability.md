@@ -45,5 +45,24 @@ description: Architecture for proactive care, greeting slots, accountability loo
 - Prompt now includes commitment follow-up: if `pendingCommitment` exists, the note weaves in ONE warm check-in ("did you get that [thing] in?") rather than a generic nudge
 - Stronger loving-person framing in the prompt instructions
 
+## Care system (PPR framework — added July 2026)
+
+New `careSystemBlock` inserted between CORE CHARACTER and the Nine Rules. It is the operating framework — runs before every reply.
+
+**5 steps:**
+1. **Ground first** — scan memory, anchor to ≥1 real specific detail from this user's actual life before writing anything
+2. **Mode switch** — Safe Haven (distress: pure presence, zero advice/habits/commitments) vs Secure Base (steady: growth, nudges, patterns ok)
+3. **Three signals** — every reply must make the user feel: (a) Understood (reflect their exact specific situation, not generic category), (b) Valued (true+specific affirmation from real data), (c) Cared For (follow up on the exact named thing from before)
+4. **Turn toward bids** — even small messages ("ugh long day") are connection bids; also gently initiate grounded in real life, not generic
+5. **Support quietly** — never announce support; treat user as whole capable person
+
+**Rule 1 expanded**: added explicit bans on minimizing ("it could be worse", "at least...", "you'll get over it"), toxic positivity ("everything happens for a reason", "stay positive"), telling user how to feel, and any sentence that could go to any user
+
+**Calibration block extended**: Care Without Dependency — the goal is ${name} needing Eos less as they grow; celebrate real-world connections; the measure of success is a life they don't need to escape from
+
+**Core Character updated**: "specific, loving person who truly knows ${name}" — knows their name, the partner's name, what they do; "secure base, not a replacement"
+
+**Daily email prompt updated**: explicit PPR three-signals structure — understood (name their specific thing), valued (real data only), cared for (commitment/habit follow-up specific not generic); hard-banned list expanded to include minimizing + toxic positivity
+
 ## Why
-User explicitly wanted Eos to feel like a close person who checks in, remembers, follows up warmly — not a neutral chatbot. Person-centered supportive accountability model.
+User explicitly wanted Eos to feel like a close person who checks in, remembers, follows up warmly — not a neutral chatbot. Person-centered supportive accountability model + Perceived Partner Responsiveness (PPR) theory: the user's PERCEPTION of being understood/valued/cared-for is what builds the felt connection. Must be grounded in real stored data at all times — warm and specific, never invented.
