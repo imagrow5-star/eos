@@ -2,6 +2,7 @@
 - [Two-path onboarding](two-path-onboarding.md) — Branching onboarding: breakup vs bereavement; profile route must return userPath + country
 - [System prompt rules](system-prompt-rules.md) — Voice mirroring, anti-ex-surveillance, country crisis lines baked into buildSystemPrompt
 - [Voice infinite loop fix](voice-loop-fix.md) — useSpeechRecognition must use a ref for onResult callback; never put it in useEffect deps
+- [Voice barge-in architecture](voice-barge-in.md) — gen-counter guard on all call-mode TTS callbacks; spokenTextRef echo guard; stopListening must cancel start-retry; re-check refs after awaits
 - [Goals route zod ban](goals-zod-ban.md) — api-server package has no zod dep; goals.ts must use plain JS validation, not z.object()
 - [Voice choice & profile extras](voice-profile-extras.md) — voiceId saved on profile (default Sarah); TTS route accepts voiceId in body; ageBand + voiceId accepted via (data as any) cast in profile PUT since not in generated types
 - [Streaming architecture](streaming-architecture.md) — /api/chat/stream SSE endpoint; claude-sonnet-4-5; prompt caching on system block; fire-and-forget background extractions after res.end()

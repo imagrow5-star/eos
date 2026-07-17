@@ -80,15 +80,38 @@ export function useSpeechRecognition(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Pending start-retry timer — must be cancellable so an explicit stop is
+  // always final (a ghost retry must never re-open the mic after stop).
+  const startRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const startListening = useCallback(() => {
     const reco = recognitionRef.current;
     if (!reco) return;
     setError(null);
+    if (startRetryTimerRef.current) {
+      clearTimeout(startRetryTimerRef.current);
+      startRetryTimerRef.current = null;
+    }
     try { reco.start(); setIsListening(true); }
-    catch { /* already running */ }
+    catch {
+      // Either already running (fine), or stop() was called a moment ago and
+      // the engine isn't ready yet (Chrome throws InvalidStateError). Retry
+      // once shortly so barge-in arming doesn't silently fail; stopListening
+      // cancels this timer.
+      startRetryTimerRef.current = setTimeout(() => {
+        startRetryTimerRef.current = null;
+        try { reco.start(); setIsListening(true); }
+        catch { /* genuinely already running */ }
+      }, 300);
+    }
   }, []);
 
   const stopListening = useCallback(() => {
+    // A pending start-retry must never outlive an explicit stop.
+    if (startRetryTimerRef.current) {
+      clearTimeout(startRetryTimerRef.current);
+      startRetryTimerRef.current = null;
+    }
     const reco = recognitionRef.current;
     if (!reco) return;
     try { reco.stop(); } catch { /* ignore */ }

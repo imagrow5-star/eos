@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2 } from "lucide-react";
+import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2, Square } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -233,6 +233,21 @@ export default function Chat() {
   // Tracks how many words were in the early (first-sentence) TTS chunk so the
   // remainder's onWordReveal can offset its count correctly.
   const earlyWordCountRef        = useRef(0);
+  // ── Barge-in / interrupt machinery ──────────────────────────────────────
+  // Generation counter: bumped on every new user turn AND every interrupt.
+  // Every TTS-starting code path captures the value at message start and
+  // re-checks it before speaking — a stale generation means the user cut in,
+  // so the reply lands in chat silently instead of talking over them.
+  const voiceTtsGenRef   = useRef(0);
+  // The text the companion is currently speaking — used to filter out the
+  // mic picking up her own voice (echo) while barge-in listening is armed.
+  const spokenTextRef    = useRef("");
+  // Echo-cancelled getUserMedia keepalive stream (best-effort AEC hint) held
+  // for the duration of the call; also surfaces mic-permission errors early.
+  const micStreamRef     = useRef<MediaStream | null>(null);
+  // Abort handle for the in-flight chat stream so a barge-in turn can cancel
+  // the previous request instead of running two generations concurrently.
+  const streamAbortRef   = useRef<AbortController | null>(null);
   // Voice call live-caption state — words revealed in sync with ElevenLabs audio.
   const [voiceCallCaptionText,     setVoiceCallCaptionText]     = useState("");
   const [voiceCallCaptionRevealed, setVoiceCallCaptionRevealed] = useState(0);
@@ -320,17 +335,21 @@ export default function Chat() {
   // messageId: when provided, drives live captions for that message bubble.
 
   const handleSpeak = (text: string, messageId?: string) => {
+    // Stale-guard for call-mode phase transitions (see speakVoiceRemainder).
+    const gen = voiceTtsGenRef.current;
     if (messageId) {
       setSpeakingMessageId(messageId);
       setRevealedWords(0);
     }
+    if (continuousVoiceRef.current) spokenTextRef.current = text;
     speakText(text, {
       voiceId: activeVoiceId,
       onStart: () => {
         setIsSpeaking(true);
-        if (continuousVoiceRef.current) {
+        if (continuousVoiceRef.current && voiceTtsGenRef.current === gen) {
           voiceCallPhaseRef.current = "speaking";
           setVoiceCallPhase("speaking");
+          voice.startListening(); // arm the mic for voice barge-in
         }
       },
       onEnd: () => {
@@ -338,7 +357,7 @@ export default function Chat() {
         setSpeakingMessageId(null);
         setRevealedWords(0);
         setVoiceCallMessage(null);
-        if (continuousVoiceRef.current) {
+        if (continuousVoiceRef.current && voiceTtsGenRef.current === gen) {
           voiceCallPhaseRef.current = "listening";
           setVoiceCallPhase("listening");
           setVoiceCallRecognizedText("");
@@ -363,6 +382,14 @@ export default function Chat() {
   // hand off to TTS + live captions.
 
   const sendStreamingMessage = async (content: string) => {
+    // New user turn: invalidate any pending TTS from the previous reply and
+    // cancel any still-running stream (e.g. after a barge-in mid-generation)
+    // so two generations never run — or speak — concurrently.
+    const ttsGen = ++voiceTtsGenRef.current;
+    streamAbortRef.current?.abort();
+    const streamAbort = new AbortController();
+    streamAbortRef.current = streamAbort;
+
     setIsStreaming(true);
     setStreamingContent("");
     setStreamError(null);
@@ -389,6 +416,7 @@ export default function Chat() {
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ content }),
+        signal: streamAbort.signal,
       });
 
       if (!response.ok || !response.body) {
@@ -429,7 +457,7 @@ export default function Chat() {
             // In voice call mode, start TTS on the first complete sentence
             // rather than waiting for the entire reply to finish streaming.
             // Sentence = ≥8 chars ending in . ! or ? followed by a space or end.
-            if (continuousVoiceRef.current && !voiceEarlyFired) {
+            if (continuousVoiceRef.current && !voiceEarlyFired && voiceTtsGenRef.current === ttsGen) {
               const m = finalContent.match(/^(.{8,}?[.!?])(?=\s|$)/);
               if (m?.[1]) {
                 voiceEarlyText  = m[1];
@@ -443,12 +471,17 @@ export default function Chat() {
                 setVoiceCallCaptionRevealed(0);
                 voiceCallPhaseRef.current = "speaking";
                 setVoiceCallPhase("speaking");
+                spokenTextRef.current = voiceEarlyText; // echo-guard reference
+                voice.startListening();                 // arm the mic for voice barge-in
                 speakText(voiceEarlyText, {
                   voiceId: activeVoiceId,
                   onStart: () => setIsSpeaking(true),
                   onEnd: () => {
                     // Mark the early TTS as done
                     voiceEarlyTTSEndedRef.current = true;
+                    // If the user barged in (or a new turn started), stay silent —
+                    // the interrupt handler already owns the phase.
+                    if (voiceTtsGenRef.current !== ttsGen) return;
                     const pending = voicePendingRemainderRef.current;
                     if (pending !== null) {
                       // Stream already finished — speak the remainder now
@@ -479,6 +512,12 @@ export default function Chat() {
         }
       }
     } catch (err) {
+      if (streamAbort.signal.aborted || (err as any)?.name === "AbortError") {
+        // Superseded by a newer turn (barge-in) — bail out silently; the new
+        // stream owns all UI state now. (Signal check covers environments
+        // that surface aborts under a different error shape.)
+        return;
+      }
       console.error("[stream] Error:", err);
       setStreamError("Something went wrong. Please try sending again.");
       // In voice call mode: surface the error so the user can tap to retry
@@ -496,7 +535,10 @@ export default function Chat() {
       queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
 
       if (continuousVoiceRef.current) {
-        if (voiceEarlyFired) {
+        if (voiceTtsGenRef.current !== ttsGen) {
+          // The user interrupted while this reply was in flight — don't speak
+          // it over them. The reply still lands in the chat history above.
+        } else if (voiceEarlyFired) {
           // Early TTS already started on sentence 1.  Compute the remainder.
           const remainder = finalContent.slice(voiceEarlyText.length).trim();
 
@@ -558,9 +600,66 @@ export default function Chat() {
     }
   };
 
+  // ── Echo guard ────────────────────────────────────────────────────────────
+  // While she speaks, the mic stays armed for barge-in — but on devices where
+  // echo cancellation is weak it will pick up HER OWN voice. Before treating
+  // recognized speech as the user's, compare it against the text she is
+  // currently speaking: high word overlap ⇒ echo ⇒ ignore.
+
+  const normalizeWords = (s: string): string[] =>
+    s.toLowerCase().replace(/[^a-z0-9\s']/g, " ").split(/\s+/).filter(Boolean);
+
+  const isLikelyEcho = (heard: string): boolean => {
+    const spoken = spokenTextRef.current;
+    if (!spoken) return false;
+    const heardWords = normalizeWords(heard);
+    if (heardWords.length === 0) return true; // nothing meaningful captured
+    const spokenSet = new Set(normalizeWords(spoken));
+    const hits = heardWords.filter((w) => spokenSet.has(w)).length;
+    return hits / heardWords.length >= 0.6;
+  };
+
+  // ── Interrupt (barge-in) ──────────────────────────────────────────────────
+  // The single cut-her-off path, used by BOTH the on-screen stop control
+  // (guaranteed) and automatic voice barge-in (best-effort). Immediately
+  // silences audio, invalidates any queued TTS (early-sentence remainder,
+  // in-flight reply), and hands the turn to the user.
+  const interruptSpeech = (opts?: { resumeListening?: boolean }) => {
+    const resume = opts?.resumeListening ?? true;
+    voiceTtsGenRef.current++;                 // stale-ify every pending TTS callback
+    voicePendingRemainderRef.current = null;  // never speak the queued remainder
+    stopSpeaking();                           // kill ElevenLabs audio + browser TTS + caption timers
+    setIsSpeaking(false);
+    setVoiceCallCaptionRevealed(99999);       // reveal the full caption so the reply stays readable
+    setVoiceCallMessage(null);
+    if (resume) {
+      voiceCallPhaseRef.current = "listening";
+      setVoiceCallPhase("listening");
+      setVoiceCallRecognizedText("");
+      voice.startListening();                 // no-op if the barge-in mic is already running
+    }
+  };
+
   // Talk mode: auto-send. Mic mode: fill input for user review.
   const handleVoiceResult = (text: string) => {
     if (continuousVoiceRef.current) {
+      const phase = voiceCallPhaseRef.current;
+
+      if (phase === "speaking") {
+        // Mic was armed for barge-in while she talks — filter out her own voice.
+        if (isLikelyEcho(text)) {
+          console.log("[voice-call] ignored echo:", JSON.stringify(text));
+          return;
+        }
+        // Genuine barge-in: cut her off and treat this as the user's turn.
+        console.log("[voice-call] barge-in (final):", JSON.stringify(text));
+        interruptSpeech({ resumeListening: false });
+      } else if (phase === "thinking") {
+        // Already processing a turn — a late final result would double-send.
+        console.log("[voice-call] ignored transcript during thinking:", JSON.stringify(text));
+        return;
+      }
+
       // Stop recognition BEFORE updating state. reco.onend fires synchronously
       // after onresult; if we haven't updated the ref yet, handleRecognitionEnd
       // would see "listening" and restart the mic while we're already thinking.
@@ -579,22 +678,40 @@ export default function Chat() {
     }
   };
 
-  // Live interim results: fill the input as the user is still speaking
+  // Live interim results. Voice call mode: detect barge-in while she speaks.
+  // Mic mode: fill the input as the user is still speaking.
   const handleVoiceInterim = (text: string) => {
-    if (!continuousVoiceRef.current) {
-      form.setValue("content", text);
+    if (continuousVoiceRef.current) {
+      // Voice barge-in (best-effort): the user starts talking over her.
+      // Require ≥2 recognized words that don't look like her own echo, then
+      // stop her audio and keep this same recognition session running — the
+      // final transcript of the user's sentence arrives in "listening" phase
+      // and is sent normally, so their first words are not lost.
+      if (
+        voiceCallPhaseRef.current === "speaking" &&
+        text.trim().split(/\s+/).length >= 2 &&
+        !isLikelyEcho(text)
+      ) {
+        console.log("[voice-call] barge-in (interim):", JSON.stringify(text));
+        interruptSpeech({ resumeListening: true });
+      }
+      return;
     }
+    form.setValue("content", text);
   };
 
   // ── Voice call: recognition ended (fires after EVERY session — result, no-speech, stop, error) ──
-  // Only restart when we're still in listening phase; other phases (thinking/speaking/error)
-  // manage their own transitions back to listening.
+  // Restart while in "listening" (user's turn) AND while "speaking" (mic armed
+  // for barge-in). Other phases (thinking/error) manage their own transitions.
   const handleRecognitionEnd = useCallback(() => {
     if (!continuousVoiceRef.current) return;
-    if (voiceCallPhaseRef.current !== "listening") return;
+    const phase = voiceCallPhaseRef.current;
+    if (phase !== "listening" && phase !== "speaking") return;
     // Brief pause before restart to avoid hammering the browser
     setTimeout(() => {
-      if (continuousVoiceRef.current && voiceCallPhaseRef.current === "listening") {
+      if (!continuousVoiceRef.current) return;
+      const p = voiceCallPhaseRef.current;
+      if (p === "listening" || p === "speaking") {
         voice.startListening();
       }
     }, 350);
@@ -604,6 +721,19 @@ export default function Chat() {
   const handleRecognitionError = useCallback((errorType: string) => {
     if (!continuousVoiceRef.current) return;
     console.log("[voice-call] recognition error:", errorType);
+
+    // While she is speaking, the mic is armed purely for barge-in. Expected
+    // noise (no-speech while her audio plays, aborted from our own stops,
+    // transient network blips) must NOT tear down the speaking state — the
+    // onEnd handler re-arms the mic. Only a blocked mic is worth surfacing.
+    if (voiceCallPhaseRef.current === "speaking") {
+      if (errorType === "not-allowed" || errorType === "service-not-allowed") {
+        setVoiceCallMessage(
+          "Mic blocked — voice interrupt is unavailable. Use the stop button below.",
+        );
+      }
+      return;
+    }
 
     if (errorType === "not-allowed" || errorType === "service-not-allowed") {
       // Hard failure — mic blocked. Common inside Replit's embedded iframe preview.
@@ -638,10 +768,31 @@ export default function Chat() {
     onRecognitionError: handleRecognitionError,
   });
 
+  // Safety net: if the Chat page unmounts mid-call (navigation), kill audio,
+  // recognition, and the mic keepalive stream so nothing runs in the background.
+  useEffect(() => {
+    return () => {
+      if (continuousVoiceRef.current) {
+        continuousVoiceRef.current = false;
+        voiceTtsGenRef.current++;
+        stopSpeaking();
+        voice.stopListening();
+        micStreamRef.current?.getTracks().forEach((t) => t.stop());
+        micStreamRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ─── Voice call: speak a chunk with word-synced caption in the overlay ────
   // wordOffset: how many words from the FULL reply were already spoken before
   // this chunk (0 for the first/only chunk; earlyWordCount for the remainder).
   const speakVoiceRemainder = (text: string, wordOffset: number) => {
+    // Capture the generation at invocation. Call sites verify it just before
+    // calling, and any interrupt after this point bumps it — so stale
+    // onStart/onEnd callbacks (e.g. a cancelled browser-TTS utterance that
+    // still fires its onend) must not flip the phase or re-arm the mic.
+    const gen = voiceTtsGenRef.current;
     if (!text.trim() || text.length <= 2) {
       setIsSpeaking(false);
       setVoiceCallMessage(null);
@@ -654,14 +805,18 @@ export default function Chat() {
       return;
     }
     console.log("[voice-call] speaking reply:", JSON.stringify(text.slice(0, 60)));
+    spokenTextRef.current = text; // echo-guard reference for barge-in
     speakText(text, {
       voiceId: activeVoiceId,
       onStart: () => {
+        if (voiceTtsGenRef.current !== gen) return; // interrupted before audio began
         setIsSpeaking(true);
         voiceCallPhaseRef.current = "speaking";
         setVoiceCallPhase("speaking");
+        voice.startListening(); // arm the mic for voice barge-in
       },
       onEnd: () => {
+        if (voiceTtsGenRef.current !== gen) return; // stale — the interrupt/new turn owns state now
         setIsSpeaking(false);
         setVoiceCallMessage(null);
         if (continuousVoiceRef.current) {
@@ -672,16 +827,23 @@ export default function Chat() {
         }
       },
       onWordReveal: (count, _total) => {
+        if (voiceTtsGenRef.current !== gen) return;
         setVoiceCallCaptionRevealed(wordOffset + count);
       },
     });
   };
 
-  const toggleContinuousVoice = () => {
+  const toggleContinuousVoice = async () => {
     if (continuousVoice) {
+      // ── End the call ──
       setContinuousVoice(false);
+      continuousVoiceRef.current = false; // sync now — a late TTS onEnd must not re-arm the mic
+      voiceTtsGenRef.current++;           // silence any reply TTS still in flight
+      voicePendingRemainderRef.current = null;
       voice.stopListening();
       stopSpeaking();
+      micStreamRef.current?.getTracks().forEach((t) => t.stop());
+      micStreamRef.current = null;
       voiceCallPhaseRef.current = "listening";
       setVoiceCallPhase("listening");
       setVoiceCallRecognizedText("");
@@ -697,10 +859,50 @@ export default function Chat() {
       voice.clearError();
       unlockAudioOnGesture(); // unlock Audio.play() + speechSynthesis in this gesture context
       setContinuousVoice(true);
+      continuousVoiceRef.current = true; // sync now — recognition callbacks may fire before the re-render
       voiceCallPhaseRef.current = "listening";
       setVoiceCallPhase("listening");
       setVoiceCallRecognizedText("");
       setVoiceCallMessage(null);
+
+      // Best-effort echo cancellation + early, VISIBLE mic-permission check:
+      // hold an echo-cancelled capture stream for the whole call so the
+      // browser's AEC pipeline is active while she speaks (barge-in mic), and
+      // surface mic problems immediately instead of talking into the void.
+      try {
+        const stream = await navigator.mediaDevices?.getUserMedia?.({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+        if (!continuousVoiceRef.current) {
+          // Call was ended while the permission prompt was open — don't
+          // resurrect the mic. Release the freshly granted stream.
+          stream?.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        if (stream) micStreamRef.current = stream;
+      } catch (err: any) {
+        if (!continuousVoiceRef.current) return; // call ended during the prompt
+        const name = err?.name ?? "";
+        if (name === "NotAllowedError" || name === "SecurityError") {
+          voiceCallPhaseRef.current = "error";
+          setVoiceCallPhase("error");
+          setVoiceCallMessage(
+            "I can't access the microphone — please allow mic access and open " +
+            "the app in its own browser tab (the mic is blocked inside the embedded preview).",
+          );
+          return;
+        }
+        if (name === "NotFoundError") {
+          voiceCallPhaseRef.current = "error";
+          setVoiceCallPhase("error");
+          setVoiceCallMessage("No microphone found — please connect one and tap to try again.");
+          return;
+        }
+        // Anything else: proceed — SpeechRecognition has its own permission path
+        // and will report through handleRecognitionError if it fails too.
+      }
+
+      if (!continuousVoiceRef.current) return; // ended during startup — stay off
       voice.startListening();
     }
   };
@@ -1756,6 +1958,13 @@ export default function Chat() {
                   {voiceCallPhase === "speaking" && <SpeakingBars />}
                 </div>
 
+                {/* Barge-in affordance — so users know they can cut in anytime */}
+                {voiceCallPhase === "speaking" && !voiceCallMessage && (
+                  <p className="text-center text-[11px] text-muted-foreground/45 px-2">
+                    Start talking to interrupt — or tap the button below
+                  </p>
+                )}
+
                 {/* Sub-label: transient status messages (no-speech hint, error detail, etc.) */}
                 <AnimatePresence>
                   {voiceCallMessage && (
@@ -1824,6 +2033,19 @@ export default function Chat() {
                   </motion.div>
                 )}
               </AnimatePresence>
+
+              {/* Tap-to-interrupt — the GUARANTEED way to cut her off mid-sentence.
+                  Immediately stops her audio and hands the turn to the user.
+                  (Voice barge-in — just start talking — also works best-effort.) */}
+              {voiceCallPhase === "speaking" && (
+                <button
+                  onClick={() => interruptSpeech({ resumeListening: true })}
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-primary/20 border-2 border-primary/50 text-primary hover:bg-primary/30 text-[12px] font-semibold tracking-wider uppercase transition-all shadow-[0_0_16px_hsl(35_49%_57%/0.18)]"
+                >
+                  <Square className="w-3 h-3 fill-current" />
+                  Tap to interrupt
+                </button>
+              )}
 
               {/* Tap-to-speak — always visible in listening phase as a manual fallback
                   (auto-loop can stall; this lets the user trigger the turn explicitly) */}
