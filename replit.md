@@ -55,6 +55,7 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
+- **Realtime Voice Call is feature-flagged OFF**: the Voice Call button/overlay and `POST /api/voice-agent/session` are hidden unless `VOICE_CALL_ENABLED=true` is set on the api-server (runtime `process.env` check in `src/lib/featureFlags.ts`, surfaced to the client via `GET /api/voices/status`). Flip the env var + restart the server to re-enable — no frontend rebuild. The per-message "Listen" TTS buttons are a separate feature and stay on.
 - After any OpenAPI spec change, run `pnpm --filter @workspace/api-spec run codegen` before touching routes or frontend
 - The `@anthropic-ai/sdk` uses `require()` dynamic import in the ai.ts service to avoid crashing when key is absent
 - `voice.ts` uses a ref pattern for the `onResult` callback to avoid an infinite re-render loop in `useSpeechRecognition`

@@ -280,13 +280,19 @@ export default function Chat() {
   const activeVoiceId = (profile as any)?.voiceId ?? (companionGender === "man" ? DEFAULT_MALE_VOICE : DEFAULT_FEMALE_VOICE);
 
   // Fetch romantic voice availability from the server
-  const { data: voicesStatus } = useQuery<{ romantic: RomanticVoiceStatus[] }>({
+  const { data: voicesStatus } = useQuery<{ romantic: RomanticVoiceStatus[]; voiceCallEnabled?: boolean }>({
     queryKey: ["voices-status"],
     queryFn: () => apiFetch(`${import.meta.env.BASE_URL}api/voices/status`).then((r) => r.json()),
     staleTime: 60_000,
     retry: false,
   });
   const romanticVoices = voicesStatus?.romantic ?? [];
+  // Server-driven feature flag: the realtime Voice Call entry point stays hidden
+  // until the ElevenLabs agent is fully configured (VOICE_CALL_ENABLED=true on
+  // the api-server — no frontend rebuild needed). Defaults to hidden while the
+  // status query is loading or unavailable. The per-message "Listen" TTS buttons
+  // are unaffected by this flag.
+  const voiceCallEnabled = voicesStatus?.voiceCallEnabled ?? false;
 
   // Current account email — reuse the auth/me cache the AuthGate already populated.
   const { data: authMe } = useQuery<{ user: { id: number; email: string }; emailVerified: boolean }>({
@@ -886,6 +892,11 @@ export default function Chat() {
       setVoiceCallRecognizedText("");
       setVoiceCallMessage(null);
     } else {
+      // Feature-flag hard guard: never START a call while Voice Call is
+      // disabled. The button is hidden when the flag is off, but this also
+      // protects against any programmatic invocation. (Ending a call — the
+      // branch above — must always stay possible.)
+      if (!voiceCallEnabled) return;
       setVoiceError(null);
       voice.clearError();
       unlockAudioOnGesture(); // unlock Audio.play() + speechSynthesis in this gesture context
@@ -975,6 +986,19 @@ export default function Chat() {
           return; // the agent owns mic + audio from here — no local recognition
         }
 
+        if (session && !session.available && session.reason === "disabled") {
+          // Voice Call is feature-flagged off server-side — abort the call
+          // entirely (NO classic fallback) and roll back all call-start state.
+          setContinuousVoice(false);
+          continuousVoiceRef.current = false;
+          voiceEngineRef.current = null;
+          setVoiceEngine(null);
+          voiceCallPhaseRef.current = "listening";
+          setVoiceCallPhase("listening");
+          setVoiceCallMessage(null);
+          return;
+        }
+
         if (session && !session.available) {
           setRealtimeNote(
             session.reason === "not_configured"
@@ -1046,6 +1070,17 @@ export default function Chat() {
       voice.startListening();
     }
   };
+
+  // Safety net: if the Voice Call feature flag flips off while a call is live
+  // (e.g. the voices-status query refetches after the server-side flag was
+  // turned off), fully end the call — otherwise the overlay would vanish while
+  // the mic / audio loop stayed hot with no visible way to stop it.
+  useEffect(() => {
+    if (!voiceCallEnabled && continuousVoice) {
+      toggleContinuousVoice(); // continuousVoice === true → runs the end-call teardown
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceCallEnabled, continuousVoice]);
 
   // ─── Settings: companion rename ───────────────────────────────────────────
 
@@ -2036,7 +2071,7 @@ export default function Chat() {
 
       {/* ── Input area ─────────────────────────────────────────────────────── */}
       <AnimatePresence mode="wait">
-        {continuousVoice ? (
+        {continuousVoice && voiceCallEnabled ? (
           /* ── Voice call overlay (replaces input bar while in talk mode) ── */
           <motion.div
             key="voice-call"
@@ -2291,16 +2326,22 @@ export default function Chat() {
                       )}
                     />
                     <div className="flex items-center gap-1">
-                      {/* ── Voice Call button — always in the bar ── */}
-                      <button
-                        type="button"
-                        onClick={toggleContinuousVoice}
-                        title="Start voice call"
-                        className="flex items-center gap-1.5 pl-3 pr-3.5 py-2 rounded-full bg-primary/12 text-primary/80 border border-primary/20 text-[11.5px] font-medium tracking-widest uppercase shrink-0 hover:bg-primary/18 hover:text-primary active:scale-95 transition-all"
-                      >
-                        <Phone className="w-3.5 h-3.5" strokeWidth={2.5} />
-                        Voice
-                      </button>
+                      {/* ── Voice Call button — hidden behind VOICE_CALL_ENABLED
+                           while the ElevenLabs realtime agent is being set up, so
+                           testers never hit a disconnecting call. The per-message
+                           "Listen" TTS and the Mic dictation button below are
+                           unaffected. ── */}
+                      {voiceCallEnabled && (
+                        <button
+                          type="button"
+                          onClick={toggleContinuousVoice}
+                          title="Start voice call"
+                          className="flex items-center gap-1.5 pl-3 pr-3.5 py-2 rounded-full bg-primary/12 text-primary/80 border border-primary/20 text-[11.5px] font-medium tracking-widest uppercase shrink-0 hover:bg-primary/18 hover:text-primary active:scale-95 transition-all"
+                        >
+                          <Phone className="w-3.5 h-3.5" strokeWidth={2.5} />
+                          Voice
+                        </button>
+                      )}
 
                       {/* ── Mic button — tap to speak, fills the input ── */}
                       <Button

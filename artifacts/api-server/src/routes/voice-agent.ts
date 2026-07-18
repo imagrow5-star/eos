@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { mintVoiceToken } from "../lib/voiceToken.js";
+import { isVoiceCallEnabled } from "../lib/featureFlags.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -14,6 +15,15 @@ const router: IRouter = Router();
 // falls back to the standard browser voice mode instead of failing silently.
 
 router.post("/voice-agent/session", async (req, res): Promise<void> => {
+  // Feature flag: while the realtime Voice Call entry point is hidden in the UI
+  // (VOICE_CALL_ENABLED unset/false), also refuse to bootstrap a session here so
+  // the feature is truly off end-to-end. The client treats this like any other
+  // "unavailable" response and stays on the standard experience.
+  if (!isVoiceCallEnabled()) {
+    res.json({ available: false, reason: "disabled" });
+    return;
+  }
+
   const agentId = process.env.ELEVENLABS_AGENT_ID?.trim();
   if (!agentId) {
     res.json({ available: false, reason: "not_configured" });
