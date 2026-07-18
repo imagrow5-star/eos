@@ -10,15 +10,14 @@ const router: IRouter = Router();
 // browser needs to open an ElevenLabs Conversational AI session:
 //   - a per-user HMAC token the agent passes back to our custom-LLM endpoint
 //     (see voice-llm.ts) so the right person's memory is loaded
-//   - a signed WebSocket URL (private agents), or the raw agent id (public)
-// If ELEVENLABS_AGENT_ID isn't configured, reports that clearly so the client
-// falls back to the standard browser voice mode instead of failing silently.
+//   - a signed WebSocket URL (required for private agents — the default)
+//
+// IMPORTANT: when the signed-URL request fails we return the SPECIFIC failure
+// reason instead of silently downgrading to "public agent id" mode. A private
+// agent rejects id-only connections by closing the socket immediately, which
+// looks like a silent instant drop in the UI — the exact bug this prevents.
 
 router.post("/voice-agent/session", async (req, res): Promise<void> => {
-  // Feature flag: while the realtime Voice Call entry point is hidden in the UI
-  // (VOICE_CALL_ENABLED unset/false), also refuse to bootstrap a session here so
-  // the feature is truly off end-to-end. The client treats this like any other
-  // "unavailable" response and stays on the standard experience.
   if (!isVoiceCallEnabled()) {
     res.json({ available: false, reason: "disabled" });
     return;
@@ -32,33 +31,90 @@ router.post("/voice-agent/session", async (req, res): Promise<void> => {
 
   const userToken = mintVoiceToken(req.userId);
 
-  // Prefer a signed URL — works for private agents and never exposes the API key.
   const apiKey = process.env.ELEVENLABS_API_KEY;
-  if (apiKey) {
-    try {
-      const r = await fetch(
-        `https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(agentId)}`,
-        { headers: { "xi-api-key": apiKey }, signal: AbortSignal.timeout(8000) },
-      );
-      if (r.ok) {
-        const data = (await r.json()) as { signed_url?: string };
-        if (data?.signed_url) {
-          res.json({ available: true, mode: "signed", signedUrl: data.signed_url, userToken });
-          return;
-        }
-      }
-      logger.warn(
-        { status: r.status },
-        "ElevenLabs get-signed-url failed — trying public agent mode",
-      );
-    } catch (err) {
-      logger.warn({ err }, "ElevenLabs get-signed-url error — trying public agent mode");
-    }
+  if (!apiKey) {
+    // No API key to sign with — only a PUBLIC agent can possibly work. Let the
+    // browser try; if the agent is private the client will surface the drop.
+    logger.warn("ELEVENLABS_API_KEY not set — attempting public-agent voice call");
+    res.json({ available: true, mode: "public", agentId, userToken });
+    return;
   }
 
-  // Public agents can connect with just the agent id; if this also fails in the
-  // browser, the client falls back to standard voice mode with a visible note.
-  res.json({ available: true, mode: "public", agentId, userToken });
+  try {
+    const r = await fetch(
+      `https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(agentId)}`,
+      { headers: { "xi-api-key": apiKey }, signal: AbortSignal.timeout(8000) },
+    );
+
+    if (r.ok) {
+      const data = (await r.json()) as { signed_url?: string };
+      if (data?.signed_url) {
+        res.json({ available: true, mode: "signed", signedUrl: data.signed_url, userToken });
+        return;
+      }
+      logger.error({ data }, "ElevenLabs get-signed-url returned 200 without signed_url");
+      res.json({
+        available: false,
+        reason: "signed_url_failed",
+        detail: "Unexpected ElevenLabs response (no signed_url)",
+      });
+      return;
+    }
+
+    // Classify the failure so the client can show a SPECIFIC, actionable error.
+    let body: unknown = null;
+    try {
+      body = await r.json();
+    } catch {
+      /* non-JSON error body */
+    }
+    const detail = (body as { detail?: { message?: string; status?: string } | string } | null)
+      ?.detail;
+    const elMessage =
+      typeof detail === "object" && typeof detail?.message === "string"
+        ? detail.message
+        : typeof detail === "string"
+          ? detail
+          : `ElevenLabs returned HTTP ${r.status}`;
+
+    logger.error(
+      { status: r.status, body },
+      "ElevenLabs get-signed-url failed — voice call cannot start",
+    );
+
+    let reason = "signed_url_failed";
+    if (r.status === 401 || r.status === 403) {
+      reason =
+        typeof detail === "object" && detail?.status === "missing_permissions"
+          ? "api_key_permission"
+          : "api_key_invalid";
+    } else if (r.status === 404) {
+      reason = "agent_not_found";
+    }
+    res.json({ available: false, reason, detail: elMessage });
+  } catch (err) {
+    logger.error({ err }, "ElevenLabs get-signed-url unreachable — voice call cannot start");
+    res.json({
+      available: false,
+      reason: "elevenlabs_unreachable",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
+// ─── Browser-side failure reporting ──────────────────────────────────────────
+// WebSocket close reasons and SDK errors happen browser↔ElevenLabs and never
+// transit our server, so the client posts them here. This is what makes a
+// remote tester's "it just dropped" diagnosable from the server logs.
+router.post("/voice-agent/client-error", (req, res): void => {
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const clip = (v: unknown, max: number) =>
+    typeof v === "string" ? v.slice(0, max) : undefined;
+  const stage = clip(b.stage, 100) ?? "unknown";
+  const message = clip(b.message, 1000) ?? "";
+  const detail = clip(b.detail, 2000);
+  logger.error({ userId: req.userId, stage, message, detail }, "voice-call failed in browser");
+  res.status(204).end();
 });
 
 export default router;

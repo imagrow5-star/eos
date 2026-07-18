@@ -9,14 +9,13 @@
 /**
  * Realtime Voice Call (ElevenLabs Conversational AI) entry point.
  *
- * Hidden by default while the ElevenLabs agent is still being configured, so
- * testers never see a Voice Call button that disconnects. The per-message
- * "Listen" text-to-speech playback is a SEPARATE feature and is NOT gated by
- * this flag — it keeps working regardless.
+ * ON by default — the Voice Call button is a first-class feature. Set
+ * VOICE_CALL_ENABLED=false (and restart the api-server) only if the feature
+ * must be temporarily hidden; a missing/unset variable never hides it.
  *
- * To re-enable once the agent is fully wired up: set VOICE_CALL_ENABLED=true on
- * the api-server and restart it. No rebuild required.
+ * The per-message "Listen" text-to-speech playback is a SEPARATE feature and
+ * is NOT gated by this flag — it keeps working regardless.
  */
 export function isVoiceCallEnabled(): boolean {
-  return process.env.VOICE_CALL_ENABLED === "true";
+  return process.env.VOICE_CALL_ENABLED !== "false";
 }

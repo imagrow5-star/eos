@@ -864,6 +864,34 @@ export default function Chat() {
     });
   };
 
+  // Server-declared hard configuration errors for realtime voice → what the
+  // person on the call screen should read. Keys mirror voice-agent.ts reasons.
+  const REALTIME_CONFIG_ERRORS: Record<string, string> = {
+    api_key_permission:
+      "The ElevenLabs API key is missing the “Conversational AI” permission, so calls can't start. " +
+      "In ElevenLabs → Developers → API Keys, enable Conversational AI on the key (or create a new " +
+      "key with it enabled), then update ELEVENLABS_API_KEY here.",
+    api_key_invalid:
+      "ElevenLabs rejected the configured API key — it may be wrong or revoked. Update ELEVENLABS_API_KEY and try again.",
+    agent_not_found:
+      "ElevenLabs couldn't find the configured agent — double-check ELEVENLABS_AGENT_ID.",
+    signed_url_failed: "ElevenLabs couldn't authorize the call.",
+    elevenlabs_unreachable:
+      "Couldn't reach ElevenLabs to start the call — check the connection and try again.",
+  };
+
+  // Ship browser-side voice-call failures to the server log so a remote
+  // tester's "it just dropped" is diagnosable (WebSocket close reasons happen
+  // browser↔ElevenLabs and never transit our server otherwise).
+  const reportVoiceCallError = (stage: string, message: string, detail?: string) => {
+    fetch(`${import.meta.env.BASE_URL}api/voice-agent/client-error`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stage, message, detail }),
+    }).catch(() => {});
+  };
+
   const toggleContinuousVoice = async () => {
     if (continuousVoice) {
       // ── End the call ──
@@ -915,10 +943,45 @@ export default function Chat() {
       // captures it and no-ops if a newer call (or an end) has bumped it.
       const rtGen = ++realtimeGenRef.current;
 
+      // ── 0) Microphone permission BEFORE any connection attempt ──────────
+      // Never open a session we can't feed audio into: ask for the mic first
+      // and only connect once it's granted. The probe tracks are stopped
+      // immediately — the SDK (or classic mode below) opens its own stream,
+      // and the browser keeps the permission grant cached.
+      setVoiceCallMessage("Waiting for microphone…");
+      try {
+        const probe = await navigator.mediaDevices?.getUserMedia?.({ audio: true });
+        probe?.getTracks().forEach((t) => t.stop());
+        if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) return;
+      } catch (err: any) {
+        if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) return;
+        const name = err?.name ?? "";
+        voiceCallPhaseRef.current = "error";
+        setVoiceCallPhase("error");
+        if (name === "NotAllowedError" || name === "SecurityError") {
+          setVoiceCallMessage(
+            "I can't access the microphone — please allow mic access and open " +
+            "the app in its own browser tab (the mic is blocked inside the embedded preview).",
+          );
+        } else if (name === "NotFoundError") {
+          setVoiceCallMessage("No microphone found — connect one, then end the call and try again.");
+        } else {
+          setVoiceCallMessage(
+            `The microphone couldn't start (${name || "unknown error"}) — end the call and try again.`,
+          );
+        }
+        reportVoiceCallError("microphone", name || String(err));
+        return;
+      }
+      setVoiceCallMessage("Connecting…");
+
       // ── 1) Realtime voice: ElevenLabs Conversational AI ─────────────────
       // The agent handles mic streaming, transcription, turn-taking, and
       // interruption natively; our custom-LLM endpoint keeps Claude + this
-      // user's memory as the brain. Any failure falls back to classic mode.
+      // user's memory as the brain. Bootstrap failures (our own API) fall back
+      // to classic mode; ElevenLabs connection failures show a specific
+      // on-screen error. connectStage tracks which kind a thrown error is.
+      let connectStage: "bootstrap" | "handshake" = "bootstrap";
       try {
         const res = await fetch(`${import.meta.env.BASE_URL}api/voice-agent/session`, {
           method: "POST",
@@ -928,6 +991,7 @@ export default function Chat() {
         if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) return; // ended/superseded while connecting
 
         if (session?.available) {
+          connectStage = "handshake";
           const convo = await startRealtimeCall(session, activeVoiceId, {
             onMode: (mode) => {
               if (realtimeGenRef.current !== rtGen || !continuousVoiceRef.current) return;
@@ -944,11 +1008,11 @@ export default function Chat() {
               setVoiceCallCaptionText(text);
               setVoiceCallCaptionRevealed(999999); // audio is realtime — show the full line
             },
-            onDisconnect: () => {
-              // Unexpected drop mid-call (network, agent hangup): close the
-              // call UI cleanly so the user can tap to reconnect. The engine
-              // check keeps a handshake-phase drop on the fallback path, and
-              // the gen check silences drops from superseded sessions.
+            onDisconnect: (info) => {
+              // Unexpected drop mid-call (network, agent hangup, auth): close
+              // the call UI cleanly and SHOW THE ACTUAL CAUSE — never a silent
+              // drop. The engine check keeps a handshake-phase drop on the
+              // error path below, and the gen check silences stale sessions.
               if (
                 realtimeGenRef.current !== rtGen ||
                 !continuousVoiceRef.current ||
@@ -964,12 +1028,18 @@ export default function Chat() {
               setVoiceCallPhase("listening");
               setVoiceCallRecognizedText("");
               setVoiceCallMessage(null);
-              setVoiceError("Voice call disconnected — tap Voice call to reconnect.");
+              if (info.message) {
+                setVoiceError(`Voice call disconnected: ${info.message}`);
+                reportVoiceCallError("disconnect", info.message);
+              } else {
+                setVoiceError("Voice call disconnected — tap Voice call to reconnect.");
+              }
               queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
             },
-            onError: (message) => {
+            onError: (message, context) => {
               if (realtimeGenRef.current !== rtGen) return;
-              console.warn("[voice-call] realtime error:", message);
+              console.error("[voice-call] realtime error:", message, context);
+              reportVoiceCallError("realtime-error", message);
             },
           });
           if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) {
@@ -999,6 +1069,19 @@ export default function Chat() {
           return;
         }
 
+        // Hard configuration errors: show EXACTLY what to fix on the call
+        // screen. No silent fallback that hides the problem — the server has
+        // already logged the underlying ElevenLabs response.
+        if (session && !session.available && session.reason && REALTIME_CONFIG_ERRORS[session.reason]) {
+          voiceCallPhaseRef.current = "error";
+          setVoiceCallPhase("error");
+          setVoiceCallMessage(
+            REALTIME_CONFIG_ERRORS[session.reason] +
+              (session.detail ? ` (ElevenLabs says: ${session.detail})` : ""),
+          );
+          return;
+        }
+
         if (session && !session.available) {
           setRealtimeNote(
             session.reason === "not_configured"
@@ -1009,8 +1092,23 @@ export default function Chat() {
           setRealtimeNote("Realtime voice unavailable — using standard voice mode.");
         }
       } catch (err) {
-        console.warn("[voice-call] realtime connect failed — falling back:", err);
-        setRealtimeNote("Realtime voice couldn't connect — using standard voice mode.");
+        console.error("[voice-call] realtime connect failed:", err);
+        if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) return;
+        if (connectStage === "bootstrap") {
+          // OUR api couldn't bootstrap the session — not an ElevenLabs
+          // problem. Classic mode can still serve the call, with a visible
+          // note (same treatment as a missing/failed session response).
+          setRealtimeNote("Realtime voice couldn't connect — using standard voice mode.");
+        } else {
+          // True ElevenLabs handshake/SDK failure: show the SPECIFIC cause on
+          // the call screen — a silent instant drop is never OK.
+          const msg = err instanceof Error ? err.message : String(err);
+          voiceCallPhaseRef.current = "error";
+          setVoiceCallPhase("error");
+          setVoiceCallMessage(`Voice call couldn't connect: ${msg} — end the call and try again.`);
+          reportVoiceCallError("connect", msg);
+          return;
+        }
       }
       if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) return; // ended/superseded during connect
 
@@ -2252,8 +2350,11 @@ export default function Chat() {
                 </button>
               )}
 
-              {/* Retry button — shown in error phase (no-speech, not-allowed, network, etc.) */}
-              {voiceCallPhase === "error" && (
+              {/* Retry button — classic-engine in-call errors only (no-speech,
+                  recognition hiccups). Config/connect errors have no engine to
+                  retry into — End call is the only action there, which avoids
+                  a phantom "Listening…" state with no session behind it. */}
+              {voiceCallPhase === "error" && voiceEngine === "classic" && (
                 <button
                   onClick={() => {
                     voiceCallPhaseRef.current = "listening";

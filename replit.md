@@ -55,7 +55,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-- **Realtime Voice Call is feature-flagged OFF**: the Voice Call button/overlay and `POST /api/voice-agent/session` are hidden unless `VOICE_CALL_ENABLED=true` is set on the api-server (runtime `process.env` check in `src/lib/featureFlags.ts`, surfaced to the client via `GET /api/voices/status`). Flip the env var + restart the server to re-enable — no frontend rebuild. The per-message "Listen" TTS buttons are a separate feature and stay on.
+- **Realtime Voice Call flag is ON by default**: set `VOICE_CALL_ENABLED=false` on the api-server + restart to temporarily hide the Voice Call button/overlay and refuse `POST /api/voice-agent/session` (runtime `process.env` read in `src/lib/featureFlags.ts`, surfaced via `GET /api/voices/status` — no rebuild needed). Per-message "Listen" TTS is separate and never gated.
+- **Voice-call failures must never be silent**: the session endpoint returns SPECIFIC reasons instead of downgrading to public-agent mode (`api_key_permission` = ElevenLabs key lacks the Conversational AI scope, `api_key_invalid`, `agent_not_found`, `elevenlabs_unreachable`); the call screen shows them verbatim, and browser-side WebSocket failures are reported to `POST /api/voice-agent/client-error` so they land in the server logs.
 - After any OpenAPI spec change, run `pnpm --filter @workspace/api-spec run codegen` before touching routes or frontend
 - The `@anthropic-ai/sdk` uses `require()` dynamic import in the ai.ts service to avoid crashing when key is absent
 - `voice.ts` uses a ref pattern for the `onResult` callback to avoid an infinite re-render loop in `useSpeechRecognition`

@@ -46,6 +46,6 @@ channel = "stable-25_05"
 
 [userenv.shared]
 RESEND_FROM_EMAIL = "Eos <noreply@itslexa.com>"
-VOICE_CALL_ENABLED = "false"
+VOICE_CALL_ENABLED = "true"
 
 [userenv.development]

@@ -1,4 +1,4 @@
-import { Conversation } from "@elevenlabs/client";
+import { Conversation, type DisconnectionDetails } from "@elevenlabs/client";
 
 // ─── Realtime voice via ElevenLabs Conversational AI ─────────────────────────
 // The agent natively handles mic streaming, live transcription, turn-taking,
@@ -14,6 +14,8 @@ import { Conversation } from "@elevenlabs/client";
 export type RealtimeSessionInfo = {
   available: boolean;
   reason?: string;
+  /** Human-readable extra context from the server (e.g. the ElevenLabs error). */
+  detail?: string;
   mode?: "signed" | "public";
   signedUrl?: string;
   agentId?: string;
@@ -24,9 +26,31 @@ export type RealtimeHandlers = {
   onMode: (mode: "speaking" | "listening") => void;
   onUserText: (text: string) => void;
   onAgentText: (text: string) => void;
-  onDisconnect: () => void;
-  onError: (message: string) => void;
+  /** Fired when the session ends. `message` is null for a clean/user-initiated end. */
+  onDisconnect: (info: { message: string | null }) => void;
+  onError: (message: string, context?: unknown) => void;
 };
+
+/**
+ * Turn the SDK's disconnection details into a human-readable cause, or null
+ * when the end was clean (we hung up, or a normal close with no error).
+ * Surfacing this is what turns a "silent instant drop" into a diagnosable
+ * message like "code 3000 — agent requires authorization".
+ */
+export function describeDisconnect(details: DisconnectionDetails): string | null {
+  if (details.reason === "user") return null; // we ended the call ourselves
+  const parts: string[] = [];
+  if (details.reason === "error" && details.message) parts.push(details.message);
+  const closeReason = details.closeReason ?? details.context?.reason;
+  const closeCode = details.closeCode ?? details.context?.code;
+  if (closeReason && !parts.includes(closeReason)) parts.push(closeReason);
+  // 1000 = normal closure, 1005 = no status present — not errors by themselves.
+  if (typeof closeCode === "number" && closeCode !== 1000 && closeCode !== 1005) {
+    parts.push(`code ${closeCode}`);
+  }
+  if (parts.length) return parts.join(" — ");
+  return details.reason === "error" ? "connection error" : null;
+}
 
 export type RealtimeConversation = Awaited<ReturnType<typeof Conversation.startSession>>;
 
@@ -48,8 +72,9 @@ export async function startRealtimeCall(
       if (role === "user") handlers.onUserText(message);
       else handlers.onAgentText(message);
     },
-    onDisconnect: () => handlers.onDisconnect(),
-    onError: (message: string) => handlers.onError(message),
+    onDisconnect: (details: DisconnectionDetails) =>
+      handlers.onDisconnect({ message: describeDisconnect(details) }),
+    onError: (message: string, context?: unknown) => handlers.onError(message, context),
   };
 
   const attempt = (withVoice: boolean) => {
