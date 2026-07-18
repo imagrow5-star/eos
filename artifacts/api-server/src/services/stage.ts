@@ -247,3 +247,42 @@ export function stageMeta(stage: number): {
       };
   }
 }
+
+// ─── Commitment timing hint ───────────────────────────────────────────────────
+// Turns a commitment's scheduled date/time into a short parenthetical the
+// greeting / morning-note / email prompts can use to frame the check-in
+// correctly (nudge forward vs. ask how it went). Returns "" when unscheduled.
+
+export function describeCommitmentTiming(
+  scheduledDate: string | null | undefined,
+  scheduledTime: string | null | undefined,
+  timezone: string,
+): string {
+  if (!scheduledDate) return "";
+  const today = todayInTimezone(timezone);
+  const timePart = scheduledTime ? ` at ${scheduledTime}` : "";
+
+  if (scheduledDate < today) {
+    return ` (was planned for ${scheduledDate}${timePart} — that day has passed; ask warmly how it went, zero pressure)`;
+  }
+  if (scheduledDate > today) {
+    return ` (planned for ${scheduledDate}${timePart} — still ahead; at most a light "that's coming up" touch)`;
+  }
+  if (scheduledTime) {
+    let nowHHMM = "12:00";
+    try {
+      nowHHMM = new Intl.DateTimeFormat("en-GB", {
+        timeZone: timezone,
+        hourCycle: "h23",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date());
+    } catch {
+      // keep neutral fallback
+    }
+    return nowHHMM >= scheduledTime
+      ? ` (planned for TODAY at ${scheduledTime} — that time has passed; ask warmly how it went)`
+      : ` (planned for TODAY at ${scheduledTime} — still ahead today; a gentle "today's the day" acknowledgment fits)`;
+  }
+  return " (planned for TODAY — one warm acknowledgment fits)";
+}

@@ -3,7 +3,12 @@ import crypto from "node:crypto";
 import { eq, desc, and, lt } from "drizzle-orm";
 import { db, messagesTable } from "@workspace/db";
 import { buildSystemPrompt } from "../services/systemPrompt.js";
-import { streamCompanionReply, appendRecentPhrase, VOICE_CALL_ADDENDUM } from "../services/ai.js";
+import {
+  streamCompanionReply,
+  appendRecentPhrase,
+  runConversationExtractions,
+  VOICE_CALL_ADDENDUM,
+} from "../services/ai.js";
 import { calculateStage } from "../services/stage.js";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { verifyVoiceToken } from "../lib/voiceToken.js";
@@ -175,6 +180,7 @@ router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> =>
     // ── Persist the exchange (fire-and-forget, mirrors the text pipeline) so
     // voice turns land in chat history and future memory extraction.
     void (async () => {
+      let freshUserTurn = false;
       if (!synthetic) {
         const [lastUserMsg] = await db
           .select()
@@ -187,12 +193,19 @@ router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> =>
           await db
             .insert(messagesTable)
             .values({ userId, role: "user", content: userContent, isMorningNote: false });
+          freshUserTurn = true;
         }
       }
       await db
         .insert(messagesTable)
         .values({ userId, role: "assistant", content: fullText, isMorningNote: false });
       await appendRecentPhrase(userId, fullText);
+      // Voice turns feed the SAME extraction pipeline as text chat (commitments,
+      // habits, periodic memory). Only on fresh user turns — the agent re-sends
+      // history after interruptions and we must not extract twice.
+      if (freshUserTurn) {
+        await runConversationExtractions(profile, userContent, fullText);
+      }
     })().catch((err) => logger.error({ err }, "voice-llm: persisting voice turn failed"));
   } catch (err) {
     logger.error({ err }, "voice-llm: completion failed");

@@ -57,6 +57,16 @@ pool
   `)
   .catch((err) => logger.error({ err }, "Failed to ensure daily email columns"));
 
+// Safety-net: commitment scheduling columns (conversation-captured plans with a
+// concrete day/time, plus the timed-email-nudge dedup marker).
+pool
+  .query(`
+    ALTER TABLE commitments ADD COLUMN IF NOT EXISTS scheduled_date text;
+    ALTER TABLE commitments ADD COLUMN IF NOT EXISTS scheduled_time text;
+    ALTER TABLE commitments ADD COLUMN IF NOT EXISTS nudge_sent_at timestamp;
+  `)
+  .catch((err) => logger.error({ err }, "Failed to ensure commitment scheduling columns"));
+
 // Safety-net: per-user personalization state (anti-repetition phrase tracking).
 pool
   .query(`

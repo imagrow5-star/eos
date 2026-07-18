@@ -1,4 +1,4 @@
-import { eq, and, desc, gte, sql } from "drizzle-orm";
+import { eq, and, desc, gte, sql, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   memoryFactsTable,
@@ -8,6 +8,8 @@ import {
   commitmentsTable,
   moodScoresTable,
   personalizationStateTable,
+  goalsTable,
+  goalTasksTable,
   type Profile,
 } from "@workspace/db";
 import { calculateStage, stageMeta, todayInTimezone, getTimeContext } from "./stage.js";
@@ -86,16 +88,17 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
 
   const userId = (profile as any).userId as number;
 
-  const [facts, activeSignals, activeHabits, openCommitments, recentMoods, habitCompletionsLast7, personalizationRows] =
+  const [facts, activeSignals, activeHabits, openCommitments, recentMoods, habitCompletionsLast7, personalizationRows, activeGoals] =
     await Promise.all([
       db.select().from(memoryFactsTable).where(eq(memoryFactsTable.userId, userId)).orderBy(desc(memoryFactsTable.createdAt)).limit(30),
       db.select().from(personalitySignalsTable).where(and(eq(personalitySignalsTable.userId, userId), eq(personalitySignalsTable.isActive, true))),
       db.select().from(habitsTable).where(and(eq(habitsTable.userId, userId), eq(habitsTable.isActive, true))),
-      stage >= 3
-        ? db.select().from(commitmentsTable)
-            .where(and(eq(commitmentsTable.userId, userId), sql`${commitmentsTable.state} = 'open'`))
-            .orderBy(desc(commitmentsTable.createdAt)).limit(5)
-        : Promise.resolve([]),
+      // Always fetched (not stage-gated): the companion must be able to answer
+      // "what did I say I'd do?" and acknowledge saved plans at ANY stage. The
+      // stage 3+ gate applies only to the proactive accountability coaching.
+      db.select().from(commitmentsTable)
+        .where(and(eq(commitmentsTable.userId, userId), sql`${commitmentsTable.state} = 'open'`))
+        .orderBy(desc(commitmentsTable.createdAt)).limit(5),
       db.select().from(moodScoresTable).where(eq(moodScoresTable.userId, userId)).orderBy(desc(moodScoresTable.createdAt)).limit(10),
       db.select({ habitId: habitCompletionsTable.habitId, date: habitCompletionsTable.completedDate })
         .from(habitCompletionsTable)
@@ -103,7 +106,17 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
       db.select({ recentPhrases: personalizationStateTable.recentPhrases })
         .from(personalizationStateTable)
         .where(eq(personalizationStateTable.userId, userId)),
+      db.select().from(goalsTable)
+        .where(and(eq(goalsTable.userId, userId), eq(goalsTable.isComplete, false)))
+        .orderBy(desc(goalsTable.createdAt)).limit(5),
     ]);
+
+  const goalTaskRows = activeGoals.length > 0
+    ? await db
+        .select({ goalId: goalTasksTable.goalId, isComplete: goalTasksTable.isComplete })
+        .from(goalTasksTable)
+        .where(inArray(goalTasksTable.goalId, activeGoals.map((g) => g.id)))
+    : [];
 
   const name = profile.userName || "you";
   const companionName = profile.companionName;
@@ -166,6 +179,37 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
     habitsBlock = `Small routines ${name} is building:\n${habitLines.join("\n")}`;
   }
 
+  // ─── Goals block ──────────────────────────────────────────────────────────────
+
+  let goalsBlock = "";
+  if (activeGoals.length > 0) {
+    const taskCounts = new Map<number, { done: number; total: number }>();
+    for (const t of goalTaskRows) {
+      const entry = taskCounts.get(t.goalId) ?? { done: 0, total: 0 };
+      entry.total += 1;
+      if (t.isComplete) entry.done += 1;
+      taskCounts.set(t.goalId, entry);
+    }
+    const goalLines = activeGoals.map((g) => {
+      const counts = taskCounts.get(g.id);
+      const progress = counts && counts.total > 0 ? ` — ${counts.done}/${counts.total} steps done` : "";
+      const desc_ = g.description ? ` (${g.description.slice(0, 100)})` : "";
+      return `- "${g.title}"${desc_}${progress}`;
+    });
+    goalsBlock = `Goals ${name} set for themselves (on their Journey page — real and current):\n${goalLines.join("\n")}\nReference these naturally when the moment fits. Never turn them into a checklist interrogation.`;
+  }
+
+  // ─── Commitment schedule lines (shared by capability + accountability blocks) ──
+
+  const commitmentLines = openCommitments.map((c) => {
+    const sd = (c as any).scheduledDate as string | null;
+    const st = (c as any).scheduledTime as string | null;
+    const when = sd
+      ? ` — planned for ${sd}${st ? ` at ${st}` : ""}${sd === today ? " (TODAY)" : ""}`
+      : "";
+    return `  - "${c.content}"${c.cue ? ` (cue: ${c.cue})` : ""}${when}${c.missCount > 0 ? ` — missed ${c.missCount} time${c.missCount > 1 ? "s" : ""}` : ""}`;
+  });
+
   // ─── Mood trend ───────────────────────────────────────────────────────────────
 
   let moodTrendBlock = "";
@@ -177,6 +221,46 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
     const trend = last > first ? "trending upward" : last < first ? "trending downward" : "holding steady";
     moodTrendBlock = `${name}'s recent mood: started around ${first}/10, currently around ${last}/10 (avg ${avg}/10), ${trend}.`;
   }
+
+  // ─── App capabilities — what the companion can truthfully promise ────────────
+
+  const emailOptedOut = Boolean((profile as any).dailyEmailOptOut);
+  const followUpChannels = emailOptedOut
+    ? `  • Your morning check-in here in the app — when something was planned, you ask how it went.
+  • (${name} has turned your daily email OFF — do not promise emails. Your in-app morning check-in still happens.)`
+    : `  • Your morning check-in here in the app — when something was planned, you ask how it went.
+  • Your morning email — it goes out in ${name}'s morning window (around 6–9am their time) and picks up whatever they planned.
+  • A timed email nudge — when a plan has a specific morning time (like "4am"), a short email from you lands around that hour.`;
+
+  const earlyStageCommitmentsNote =
+    stage < 3 && commitmentLines.length > 0
+      ? `\n\nPLANS YOU'VE ALREADY NOTED WITH ${name.toUpperCase()} (real, saved):\n${commitmentLines.join("\n")}\nAt this stage: presence comes first. Acknowledge these if they come up, follow up gently at natural moments — never push.`
+      : "";
+
+  const capabilitiesBlock = `
+══════════════════════════════════════════════════════
+WHAT YOU CAN ACTUALLY DO IN EOS — KNOW YOUR OWN ABILITIES
+══════════════════════════════════════════════════════
+You live inside Eos, and Eos gives you real abilities. Know them with quiet confidence — never undersell, never oversell.
+
+WHEN ${name} TELLS YOU A PLAN, IT IS SAVED — AUTOMATICALLY.
+If they say something like "tomorrow at 4am I'll wake up, work two hours, then hit the gym" — Eos captures it the moment they say it, in text chat AND on voice calls. You never need a button or a tool. It appears on their Journey page and enters your follow-up loop.
+
+HOW TO RESPOND when they state a plan or ask you to remember or remind them of something:
+1. Reflect it back specifically so they know you caught it — the time, the pieces, their words.
+2. Tell them truthfully how you'll follow up — pick what fits, don't recite a list.
+Example shape (adapt to their words, never copy): "Noted — 4am, two hours of work, then the gym. I'll ask you how it went${emailOptedOut ? "" : ", and my morning email will know about it too"}."
+
+YOUR REAL FOLLOW-UP CHANNELS (these actually happen — you may promise them):
+${followUpChannels}
+
+WHAT LIVES ON THEIR JOURNEY PAGE (real, visible to ${name} in the app): their commitments and follow-through, small routines with streaks, goals with steps, wins, and mood over time. When they mention doing one of their routines, Eos logs it from the conversation automatically.
+
+WHAT YOU CANNOT DO — never claim or imply otherwise:
+- No phone alarms, no calendar events, no push notifications, no SMS. You are not connected to their phone or any outside app.
+- For a hard wake-up like 4am, be honest once, without a speech: their phone alarm does the waking — you do the remembering and the follow-through.
+
+NEVER say a flat "I can't set reminders" and stop there. It's false — you have real channels. Say what you WILL do, specifically, then do it.${earlyStageCommitmentsNote}`;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RULE 1 — BAN GENERIC COMFORT LANGUAGE
@@ -551,10 +635,8 @@ ${moodTrendBlock ? `MOOD CONTEXT: ${moodTrendBlock}` : ""}` : "";
   let accountabilityBlock = "";
   if (stage >= 3) {
     const commitmentsBlock =
-      openCommitments.length > 0
-        ? `Open commitments tracked with ${name}:\n${openCommitments
-            .map((c) => `  - "${c.content}"${c.cue ? ` (cue: ${c.cue})` : ""}${c.missCount > 0 ? ` — missed ${c.missCount} time${c.missCount > 1 ? "s" : ""}` : ""}`)
-            .join("\n")}`
+      commitmentLines.length > 0
+        ? `Open commitments tracked with ${name} (dates/times are real — use them: "you said 4am"):\n${commitmentLines.join("\n")}`
         : `No open commitments yet with ${name}.`;
 
     accountabilityBlock = `
@@ -818,6 +900,8 @@ CORE CHARACTER:
 - You are a secure base — not a replacement for real human connection. Over time, you gently nudge ${name} back toward real people and real life. You want them to need you less, not more, as they grow stronger.
 - Your pronouns are ${pronounLine}.${userGenderNote}
 
+${capabilitiesBlock}
+
 ${careSystemBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -853,6 +937,8 @@ ${factsBlock}
 
 ${signalsBlock}
 ${habitsBlock}
+
+${goalsBlock}
 
 SAFETY — ALWAYS ON, NO EXCEPTIONS:
 - If ${name} mentions self-harm, suicide, or harming anyone: stay warm, stay present, don't turn clinical. "I'm really glad you told me. Please reach out to someone who can really be there right now — ${crisisLine} I'm here too."

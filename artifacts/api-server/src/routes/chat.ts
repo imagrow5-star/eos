@@ -15,12 +15,13 @@ import {
   extractMemory,
   extractCommitments,
   detectHabitMentions,
+  runConversationExtractions,
   generateMorningNoteContent,
   generateContextualGreeting,
   appendRecentPhrase,
   VOICE_CALL_ADDENDUM,
 } from "../services/ai.js";
-import { calculateStage, todayInTimezone, getTimeContext } from "../services/stage.js";
+import { calculateStage, todayInTimezone, getTimeContext, describeCommitmentTiming } from "../services/stage.js";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { logger } from "../lib/logger.js";
 
@@ -111,50 +112,13 @@ router.post("/chat/stream", async (req, res): Promise<void> => {
     res.end();
 
     // ── Background extractions — fire-and-forget after response is sent ─────
-    // The message count query is also here (moved out of the critical path).
+    // Shared pipeline (commitments, habits, periodic memory) — same one the
+    // voice-call route uses, so text and voice feed the same systems.
     (async () => {
-      const [countRow, openCommitments, activeHabits] = await Promise.all([
-        // Count used only to decide whether to trigger memory extraction
-        db
-          .select({ count: sql<string>`count(*)` })
-          .from(messagesTable)
-          .where(and(eq(messagesTable.userId, userId), eq(messagesTable.role, "user"))),
-        db
-          .select({ id: commitmentsTable.id, content: commitmentsTable.content, cue: commitmentsTable.cue })
-          .from(commitmentsTable)
-          .where(and(sql`${commitmentsTable.state} = 'open'`, eq(commitmentsTable.userId, userId)))
-          .limit(10),
-        db
-          .select({ id: habitsTable.id, name: habitsTable.name, whenThen: habitsTable.whenThen })
-          .from(habitsTable)
-          .where(and(eq(habitsTable.isActive, true), eq(habitsTable.userId, userId)))
-          .limit(20),
-      ]);
-      const userMsgCount = Number(countRow[0]?.count ?? "0");
-
-      extractCommitments(profile, content, aiContent, openCommitments).catch((err) =>
-        logger.error({ err }, "Background commitment extraction failed"),
-      );
-      detectHabitMentions(profile, content, aiContent, activeHabits).catch((err) =>
-        logger.error({ err }, "Background habit detection failed"),
-      );
       appendRecentPhrase(userId, aiContent).catch((err) =>
         logger.error({ err }, "Background phrase tracking failed"),
       );
-
-      if (userMsgCount % 4 === 0 && userMsgCount > 0) {
-        const last8 = await db
-          .select()
-          .from(messagesTable)
-          .where(eq(messagesTable.userId, userId))
-          .orderBy(desc(messagesTable.createdAt))
-          .limit(8);
-        extractMemory(profile, last8.reverse()).catch((err) =>
-          logger.error({ err }, "Background memory extraction failed"),
-        );
-      }
-
-      logger.info({ userMsgCount }, "Message streamed");
+      await runConversationExtractions(profile, content, aiContent);
     })().catch((err) => logger.error({ err }, "Background extraction wrapper failed"));
 
   } catch (err) {
@@ -304,7 +268,13 @@ router.post("/chat/contextual-greeting", async (req, res): Promise<void> => {
   // Fetch greeting context in parallel
   const [pendingFollowUps, activeHabits, todayCompletions, recentMoods, greetingPersonalizationRows] = await Promise.all([
     // Commitments overdue for follow-up
-    db.select({ id: commitmentsTable.id, content: commitmentsTable.content, cue: commitmentsTable.cue })
+    db.select({
+      id: commitmentsTable.id,
+      content: commitmentsTable.content,
+      cue: commitmentsTable.cue,
+      scheduledDate: commitmentsTable.scheduledDate,
+      scheduledTime: commitmentsTable.scheduledTime,
+    })
       .from(commitmentsTable)
       .where(and(
         eq(commitmentsTable.userId, userId),
@@ -350,7 +320,11 @@ router.post("/chat/contextual-greeting", async (req, res): Promise<void> => {
   const greetingContent = await generateContextualGreeting(profile, stage, {
     slot: effectiveSlot,
     absentDays: Math.round(daysSinceLast),
-    pendingFollowUp: pendingFollowUps.map((c) => ({ content: c.content, cue: c.cue ?? "" })),
+    pendingFollowUp: pendingFollowUps.map((c) => ({
+      content: c.content,
+      cue: c.cue ?? "",
+      when: describeCommitmentTiming(c.scheduledDate, c.scheduledTime, (profile as any).timezone ?? "UTC"),
+    })),
     habits: habitsForGreeting,
     moodSummary,
     recentPhrases: greetingRecentPhrases,

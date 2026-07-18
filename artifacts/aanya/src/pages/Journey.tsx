@@ -55,8 +55,18 @@ interface Commitment {
   missCount: number;
   qualityNote: string | null;
   scheduledFollowupDate: string | null;
+  scheduledDate: string | null;
+  scheduledTime: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+function formatClockTime(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  if (Number.isNaN(h)) return hhmm;
+  const suffix = h >= 12 ? "PM" : "AM";
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m ?? 0).padStart(2, "0")} ${suffix}`;
 }
 
 const STATE_META = {
@@ -158,6 +168,12 @@ function CommitmentsSection() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-foreground/85 leading-snug">{c.content}</p>
                       {c.cue && <p className="text-[11px] text-muted-foreground/55 mt-0.5">{c.cue}</p>}
+                      {c.scheduledDate && (
+                        <p className="text-[10px] text-secondary/70 mt-1 uppercase tracking-wide">
+                          Planned for {format(parseISO(c.scheduledDate), "MMM d")}
+                          {c.scheduledTime && ` · ${formatClockTime(c.scheduledTime)}`}
+                        </p>
+                      )}
                       {c.scheduledFollowupDate && (
                         <p className="text-[10px] text-primary/60 mt-1 uppercase tracking-wide">
                           Follow-up {format(parseISO(c.scheduledFollowupDate), "MMM d")}

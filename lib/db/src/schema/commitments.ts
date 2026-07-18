@@ -30,6 +30,15 @@ export const commitmentsTable = pgTable("commitments", {
   // YYYY-MM-DD: when the companion should gently follow up
   scheduledFollowupDate: text("scheduled_followup_date"),
 
+  // YYYY-MM-DD: the day the action itself is planned for ("tomorrow 4am" → tomorrow)
+  scheduledDate: text("scheduled_date"),
+
+  // HH:MM 24h local time when the user named a clock time ("4am" → "04:00")
+  scheduledTime: text("scheduled_time"),
+
+  // When the timed email nudge for this commitment was sent (dedup guard)
+  nudgeSentAt: timestamp("nudge_sent_at"),
+
   // When the companion actually followed up on this
   followedUpAt: timestamp("followed_up_at"),
 

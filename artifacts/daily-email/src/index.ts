@@ -13,6 +13,7 @@
  *   RESEND_FROM_EMAIL    — e.g. "Eos <noreply@itslexa.com>"
  *   SESSION_SECRET       — Signs unsubscribe tokens (same as api-server)
  *   APP_URL              — Production URL (optional)
+ *   DAILY_EMAIL_ONLY_USER — (test hook, optional) process only this user id
  */
 
 import { createHmac } from "node:crypto";
@@ -43,6 +44,15 @@ const ANTHROPIC_KEY   = process.env.ANTHROPIC_API_KEY;
 const SEND_HOUR_START = 6;
 const SEND_HOUR_END   = 9;
 
+// Timed commitment nudges are a morning channel only — a plan scheduled for
+// 13:00+ gets covered by the daily note / in-app follow-up instead.
+const NUDGE_LATEST_HOUR = 11;
+
+// Test hook: when set, the job processes only this user id (safe local runs)
+const ONLY_USER = process.env.DAILY_EMAIL_ONLY_USER
+  ? parseInt(process.env.DAILY_EMAIL_ONLY_USER, 10)
+  : null;
+
 // ─── Logging ──────────────────────────────────────────────────────────────────
 
 const log = (msg: string, data?: Record<string, unknown>) =>
@@ -66,6 +76,16 @@ function localHour(tz: string): number {
   }
 }
 
+function localHHMM(tz: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: tz, hourCycle: "h23", hour: "2-digit", minute: "2-digit",
+    }).format(new Date());
+  } catch {
+    return "12:00";
+  }
+}
+
 function todayLocal(tz: string): string {
   try {
     return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
@@ -80,6 +100,39 @@ function dayOfWeekName(tz: string): string {
   } catch {
     return "today";
   }
+}
+
+function formatClock(hhmm: string): string {
+  const h = parseInt(hhmm.slice(0, 2), 10);
+  const m = hhmm.slice(3, 5);
+  if (Number.isNaN(h)) return hhmm;
+  const suffix = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${m || "00"} ${suffix}`;
+}
+
+// Frames a scheduled commitment for the note prompt: nudge forward vs. ask how
+// it went. Mirrors the api-server's describeCommitmentTiming logic.
+function commitmentTimingHint(
+  scheduledDate: string | null,
+  scheduledTime: string | null,
+  tz: string,
+): string {
+  if (!scheduledDate) return "";
+  const today = todayLocal(tz);
+  const timePart = scheduledTime ? ` at ${formatClock(scheduledTime)}` : "";
+  if (scheduledDate < today) {
+    return ` (was planned for ${scheduledDate}${timePart} — already behind them; ask warmly how it went)`;
+  }
+  if (scheduledDate > today) {
+    return ` (planned for ${scheduledDate}${timePart} — still ahead; nudge forward gently, do NOT ask how it went)`;
+  }
+  if (scheduledTime) {
+    return localHHMM(tz) >= scheduledTime
+      ? ` (planned for TODAY${timePart} — by the time they read this it likely already happened; ask how it went)`
+      : ` (planned for TODAY${timePart} — hasn't happened yet; this email IS the reminder — nudge forward warmly, do NOT ask how it went)`;
+  }
+  return " (planned for TODAY)";
 }
 
 // ─── Unsubscribe token (HMAC — no DB storage needed) ─────────────────────────
@@ -106,6 +159,7 @@ interface UserContext {
   habits: Array<{ name: string; streak: number; doneThisWeek: number; whenThen: string }>;
   moodSummary: string | null;
   pendingCommitment: string | null;
+  pendingCommitmentId: number | null;
   recentPhrases: string[];
 }
 
@@ -150,7 +204,13 @@ async function gatherContext(
       .orderBy(desc(moodScoresTable.date))
       .limit(7),
 
-    db.select({ content: commitmentsTable.content, cue: commitmentsTable.cue })
+    db.select({
+      id: commitmentsTable.id,
+      content: commitmentsTable.content,
+      cue: commitmentsTable.cue,
+      scheduledDate: commitmentsTable.scheduledDate,
+      scheduledTime: commitmentsTable.scheduledTime,
+    })
       .from(commitmentsTable)
       .where(and(
         eq(commitmentsTable.userId, userId),
@@ -218,8 +278,9 @@ async function gatherContext(
     habits:      habitsWithWeekData,
     moodSummary,
     pendingCommitment: pending[0]
-      ? `${pending[0].content}${pending[0].cue ? ` (cue: "${pending[0].cue}")` : ""}`
+      ? `${pending[0].content}${pending[0].cue ? ` (cue: "${pending[0].cue}")` : ""}${commitmentTimingHint(pending[0].scheduledDate, pending[0].scheduledTime, profile.timezone)}`
       : null,
+    pendingCommitmentId: pending[0]?.id ?? null,
     recentPhrases: personalizationRows[0]?.recentPhrases ?? [],
   };
 }
@@ -290,7 +351,7 @@ Only use what the data above actually supports. Not "you're so strong" — somet
 
 (3) MAKE THEM FEEL CARED FOR — follow up on the exact thing they've been doing or committed to:
 ${ctx.pendingCommitment
-  ? `They said they'd do something: "${ctx.pendingCommitment}". Weave in ONE warm check-in — "did you get that [thing] in?" or "hope [the thing] went well" — like a close friend who was actually thinking about them. Not a reminder. Genuine curiosity.`
+  ? `They said they'd do something: "${ctx.pendingCommitment}". Follow the timing note in the parentheses (if any): if its time has already passed, weave in ONE warm "how did it go" check-in; if it's still ahead today, this email IS the gentle reminder — acknowledge the plan specifically and warmly, in your own words, WITHOUT asking how it went. Either way: like a close friend who was actually thinking about them. Never robotic.`
   : ctx.habits.length > 0
     ? `Reference their actual habit progress — not generically ("you've been consistent") but specifically ("that's [N] days in a row" or "you've had a quieter week with it — what's been getting in the way?").`
     : `End on a small, real, specific observation about where they are right now — grounded in something from their data.`}
@@ -333,7 +394,7 @@ Write only the note text itself — nothing else.`;
 
 // ─── HTML email template (Intimate Dusk) ─────────────────────────────────────
 
-function buildHtml(ctx: UserContext, noteText: string): string {
+function buildHtml(userId: number, noteText: string): string {
   const paragraphs = noteText
     .split(/\n+/)
     .filter((p) => p.trim())
@@ -343,8 +404,8 @@ function buildHtml(ctx: UserContext, noteText: string): string {
     )
     .join("");
 
-  const token = unsubToken(ctx.userId);
-  const unsubUrl = `${APP_URL}/api/email/unsubscribe?uid=${ctx.userId}&token=${token}`;
+  const token = unsubToken(userId);
+  const unsubUrl = `${APP_URL}/api/email/unsubscribe?uid=${userId}&token=${token}`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -411,6 +472,120 @@ async function sendEmail(
   }
 }
 
+// ─── Timed commitment nudge ───────────────────────────────────────────────────
+// A commitment captured from conversation with scheduledDate = today and an
+// explicit morning clock time gets one short email right at that hour. The
+// companion persona truthfully promises this channel, so it must actually fire.
+
+async function generateNudgeText(
+  companionName: string,
+  name: string,
+  content: string,
+  timeDisplay: string,
+  isLate: boolean,
+): Promise<string> {
+  const fallback = `${name} — ${timeDisplay}, like you planned: ${content}. I remembered.`;
+  if (!ANTHROPIC_KEY) return fallback;
+
+  const prompt = `You are ${companionName}, writing a 1–2 sentence email nudge to ${name}. They told you they'd do this today at ${timeDisplay}: "${content}". The email arrives ${isLate ? "a little after that time — do not pretend it is exactly that moment" : "right at that time"}.
+
+Write it warm, specific, quietly confident — a close friend keeping their word by remembering, not an alarm clock, not a cheerleader. Reference the actual plan in their words.
+
+Rules: no greeting line, no sign-off, no exclamation marks, no emojis. Banned: "you've got this", "let's do this", "rise and shine", "make it happen", "crush it", any cheerleading or wellness-app language.
+
+Write only the nudge text itself.`;
+
+  try {
+    const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 150,
+      temperature: 0.7,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const textBlock = response.content.find((b) => b.type === "text");
+    const text = textBlock?.text?.trim();
+    return text && text.length > 10 ? text : fallback;
+  } catch (err) {
+    logErr("Nudge text generation failed — using fallback", err);
+    return fallback;
+  }
+}
+
+async function processTimedNudges(
+  userId: number,
+  email: string,
+  companionName: string,
+  name: string,
+  today: string,
+  hour: number,
+  noteCoveredCommitmentId: number | null,
+): Promise<number> {
+  const dueRows = await db
+    .select({
+      id: commitmentsTable.id,
+      content: commitmentsTable.content,
+      scheduledTime: commitmentsTable.scheduledTime,
+    })
+    .from(commitmentsTable)
+    .where(and(
+      eq(commitmentsTable.userId, userId),
+      sql`${commitmentsTable.state} = 'open'`,
+      sql`${commitmentsTable.scheduledDate} = ${today}`,
+      sql`${commitmentsTable.scheduledTime} IS NOT NULL`,
+      sql`${commitmentsTable.nudgeSentAt} IS NULL`,
+    ));
+
+  let sentCount = 0;
+  for (const c of dueRows) {
+    const commitHour = parseInt((c.scheduledTime ?? "").slice(0, 2), 10);
+    if (Number.isNaN(commitHour)) continue;
+    if (commitHour > NUDGE_LATEST_HOUR) continue; // morning channel only
+    // Fire at the commitment's hour, with one hour of catch-up so a delayed
+    // cron run doesn't silently drop the nudge.
+    if (hour !== commitHour && hour !== commitHour + 1) continue;
+    const isLate = hour > commitHour;
+
+    // Atomically claim the nudge BEFORE sending — if two runs ever overlap,
+    // only one wins the conditional update, so no double-send is possible.
+    const claimed = await db.update(commitmentsTable)
+      .set({ nudgeSentAt: new Date() })
+      .where(and(
+        eq(commitmentsTable.id, c.id),
+        sql`${commitmentsTable.nudgeSentAt} IS NULL`,
+      ))
+      .returning({ id: commitmentsTable.id });
+    if (claimed.length === 0) continue; // another run already claimed it
+
+    if (noteCoveredCommitmentId !== null && c.id === noteCoveredCommitmentId) {
+      // The daily note that just went out mentions THIS commitment — keep the
+      // claim but skip the extra email.
+      log("Nudge folded into daily note", { userId, commitmentId: c.id });
+      continue;
+    }
+
+    try {
+      const timeDisplay = formatClock(c.scheduledTime!);
+      const nudgeText = await generateNudgeText(companionName, name, c.content, timeDisplay, isLate);
+      const html = buildHtml(userId, nudgeText);
+      await sendEmail(email, `${companionName} — you said ${timeDisplay}`, html);
+      log("Nudge sent", { userId, commitmentId: c.id, at: timeDisplay, late: isLate });
+      sentCount++;
+    } catch (err) {
+      // Release the claim so the catch-up hour can retry the send.
+      logErr("Nudge send failed — releasing claim", err, { userId, commitmentId: c.id });
+      try {
+        await db.update(commitmentsTable)
+          .set({ nudgeSentAt: null })
+          .where(eq(commitmentsTable.id, c.id));
+      } catch {
+        // claim stays consumed — better a lost nudge than a double-send
+      }
+    }
+  }
+  return sentCount;
+}
+
 // ─── Mark sent (update lastEmailDate on profile) ──────────────────────────────
 
 async function markSent(userId: number, date: string): Promise<void> {
@@ -455,7 +630,7 @@ async function run(): Promise<void> {
 
   log(`Eligible users found`, { count: users.length });
 
-  let sent = 0, skipped = 0, failed = 0;
+  let sent = 0, skipped = 0, failed = 0, nudged = 0;
 
   for (const user of users) {
     if (!user.userId || !user.email) { skipped++; continue; }
@@ -463,17 +638,23 @@ async function run(): Promise<void> {
     // Respect opt-out
     if (user.dailyEmailOptOut) { skipped++; continue; }
 
+    // Test hook: restrict processing to a single user id
+    if (ONLY_USER !== null && user.userId !== ONLY_USER) { skipped++; continue; }
+
     const tz    = user.timezone ?? "UTC";
     const today = todayLocal(tz);
     const hour  = localHour(tz);
 
-    // Already sent today (in this user's timezone)
-    if (user.lastEmailDate === today) { skipped++; continue; }
+    // When the daily note goes out, this holds the id of the ONE commitment it
+    // mentioned — only that one gets folded instead of separately nudged.
+    let noteCoveredCommitmentId: number | null = null;
 
-    // Not in the 6–9 AM morning window
-    if (hour < SEND_HOUR_START || hour > SEND_HOUR_END) { skipped++; continue; }
+    // ── Daily morning note — once per day, inside the 6–9 AM local window ───
+    const shouldSendDailyNote =
+      user.lastEmailDate !== today && hour >= SEND_HOUR_START && hour <= SEND_HOUR_END;
 
-    try {
+    if (!shouldSendDailyNote) skipped++;
+    else try {
       // Gather personalized data
       const ctx = await gatherContext(user.userId, user.email, {
         userName:      user.userName,
@@ -484,55 +665,71 @@ async function run(): Promise<void> {
       });
 
       if (!ctx) {
-        // Not enough data yet — skip gracefully
+        // Not enough data yet — skip the note. IMPORTANT: no `continue` here,
+        // the timed-nudge pass below must still run for this user.
         log("Skipping user — not enough data yet", { userId: user.userId });
         skipped++;
-        continue;
-      }
+      } else {
+        // Generate text + HTML
+        const noteText = await generateNoteText(ctx);
+        const html     = buildHtml(ctx.userId, noteText);
+        const dayName  = dayOfWeekName(tz);
+        const subject  = `${ctx.companionName} — ${dayName}`;
 
-      // Generate text + HTML
-      const noteText = await generateNoteText(ctx);
-      const html     = buildHtml(ctx, noteText);
-      const dayName  = dayOfWeekName(tz);
-      const subject  = `${ctx.companionName} — ${dayName}`;
+        await sendEmail(user.email, subject, html);
+        await markSent(user.userId, today);
+        noteCoveredCommitmentId = ctx.pendingCommitmentId;
 
-      await sendEmail(user.email, subject, html);
-      await markSent(user.userId, today);
-
-      // Track the email opening phrase for anti-repetition on future emails (non-fatal)
-      const emailOpener = noteText.split(/(?<=[.!?])\s+/)[0]?.trim()?.slice(0, 80) ?? "";
-      if (emailOpener.length >= 8) {
-        try {
-          const existingPs = await db
-            .select({ rp: personalizationStateTable.recentPhrases })
-            .from(personalizationStateTable)
-            .where(eq(personalizationStateTable.userId, user.userId));
-          const currentPs: string[] = existingPs[0]?.rp ?? [];
-          if (!currentPs.some((p) => p.startsWith(emailOpener.slice(0, 40)))) {
-            const updatedPs = [...currentPs, emailOpener].slice(-15);
-            await db
-              .insert(personalizationStateTable)
-              .values({ userId: user.userId, recentPhrases: updatedPs })
-              .onConflictDoUpdate({
-                target: personalizationStateTable.userId,
-                set: { recentPhrases: updatedPs, updatedAt: new Date() },
-              });
+        // Track the email opening phrase for anti-repetition on future emails (non-fatal)
+        const emailOpener = noteText.split(/(?<=[.!?])\s+/)[0]?.trim()?.slice(0, 80) ?? "";
+        if (emailOpener.length >= 8) {
+          try {
+            const existingPs = await db
+              .select({ rp: personalizationStateTable.recentPhrases })
+              .from(personalizationStateTable)
+              .where(eq(personalizationStateTable.userId, user.userId));
+            const currentPs: string[] = existingPs[0]?.rp ?? [];
+            if (!currentPs.some((p) => p.startsWith(emailOpener.slice(0, 40)))) {
+              const updatedPs = [...currentPs, emailOpener].slice(-15);
+              await db
+                .insert(personalizationStateTable)
+                .values({ userId: user.userId, recentPhrases: updatedPs })
+                .onConflictDoUpdate({
+                  target: personalizationStateTable.userId,
+                  set: { recentPhrases: updatedPs, updatedAt: new Date() },
+                });
+            }
+          } catch {
+            // non-fatal — skip phrase tracking on error
           }
-        } catch {
-          // non-fatal — skip phrase tracking on error
         }
-      }
 
-      log("Email sent", { userId: user.userId, day: today });
-      sent++;
+        log("Email sent", { userId: user.userId, day: today });
+        sent++;
+      }
 
     } catch (err) {
       logErr("Failed to send email to user", err, { userId: user.userId });
       failed++;
     }
+
+    // ── Timed commitment nudge — fires at the commitment's own morning hour ──
+    try {
+      nudged += await processTimedNudges(
+        user.userId,
+        user.email,
+        user.companionName,
+        user.userName || "there",
+        today,
+        hour,
+        noteCoveredCommitmentId,
+      );
+    } catch (err) {
+      logErr("Nudge pass failed", err, { userId: user.userId });
+    }
   }
 
-  log("Daily email job complete", { sent, skipped, failed });
+  log("Daily email job complete", { sent, skipped, failed, nudged });
 }
 
 // ─── Entry point ─────────────────────────────────────────────────────────────

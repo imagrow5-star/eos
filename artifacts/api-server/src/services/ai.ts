@@ -14,7 +14,7 @@ import {
   type Profile,
 } from "@workspace/db";
 import { logger } from "../lib/logger.js";
-import { todayInTimezone } from "./stage.js";
+import { todayInTimezone, describeCommitmentTiming } from "./stage.js";
 
 // Anthropic client — lazy init so mock mode works without the key
 let _anthropic: import("@anthropic-ai/sdk").Anthropic | null = null;
@@ -215,19 +215,21 @@ export async function generateMorningNoteContent(
   const [facts, wins, pendingFollowUps] = await Promise.all([
     db.select().from(memoryFactsTable).where(eq(memoryFactsTable.userId, userId)).orderBy(desc(memoryFactsTable.createdAt)).limit(10),
     db.select().from(winsTable).where(eq(winsTable.userId, userId)).orderBy(desc(winsTable.createdAt)).limit(3),
-    stage >= 3
-      ? db
-          .select()
-          .from(commitmentsTable)
-          .where(
-            and(
-              eq(commitmentsTable.userId, userId),
-              sql`${commitmentsTable.state} = 'open' AND ${commitmentsTable.scheduledFollowupDate} <= ${today}`,
-            ),
-          )
-          .limit(2)
-      : Promise.resolve([]),
+    // Not stage-gated: user-declared plans deserve follow-up at any stage —
+    // the tone rules below keep it presence-first for early stages.
+    db
+      .select()
+      .from(commitmentsTable)
+      .where(
+        and(
+          eq(commitmentsTable.userId, userId),
+          sql`${commitmentsTable.state} = 'open' AND ${commitmentsTable.scheduledFollowupDate} <= ${today}`,
+        ),
+      )
+      .limit(2),
   ]);
+
+  const tzForTiming = (profile as any).timezone ?? "UTC";
 
   const daysSinceStart = Math.floor(
     (Date.now() - profile.createdAt.getTime()) / (1000 * 60 * 60 * 24),
@@ -250,7 +252,7 @@ export async function generateMorningNoteContent(
 
   const followUpText =
     pendingFollowUps.length > 0
-      ? `\nThere are pending commitments to gently and warmly check in on (ONLY if the note's tone allows — never robotic, never guilt-inducing): ${pendingFollowUps.map((c) => `"${c.content}"${c.cue ? ` (cue: ${c.cue})` : ""}`).join("; ")}`
+      ? `\nThere are pending commitments to gently and warmly check in on (ONLY if the note's tone allows — never robotic, never guilt-inducing): ${pendingFollowUps.map((c) => `"${c.content}"${c.cue ? ` (cue: ${c.cue})` : ""}${describeCommitmentTiming((c as any).scheduledDate, (c as any).scheduledTime, tzForTiming)}`).join("; ")}`
       : "";
 
   const contextLines: string[] = [];
@@ -263,7 +265,7 @@ export async function generateMorningNoteContent(
   if (pendingFollowUps.length > 0) {
     contextLines.push(
       `Pending commitment(s) to gently check in on:\n${pendingFollowUps
-        .map((c) => `• "${c.content}"${c.cue ? ` (cue: ${c.cue})` : ""}`)
+        .map((c) => `• "${c.content}"${c.cue ? ` (cue: ${c.cue})` : ""}${describeCommitmentTiming((c as any).scheduledDate, (c as any).scheduledTime, tzForTiming)}`)
         .join("\n")}`,
     );
   }
@@ -502,7 +504,13 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
 //   3. User emotional state: so the system prompt knows whether to surface tasks
 
 export interface CommitmentExtractionResult {
-  newCommitment: { content: string; cue: string; scheduledFollowupDate: string } | null;
+  newCommitment: {
+    content: string;
+    cue: string;
+    scheduledFollowupDate: string;
+    scheduledDate?: string | null;
+    scheduledTime?: string | null;
+  } | null;
   stateUpdates: Array<{ id: number; state: string; qualityNote: string }>;
   userEmotionalState: "low" | "steady" | "unknown";
 }
@@ -546,9 +554,11 @@ ${commitmentsContext}
 Return ONLY valid JSON in this exact shape — no explanation, no markdown:
 {
   "newCommitment": {
-    "content": "the exact specific action (one concrete step with who/what)",
-    "cue": "when or where trigger (e.g. 'after morning coffee', 'tomorrow evening', or empty string)",
-    "scheduledFollowupDate": "YYYY-MM-DD — 1 to 3 days from today"
+    "content": "the specific action(s), concrete and in the user's own terms — a multi-step plan stays ONE commitment",
+    "cue": "when or where trigger (e.g. 'after morning coffee', 'tomorrow 4:00 AM', or empty string)",
+    "scheduledDate": "YYYY-MM-DD the action is planned for, or null if no specific day was named",
+    "scheduledTime": "HH:MM 24-hour clock time if the user named one, or null",
+    "scheduledFollowupDate": "YYYY-MM-DD — same as scheduledDate when set, otherwise 1 to 3 days from today"
   },
   "stateUpdates": [
     { "id": <existing commitment id as integer>, "state": "done|partial|missed", "qualityNote": "what user said about how it went, or empty string" }
@@ -557,11 +567,15 @@ Return ONLY valid JSON in this exact shape — no explanation, no markdown:
 }
 
 RULES — read carefully:
-- newCommitment: Set this ONLY when ALL of the following are true:
-    (a) The companion's reply proposed or confirmed ONE specific, concrete next-step action (not vague, not a general suggestion)
-    (b) The user's message shows explicit agreement: "ok", "yeah", "sure", "I will", "deal", "I can do that", "sounds good", "yep", "let's do it", "I'll try that", "alright"
-    (c) The commitment has a real-world cue (time, event, or trigger) — if the companion didn't give one, set cue to empty string
-    If ANY condition fails, set newCommitment to null.
+- newCommitment: Set this when EITHER path applies:
+    PATH A (companion-led): the companion's reply proposed or confirmed ONE specific, concrete next-step action AND the user's message shows explicit agreement: "ok", "yeah", "sure", "I will", "deal", "I can do that", "sounds good", "yep", "let's do it", "I'll try that", "alright".
+    PATH B (user-led): the USER stated their OWN concrete plan or intention — a decision to act, with at least one real-world anchor (a day, a time, or an event). Examples: "tomorrow morning at 4am I'll wake up, work for two hours, then go to the gym", "I'm going to call my mum on Sunday", "tonight I'll pack up his things". The companion does NOT need to have proposed it — the user declaring it is enough.
+  A multi-step plan ("wake at 4, work two hours, then gym") is ONE commitment with all steps in content — never split it into several.
+  Vague hopes are NOT commitments: "I should exercise more", "maybe I'll try", "I wish I could" → null.
+  RECURRING routines ("every morning", "from now on", "daily") are habits, NOT commitments → null here.
+  DUPLICATES: if the plan is essentially the same as an EXISTING OPEN COMMITMENT listed above, set newCommitment to null.
+- scheduledDate: resolve relative words using today's date above — "today"/"tonight" = today, "tomorrow" = the day after today, a weekday name = the next such day after today. null when no specific day was named.
+- scheduledTime: ONLY when an actual clock time was said ("4am" → "04:00", "7:30 in the evening" → "19:30"). null otherwise.
 - stateUpdates: Set ONLY when the user explicitly reports completing or NOT completing an existing commitment from the list above. Match by content similarity. "done" = completed fully, "partial" = did some of it, "missed" = didn't do it.
 - userEmotionalState: "low" = user is currently hurting, sad, crying, venting, grieving, panicking, or in crisis. "steady" = calm, okay, positive, matter-of-fact, functional. "unknown" = genuinely unclear.
 - Set newCommitment to null (the JSON null) if not applicable.
@@ -584,11 +598,19 @@ RULES — read carefully:
     // Persist new commitment
     const userId = (profile as any).userId as number;
     if (result.newCommitment && result.newCommitment.content?.length > 3) {
+      // Model output is untrusted — persist only well-formed dates/times so
+      // downstream string comparisons and nudge hour-matching stay sound.
+      const validDate = (s: string | null | undefined): string | null =>
+        s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+      const validTime = (s: string | null | undefined): string | null =>
+        s && /^([01]\d|2[0-3]):[0-5]\d$/.test(s) ? s : null;
       await db.insert(commitmentsTable).values({
         userId,
         content: result.newCommitment.content,
         cue: result.newCommitment.cue ?? "",
-        scheduledFollowupDate: result.newCommitment.scheduledFollowupDate ?? null,
+        scheduledFollowupDate: validDate(result.newCommitment.scheduledFollowupDate),
+        scheduledDate: validDate(result.newCommitment.scheduledDate),
+        scheduledTime: validTime(result.newCommitment.scheduledTime),
         state: "open",
       });
       logger.info({ content: result.newCommitment.content }, "New commitment saved");
@@ -726,9 +748,10 @@ Return ONLY valid JSON — no explanation, no markdown:
 
 RULES:
 - completedHabitIds: include an ID ONLY when the user clearly says they did that specific habit (e.g. "I went for a walk", "I texted Sam", "I journaled this morning"). Match by semantic similarity to the habit name/cue.
-- newHabit: set ONLY when BOTH are true:
-    (a) The companion explicitly suggested a specific new habit with a clear when/then cue in its reply
-    (b) The user agreed to it ("ok", "yeah", "sure", "I'll try that", "sounds good", "alright", "deal")
+- newHabit: set when EITHER is true:
+    (a) The companion explicitly suggested a specific new habit with a clear when/then cue in its reply AND the user agreed ("ok", "yeah", "sure", "I'll try that", "sounds good", "alright", "deal")
+    (b) The USER declared their own new RECURRING routine they intend to keep ("every day", "each morning", "from now on I'll…")
+  One-off plans for a single specific day ("tomorrow at 4am I'll…") are NOT habits — those are commitments; set newHabit to null for them.
   Otherwise set newHabit to null.
 - Return ONLY the JSON object. No markdown. No explanation.`;
 
@@ -792,6 +815,61 @@ RULES:
   }
 }
 
+// ─── Shared post-exchange extraction pipeline ─────────────────────────────────
+//
+// One entry point for everything that should happen in the background after a
+// completed exchange, used by BOTH the text chat stream and the realtime voice
+// call (voice-llm). Keeps voice and text feeding the same commitment/habit/
+// memory systems. Fire-and-forget friendly — every step catches its own errors.
+
+export async function runConversationExtractions(
+  profile: Profile,
+  userContent: string,
+  aiContent: string,
+): Promise<void> {
+  const userId = (profile as any).userId as number;
+
+  const [countRow, openCommitments, activeHabits] = await Promise.all([
+    // Count used only to decide whether to trigger memory extraction
+    db
+      .select({ count: sql<string>`count(*)` })
+      .from(messagesTable)
+      .where(and(eq(messagesTable.userId, userId), eq(messagesTable.role, "user"))),
+    db
+      .select({ id: commitmentsTable.id, content: commitmentsTable.content, cue: commitmentsTable.cue })
+      .from(commitmentsTable)
+      .where(and(sql`${commitmentsTable.state} = 'open'`, eq(commitmentsTable.userId, userId)))
+      .limit(10),
+    db
+      .select({ id: habitsTable.id, name: habitsTable.name, whenThen: habitsTable.whenThen })
+      .from(habitsTable)
+      .where(and(eq(habitsTable.isActive, true), eq(habitsTable.userId, userId)))
+      .limit(20),
+  ]);
+  const userMsgCount = Number(countRow[0]?.count ?? "0");
+
+  extractCommitments(profile, userContent, aiContent, openCommitments).catch((err) =>
+    logger.error({ err }, "Background commitment extraction failed"),
+  );
+  detectHabitMentions(profile, userContent, aiContent, activeHabits).catch((err) =>
+    logger.error({ err }, "Background habit detection failed"),
+  );
+
+  if (userMsgCount % 4 === 0 && userMsgCount > 0) {
+    const last8 = await db
+      .select()
+      .from(messagesTable)
+      .where(eq(messagesTable.userId, userId))
+      .orderBy(desc(messagesTable.createdAt))
+      .limit(8);
+    extractMemory(profile, last8.reverse()).catch((err) =>
+      logger.error({ err }, "Background memory extraction failed"),
+    );
+  }
+
+  logger.info({ userMsgCount }, "Post-exchange extractions dispatched");
+}
+
 // ─── Goal task breakdown ──────────────────────────────────────────────────────
 
 export async function breakGoalIntoTasks(
@@ -851,7 +929,7 @@ Rules:
 export interface GreetingContext {
   slot: "morning" | "evening" | "night" | "absent";
   absentDays: number;
-  pendingFollowUp: Array<{ content: string; cue: string }>;
+  pendingFollowUp: Array<{ content: string; cue: string; when?: string }>;
   habits: Array<{ name: string; streak: number; doneToday: boolean }>;
   moodSummary: string | null; // "doing well lately" | "somewhere in the middle" | "going through a harder stretch" | null
   recentPhrases?: string[]; // last N opening lines used with this user — for anti-repetition
@@ -892,7 +970,7 @@ export async function generateContextualGreeting(
   if (ctx.pendingFollowUp.length > 0) {
     contextLines.push(
       `Something ${name} said they'd do:\n${ctx.pendingFollowUp
-        .map((c) => `• "${c.content}"${c.cue ? ` (cue: "${c.cue}")` : ""}`)
+        .map((c) => `• "${c.content}"${c.cue ? ` (cue: "${c.cue}")` : ""}${c.when ?? ""}`)
         .join("\n")}`,
     );
   }
