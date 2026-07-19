@@ -48,6 +48,31 @@ pool
   .query(`ALTER TABLE email_verification_tokens ADD COLUMN IF NOT EXISTS new_email text;`)
   .catch((err) => logger.error({ err }, "Failed to ensure new_email column"));
 
+// Safety-net: collapse duplicate profile rows for the same user. A race in
+// getOrCreateProfileForUser (fixed with an advisory lock, but prod data may
+// predate the fix) could insert two rows for one user_id. Keep the row the
+// app actually reads — completed onboarding first, then the oldest id — and
+// drop the rest. No-op when there are no duplicates. Legacy rows with a NULL
+// user_id are intentionally left untouched.
+pool
+  .query(
+    `DELETE FROM profile WHERE id IN (
+       SELECT id FROM (
+         SELECT id, row_number() OVER (
+           PARTITION BY user_id
+           ORDER BY is_onboarding_complete DESC, id ASC
+         ) AS rn
+         FROM profile
+         WHERE user_id IS NOT NULL
+       ) ranked
+       WHERE rn > 1
+     )`,
+  )
+  .then((r) => {
+    if (r.rowCount) logger.warn({ removed: r.rowCount }, "Removed duplicate profile rows");
+  })
+  .catch((err) => logger.error({ err }, "Failed to dedupe profile rows"));
+
 // Safety-net: daily email opt-out and last-sent tracking columns.
 pool
   .query(`

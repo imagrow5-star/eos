@@ -21,3 +21,4 @@
 - [Commitment capture & nudges](commitment-capture.md) — shared text+voice extraction dispatcher; persona capabilities block must mirror real channels; morning-only email nudges dedup via nudgeSentAt
 - [Prompt caching & AI cost](prompt-caching-cost.md) — system prompt split stable/context, volatile blocks NEVER in stable; voice freezes prompt per call (sliding TTL) + stepped window; grep "ai_usage" for cost
 - [Email delivery diagnosis](email-delivery-diagnosis.md) — Resend domain verified (not sandbox), account shared with spa app; daily job needs own Scheduled Deployment; prod table is `profile` singular; verified+onboarded gate decides who gets emailed
+- [Verification recovery](verification-recovery.md) — unauth resend endpoint (fixed generic reply), 7-day tokens, advisory-lock atomic token swap + profile creation; boot-time profile dedupe

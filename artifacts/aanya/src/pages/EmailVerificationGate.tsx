@@ -90,7 +90,11 @@ export function EmailVerificationGate({ email, onVerified }: Props) {
             {email}
           </p>
           <p className="text-xs text-muted-foreground leading-relaxed mb-8">
-            Click the link in that email to activate your account. Check your spam folder if you don't see it.
+            Click the link in that email to activate your account — it stays valid for 7 days.
+            Don't see it? In Gmail, check the{" "}
+            <span className="text-foreground/80">Promotions</span> and{" "}
+            <span className="text-foreground/80">Updates</span> tabs — new senders often land
+            there — not just spam.
           </p>
 
           {error && (
@@ -101,7 +105,8 @@ export function EmailVerificationGate({ email, onVerified }: Props) {
 
           {resendStatus === "sent" && (
             <p className="text-sm text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-xl px-4 py-3 mb-4">
-              A new verification link is on its way. Check your inbox.
+              A new verification link is on its way — give it a minute, and peek at
+              Gmail's Promotions/Updates tabs if it isn't in your inbox.
             </p>
           )}
 

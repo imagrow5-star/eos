@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import bcrypt from "bcryptjs";
-import { eq, and, gt, isNull } from "drizzle-orm";
+import { eq, and, gt, isNull, desc, sql } from "drizzle-orm";
 import { randomBytes } from "crypto";
 import { db, pool } from "@workspace/db";
 import { usersTable, passwordResetTokensTable, emailVerificationTokensTable } from "@workspace/db";
@@ -112,7 +112,7 @@ async function sendVerificationEmail(
           <h1 style="font-size:32px;letter-spacing:0.25em;text-align:center;color:#b8962e;margin-bottom:8px;">EOS</h1>
           <p style="text-align:center;font-size:12px;letter-spacing:0.2em;color:#888;text-transform:uppercase;margin-bottom:40px;">a new dawn</p>
           <p style="font-size:16px;line-height:1.6;">Hi there,</p>
-          <p style="font-size:16px;line-height:1.6;">Thank you for creating an Eos account. Please verify your email address to get started. This link expires in 24 hours.</p>
+          <p style="font-size:16px;line-height:1.6;">Thank you for creating an Eos account. Please verify your email address to get started. This link stays valid for 7 days.</p>
           <div style="text-align:center;margin:36px 0;">
             <a href="${verifyUrl}" style="display:inline-block;background:#b8962e;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:14px;letter-spacing:0.1em;">Verify My Email</a>
           </div>
@@ -236,11 +236,22 @@ async function sendEmailChangeSecurityAlert(
   }
 }
 
+/**
+ * How long a signup/resend verification link stays valid. Was 24 hours; real
+ * users often find the email days later (it lands in Gmail's Promotions or
+ * Updates tabs), and an expired link with no self-serve resend permanently
+ * locked them out.
+ */
+const VERIFICATION_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+/** Minimum gap between verification emails to one account (anti-flooding). */
+const RESEND_COOLDOWN_MS = 60 * 1000;
+
 /** Creates a verification token in the DB and fires off the email (no throw). */
 async function issueAndSendVerification(userId: number, email: string): Promise<void> {
   try {
     const token = randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    const expiresAt = new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS);
 
     await db.insert(emailVerificationTokensTable).values({ token, userId, expiresAt });
 
@@ -251,6 +262,52 @@ async function issueAndSendVerification(userId: number, email: string): Promise<
   } catch (err) {
     logger.error({ err, userId }, "Failed to send verification email");
   }
+}
+
+/**
+ * Atomically replaces a user's signup verification token. Takes a per-user
+ * advisory lock, re-checks the resend cooldown *inside* it (so parallel
+ * requests can't each slip past), then deletes old signup tokens and inserts
+ * the fresh one in the same transaction — no crash window in which the user
+ * has zero valid tokens. Change-email staging tokens (new_email set) are
+ * never touched.
+ *
+ * Returns the new token, or null when the cooldown applies.
+ */
+async function replaceVerificationTokenAtomic(userId: number): Promise<string | null> {
+  return await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(917502, ${userId})`);
+
+    const [latest] = await tx
+      .select({ createdAt: emailVerificationTokensTable.createdAt })
+      .from(emailVerificationTokensTable)
+      .where(
+        and(
+          eq(emailVerificationTokensTable.userId, userId),
+          isNull(emailVerificationTokensTable.newEmail),
+        ),
+      )
+      .orderBy(desc(emailVerificationTokensTable.createdAt))
+      .limit(1);
+
+    if (latest && Date.now() - latest.createdAt.getTime() < RESEND_COOLDOWN_MS) {
+      return null;
+    }
+
+    await tx
+      .delete(emailVerificationTokensTable)
+      .where(
+        and(
+          eq(emailVerificationTokensTable.userId, userId),
+          isNull(emailVerificationTokensTable.newEmail),
+        ),
+      );
+
+    const token = randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS);
+    await tx.insert(emailVerificationTokensTable).values({ token, userId, expiresAt });
+    return token;
+  });
 }
 
 // ─── POST /auth/signup ────────────────────────────────────────────────────────
@@ -473,38 +530,91 @@ router.get("/auth/verify-email", async (req, res): Promise<void> => {
 // ─── POST /auth/resend-verification ──────────────────────────────────────────
 
 router.post("/auth/resend-verification", async (req, res): Promise<void> => {
-  const userId = req.session?.userId;
-  if (!userId) {
-    res.status(401).json({ error: "Not authenticated" });
-    return;
-  }
+  const sessionUserId = req.session?.userId;
+
+  // The unauthenticated path always answers with this exact body, so the
+  // endpoint can't be used to probe which addresses have accounts.
+  const generic = {
+    ok: true,
+    message: "If an account exists for that address, a new verification link is on its way.",
+  };
 
   try {
-    const [user] = await db
-      .select({ id: usersTable.id, email: usersTable.email, emailVerifiedAt: usersTable.emailVerifiedAt })
-      .from(usersTable)
-      .where(eq(usersTable.id, userId))
-      .limit(1);
+    let user:
+      | { id: number; email: string; emailVerifiedAt: Date | null }
+      | undefined;
 
-    if (!user) {
-      res.status(401).json({ error: "Session invalid" });
+    if (sessionUserId) {
+      // Logged-in path — used by the verification gate screen.
+      [user] = await db
+        .select({ id: usersTable.id, email: usersTable.email, emailVerifiedAt: usersTable.emailVerifiedAt })
+        .from(usersTable)
+        .where(eq(usersTable.id, sessionUserId))
+        .limit(1);
+
+      if (!user) {
+        res.status(401).json({ error: "Session invalid" });
+        return;
+      }
+      if (user.emailVerifiedAt !== null) {
+        res.status(400).json({ error: "Your email is already verified." });
+        return;
+      }
+    } else {
+      // Email-based path — lets users whose link expired request a fresh one
+      // without needing to remember to log back in first.
+      const rawEmail = (req.body as { email?: unknown } | undefined)?.email;
+      if (typeof rawEmail !== "string" || !rawEmail.trim()) {
+        res.status(400).json({ error: "Enter your email address." });
+        return;
+      }
+      const cleanEmail = rawEmail.toLowerCase().trim();
+      if (cleanEmail.length > 254) {
+        res.status(400).json({ error: "Email address is too long." });
+        return;
+      }
+
+      [user] = await db
+        .select({ id: usersTable.id, email: usersTable.email, emailVerifiedAt: usersTable.emailVerifiedAt })
+        .from(usersTable)
+        .where(eq(usersTable.email, cleanEmail))
+        .limit(1);
+
+      // Unknown address or already verified → same generic answer, no send.
+      if (!user || user.emailVerifiedAt !== null) {
+        res.json(generic);
+        return;
+      }
+    }
+
+    // Atomically re-check the cooldown and swap the signup token under a
+    // per-user lock — parallel requests can't each slip past the cooldown.
+    const token = await replaceVerificationTokenAtomic(user.id);
+
+    if (token === null) {
+      // Cooldown: a token was issued less than a minute ago.
+      if (sessionUserId) {
+        res.status(429).json({ error: "We just sent one — wait a minute, then try again." });
+      } else {
+        res.json(generic); // stay silent on the email path
+      }
       return;
     }
 
-    if (user.emailVerifiedAt !== null) {
-      res.status(400).json({ error: "Your email is already verified." });
-      return;
-    }
+    // Token is committed — respond now, send the email in the background.
+    res.json(sessionUserId ? { ok: true } : generic);
 
-    // Delete old tokens before issuing a new one
-    await db
-      .delete(emailVerificationTokensTable)
-      .where(eq(emailVerificationTokensTable.userId, userId));
-
-    // Respond immediately, then send the email
-    res.json({ ok: true });
-
-    issueAndSendVerification(user.id, user.email);
+    const targetEmail = user.email;
+    const targetUserId = user.id;
+    void (async () => {
+      try {
+        const verifyUrl = `${getAppBaseUrl()}/?verifyToken=${token}`;
+        await sendVerificationEmail(targetEmail, verifyUrl);
+        logger.info({ userId: targetUserId }, "Verification email sent");
+      } catch (err) {
+        logger.error({ err, userId: targetUserId }, "Failed to send verification email");
+      }
+    })();
   } catch (err) {
     logger.error({ err }, "resend-verification error");
     res.status(500).json({ error: "Something went wrong. Please try again." });

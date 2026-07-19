@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { profileTable } from "@workspace/db";
 import type { Profile } from "@workspace/db";
@@ -23,11 +23,27 @@ export async function getOrCreateProfileForUser(userId: number): Promise<Profile
     .limit(1);
   if (existing) return existing;
 
-  const [created] = await db
-    .insert(profileTable)
-    .values({ userId, userName: "", companionName: "Eos" })
-    .returning();
-  return created!;
+  // No row yet. There is no unique constraint on profile.user_id, so two
+  // concurrent first requests used to race past the SELECT above and each
+  // insert a row (seen in production: two rows created 2ms apart). Serialize
+  // creation per user with a transaction-scoped advisory lock, and re-check
+  // inside the lock before inserting.
+  return await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(917501, ${userId})`);
+
+    const [row] = await tx
+      .select()
+      .from(profileTable)
+      .where(eq(profileTable.userId, userId))
+      .limit(1);
+    if (row) return row;
+
+    const [created] = await tx
+      .insert(profileTable)
+      .values({ userId, userName: "", companionName: "Eos" })
+      .returning();
+    return created!;
+  });
 }
 
 async function recordVisit(profileId: number, userId: number, currentVisitDates: string[]) {
