@@ -45,7 +45,10 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.shared]
-RESEND_FROM_EMAIL = "Eos <noreply@itslexa.com>"
+RESEND_FROM_EMAIL = "Eos <hello@eoscompanion.com>"
 VOICE_CALL_ENABLED = "true"
 
 [userenv.development]
+
+[userenv.production]
+APP_URL = "https://eoscompanion.com"

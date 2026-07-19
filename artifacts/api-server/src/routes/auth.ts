@@ -62,7 +62,7 @@ async function sendPasswordResetEmail(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: process.env.RESEND_FROM_EMAIL ?? "Eos <onboarding@resend.dev>",
+      from: process.env.RESEND_FROM_EMAIL ?? "Eos <hello@eoscompanion.com>",
       to: [toEmail],
       subject: "Reset your Eos password",
       html: `
@@ -104,7 +104,7 @@ async function sendVerificationEmail(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: process.env.RESEND_FROM_EMAIL ?? "Eos <onboarding@resend.dev>",
+      from: process.env.RESEND_FROM_EMAIL ?? "Eos <hello@eoscompanion.com>",
       to: [toEmail],
       subject: "Verify your Eos email address",
       html: `
@@ -162,7 +162,7 @@ async function sendChangeEmailVerification(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: process.env.RESEND_FROM_EMAIL ?? "Eos <onboarding@resend.dev>",
+      from: process.env.RESEND_FROM_EMAIL ?? "Eos <hello@eoscompanion.com>",
       to: [toEmail],
       subject: "Confirm your new Eos email address",
       html: `
@@ -210,7 +210,7 @@ async function sendEmailChangeSecurityAlert(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: process.env.RESEND_FROM_EMAIL ?? "Eos <onboarding@resend.dev>",
+      from: process.env.RESEND_FROM_EMAIL ?? "Eos <hello@eoscompanion.com>",
       to: [toEmail],
       subject: "Security alert: a new email address was requested for your Eos account",
       html: `
@@ -739,7 +739,7 @@ async function sendSecurityAlertEmail(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: process.env.RESEND_FROM_EMAIL ?? "Eos <onboarding@resend.dev>",
+      from: process.env.RESEND_FROM_EMAIL ?? "Eos <hello@eoscompanion.com>",
       to: [toEmail],
       subject: "Security alert: password reset requested for your Eos account",
       html: `

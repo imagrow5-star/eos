@@ -28,7 +28,7 @@ A one-shot Node.js script that sends personalized morning notes to all eligible 
    - `RESEND_API_KEY`
    - `RESEND_FROM_EMAIL`
    - `SESSION_SECRET`
-   - `APP_URL` (optional — defaults to `https://eos-companion.replit.app`)
+   - `APP_URL` (optional — defaults to `https://eoscompanion.com`)
 
 ## Local test run
 

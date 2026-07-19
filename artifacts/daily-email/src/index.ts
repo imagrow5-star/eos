@@ -10,7 +10,7 @@
  *   DATABASE_URL         — Postgres connection string
  *   ANTHROPIC_API_KEY    — Claude API key (claude-sonnet-4-5)
  *   RESEND_API_KEY       — Resend email API key
- *   RESEND_FROM_EMAIL    — e.g. "Eos <noreply@itslexa.com>"
+ *   RESEND_FROM_EMAIL    — e.g. "Eos <hello@eoscompanion.com>"
  *   SESSION_SECRET       — Signs unsubscribe tokens (same as api-server)
  *   APP_URL              — Production URL (optional)
  *   DAILY_EMAIL_ONLY_USER — (test hook, optional) process only this user id
@@ -35,8 +35,8 @@ import Anthropic from "@anthropic-ai/sdk";
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 const RESEND_API_KEY  = process.env.RESEND_API_KEY;
-const RESEND_FROM     = process.env.RESEND_FROM_EMAIL ?? "Eos <noreply@itslexa.com>";
-const APP_URL         = (process.env.APP_URL ?? "https://eos-companion.replit.app").replace(/\/$/, "");
+const RESEND_FROM     = process.env.RESEND_FROM_EMAIL ?? "Eos <hello@eoscompanion.com>";
+const APP_URL         = (process.env.APP_URL ?? "https://eoscompanion.com").replace(/\/$/, "");
 const SESSION_SECRET  = process.env.SESSION_SECRET ?? "";
 const ANTHROPIC_KEY   = process.env.ANTHROPIC_API_KEY;
 
