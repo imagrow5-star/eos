@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, asc, desc, and } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { goalsTable, goalTasksTable } from "@workspace/db";
-import { breakGoalIntoTasks } from "../services/ai.js";
+import { createGoalWithTasks } from "../services/ai.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -46,33 +46,21 @@ router.post("/goals", async (req, res): Promise<void> => {
     return;
   }
 
-  const cleanTitle = title.trim();
-  const cleanDesc = typeof description === "string" ? description.trim().slice(0, 500) : "";
+  // Shared with the conversational path (services/ai.ts detectHabitMentions) —
+  // one code path so form-created and conversation-created goals are identical.
+  const created = await createGoalWithTasks(
+    userId,
+    title,
+    typeof description === "string" ? description : "",
+  );
 
-  const [goal] = await db
-    .insert(goalsTable)
-    .values({ userId, title: cleanTitle, description: cleanDesc })
-    .returning();
-
-  if (!goal) {
+  if (!created) {
     res.status(500).json({ error: "Failed to create goal" });
     return;
   }
 
-  const taskStrings = await breakGoalIntoTasks(cleanTitle, cleanDesc);
-
-  const tasks = await Promise.all(
-    taskStrings.map((content, order) =>
-      db
-        .insert(goalTasksTable)
-        .values({ goalId: goal.id, content, order })
-        .returning()
-        .then((r) => r[0]!),
-    ),
-  );
-
-  logger.info({ goalId: goal.id, taskCount: tasks.length }, "Goal created with AI sub-tasks");
-  res.status(201).json({ ...goal, tasks });
+  logger.info({ goalId: created.goal.id, source: "journey_form" }, "Goal created via form");
+  res.status(201).json({ ...created.goal, tasks: created.tasks });
 });
 
 // ─── DELETE /goals/:id ────────────────────────────────────────────────────────

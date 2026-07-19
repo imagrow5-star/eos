@@ -13,7 +13,10 @@
  */
 const realFetch = globalThis.fetch;
 
-globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+type FetchInput = Parameters<typeof fetch>[0];
+type FetchInit = Parameters<typeof fetch>[1];
+
+globalThis.fetch = ((input: FetchInput, init?: FetchInit) => {
   const url =
     typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
   if (url.startsWith("https://api.resend.com/")) {
@@ -24,5 +27,5 @@ globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
       }),
     );
   }
-  return realFetch(input as RequestInfo, init);
+  return realFetch(input, init);
 }) as typeof fetch;

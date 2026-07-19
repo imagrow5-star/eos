@@ -28,6 +28,8 @@ import {
   habitCompletionsTable,
   commitmentsTable,
   personalizationStateTable,
+  goalsTable,
+  goalTasksTable,
 } from "@workspace/db";
 import { eq, and, desc, sql, isNotNull } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
@@ -189,6 +191,7 @@ interface UserContext {
   facts: string[];
   wins: string[];
   habits: Array<{ name: string; streak: number; doneThisWeek: number; whenThen: string }>;
+  goals: Array<{ title: string; stepsDone: number; stepsTotal: number }>;
   moodSummary: string | null;
   pendingCommitment: string | null;
   pendingCommitmentId: number | null;
@@ -213,7 +216,7 @@ async function gatherContext(
   d7.setDate(d7.getDate() - 7);
   const sevenDaysAgo = d7.toISOString().slice(0, 10);
 
-  const [facts, wins, habits, moods, pending, personalizationRows] = await Promise.all([
+  const [facts, wins, habits, moods, pending, personalizationRows, goals] = await Promise.all([
     db.select({ fact: memoryFactsTable.fact })
       .from(memoryFactsTable)
       .where(eq(memoryFactsTable.userId, userId))
@@ -254,10 +257,16 @@ async function gatherContext(
     db.select({ recentPhrases: personalizationStateTable.recentPhrases })
       .from(personalizationStateTable)
       .where(eq(personalizationStateTable.userId, userId)),
+
+    db.select({ id: goalsTable.id, title: goalsTable.title })
+      .from(goalsTable)
+      .where(and(eq(goalsTable.userId, userId), eq(goalsTable.isComplete, false)))
+      .orderBy(desc(goalsTable.createdAt))
+      .limit(3),
   ]);
 
   // Skip if no personal data at all — generic email would feel worse than nothing
-  if (facts.length === 0 && wins.length === 0 && habits.length === 0) return null;
+  if (facts.length === 0 && wins.length === 0 && habits.length === 0 && goals.length === 0) return null;
 
   // Per-habit: completions in last 7 days
   const habitsWithWeekData = await Promise.all(
@@ -274,6 +283,21 @@ async function gatherContext(
         whenThen:    h.whenThen,
         streak:      h.streak ?? 0,
         doneThisWeek: completions.length,
+      };
+    }),
+  );
+
+  // Per-goal: step progress (steps live in goal_tasks)
+  const goalsWithSteps = await Promise.all(
+    goals.map(async (g) => {
+      const steps = await db
+        .select({ isComplete: goalTasksTable.isComplete })
+        .from(goalTasksTable)
+        .where(eq(goalTasksTable.goalId, g.id));
+      return {
+        title:      g.title,
+        stepsDone:  steps.filter((s) => s.isComplete).length,
+        stepsTotal: steps.length,
       };
     }),
   );
@@ -308,6 +332,7 @@ async function gatherContext(
     facts:       facts.map((f) => f.fact),
     wins:        wins.map((w) => w.content),
     habits:      habitsWithWeekData,
+    goals:       goalsWithSteps,
     moodSummary,
     pendingCommitment: pending[0]
       ? `${pending[0].content}${pending[0].cue ? ` (cue: "${pending[0].cue}")` : ""}${commitmentTimingHint(pending[0].scheduledDate, pending[0].scheduledTime, profile.timezone)}`
@@ -347,6 +372,12 @@ async function generateNoteText(ctx: UserContext): Promise<string> {
       return parts.join(", ");
     });
     lines.push(`Their habits:\n${habitLines.join("\n")}`);
+  }
+  if (ctx.goals.length > 0) {
+    const goalLines = ctx.goals.map(
+      (g) => `• "${g.title}"${g.stepsTotal > 0 ? ` — ${g.stepsDone} of ${g.stepsTotal} small steps done` : ""}`,
+    );
+    lines.push(`Goals they're working toward (most were set together in conversation — reference at most ONE, and only where it fits naturally):\n${goalLines.join("\n")}`);
   }
   if (ctx.moodSummary) {
     lines.push(`Mood: ${ctx.moodSummary}`);

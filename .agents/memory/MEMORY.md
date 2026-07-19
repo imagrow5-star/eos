@@ -23,3 +23,4 @@
 - [Email delivery diagnosis](email-delivery-diagnosis.md) — Resend domain verified (not sandbox), account shared with spa app; daily job needs own Scheduled Deployment; prod table is `profile` singular; verified+onboarded gate decides who gets emailed
 - [Verification recovery](verification-recovery.md) — unauth resend endpoint (fixed generic reply), 7-day tokens, advisory-lock atomic token swap + profile creation; boot-time profile dedupe
 - [Email bounce & test pollution](email-bounce-and-test-pollution.md) — triage via Resend last_event (bounced = bad address, don't resend); tests stub Resend fetch; prod replica hides bad-column errors
+- [Conversational goal-setting](conversational-goal-setting.md) — extraction needs agreement + CHRONOLOGY gates (proposal turn must not create); declines → 7-day cooldown; Publish auto-syncs prod schema, never hand-migrate

@@ -118,9 +118,21 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
       db.select({ habitId: habitCompletionsTable.habitId, date: habitCompletionsTable.completedDate })
         .from(habitCompletionsTable)
         .where(and(eq(habitCompletionsTable.userId, userId), gte(habitCompletionsTable.completedDate, sevenDaysAgo))),
-      db.select({ recentPhrases: personalizationStateTable.recentPhrases })
-        .from(personalizationStateTable)
-        .where(eq(personalizationStateTable.userId, userId)),
+      // goalOfferDeclinedAt guarded: on a freshly-published prod this column may
+      // not exist until the schema sync runs — degrade to defaults, never break chat.
+      (async () => {
+        try {
+          return await db
+            .select({
+              recentPhrases: personalizationStateTable.recentPhrases,
+              goalOfferDeclinedAt: personalizationStateTable.goalOfferDeclinedAt,
+            })
+            .from(personalizationStateTable)
+            .where(eq(personalizationStateTable.userId, userId));
+        } catch {
+          return [] as Array<{ recentPhrases: string[]; goalOfferDeclinedAt: Date | null }>;
+        }
+      })(),
       db.select().from(goalsTable)
         .where(and(eq(goalsTable.userId, userId), eq(goalsTable.isComplete, false)))
         .orderBy(desc(goalsTable.createdAt)).limit(5),
@@ -145,6 +157,7 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
 
   // Personalization layer — derived from stored data
   const recentPhrases: string[] = personalizationRows[0]?.recentPhrases ?? [];
+  const goalOfferDeclinedAt: Date | null = personalizationRows[0]?.goalOfferDeclinedAt ?? null;
   const discoveryGaps = deriveDiscoveryGaps(facts);
 
   // ─── Identity ────────────────────────────────────────────────────────────────
@@ -211,7 +224,7 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
       const desc_ = g.description ? ` (${g.description.slice(0, 100)})` : "";
       return `- "${g.title}"${desc_}${progress}`;
     });
-    goalsBlock = `Goals ${name} set for themselves (on their Journey page — real and current):\n${goalLines.join("\n")}\nReference these naturally when the moment fits. Never turn them into a checklist interrogation.`;
+    goalsBlock = `Goals ${name} is working toward (real and current — some you set together in conversation; all visible on their Journey page):\n${goalLines.join("\n")}\nReference these naturally when the moment fits. Never turn them into a checklist interrogation.`;
   }
 
   // ─── Commitment schedule lines (shared by capability + accountability blocks) ──
@@ -270,6 +283,9 @@ YOUR REAL FOLLOW-UP CHANNELS (these actually happen — you may promise them):
 ${followUpChannels}
 
 WHAT LIVES ON THEIR JOURNEY PAGE (real, visible to ${name} in the app): their commitments and follow-through, small routines with streaks, goals with steps, wins, and mood over time. When they mention doing one of their routines, Eos logs it from the conversation automatically.
+
+GOALS & ROUTINES — YOU CAN SET THEM RIGHT HERE IN THE CONVERSATION.
+When ${name} asks you for one ("set a goal for me", "help me build a routine") — or clearly agrees to one you offered — Eos saves it the moment they say yes. Text chat AND voice calls. No form, no settings page: the conversation is the interface (the Journey page just displays it). Bigger goals get broken into small steps automatically; recurring routines are tracked with streaks. After their yes, confirm it warmly and specifically — it's on their Journey — and say how you'll follow up. Never send them off to add it themselves.
 
 WHAT YOU CANNOT DO — never claim or imply otherwise:
 - No phone alarms, no calendar events, no push notifications, no SMS. You are not connected to their phone or any outside app.
@@ -902,6 +918,33 @@ USE NATURALLY:
   // `stable` must contain NOTHING that changes turn-to-turn. `context` carries
   // all live data and is placed after the cache breakpoint by the callers.
 
+  const conversationalGoalBlock = `
+══════════════════════════════════════════════════════
+CONVERSATIONAL GOAL-SETTING — THE CONVERSATION IS THE INTERFACE
+══════════════════════════════════════════════════════
+Goals and routines are set by talking with you — ${name} never needs a form.
+
+WHEN ${name} ASKS ("set a goal for me", "give me something to work on", "help me get out of this rut"):
+- Propose exactly ONE small, specific, realistic thing — grounded in THEIR real life: what they've told you about their mornings and evenings, what they miss, what used to make them feel like themselves, where they are right now. Never a generic wellness tip.
+- Small enough to succeed in the first week. Anchor it to a moment that already exists in their day ("after your morning coffee", "when you close the laptop").
+- If you genuinely don't know enough to make it personal yet: ask ONE question first, then propose.
+- Then ask for their yes, plainly: "want me to set that?"
+
+OFFERING ONE YOURSELF — only at genuinely right moments:
+- Natural openings: they voice wanting change ("I'm tired of feeling like this", "I can't keep doing this"), or they're steady with no active goals or routines and the conversation has room for it.
+- NEVER while they're in acute pain or distress — comfort mode overrides this block completely. Feeling first, always.
+- If the context says they recently declined an offer: don't offer again. Let them bring it up.
+- At most ONE offer in a conversation. If it doesn't land, drop it instantly and completely.
+- Early stages (1–2): only offer if THEY voiced wanting change. From stage 3 on, a steady moment with no active goals is also a fair opening.
+
+ONLY A CLEAR YES CREATES IT:
+- "yes", "okay, set it", "let's do it", "sounds good" — that's agreement. Eos saves it the moment they say it.
+- Hesitation is not yes. "maybe", "I guess", "I'll think about it" → respond with warmth, zero pressure, and NO re-ask this conversation. A goal they were talked into is worse than no goal.
+
+AFTER THE YES:
+- Confirm warmly and specifically: it's saved on their Journey, and name how you'll follow up ("I'll ask you tomorrow how the walk went"${emailOptedOut ? "" : ` — "and my morning email will know about it"`}).
+- Then let it breathe. No pep talk, no second task, no bigger version of the goal.`;
+
   const stable = `${relationshipPersona}
 
 ${energyDesc}
@@ -938,6 +981,7 @@ ${isBereavement ? bereavementVoicePack : breakupVoicePack}
 ${antiSurveillance}
 ${pathGuidance}
 ${habitLoggingRules}
+${conversationalGoalBlock}
 ${accountabilityBlock}
 ${warmSignOffsBlock}
 ${calibrationBlock}
@@ -945,6 +989,18 @@ ${bookWisdomBlock}
 
 CURRENT STAGE: ${label} (Stage ${stage})
 ${rules}`;
+
+  // Goal-offer state (volatile — context block): decline cooldown beats opportunity.
+  const GOAL_OFFER_COOLDOWN_DAYS = 7;
+  const msSinceDecline = goalOfferDeclinedAt ? Date.now() - goalOfferDeclinedAt.getTime() : Infinity;
+  let goalOfferStateBlock = "";
+  if (msSinceDecline < GOAL_OFFER_COOLDOWN_DAYS * 24 * 3600 * 1000) {
+    const daysAgo = Math.floor(msSinceDecline / (24 * 3600 * 1000));
+    const when = daysAgo === 0 ? "earlier today" : daysAgo === 1 ? "yesterday" : `${daysAgo} days ago`;
+    goalOfferStateBlock = `GOAL OFFERS — HOLD OFF: you offered to set a goal and ${name} declined ${when}. Do NOT bring up setting goals again — let them raise it. If THEY ask for one, that is different: help gladly.`;
+  } else if (activeGoals.length === 0 && activeHabits.length === 0 && stage >= 3) {
+    goalOfferStateBlock = `${name} has no active goals or routines right now. If — and only if — a steady, natural moment arises (never during distress, never as an opener), you may offer to set ONE small goal together. One light offer at most; drop it instantly and completely if it doesn't land.`;
+  }
 
   const contextParts: string[] = [dateTimeBlock];
   if (earlyStageCommitmentsNote) contextParts.push(earlyStageCommitmentsNote.trim());
@@ -955,6 +1011,7 @@ ${rules}`;
   if (signalsBlock) contextParts.push(signalsBlock);
   if (habitsBlock) contextParts.push(habitsBlock);
   if (goalsBlock) contextParts.push(goalsBlock);
+  if (goalOfferStateBlock) contextParts.push(goalOfferStateBlock);
   if (antiRepetitionBlock) contextParts.push(antiRepetitionBlock.trim());
   contextParts.push(`SAFETY — ALWAYS ON, NO EXCEPTIONS:
 - If ${name} mentions self-harm, suicide, or harming anyone: stay warm, stay present, don't turn clinical. "I'm really glad you told me. Please reach out to someone who can really be there right now — ${crisisLine} I'm here too."

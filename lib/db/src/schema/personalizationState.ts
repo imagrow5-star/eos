@@ -6,6 +6,8 @@ import { usersTable } from "./users";
  * Per-user personalization state.
  * - recentPhrases: opening lines from the last 15 AI messages, used to prevent
  *   the companion from repeating the same openers/phrasings with this user.
+ * - goalOfferDeclinedAt: when the user last declined the companion's offer to
+ *   set a goal/routine — the prompt suppresses re-offers for 7 days after.
  */
 export const personalizationStateTable = pgTable("personalization_state", {
   userId: integer("user_id")
@@ -15,6 +17,7 @@ export const personalizationStateTable = pgTable("personalization_state", {
     .array()
     .notNull()
     .default(sql`'{}'::text[]`),
+  goalOfferDeclinedAt: timestamp("goal_offer_declined_at"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 

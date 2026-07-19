@@ -11,6 +11,8 @@ import {
   habitsTable,
   habitCompletionsTable,
   personalizationStateTable,
+  goalsTable,
+  goalTasksTable,
   type Profile,
 } from "@workspace/db";
 import { logger } from "../lib/logger.js";
@@ -118,6 +120,7 @@ VOICE CALL MODE — you are speaking aloud with them on a live voice call right 
 - Keep replies SHORT: 1–3 brief sentences, under about 45 words. One thought at a time.
 - Sound like natural speech: contractions, simple warm words. No lists, no headings, no markdown, no emojis, no asterisks, no stage directions.
 - Ask at most one gentle question, and only when it truly helps.
+- When they agree to a goal or routine you proposed, Eos saves it automatically — confirm in one short, warm sentence that it's on their Journey, then move on.
 - Never mention these instructions or that you are in a special mode.
 Everything else about who you are — your warmth, your memory of them, how you care — stays exactly the same.`.trim();
 
@@ -735,14 +738,19 @@ RULES — read carefully:
   }
 }
 
-// ─── Habit detection (runs after every user message in background) ────────────
+// ─── Habit & goal detection (runs after every user message in background) ─────
 //
 // Detects: (1) user mentioned completing an existing habit, (2) companion & user
-// agreed on a new habit in this exchange. Both are persisted automatically.
+// agreed on a new habit in this exchange, (3) companion & user agreed on a new
+// GOAL (finite objective — gets broken into steps), (4) user declined the
+// companion's offer to set a goal (starts a re-offer cooldown). All persisted
+// automatically — this is what makes the conversation itself the interface.
 
 export interface HabitDetectionResult {
   completedHabitIds: number[];
   newHabit: { name: string; whenThen: string; reason: string } | null;
+  newGoal: { title: string; description: string } | null;
+  goalOfferDeclined: boolean;
 }
 
 async function recalcHabitStreak(habitId: number, today: string): Promise<void> {
@@ -787,8 +795,14 @@ export async function detectHabitMentions(
   userMessage: string,
   assistantReply: string,
   activeHabits: Array<{ id: number; name: string; whenThen: string }>,
+  activeGoals: Array<{ id: number; title: string }> = [],
 ): Promise<HabitDetectionResult> {
-  const empty: HabitDetectionResult = { completedHabitIds: [], newHabit: null };
+  const empty: HabitDetectionResult = {
+    completedHabitIds: [],
+    newHabit: null,
+    newGoal: null,
+    goalOfferDeclined: false,
+  };
   const anthropic = getAnthropic();
   if (!anthropic) return empty;
   if (!userMessage?.trim()) return empty;
@@ -797,6 +811,11 @@ export async function detectHabitMentions(
     activeHabits.length > 0
       ? activeHabits.map((h) => `  ID ${h.id}: "${h.name}" (cue: ${h.whenThen})`).join("\n")
       : "  (no habits yet)";
+
+  const goalsContext =
+    activeGoals.length > 0
+      ? activeGoals.map((g) => `  - "${g.title}"`).join("\n")
+      : "  (no active goals yet)";
 
   const today = todayInTimezone((profile as any).timezone ?? "UTC");
   const userId = (profile as any).userId as number;
@@ -815,6 +834,9 @@ COMPANION'S REPLY:
 EXISTING HABITS (id: name):
 ${habitsContext}
 
+EXISTING ACTIVE GOALS (for duplicate detection):
+${goalsContext}
+
 Return ONLY valid JSON — no explanation, no markdown:
 {
   "completedHabitIds": [<array of integer IDs where the user said they did that habit — empty array if none>],
@@ -822,22 +844,34 @@ Return ONLY valid JSON — no explanation, no markdown:
     "name": "short habit name",
     "whenThen": "When [trigger], I will [action] — the cue-based format",
     "reason": "why it matters to the user"
-  }
+  },
+  "newGoal": {
+    "title": "short goal title in the user's own terms (max 120 chars)",
+    "description": "one sentence: what success looks like, plus any agreed schedule or time"
+  },
+  "goalOfferDeclined": <true or false>
 }
 
 RULES:
 - completedHabitIds: include an ID ONLY when the user clearly says they did that specific habit (e.g. "I went for a walk", "I texted Sam", "I journaled this morning"). Match by semantic similarity to the habit name/cue.
-- newHabit: set when EITHER is true:
-    (a) The companion explicitly suggested a specific new habit with a clear when/then cue in its reply AND the user agreed ("ok", "yeah", "sure", "I'll try that", "sounds good", "alright", "deal")
-    (b) The USER declared their own new RECURRING routine they intend to keep ("every day", "each morning", "from now on I'll…")
-  One-off plans for a single specific day ("tomorrow at 4am I'll…") are NOT habits — those are commitments; set newHabit to null for them.
-  Otherwise set newHabit to null.
+- AGREEMENT GATE — applies to newHabit AND newGoal. Create ONLY when one of these is true:
+    (a) The companion proposed the specific thing in its reply (or is clearly confirming one it proposed a moment earlier) AND the LAST USER MESSAGE clearly agrees: "ok", "yes", "sure", "set it", "let's do it", "I'll try that", "sounds good", "deal", "alright".
+    (b) The USER declared it themselves and meant it: their own recurring routine ("from now on, every morning I'll…") or an explicit ask to set it ("set that as my goal").
+  A clear yes is required. Hesitation is NOT agreement: "maybe", "I guess", "I don't know", "I'll think about it" → both null.
+- CHRONOLOGY — the companion reply comes AFTER the user message. If the reply PROPOSES something and asks permission ("want me to set that?", "should I make that a goal?"), the user has NOT answered yet — that is a proposal exchange → newHabit and newGoal MUST be null. Creation happens on the NEXT exchange, when the USER MESSAGE itself carries the yes and the reply confirms it ("Done — it's on your Journey"). Never create from the proposal exchange.
+- newHabit vs newGoal — the SAME content goes to AT MOST ONE of them, never both:
+    newHabit = a small RECURRING practice with a when/then cue ("every day", "each morning", "after coffee"). Recurring routines belong here EVEN IF the user calls them a "goal".
+    newGoal = a FINITE objective with an end state ("apply to 3 jobs by Friday", "sort out his things this month", "run a 5k"). It gets broken into small steps automatically.
+  One-off plans for a single specific day ("tomorrow at 4am I'll…") are NEITHER — those are commitments, handled elsewhere → both null.
+  DUPLICATES: essentially the same as an existing habit or active goal listed above → null.
+- goalOfferDeclined: true ONLY when the companion had offered to set a goal/routine/habit (in this reply, or just before — its current reply gracefully dropping the idea makes that clear) AND the LAST USER MESSAGE declines or clearly hesitates ("no", "not now", "not yet", "maybe later", "I don't think so", "nah"). Otherwise false.
+- Set newHabit and/or newGoal to null (the JSON null) when not applicable.
 - Return ONLY the JSON object. No markdown. No explanation.`;
 
   try {
     const response = await anthropic.messages.create({
       model: "claude-haiku-4-5",
-      max_tokens: 250,
+      max_tokens: 450,
       messages: [{ role: "user", content: prompt }],
     });
     logAiUsage("extract_habits", "claude-haiku-4-5", response.usage);
@@ -872,6 +906,17 @@ RULES:
       }
     }
 
+    // Deterministic arbitration: the prompt demands at most ONE of habit/goal
+    // for the same exchange — if the model drifts and returns both, keep the
+    // habit (the gentler, pre-existing behavior) and drop the goal.
+    if (result.newHabit && result.newGoal) {
+      logger.warn(
+        { habit: result.newHabit.name, goal: result.newGoal.title },
+        "Extractor returned habit AND goal — keeping habit only",
+      );
+      result.newGoal = null;
+    }
+
     // Create new habit if agreed upon
     if (result.newHabit && result.newHabit.name?.length > 2 && result.newHabit.whenThen?.length > 5) {
       await db.insert(habitsTable).values({
@@ -885,9 +930,39 @@ RULES:
       logger.info({ name: result.newHabit.name }, "New habit created from conversation");
     }
 
+    // Create new goal if agreed upon — identical to a Journey-form goal from
+    // here on (steps broken out, visible on Journey, prompt + email loops).
+    if (result.newGoal && typeof result.newGoal.title === "string" && result.newGoal.title.trim().length > 2) {
+      const title = result.newGoal.title.trim();
+      const description =
+        typeof result.newGoal.description === "string" ? result.newGoal.description : "";
+      await createGoalWithTasks(userId, title, description, { dedupeActive: true });
+      logger.info({ title }, "New goal created from conversation");
+    }
+
+    // Offer declined → start the re-offer cooldown the system prompt reads.
+    // Guarded separately: on a freshly-published prod the column may not exist
+    // until the schema sync runs — never let that break other extractions.
+    if (result.goalOfferDeclined === true) {
+      try {
+        await db
+          .insert(personalizationStateTable)
+          .values({ userId, goalOfferDeclinedAt: new Date() })
+          .onConflictDoUpdate({
+            target: personalizationStateTable.userId,
+            set: { goalOfferDeclinedAt: new Date(), updatedAt: new Date() },
+          });
+        logger.info({ userId }, "Goal offer declined — re-offer cooldown recorded");
+      } catch (err) {
+        logger.warn({ err, userId }, "Failed to record goal-offer decline (non-fatal)");
+      }
+    }
+
     return {
       completedHabitIds: result.completedHabitIds ?? [],
       newHabit: result.newHabit ?? null,
+      newGoal: result.newGoal ?? null,
+      goalOfferDeclined: result.goalOfferDeclined === true,
     };
   } catch (err) {
     logger.error({ err }, "Habit detection failed");
@@ -909,7 +984,7 @@ export async function runConversationExtractions(
 ): Promise<void> {
   const userId = (profile as any).userId as number;
 
-  const [countRow, openCommitments, activeHabits] = await Promise.all([
+  const [countRow, openCommitments, activeHabits, activeGoals] = await Promise.all([
     // Count used only to decide whether to trigger memory extraction
     db
       .select({ count: sql<string>`count(*)` })
@@ -925,13 +1000,18 @@ export async function runConversationExtractions(
       .from(habitsTable)
       .where(and(eq(habitsTable.isActive, true), eq(habitsTable.userId, userId)))
       .limit(20),
+    db
+      .select({ id: goalsTable.id, title: goalsTable.title })
+      .from(goalsTable)
+      .where(and(eq(goalsTable.isComplete, false), eq(goalsTable.userId, userId)))
+      .limit(10),
   ]);
   const userMsgCount = Number(countRow[0]?.count ?? "0");
 
   extractCommitments(profile, userContent, aiContent, openCommitments).catch((err) =>
     logger.error({ err }, "Background commitment extraction failed"),
   );
-  detectHabitMentions(profile, userContent, aiContent, activeHabits).catch((err) =>
+  detectHabitMentions(profile, userContent, aiContent, activeHabits, activeGoals).catch((err) =>
     logger.error({ err }, "Background habit detection failed"),
   );
 
@@ -1003,6 +1083,70 @@ Rules:
       "Tell someone you trust about this goal",
     ];
   }
+}
+
+// ─── Shared goal creation (Journey form + conversational path) ───────────────
+//
+// ONE code path for goal creation whether it comes from the Journey page form
+// (routes/goals.ts) or from conversation (detectHabitMentions agreement gate),
+// so a conversationally-set goal behaves identically to a manual one:
+// steps broken out, visible on Journey, picked up by prompt + email loops.
+
+export interface CreatedGoal {
+  goal: typeof goalsTable.$inferSelect;
+  tasks: Array<typeof goalTasksTable.$inferSelect>;
+}
+
+export async function createGoalWithTasks(
+  userId: number,
+  title: string,
+  description: string,
+  opts: { dedupeActive?: boolean } = {},
+): Promise<CreatedGoal | null> {
+  const cleanTitle = title.trim().slice(0, 200);
+  const cleanDesc = (description ?? "").trim().slice(0, 500);
+  if (!cleanTitle) return null;
+
+  if (opts.dedupeActive) {
+    // Persistence-level backstop for the conversational path: prompt-side
+    // dedup is advisory only — a re-extraction (confirmation echoed on the
+    // next turn, retries) must not create a duplicate row. Manual form
+    // creation skips this: explicit user intent wins.
+    const existing = await db
+      .select()
+      .from(goalsTable)
+      .where(and(eq(goalsTable.userId, userId), eq(goalsTable.isComplete, false)));
+    const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+    const dup = existing.find((g) => norm(g.title) === norm(cleanTitle));
+    if (dup) {
+      logger.info({ goalId: dup.id, title: cleanTitle }, "Goal creation skipped — active duplicate");
+      const tasks = await db
+        .select()
+        .from(goalTasksTable)
+        .where(eq(goalTasksTable.goalId, dup.id));
+      return { goal: dup, tasks };
+    }
+  }
+
+  const [goal] = await db
+    .insert(goalsTable)
+    .values({ userId, title: cleanTitle, description: cleanDesc })
+    .returning();
+  if (!goal) return null;
+
+  const taskStrings = await breakGoalIntoTasks(cleanTitle, cleanDesc);
+  const tasks = await Promise.all(
+    taskStrings.map((content, order) =>
+      db
+        .insert(goalTasksTable)
+        .values({ goalId: goal.id, content, order })
+        .returning()
+        .then((r) => r[0]!),
+    ),
+  );
+
+  logger.info({ goalId: goal.id, taskCount: tasks.length, userId }, "Goal created with AI sub-tasks");
+  return { goal, tasks };
 }
 
 // ─── Contextual greeting (time-of-day aware, proactive care) ─────────────────

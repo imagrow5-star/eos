@@ -12,9 +12,6 @@ import { buildSystemPrompt } from "../services/systemPrompt.js";
 import {
   streamCompanionReply,
   getCompanionReply,
-  extractMemory,
-  extractCommitments,
-  detectHabitMentions,
   runConversationExtractions,
   generateMorningNoteContent,
   generateContextualGreeting,
@@ -182,39 +179,15 @@ router.post("/chat/send", async (req, res): Promise<void> => {
     .values({ userId, role: "assistant", content: aiContent, isMorningNote: false })
     .returning();
 
-  const [openCommitments, activeHabits] = await Promise.all([
-    db
-      .select({ id: commitmentsTable.id, content: commitmentsTable.content, cue: commitmentsTable.cue })
-      .from(commitmentsTable)
-      .where(and(sql`${commitmentsTable.state} = 'open'`, eq(commitmentsTable.userId, userId)))
-      .limit(10),
-    db
-      .select({ id: habitsTable.id, name: habitsTable.name, whenThen: habitsTable.whenThen })
-      .from(habitsTable)
-      .where(and(eq(habitsTable.isActive, true), eq(habitsTable.userId, userId)))
-      .limit(20),
-  ]);
-
-  extractCommitments(profile, content, aiContent, openCommitments).catch((err) =>
-    logger.error({ err }, "Commitment extraction failed"),
-  );
-  detectHabitMentions(profile, content, aiContent, activeHabits).catch((err) =>
-    logger.error({ err }, "Habit detection failed"),
+  // Shared background extraction dispatcher — the same path stream + voice
+  // use, so commitments/habits/goals/memory behave identically on every chat
+  // API (including goal dedup context, which this route used to skip).
+  runConversationExtractions(profile, content, aiContent).catch((err) =>
+    logger.error({ err }, "Background extractions failed"),
   );
 
-  let memoryExtracted = false;
-  if (userMsgCount % 4 === 0 && userMsgCount > 0) {
-    memoryExtracted = true;
-    const last8 = await db
-      .select()
-      .from(messagesTable)
-      .where(eq(messagesTable.userId, userId))
-      .orderBy(desc(messagesTable.createdAt))
-      .limit(8);
-    extractMemory(profile, last8.reverse()).catch((err) =>
-      logger.error({ err }, "Memory extraction failed"),
-    );
-  }
+  // Mirrors the dispatcher's own every-4th-user-message memory trigger.
+  const memoryExtracted = userMsgCount % 4 === 0 && userMsgCount > 0;
 
   req.log.info({ userMsgCount, memoryExtracted }, "Message sent");
 

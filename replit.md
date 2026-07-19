@@ -47,6 +47,7 @@ A warm AI companion web app for people recovering from a breakup. Users talk to 
 - **Onboarding**: Conversational (chat-based, never a form) — companion asks name, relationship type, energy, and her own name
 - **Chat**: Full message history, typing indicator, morning note (once daily), voice mode with browser SpeechRecognition + speechSynthesis
 - **Journey panel** (`/journey`): Stage badge, day/streak/wins stats, mood line chart, habits with 7-day completion dots, milestone grid, wins list
+- **Conversational goal-setting**: "set a goal for me" (or a companion offer at steady moments — never in acute distress, 7-day cooldown after a decline) → one small grounded proposal → clear yes creates the goal/routine right from chat or voice; the Journey form still works too
 - **Memory panel** (`/memory`): Personality signals with confidence levels, remembered facts by category
 
 ## User preferences
