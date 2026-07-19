@@ -1,8 +1,8 @@
 import { Router, type IRouter } from "express";
 import crypto from "node:crypto";
 import { eq, desc, and, lt } from "drizzle-orm";
-import { db, messagesTable } from "@workspace/db";
-import { buildSystemPrompt } from "../services/systemPrompt.js";
+import { db, messagesTable, type Profile } from "@workspace/db";
+import { buildSystemPrompt, type SystemPromptParts } from "../services/systemPrompt.js";
 import {
   streamCompanionReply,
   appendRecentPhrase,
@@ -57,6 +57,41 @@ function sanitizeTurns(turns: ChatMsg[]): ChatMsg[] {
   return merged;
 }
 
+// ─── Per-call frozen system prompt ───────────────────────────────────────────
+// A live call hits this endpoint every few seconds. Rebuilding the system
+// prompt per turn changes the dynamic context block (clock time, phrases…),
+// which would void Anthropic's prompt cache mid-call. Freezing both parts for
+// the duration of one call — keyed by the token's issuedAt, i.e. call start —
+// keeps the whole prefix byte-identical, so stable + context + transcript all
+// hit the cache from turn 2 on. Mid-call profile/memory changes apply on the
+// NEXT call; a live conversation doesn't need them sooner. The TTL slides on
+// every hit — an active call touches its entry every few seconds, so entries
+// outlive even very long calls and are swept only after ~15 min of silence.
+
+const frozenSystems = new Map<string, { parts: SystemPromptParts; at: number }>();
+const FROZEN_SYSTEM_TTL_MS = 15 * 60 * 1000;
+
+async function getFrozenSystem(
+  userId: number,
+  issuedAt: number,
+  profile: Profile,
+  stage: number,
+): Promise<SystemPromptParts> {
+  const now = Date.now();
+  for (const [k, v] of frozenSystems) {
+    if (now - v.at > FROZEN_SYSTEM_TTL_MS) frozenSystems.delete(k);
+  }
+  const key = `${userId}:${issuedAt}`;
+  const hit = frozenSystems.get(key);
+  if (hit) {
+    hit.at = now; // sliding TTL — keep the frozen prompt alive for the whole call
+    return hit.parts;
+  }
+  const parts = await buildSystemPrompt(profile, stage);
+  frozenSystems.set(key, { parts, at: now });
+  return parts;
+}
+
 router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> => {
   const body = (req.body ?? {}) as Record<string, any>;
 
@@ -108,7 +143,7 @@ router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> =>
         .orderBy(desc(messagesTable.createdAt))
         .limit(12),
     ]);
-    const systemPrompt = await buildSystemPrompt(profile, stage);
+    const systemPrompt = await getFrozenSystem(userId, issuedAt, profile, stage);
 
     // Pre-call chat history (token issuedAt = call start, so in-call turns we
     // persist below are never double-counted) + the call transcript itself.
@@ -116,7 +151,13 @@ router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> =>
       role: (m.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
       content: m.content,
     }));
-    let contextMessages = sanitizeTurns([...preCall, ...callContext]).slice(-20);
+    // Stepped history window: the window START moves in strides of 10 turns
+    // (window size floats 20–29) instead of sliding by one each turn — a
+    // per-turn slide changes the first message and would void the cached
+    // conversation prefix on every request.
+    const allTurns = sanitizeTurns([...preCall, ...callContext]);
+    const windowStart = allTurns.length > 29 ? Math.floor((allTurns.length - 20) / 10) * 10 : 0;
+    let contextMessages = allTurns.slice(windowStart);
     // streamCompanionReply appends the final user turn itself — the context
     // must not also end on a user turn (alternation).
     while (contextMessages.length && contextMessages[contextMessages.length - 1]!.role === "user") {
@@ -157,7 +198,7 @@ router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> =>
           }
         }
       },
-      VOICE_CALL_ADDENDUM,
+      { systemExtra: VOICE_CALL_ADDENDUM, callType: "voice", cacheConversation: true },
     );
 
     if (wantStream) {

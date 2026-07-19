@@ -58,6 +58,38 @@ const ONLY_USER = process.env.DAILY_EMAIL_ONLY_USER
 const log = (msg: string, data?: Record<string, unknown>) =>
   console.log(JSON.stringify({ time: new Date().toISOString(), msg, ...data }));
 
+// Token usage per Claude call — same shape as api-server's "ai_usage" lines.
+const AI_PRICES_PER_MTOK: Record<
+  string,
+  { input: number; output: number; cacheWrite: number; cacheRead: number }
+> = {
+  "claude-sonnet-4-5-20250929": { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
+  "claude-haiku-4-5": { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 },
+};
+
+function logAiUsage(callType: string, model: string, usage: unknown): void {
+  try {
+    const u = (usage ?? {}) as Record<string, unknown>;
+    const num = (v: unknown): number => (typeof v === "number" ? v : 0);
+    const input = num(u.input_tokens);
+    const output = num(u.output_tokens);
+    const cacheWrite = num(u.cache_creation_input_tokens);
+    const cacheRead = num(u.cache_read_input_tokens);
+    const p = AI_PRICES_PER_MTOK[model];
+    const estCostUsd = p
+      ? Number(
+          (
+            (input * p.input + output * p.output + cacheWrite * p.cacheWrite + cacheRead * p.cacheRead) /
+            1_000_000
+          ).toFixed(6),
+        )
+      : undefined;
+    log("ai_usage", { aiUsage: { callType, model, input, cacheRead, cacheWrite, output, estCostUsd } });
+  } catch {
+    // never break the send loop over a log line
+  }
+}
+
 const logErr = (msg: string, err: unknown, data?: Record<string, unknown>) =>
   console.error(JSON.stringify({
     time: new Date().toISOString(), msg,
@@ -384,6 +416,7 @@ Write only the note text itself — nothing else.`;
       temperature: 0.8,
       messages:   [{ role: "user", content: prompt }],
     });
+    logAiUsage("daily_note", "claude-sonnet-4-5-20250929", response.usage);
     const textBlock = response.content.find((b) => b.type === "text");
     return textBlock?.text?.trim() ?? `${ctx.name} — thinking of you today.`;
   } catch (err) {
@@ -503,6 +536,7 @@ Write only the nudge text itself.`;
       temperature: 0.7,
       messages: [{ role: "user", content: prompt }],
     });
+    logAiUsage("nudge", "claude-haiku-4-5", response.usage);
     const textBlock = response.content.find((b) => b.type === "text");
     const text = textBlock?.text?.trim();
     return text && text.length > 10 ? text : fallback;

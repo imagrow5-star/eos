@@ -15,6 +15,7 @@ import {
 } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { todayInTimezone, describeCommitmentTiming } from "./stage.js";
+import type { SystemPromptParts } from "./systemPrompt.js";
 
 // Anthropic client — lazy init so mock mode works without the key
 let _anthropic: import("@anthropic-ai/sdk").Anthropic | null = null;
@@ -28,6 +29,46 @@ function getAnthropic(): import("@anthropic-ai/sdk").Anthropic | null {
     _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   }
   return _anthropic;
+}
+
+// ─── Token usage logging ──────────────────────────────────────────────────────
+// One structured line per Anthropic call so cost per feature is visible in the
+// workflow logs — grep for "ai_usage". Healthy caching shows a LARGE cacheRead
+// and a small input from the 2nd message on; cacheRead bills at ~10% of input,
+// cacheWrite at 125%.
+
+const MODEL_PRICES_PER_MTOK: Record<
+  string,
+  { input: number; output: number; cacheWrite: number; cacheRead: number }
+> = {
+  "claude-sonnet-4-5-20250929": { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
+  "claude-haiku-4-5": { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 },
+};
+
+export function logAiUsage(callType: string, model: string, usage: unknown): void {
+  try {
+    const u = (usage ?? {}) as Record<string, unknown>;
+    const num = (v: unknown): number => (typeof v === "number" ? v : 0);
+    const input = num(u.input_tokens);
+    const output = num(u.output_tokens);
+    const cacheWrite = num(u.cache_creation_input_tokens);
+    const cacheRead = num(u.cache_read_input_tokens);
+    const p = MODEL_PRICES_PER_MTOK[model];
+    const estCostUsd = p
+      ? Number(
+          (
+            (input * p.input + output * p.output + cacheWrite * p.cacheWrite + cacheRead * p.cacheRead) /
+            1_000_000
+          ).toFixed(6),
+        )
+      : undefined;
+    logger.info(
+      { aiUsage: { callType, model, input, cacheRead, cacheWrite, output, estCostUsd } },
+      "ai_usage",
+    );
+  } catch {
+    // usage logging must never break the request path
+  }
 }
 
 // ─── Mock mode responses by stage ────────────────────────────────────────────
@@ -81,19 +122,33 @@ VOICE CALL MODE — you are speaking aloud with them on a live voice call right 
 Everything else about who you are — your warmth, your memory of them, how you care — stays exactly the same.`.trim();
 
 // ─── Core: stream companion reply (primary path) ──────────────────────────────
-// Uses Anthropic streaming + prompt caching on the system prompt.
-// Calls onChunk with each text delta so the caller can push it to the client
-// in real-time. Returns the full accumulated text when the stream ends.
-// systemExtra: optional extra system block (e.g. voice brevity) appended AFTER
-// the cached persona block so the cache stays warm across text/voice modes.
+// Anthropic streaming + prompt caching. The system prompt arrives in TWO parts
+// (see buildSystemPrompt): `stable` carries the cache_control breakpoint — it
+// is byte-identical turn after turn, so Anthropic serves it from cache at ~10%
+// of input price. `context` (live time/memory/mood/phrases) sits AFTER the
+// breakpoint so its churn never voids the cached prefix. Calls onChunk per
+// text delta; returns the full accumulated text.
+
+export interface CompanionCallOptions {
+  /** Extra instructions appended to the END of the stable block (e.g. voice brevity). */
+  systemExtra?: string;
+  /** Tag for the ai_usage log line: "chat" | "voice" | "voice_fallback" | … */
+  callType?: string;
+  /**
+   * Voice calls only: the caller freezes the system parts for the whole call,
+   * so ALSO cache the context block and the conversation prefix (breakpoints
+   * 2 and 3) — successive turns then re-read the growing transcript from cache.
+   */
+  cacheConversation?: boolean;
+}
 
 export async function streamCompanionReply(
-  systemPrompt: string,
+  system: SystemPromptParts,
   contextMessages: { role: string; content: string }[],
   userContent: string,
   stage: number,
   onChunk: (text: string) => void,
-  systemExtra?: string,
+  opts?: CompanionCallOptions,
 ): Promise<string> {
   const anthropic = getAnthropic();
 
@@ -109,30 +164,48 @@ export async function streamCompanionReply(
   }
 
   try {
-    const messages = [
+    const messages: any[] = [
       ...contextMessages.map((m) => ({
         role: m.role as "user" | "assistant",
-        content: m.content,
+        content: m.content as string | Array<Record<string, unknown>>,
       })),
       { role: "user" as const, content: userContent },
     ];
 
-    let fullText = "";
+    // Breakpoint 3 (voice only): mark the last context message so the whole
+    // conversation prefix up to it is served from cache; the fresh user turn
+    // after it is the only uncached message.
+    if (opts?.cacheConversation && messages.length > 1) {
+      const prev = messages[messages.length - 2];
+      prev.content = [
+        { type: "text", text: prev.content, cache_control: { type: "ephemeral" } },
+      ];
+    }
 
-    // Use cache_control on the system block so the large static system prompt
-    // is cached by Anthropic for 5 min — cuts both latency and cost on repeat messages.
+    const systemBlocks: any[] = [
+      {
+        type: "text",
+        text: opts?.systemExtra ? `${system.stable}\n\n${opts.systemExtra}` : system.stable,
+        cache_control: { type: "ephemeral" }, // breakpoint 1 — the big stable prefix
+      },
+    ];
+    if (system.context) {
+      systemBlocks.push({
+        type: "text",
+        text: system.context,
+        // Breakpoint 2 (voice only): context is frozen per call, so it caches too.
+        ...(opts?.cacheConversation ? { cache_control: { type: "ephemeral" } } : {}),
+      });
+    }
+
+    let fullText = "";
+    const usage: Record<string, number> = {};
+
     const stream = await (anthropic.messages.create as any)({
       model: "claude-sonnet-4-5-20250929",
       max_tokens: 600,
       temperature: 0.8,
-      system: [
-        {
-          type: "text",
-          text: systemPrompt,
-          cache_control: { type: "ephemeral" },
-        },
-        ...(systemExtra ? [{ type: "text", text: systemExtra }] : []),
-      ],
+      system: systemBlocks,
       messages,
       stream: true,
     });
@@ -145,8 +218,14 @@ export async function streamCompanionReply(
         const chunk = event.delta.text as string;
         fullText += chunk;
         onChunk(chunk);
+      } else if (event.type === "message_start" && event.message?.usage) {
+        Object.assign(usage, event.message.usage);
+      } else if (event.type === "message_delta" && event.usage) {
+        Object.assign(usage, event.usage);
       }
     }
+
+    logAiUsage(opts?.callType ?? "chat", "claude-sonnet-4-5-20250929", usage);
 
     return fullText || "I'm here. Tell me more.";
   } catch (err) {
@@ -160,7 +239,7 @@ export async function streamCompanionReply(
 // ─── Core: get companion reply (non-streaming fallback / background use) ───────
 
 export async function getCompanionReply(
-  systemPrompt: string,
+  system: SystemPromptParts,
   contextMessages: { role: string; content: string }[],
   userContent: string,
   stage: number,
@@ -188,12 +267,14 @@ export async function getCompanionReply(
       system: [
         {
           type: "text",
-          text: systemPrompt,
+          text: system.stable,
           cache_control: { type: "ephemeral" },
         },
+        ...(system.context ? [{ type: "text", text: system.context }] : []),
       ] as any,
       messages,
     });
+    logAiUsage("chat_send", "claude-sonnet-4-5-20250929", response.usage);
 
     const textBlock = response.content.find((b) => b.type === "text");
     return textBlock?.text ?? "I'm here. Tell me more.";
@@ -250,11 +331,6 @@ export async function generateMorningNoteContent(
   const winsText =
     wins.length > 0 ? wins.map((w) => w.content).join("; ") : "no wins logged yet";
 
-  const followUpText =
-    pendingFollowUps.length > 0
-      ? `\nThere are pending commitments to gently and warmly check in on (ONLY if the note's tone allows — never robotic, never guilt-inducing): ${pendingFollowUps.map((c) => `"${c.content}"${c.cue ? ` (cue: ${c.cue})` : ""}${describeCommitmentTiming((c as any).scheduledDate, (c as any).scheduledTime, tzForTiming)}`).join("; ")}`
-      : "";
-
   const contextLines: string[] = [];
   if (facts.length > 0) {
     contextLines.push(`About ${profile.userName || "them"}:\n${facts.map((f) => `• ${f.fact}`).join("\n")}`);
@@ -301,6 +377,7 @@ Write only the note text.`;
       temperature: 0.8,
       messages: [{ role: "user", content: prompt }],
     });
+    logAiUsage("morning_note", "claude-sonnet-4-5-20250929", response.usage);
     const textBlock = response.content.find((b) => b.type === "text");
     return (
       textBlock?.text ??
@@ -412,6 +489,7 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
       max_tokens: 600,
       messages: [{ role: "user", content: extractPrompt }],
     });
+    logAiUsage("extract_memory", "claude-haiku-4-5", response.usage);
 
     const textBlock = response.content.find((b) => b.type === "text");
     if (!textBlock) return;
@@ -588,6 +666,7 @@ RULES — read carefully:
       max_tokens: 400,
       messages: [{ role: "user", content: prompt }],
     });
+    logAiUsage("extract_commitments", "claude-haiku-4-5", response.usage);
 
     const textBlock = response.content.find((b) => b.type === "text");
     if (!textBlock) return empty;
@@ -761,6 +840,7 @@ RULES:
       max_tokens: 250,
       messages: [{ role: "user", content: prompt }],
     });
+    logAiUsage("extract_habits", "claude-haiku-4-5", response.usage);
 
     const textBlock = response.content.find((b) => b.type === "text");
     if (!textBlock) return empty;
@@ -903,6 +983,7 @@ Rules:
       max_tokens: 300,
       messages: [{ role: "user", content: prompt }],
     });
+    logAiUsage("goal_tasks", "claude-haiku-4-5", response.usage);
 
     const textBlock = response.content.find((b) => b.type === "text");
     if (!textBlock) return [];
@@ -1088,6 +1169,7 @@ Rules:
       temperature: 0.85,
       messages:    [{ role: "user", content: prompts[ctx.slot] }],
     });
+    logAiUsage("greeting", "claude-sonnet-4-5-20250929", response.usage);
     const textBlock = response.content.find((b) => b.type === "text");
     return textBlock?.text?.trim() ?? `${name} — good to see you.`;
   } catch (err) {

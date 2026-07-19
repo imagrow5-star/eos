@@ -99,7 +99,10 @@ router.post("/chat/stream", async (req, res): Promise<void> => {
       content,
       stage,
       (chunk) => sendEvent("delta", { text: chunk }),
-      voiceMode ? VOICE_CALL_ADDENDUM : undefined,
+      {
+        systemExtra: voiceMode ? VOICE_CALL_ADDENDUM : undefined,
+        callType: voiceMode ? "voice_fallback" : "chat",
+      },
     );
 
     // Persist assistant message

@@ -19,3 +19,4 @@
 - [Personalization layer](personalization-layer.md) — anti-repetition (recentPhrases in personalization_state), discovery gap tracking (7 domains, pure computation from memoryFacts), go-deeper curiosity block, enhanced extractMemory categories (10 types)
 - [Email link base URL](email-link-base-url.md) — email links must use REPLIT_DOMAINS-first helper; REPLIT_DEV_DOMAIN is workspace-only, so old code sent localhost links from production
 - [Commitment capture & nudges](commitment-capture.md) — shared text+voice extraction dispatcher; persona capabilities block must mirror real channels; morning-only email nudges dedup via nudgeSentAt
+- [Prompt caching & AI cost](prompt-caching-cost.md) — system prompt split stable/context, volatile blocks NEVER in stable; voice freezes prompt per call (sliding TTL) + stepped window; grep "ai_usage" for cost

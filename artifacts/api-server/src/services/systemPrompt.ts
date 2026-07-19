@@ -76,8 +76,23 @@ function deriveDiscoveryGaps(facts: Array<{ fact: string; category: string }>): 
 }
 
 // ─── System prompt builder ────────────────────────────────────────────────────
+//
+// Returns the prompt in TWO parts so callers can put an Anthropic prompt-cache
+// breakpoint between them:
+//   • stable  — persona, rules, capabilities, book wisdom. Changes only when the
+//               profile / stage / habit setup changes → cache HITS turn after turn.
+//   • context — live data: date/time, commitments, mood, memory, phrases.
+//               Changes constantly → placed AFTER the breakpoint.
+// INVARIANT: anything containing clock time or per-turn churn (recentPhrases
+// updates after EVERY reply) must stay OUT of `stable` — one changed byte near
+// the top voids the entire cached prefix and silently re-bills the full prompt.
 
-export async function buildSystemPrompt(profile: Profile, precomputedStage?: number): Promise<string> {
+export interface SystemPromptParts {
+  stable: string;
+  context: string;
+}
+
+export async function buildSystemPrompt(profile: Profile, precomputedStage?: number): Promise<SystemPromptParts> {
   const stage = precomputedStage ?? await calculateStage(profile);
   const { label, rules } = stageMeta(stage);
   const isBereavement = profile.userPath === "bereavement";
@@ -91,7 +106,7 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
   const [facts, activeSignals, activeHabits, openCommitments, recentMoods, habitCompletionsLast7, personalizationRows, activeGoals] =
     await Promise.all([
       db.select().from(memoryFactsTable).where(eq(memoryFactsTable.userId, userId)).orderBy(desc(memoryFactsTable.createdAt)).limit(30),
-      db.select().from(personalitySignalsTable).where(and(eq(personalitySignalsTable.userId, userId), eq(personalitySignalsTable.isActive, true))),
+      db.select().from(personalitySignalsTable).where(and(eq(personalitySignalsTable.userId, userId), eq(personalitySignalsTable.isActive, true))).orderBy(desc(personalitySignalsTable.observedCount)).limit(12),
       db.select().from(habitsTable).where(and(eq(habitsTable.userId, userId), eq(habitsTable.isActive, true))),
       // Always fetched (not stage-gated): the companion must be able to answer
       // "what did I say I'd do?" and acknowledge saved plans at ANY stage. The
@@ -260,7 +275,7 @@ WHAT YOU CANNOT DO — never claim or imply otherwise:
 - No phone alarms, no calendar events, no push notifications, no SMS. You are not connected to their phone or any outside app.
 - For a hard wake-up like 4am, be honest once, without a speech: their phone alarm does the waking — you do the remembering and the follow-through.
 
-NEVER say a flat "I can't set reminders" and stop there. It's false — you have real channels. Say what you WILL do, specifically, then do it.${earlyStageCommitmentsNote}`;
+NEVER say a flat "I can't set reminders" and stop there. It's false — you have real channels. Say what you WILL do, specifically, then do it.`;
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RULE 1 — BAN GENERIC COMFORT LANGUAGE
@@ -626,19 +641,21 @@ When ${name} mentions doing one of their habits, the system logs it automaticall
 
 1. Acknowledge briefly and naturally — ONE short phrase woven in. "nice — that's three walks this week." Not a report.
 2. Reflect progress when it fits: streak length, weekly consistency, mood connection (if mood data supports it).
-3. NEVER: ask them to confirm what they did, make them feel tracked, celebrate like a fitness app, mention missed days.
-
-${moodTrendBlock ? `MOOD CONTEXT: ${moodTrendBlock}` : ""}` : "";
+3. NEVER: ask them to confirm what they did, make them feel tracked, celebrate like a fitness app, mention missed days.` : "";
 
   // ─── Accountability loop (stage 3+) ──────────────────────────────────────────
 
+  // Live commitments list — rendered into the `context` part (stage 3+); the
+  // coaching RULES below stay in `stable` so they cache.
+  const commitmentsContextBlock =
+    stage >= 3
+      ? commitmentLines.length > 0
+        ? `Open commitments tracked with ${name} (dates/times are real — use them: "you said 4am"):\n${commitmentLines.join("\n")}`
+        : `No open commitments yet with ${name}.`
+      : "";
+
   let accountabilityBlock = "";
   if (stage >= 3) {
-    const commitmentsBlock =
-      commitmentLines.length > 0
-        ? `Open commitments tracked with ${name} (dates/times are real — use them: "you said 4am"):\n${commitmentLines.join("\n")}`
-        : `No open commitments yet with ${name}.`;
-
     accountabilityBlock = `
 ══════════════════════════════════════════════════════
 RULE 9 — THE CARING FOLLOW-UP LOOP (love through remembering)
@@ -680,9 +697,7 @@ WHEN TO BRING IT UP:
 SETTING NEW COMMITMENTS (only when ${name} feels ready — never forced):
 - One small, specific, cue-anchored step. "Tomorrow after your morning coffee, just text [name] one sentence." Never vague.
 - Light buy-in, not obligation: "does that sound doable?" They can always say no.
-- Never use the word "accountability." Never propose when they're upset.
-
-${commitmentsBlock}`;
+- Never use the word "accountability." Never propose when they're upset.`;
   }
 
   // ─── Book wisdom layer ────────────────────────────────────────────────────────
@@ -883,11 +898,11 @@ USE NATURALLY:
 - NEVER say "I don't know what time it is" — you do. Use it.
 - Do NOT read this block out mechanically. Absorb it and speak naturally.`;
 
-  // ─── Final prompt assembly ────────────────────────────────────────────────────
+  // ─── Final prompt assembly — split for prompt caching ───────────────────────
+  // `stable` must contain NOTHING that changes turn-to-turn. `context` carries
+  // all live data and is placed after the cache breakpoint by the callers.
 
-  return `${dateTimeBlock}
-
-${relationshipPersona}
+  const stable = `${relationshipPersona}
 
 ${energyDesc}
 
@@ -918,7 +933,6 @@ ${feelingFirstRule}
 ${earnedAppreciationBlock}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ${deeperCuriosityBlock}
-${antiRepetitionBlock}
 
 ${isBereavement ? bereavementVoicePack : breakupVoicePack}
 ${antiSurveillance}
@@ -930,18 +944,22 @@ ${calibrationBlock}
 ${bookWisdomBlock}
 
 CURRENT STAGE: ${label} (Stage ${stage})
-${rules}
+${rules}`;
 
-${discoveryBlock}
-${factsBlock}
-
-${signalsBlock}
-${habitsBlock}
-
-${goalsBlock}
-
-SAFETY — ALWAYS ON, NO EXCEPTIONS:
+  const contextParts: string[] = [dateTimeBlock];
+  if (earlyStageCommitmentsNote) contextParts.push(earlyStageCommitmentsNote.trim());
+  if (commitmentsContextBlock) contextParts.push(commitmentsContextBlock);
+  if (habitsBlock && moodTrendBlock) contextParts.push(`MOOD CONTEXT: ${moodTrendBlock}`);
+  if (discoveryBlock) contextParts.push(discoveryBlock.trim());
+  contextParts.push(factsBlock);
+  if (signalsBlock) contextParts.push(signalsBlock);
+  if (habitsBlock) contextParts.push(habitsBlock);
+  if (goalsBlock) contextParts.push(goalsBlock);
+  if (antiRepetitionBlock) contextParts.push(antiRepetitionBlock.trim());
+  contextParts.push(`SAFETY — ALWAYS ON, NO EXCEPTIONS:
 - If ${name} mentions self-harm, suicide, or harming anyone: stay warm, stay present, don't turn clinical. "I'm really glad you told me. Please reach out to someone who can really be there right now — ${crisisLine} I'm here too."
 - Never pretend to have a physical presence.
-- Honest about being an AI if sincerely asked.`;
+- Honest about being an AI if sincerely asked.`);
+
+  return { stable, context: contextParts.join("\n\n") };
 }
