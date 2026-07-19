@@ -8,5 +8,7 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 30_000,
     include: ["src/__tests__/**/*.test.ts"],
+    // Keep test runs from sending real emails (see the setup file's rationale)
+    setupFiles: ["src/__tests__/setup/suppress-resend.ts"],
   },
 });
