@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -24,6 +24,7 @@ import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useSpeechRecognition, speakText, stopSpeaking, unlockAudioOnGesture } from "@/lib/voice";
+import { countryName, suggestCountry, searchCountries, type Country } from "@/lib/countries";
 import { startRealtimeCall, type RealtimeConversation, type RealtimeSessionInfo } from "@/lib/realtimeVoice";
 import { CaptionSyncEngine } from "@/lib/captionSync";
 import { cn } from "@/lib/utils";
@@ -101,18 +102,7 @@ const STEP_CHOICES: Record<string, Array<{ label: string; value: string }>> = {
     { label: "A man (he/him)", value: "man" },
     { label: "Non-binary / no preference", value: "nonbinary" },
   ],
-  country: [
-    { label: "United States", value: "US" },
-    { label: "United Kingdom", value: "UK" },
-    { label: "Australia", value: "AU" },
-    { label: "Other country", value: "other" },
-  ],
-  ageBand: [
-    { label: "18–25", value: "18-25" },
-    { label: "26–35", value: "26-35" },
-    { label: "36–50", value: "36-50" },
-    { label: "50 or over", value: "50+" },
-  ],
+  // country + ageBand are handled by the composite "basics" card, not chips.
   userGender: [
     { label: "Male", value: "male" },
     { label: "Female", value: "female" },
@@ -380,6 +370,19 @@ export default function Chat() {
     );
     setGenderCustomValue(profile?.userGenderCustom ?? "");
   }, [profile?.userGender, profile?.userGenderCustom]);
+
+  // ── Profile basics (age + country) — onboarding card + settings rows ──────
+  const [basicsAge, setBasicsAge] = useState("");
+  const [basicsCountry, setBasicsCountry] = useState<Country | null>(null);
+  const [basicsCountryQuery, setBasicsCountryQuery] = useState("");
+  const [basicsError, setBasicsError] = useState<string | null>(null);
+  const countrySuggestion = useMemo(() => suggestCountry(), []);
+  const [settingsAge, setSettingsAge] = useState("");
+  const [settingsAgeNote, setSettingsAgeNote] = useState<string | null>(null);
+  const [settingsCountryQuery, setSettingsCountryQuery] = useState("");
+  useEffect(() => {
+    setSettingsAge(profile?.ageYears ? String(profile.ageYears) : "");
+  }, [profile?.ageYears]);
 
   const form = useForm<ChatMessageFormValues>({
     resolver: zodResolver(chatMessageSchema),
@@ -677,6 +680,67 @@ export default function Chat() {
       // Chat uses streaming — text appears token-by-token, no artificial wait
       await sendStreamingMessage(content);
     }
+  };
+
+  // ─── Onboarding basics card (age + country in one gentle moment) ──────────
+  // The age answer goes to the server as the ageBand step; the country answer
+  // is then auto-submitted behind the scenes so the pair feels like ONE step —
+  // the intermediate country question is never rendered.
+
+  const submitBasicsCountryAnswer = (answer: string) => {
+    submitAnswer.mutate(
+      { data: { step: "country", answer } },
+      {
+        onSuccess: (status) => {
+          queryClient.setQueryData(getGetOnboardingStatusQueryKey(), status);
+          setIsTyping(false);
+          if (status.companionFirstMessage) handleSpeak(status.companionFirstMessage);
+        },
+        onError: () => setIsTyping(false),
+      },
+    );
+  };
+
+  const handleBasicsSubmit = () => {
+    if (isTyping || submitAnswer.isPending) return;
+    const countryAnswer = basicsCountry?.code ?? "skip";
+
+    if (currentStep === "country") {
+      // Reloaded mid-flow: age already stored, only country remains.
+      setIsTyping(true);
+      submitBasicsCountryAnswer(countryAnswer);
+      return;
+    }
+
+    const ageText = basicsAge.trim();
+    if (!ageText) {
+      setBasicsError("Just your age to continue — Eos is for adults 18 and over.");
+      return;
+    }
+    setBasicsError(null);
+    setIsTyping(true);
+    submitAnswer.mutate(
+      { data: { step: "ageBand", answer: ageText } },
+      {
+        onSuccess: (ageStatus) => {
+          if (ageStatus.isComplete) {
+            queryClient.setQueryData(getGetOnboardingStatusQueryKey(), ageStatus);
+            setIsTyping(false);
+            return;
+          }
+          if (ageStatus.currentStep === "ageBand") {
+            // Blocked (under 18) or unparseable — show her message and stay.
+            queryClient.setQueryData(getGetOnboardingStatusQueryKey(), ageStatus);
+            setIsTyping(false);
+            if (ageStatus.companionFirstMessage) handleSpeak(ageStatus.companionFirstMessage);
+            return;
+          }
+          // Advanced — answer country silently (typing dots stay up meanwhile).
+          submitBasicsCountryAnswer(countryAnswer);
+        },
+        onError: () => setIsTyping(false),
+      },
+    );
   };
 
   // ── Echo guard ────────────────────────────────────────────────────────────
@@ -1358,6 +1422,38 @@ export default function Chat() {
     );
   };
 
+  // ─── Settings: about you (age + country) ──────────────────────────────────
+
+  const handleSaveAge = () => {
+    const t = settingsAge.trim();
+    if (!t) {
+      // Cleared — back to "not shared"
+      setSettingsAgeNote(null);
+      updateProfile.mutate({ data: { ageYears: "" } }, { onSuccess: refreshProfile });
+      return;
+    }
+    const n = Number(t);
+    if (!Number.isInteger(n) || n < 18 || n > 120) {
+      setSettingsAgeNote(
+        Number.isFinite(n) && n >= 1 && n < 18
+          ? "Eos is designed for adults 18 and over."
+          : "That doesn't look like an age — try a number like 34.",
+      );
+      return;
+    }
+    setSettingsAgeNote(null);
+    updateProfile.mutate({ data: { ageYears: n } }, { onSuccess: refreshProfile });
+  };
+
+  const handleSaveCountry = (code: string) => {
+    setSettingsCountryQuery("");
+    updateProfile.mutate({ data: { country: code } }, { onSuccess: refreshProfile });
+  };
+
+  const handleClearCountry = () => {
+    updateProfile.mutate({ data: { country: "" } }, { onSuccess: refreshProfile });
+  };
+
   // ─── Settings: delete account ─────────────────────────────────────────────
 
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -1554,7 +1650,9 @@ export default function Chat() {
   const currentStep = onboarding?.currentStep ?? "";
   const stepChoices = STEP_CHOICES[currentStep] ?? null;
   const showChoiceButtons = !onboarding?.isComplete && !!stepChoices;
-  const showTextInput = onboarding?.isComplete || (!stepChoices && !onboarding?.isComplete);
+  // Age + country share one composite card (rendered instead of chips/text input).
+  const basicsStep = !onboarding?.isComplete && (currentStep === "ageBand" || currentStep === "country");
+  const showTextInput = onboarding?.isComplete || (!stepChoices && !basicsStep && !onboarding?.isComplete);
 
   // ─── Chat content ─────────────────────────────────────────────────────────
 
@@ -1940,6 +2038,86 @@ export default function Chat() {
               <p className="text-[10.5px] text-muted-foreground/45 mt-2 leading-relaxed">
                 Optional — so {profile?.companionName || "she"} speaks to you the way you'd want. Tap the selected one again to clear it.
               </p>
+
+              {/* Age */}
+              <div className="mt-5">
+                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                  Your age
+                </p>
+                <div className="flex gap-2 items-center">
+                  <Input
+                    value={settingsAge}
+                    onChange={(e) => {
+                      setSettingsAge(e.target.value);
+                      setSettingsAgeNote(null);
+                    }}
+                    onKeyDown={(e) => e.key === "Enter" && handleSaveAge()}
+                    placeholder="—"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    className="bg-background/60 border-primary/20 text-sm text-foreground/85 placeholder:text-muted-foreground/40 h-9 w-24"
+                  />
+                  <Button
+                    size="sm"
+                    className="h-9 bg-primary/15 text-primary hover:bg-primary/25 border border-primary/25 px-4"
+                    onClick={handleSaveAge}
+                    disabled={updateProfile.isPending}
+                  >
+                    <Check className="w-4 h-4" />
+                  </Button>
+                </div>
+                {settingsAgeNote && (
+                  <p className="text-[11px] text-amber-400/70 mt-1.5 leading-relaxed">{settingsAgeNote}</p>
+                )}
+              </div>
+
+              {/* Country */}
+              <div className="mt-5">
+                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                  Your country
+                </p>
+                {profile?.country && countryName(profile.country) ? (
+                  <div className="flex items-center gap-2.5">
+                    <span className="px-3 py-1.5 rounded-full text-[11px] font-medium bg-primary/15 border border-primary/40 text-primary">
+                      {countryName(profile.country)}
+                    </span>
+                    <button
+                      onClick={handleClearCountry}
+                      disabled={updateProfile.isPending}
+                      className="text-[11px] text-muted-foreground/55 hover:text-foreground/75 transition-colors"
+                    >
+                      clear
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <Input
+                      value={settingsCountryQuery}
+                      onChange={(e) => setSettingsCountryQuery(e.target.value)}
+                      placeholder="Start typing — e.g. India"
+                      autoComplete="off"
+                      className="bg-background/60 border-primary/20 text-sm text-foreground/85 placeholder:text-muted-foreground/40 h-9"
+                    />
+                    {settingsCountryQuery.trim() && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {searchCountries(settingsCountryQuery, 6).map((c) => (
+                          <button
+                            key={c.code}
+                            onClick={() => handleSaveCountry(c.code)}
+                            disabled={updateProfile.isPending}
+                            className="px-3 py-1.5 rounded-full text-[11px] border border-primary/15 text-foreground/70 hover:border-primary/40 hover:text-foreground transition-all"
+                          >
+                            {c.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <p className="text-[10.5px] text-muted-foreground/45 mt-2 leading-relaxed">
+                  Both optional — they help {profile?.companionName || "her"} meet you where you are, and know who to point you to if you ever need local support.
+                </p>
+              </div>
             </div>
 
             {/* ── Account email ───────────────────────────────────────────── */}
@@ -2433,6 +2611,124 @@ export default function Chat() {
                   {choice.label}
                 </button>
               ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Basics card (age + country, one gentle moment) ─────────────────── */}
+      <AnimatePresence>
+        {basicsStep && !isTyping && (
+          <motion.div
+            key={`basics-${currentStep}`}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="px-4 sm:px-6 pb-4 shrink-0"
+          >
+            <div className="max-w-3xl mx-auto bg-card border border-primary/15 rounded-2xl px-5 py-5 space-y-5">
+              {currentStep === "ageBand" && (
+                <div>
+                  <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                    How old are you?
+                  </p>
+                  <Input
+                    value={basicsAge}
+                    onChange={(e) => {
+                      setBasicsAge(e.target.value);
+                      if (basicsError) setBasicsError(null);
+                    }}
+                    onKeyDown={(e) => e.key === "Enter" && handleBasicsSubmit()}
+                    placeholder="e.g. 27"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    className="bg-background/60 border-primary/20 text-sm text-foreground/85 placeholder:text-muted-foreground/40 h-10 w-36"
+                  />
+                  {basicsError && (
+                    <p className="text-[12px] text-amber-400/75 mt-2 leading-relaxed">{basicsError}</p>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                  Your country{" "}
+                  <span className="text-muted-foreground/45 normal-case tracking-normal">— optional</span>
+                </p>
+                {basicsCountry ? (
+                  <div className="flex items-center gap-2.5">
+                    <span className="px-3 py-1.5 rounded-full text-[12px] font-medium bg-primary/15 border border-primary/40 text-primary">
+                      {basicsCountry.name}
+                    </span>
+                    <button
+                      onClick={() => {
+                        setBasicsCountry(null);
+                        setBasicsCountryQuery("");
+                      }}
+                      className="text-[11px] text-muted-foreground/55 hover:text-foreground/75 transition-colors"
+                    >
+                      change
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <Input
+                      value={basicsCountryQuery}
+                      onChange={(e) => setBasicsCountryQuery(e.target.value)}
+                      placeholder="Start typing — e.g. India"
+                      autoComplete="off"
+                      className="bg-background/60 border-primary/20 text-sm text-foreground/85 placeholder:text-muted-foreground/40 h-10"
+                    />
+                    {basicsCountryQuery.trim() ? (
+                      (() => {
+                        const matches = searchCountries(basicsCountryQuery, 6);
+                        return matches.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {matches.map((c) => (
+                              <button
+                                key={c.code}
+                                onClick={() => {
+                                  setBasicsCountry(c);
+                                  setBasicsCountryQuery("");
+                                }}
+                                className="px-3 py-1.5 rounded-full text-[12px] border border-primary/15 text-foreground/70 hover:border-primary/40 hover:text-foreground transition-all"
+                              >
+                                {c.name}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[11.5px] text-muted-foreground/45 mt-2 leading-relaxed">
+                            No match — it's completely fine to leave this blank.
+                          </p>
+                        );
+                      })()
+                    ) : countrySuggestion ? (
+                      <button
+                        onClick={() => setBasicsCountry(countrySuggestion)}
+                        className="mt-2 px-3 py-1.5 rounded-full text-[12px] border border-primary/20 text-foreground/70 hover:border-primary/45 hover:bg-primary/8 hover:text-foreground transition-all"
+                      >
+                        I'm in {countrySuggestion.name}
+                      </button>
+                    ) : null}
+                  </>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3 pt-1">
+                <Button
+                  onClick={handleBasicsSubmit}
+                  disabled={isTyping || submitAnswer.isPending}
+                  className="h-10 px-6 bg-primary text-primary-foreground hover:bg-primary/85 rounded-full shadow-[0_2px_10px_hsl(35_49%_57%/0.30)]"
+                >
+                  Continue
+                </Button>
+                {!basicsCountry && (
+                  <span className="text-[11px] text-muted-foreground/45">
+                    leaving country blank is completely fine
+                  </span>
+                )}
+              </div>
             </div>
           </motion.div>
         )}

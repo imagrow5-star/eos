@@ -12,7 +12,8 @@ export const profileTable = pgTable("profile", {
   energy: text("energy").notNull().default("calm"), // playful | calm | deep
   userPath: text("user_path").notNull().default("breakup"), // lonely | support | breakup | bereavement
   country: text("country").notNull().default(""), // US | UK | AU | other
-  ageBand: text("age_band").notNull().default(""), // 18-25 | 26-35 | 36-50 | 50+
+  ageBand: text("age_band").notNull().default(""), // 18-25 | 26-35 | 36-50 | 50+ (derived from birthYear when known)
+  birthYear: integer("birth_year"), // approximate birth year (from age number or DOB) — nullable; adults only (18+)
   // purpose -> name -> companionName -> country -> ageBand -> done  (also accepts legacy "path" step)
   onboardingStep: text("onboarding_step").notNull().default("purpose"),
   isOnboardingComplete: boolean("is_onboarding_complete").notNull().default(false),

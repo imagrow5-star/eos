@@ -197,6 +197,7 @@ interface UserContext {
   pendingCommitmentId: number | null;
   recentPhrases: string[];
   genderNote: string;
+  basicsNote: string;
 }
 
 /**
@@ -225,6 +226,42 @@ function describeUserGender(
   return `${who} hasn't shared their gender — never assume it. No gendered terms, no gendered pet names; keep language neutral for them.`;
 }
 
+/** "IN" → "India", legacy "UK" → "United Kingdom". null for empty/"other"/unknown. */
+function countryDisplayName(code: string | null | undefined): string | null {
+  const c = (code ?? "").trim().toUpperCase();
+  if (!c || c === "OTHER") return null;
+  const iso = c === "UK" ? "GB" : c;
+  if (!/^[A-Z]{2}$/.test(iso)) return null;
+  try {
+    const name = new Intl.DisplayNames(["en"], { type: "region" }).of(iso);
+    return name && name !== iso ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+// Life stage + where they live — mirrors the api-server helper (separate
+// package, keep the wording in sync with describeUserBasics there).
+// Only whitelisted bands may reach the prompt — ageBand text goes in verbatim.
+const AGE_BANDS = ["18-25", "26-35", "36-50", "50+"];
+function describeUserBasics(
+  p: { userName: string; birthYear: number | null; country: string; ageBand: string },
+): string {
+  const name = p.userName || "there";
+  const who = name !== "there" ? name : "The person you're writing to";
+  const parts: string[] = [];
+  if (p.birthYear) {
+    const age = new Date().getFullYear() - p.birthYear;
+    if (age >= 18 && age <= 120) parts.push(`${who} is about ${age}`);
+  } else if (AGE_BANDS.includes((p.ageBand ?? "").trim())) {
+    parts.push(`${who} is in the ${p.ageBand} age range`);
+  }
+  const country = countryDisplayName(p.country);
+  if (country) parts.push(`${parts.length ? "and lives" : `${who} lives`} in ${country}`);
+  if (parts.length === 0) return "";
+  return `${parts.join(" ")}. Let that quietly shape your references and examples — life stage and cultural context change what things mean. Use it to understand them, never to stereotype them.`;
+}
+
 async function gatherContext(
   userId: number,
   email: string,
@@ -235,6 +272,9 @@ async function gatherContext(
     userPath: string;
     userGender: string | null;
     userGenderCustom: string | null;
+    birthYear: number | null;
+    country: string;
+    ageBand: string;
     createdAt: Date;
   },
 ): Promise<UserContext | null> {
@@ -358,6 +398,7 @@ async function gatherContext(
     timezone:    profile.timezone,
     userPath:    profile.userPath,
     genderNote:  describeUserGender(profile, profile.userName || "there"),
+    basicsNote:  describeUserBasics(profile),
     daysSinceStart,
     facts:       facts.map((f) => f.fact),
     wins:        wins.map((w) => w.content),
@@ -431,6 +472,7 @@ WHAT YOU KNOW ABOUT ${ctx.name.toUpperCase()}:
 ${lines.join("\n\n")}
 ${pathNote}
 ${ctx.genderNote}
+${ctx.basicsNote}
 
 YOUR JOB — DELIVER ALL THREE OF THESE, THROUGH THE WORDS YOU CHOOSE:
 
@@ -579,6 +621,7 @@ async function generateNudgeText(
   timeDisplay: string,
   isLate: boolean,
   genderNote: string,
+  basicsNote: string,
 ): Promise<string> {
   const fallback = `${name} — ${timeDisplay}, like you planned: ${content}. I remembered.`;
   if (!ANTHROPIC_KEY) return fallback;
@@ -586,6 +629,7 @@ async function generateNudgeText(
   const prompt = `You are ${companionName}, writing a 1–2 sentence email nudge to ${name}. They told you they'd do this today at ${timeDisplay}: "${content}". The email arrives ${isLate ? "a little after that time — do not pretend it is exactly that moment" : "right at that time"}.
 
 ${genderNote}
+${basicsNote}
 
 Write it warm, specific, quietly confident — a close friend keeping their word by remembering, not an alarm clock, not a cheerleader. Reference the actual plan in their words.
 
@@ -617,6 +661,7 @@ async function processTimedNudges(
   companionName: string,
   name: string,
   genderNote: string,
+  basicsNote: string,
   today: string,
   hour: number,
   noteCoveredCommitmentId: number | null,
@@ -666,7 +711,7 @@ async function processTimedNudges(
 
     try {
       const timeDisplay = formatClock(c.scheduledTime!);
-      const nudgeText = await generateNudgeText(companionName, name, c.content, timeDisplay, isLate, genderNote);
+      const nudgeText = await generateNudgeText(companionName, name, c.content, timeDisplay, isLate, genderNote, basicsNote);
       const html = buildHtml(userId, nudgeText);
       await sendEmail(email, `${companionName} — you said ${timeDisplay}`, html);
       log("Nudge sent", { userId, commitmentId: c.id, at: timeDisplay, late: isLate });
@@ -718,6 +763,9 @@ async function run(): Promise<void> {
       timezone:         profileTable.timezone,
       userPath:         profileTable.userPath,
       userGender:       profileTable.userGender,
+      birthYear:        profileTable.birthYear,
+      country:          profileTable.country,
+      ageBand:          profileTable.ageBand,
       userGenderCustom: profileTable.userGenderCustom,
       createdAt:        profileTable.createdAt,
       lastEmailDate:    profileTable.lastEmailDate,
@@ -765,6 +813,9 @@ async function run(): Promise<void> {
         userPath:         user.userPath,
         userGender:       user.userGender,
         userGenderCustom: user.userGenderCustom,
+        birthYear:        user.birthYear,
+        country:          user.country,
+        ageBand:          user.ageBand,
         createdAt:        user.createdAt,
       });
 
@@ -825,6 +876,7 @@ async function run(): Promise<void> {
         user.companionName,
         user.userName || "there",
         describeUserGender(user, user.userName || "there"),
+        describeUserBasics(user),
         today,
         hour,
         noteCoveredCommitmentId,

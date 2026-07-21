@@ -40,4 +40,6 @@ export interface Profile {
      * @nullable
      */
   userGenderCustom?: string | null;
+  birthYear?: number | null;
+  ageYears?: number | null;
 }

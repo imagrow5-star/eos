@@ -19,4 +19,5 @@ export interface ProfileInput {
   companionGender?: string;
   userGender?: string;
   userGenderCustom?: string;
+  ageYears?: number | string;
 }

@@ -11,6 +11,7 @@ import {
 import { calculateStage } from "../services/stage.js";
 import { todayString } from "../services/stage.js";
 import { sanitizeGenderWords } from "../services/systemPrompt.js";
+import { ageToBand, isValidCountryCode, AGE_BANDS } from "../lib/basics.js";
 
 const router: IRouter = Router();
 
@@ -79,6 +80,10 @@ function buildProfilePayload(
     companionGender: (profile as any).companionGender ?? "woman",
     userGender: (profile as any).userGender ?? null,
     userGenderCustom: (profile as any).userGenderCustom ?? null,
+    birthYear: (profile as any).birthYear ?? null,
+    ageYears: (profile as any).birthYear
+      ? new Date().getFullYear() - (profile as any).birthYear
+      : null,
     timezone: (profile as any).timezone ?? "UTC",
     createdAt: profile.createdAt,
     daysSinceStart,
@@ -116,8 +121,25 @@ router.put("/profile", async (req, res): Promise<void> => {
   if (data.relationshipType != null) updates.relationshipType = data.relationshipType;
   if (data.energy != null) updates.energy = data.energy;
   if (data.userPath != null) updates.userPath = data.userPath;
-  if (data.country != null) updates.country = data.country;
-  if ((data as any).ageBand != null) updates.ageBand = (data as any).ageBand;
+  // country: an ISO-3166 alpha-2 code ("UK" legacy alias welcome) — or "" to
+  // clear back to "not shared". Anything else is ignored — never guessed.
+  if (data.country != null) {
+    const c = String(data.country).trim().toUpperCase();
+    if (c === "") {
+      updates.country = "";
+    } else if (c === "UK" || c === "GB") {
+      updates.country = "UK";
+    } else if (/^[A-Z]{2}$/.test(c) && isValidCountryCode(c)) {
+      updates.country = c;
+    }
+  }
+  // ageBand: legacy surface — only the four known bands (or "" to clear) may
+  // ever be stored. ageBand reaches system prompts, so free text must never
+  // land here; prefer ageYears below, which derives the band.
+  if ((data as any).ageBand != null) {
+    const b = String((data as any).ageBand).trim();
+    if (b === "" || (AGE_BANDS as readonly string[]).includes(b)) updates.ageBand = b;
+  }
   if ((data as any).voiceId != null) updates.voiceId = (data as any).voiceId;
   if (
     (data as any).voiceTone != null &&
@@ -148,6 +170,22 @@ router.put("/profile", async (req, res): Promise<void> => {
     if (effectiveGender === "custom") {
       const words = sanitizeGenderWords(String((data as any).userGenderCustom));
       updates.userGenderCustom = words === "" ? null : words;
+    }
+  }
+  // ageYears: 18–120 — or "" / 0 to clear. Stored as birthYear so it stays
+  // truthful over the years; ageBand is derived alongside for older surfaces.
+  // Under-18 values are never stored — the UI explains kindly.
+  if ((data as any).ageYears != null) {
+    const raw = (data as any).ageYears;
+    if (raw === "" || raw === 0 || raw === "0") {
+      updates.birthYear = null;
+      updates.ageBand = "";
+    } else {
+      const age = Math.floor(Number(raw));
+      if (Number.isFinite(age) && age >= 18 && age <= 120) {
+        updates.birthYear = new Date().getFullYear() - age;
+        updates.ageBand = ageToBand(age);
+      }
     }
   }
   if ((data as any).timezone != null) updates.timezone = (data as any).timezone;

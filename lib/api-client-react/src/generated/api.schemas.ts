@@ -58,6 +58,10 @@ export interface Profile {
      * @nullable
      */
   userGenderCustom?: string | null;
+  /** Approximate birth year — adults only, null when not shared */
+  birthYear?: number | null;
+  /** Current age computed from birthYear — null when not shared */
+  ageYears?: number | null;
 }
 
 export interface ProfileInput {
@@ -72,6 +76,8 @@ export interface ProfileInput {
   companionGender?: string;
   userGender?: string;
   userGenderCustom?: string;
+  /** Age in years (18–120), or empty string / 0 to clear */
+  ageYears?: number | string;
 }
 
 export interface Message {

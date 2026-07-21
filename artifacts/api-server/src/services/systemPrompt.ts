@@ -13,6 +13,7 @@ import {
   type Profile,
 } from "@workspace/db";
 import { calculateStage, stageMeta, todayInTimezone, getTimeContext } from "./stage.js";
+import { countryDisplayName, AGE_BANDS } from "../lib/basics.js";
 
 // ─── Crisis resource per country ──────────────────────────────────────────────
 
@@ -21,6 +22,8 @@ function getCrisisLine(country: string): string {
     case "US": return "988 Suicide & Crisis Lifeline — call or text 988, free and available 24/7.";
     case "UK": return "Samaritans — call 116 123, free, confidential, and available any time day or night.";
     case "AU": return "Lifeline — call 13 11 14, available around the clock.";
+    case "CA": return "Talk Suicide Canada — call or text 988, free and available 24/7.";
+    case "IN": return "AASRA — call 91-9820466726 (24/7), or iCall at 9152987821.";
     default:   return "a crisis support line in your country — you deserve real, immediate support.";
   }
 }
@@ -153,6 +156,8 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
     : (profile as any).companionGender === "nonbinary" ? "they/them"
     : "she/her";
   const userGenderNote = `\n- ${describeUserGender(profile, name)}`;
+  const basicsLine = describeUserBasics(profile, name);
+  const userBasicsNote = basicsLine ? `\n- ${basicsLine}` : "";
 
   // Personalization layer — derived from stored data
   const recentPhrases: string[] = personalizationRows[0]?.recentPhrases ?? [];
@@ -955,7 +960,7 @@ CORE CHARACTER:
 - Keep responses conversational. 2–4 sentences is usually right. Never use bullet lists, headers, or emojis. Just natural prose in their register.
 - You are an AI. If ${name} sincerely asks, you say so honestly. Your care is genuine even so.
 - You are a secure base — not a replacement for real human connection. Over time, you gently nudge ${name} back toward real people and real life. You want them to need you less, not more, as they grow stronger.
-- Your pronouns are ${pronounLine}.${userGenderNote}
+- Your pronouns are ${pronounLine}.${userGenderNote}${userBasicsNote}
 
 ${capabilitiesBlock}
 
@@ -1054,4 +1059,27 @@ export function describeUserGender(profile: Profile, name: string): string {
     return `${who} describes their gender in their own words: "${custom}". Mirror exactly the language and pronouns they use for themself — never relabel them, never default to gendered terms.`;
   }
   return `${who} hasn't shared their gender — never assume it. No gendered terms, no gendered pet names, no he/she guesses; keep language neutral for them unless they tell you themselves.`;
+}
+
+/**
+ * Life stage + where they live, for the system prompt. Mirrors the copy in the
+ * daily-email package (separate deployable — keep the wording in sync).
+ * Returns "" when neither age nor country is known.
+ */
+export function describeUserBasics(profile: Profile, name: string): string {
+  const who = name && name !== "you" && name !== "them" ? name : "The person you're talking with";
+  const parts: string[] = [];
+  const birthYear = ((profile as any).birthYear as number | null | undefined) ?? null;
+  const ageBand = ((profile.ageBand as string | null | undefined) ?? "").trim();
+  if (birthYear) {
+    const age = new Date().getFullYear() - birthYear;
+    if (age >= 18 && age <= 120) parts.push(`${who} is about ${age}`);
+  } else if ((AGE_BANDS as readonly string[]).includes(ageBand)) {
+    // Whitelisted bands only — ageBand text reaches the prompt verbatim.
+    parts.push(`${who} is in the ${ageBand} age range`);
+  }
+  const country = countryDisplayName(profile.country);
+  if (country) parts.push(`${parts.length ? "and lives" : `${who} lives`} in ${country}`);
+  if (parts.length === 0) return "";
+  return `${parts.join(" ")}. Let that quietly shape your references and examples — life stage and cultural context change what things mean. Use it to understand them, never to stereotype them.`;
 }

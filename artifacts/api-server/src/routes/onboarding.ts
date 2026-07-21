@@ -11,6 +11,7 @@ import { logger } from "../lib/logger.js";
 import type { Profile } from "@workspace/db";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { sanitizeGenderWords } from "../services/systemPrompt.js";
+import { parseAgeText, ageToBand, resolveCountryAnswer, AGE_BANDS, isValidCountryCode } from "../lib/basics.js";
 
 const router: IRouter = Router();
 
@@ -85,10 +86,10 @@ function getStepQuestion(step: string, profile: Profile): string {
     }
 
     case "country":
-      return "Which country are you in? I ask only so I know who to point you to if you ever need support beyond what we share here.";
+      return "And which country do you call home? I ask only so I know who to point you to if you ever need support beyond what we share here — completely fine to skip.";
 
     case "ageBand":
-      return "And roughly how old are you? It helps me get the tone right.";
+      return "A couple of small things so I can meet you where you are — how old are you? And which country do you call home? The country part is completely optional.";
 
     case "userGender":
       return "One last thing — completely optional, so skip it if you like. What's your gender? Tap one below, or just tell me in your own words.";
@@ -106,15 +107,18 @@ function getStepQuestion(step: string, profile: Profile): string {
 
 // ─── Next step resolver ───────────────────────────────────────────────────────
 
-function getNextStep(currentStep: string, _profile: Profile): string {
+function getNextStep(currentStep: string, profile: Profile): string {
   switch (currentStep) {
     case "purpose":
     case "path":            return "companionGender";
     case "companionGender": return "name";
     case "name":            return "companionName";
-    case "companionName":   return "country";
-    case "country":         return "ageBand";
-    case "ageBand":         return "userGender";
+    // Age comes before country so the 18+ gate runs before anything else
+    // about them is stored.
+    case "companionName":   return "ageBand";
+    // Legacy sessions (old step order) may already have a country — don't ask twice.
+    case "ageBand":         return isValidCountryCode(profile.country ?? "") ? "userGender" : "country";
+    case "country":         return "userGender";
     case "userGender":      return "done";
     case "relationshipType": return "energy";
     case "energy":          return "companionName";
@@ -154,6 +158,33 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
         isComplete: true,
         currentStep: "done",
         companionFirstMessage: null,
+      }),
+    );
+    return;
+  }
+
+  // ── Adults-only gate integrity ──────────────────────────────────────────
+  // Never trust the client's step ordering: every step at-or-beyond country
+  // requires that the age question was genuinely answered first. Without
+  // this, a crafted request could jump straight to userGender (which
+  // completes onboarding) — and legacy sessions parked on the old step order
+  // (country before age) could finish setup without ever seeing the age
+  // question.
+  const STEPS_REQUIRING_AGE = ["country", "userGender", "relationshipType", "energy"];
+  const hasAgeEvidence =
+    (profile as any).birthYear != null ||
+    (AGE_BANDS as readonly string[]).includes((profile.ageBand ?? "").trim());
+  if (STEPS_REQUIRING_AGE.includes(step) && !hasAgeEvidence) {
+    // Nothing from this answer is stored — the age question comes first.
+    await db
+      .update(profileTable)
+      .set({ onboardingStep: "ageBand" })
+      .where(and(eq(profileTable.id, profile.id), eq(profileTable.userId, userId)));
+    res.json(
+      SubmitOnboardingAnswerResponse.parse({
+        isComplete: false,
+        currentStep: "ageBand",
+        companionFirstMessage: getStepQuestion("ageBand", profile),
       }),
     );
     return;
@@ -213,28 +244,45 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
     }
 
     case "country": {
-      const lower = answer.toLowerCase();
-      updates.country =
-        lower.includes("uk") || lower.includes("britain") || lower.includes("england") || lower.includes("united kingdom")
-          ? "UK"
-          : lower.includes("aus") || lower.includes("australia")
-            ? "AU"
-            : lower.includes("us") || lower.includes("united states") || lower.includes("america")
-              ? "US"
-              : "other";
+      // Picker sends an ISO code; typed text is resolved by name. Skips and
+      // unresolvable answers store nothing — we never guess where someone lives.
+      const resolved = resolveCountryAnswer(answer);
+      if (resolved && resolved !== "skip") updates.country = resolved;
       break;
     }
 
     case "ageBand": {
-      const lower = answer.toLowerCase().replace(/\s/g, "");
-      updates.ageBand =
-        lower.includes("50") || lower.includes("older") || lower.includes("over50")
-          ? "50+"
-          : lower.includes("36") || lower.includes("40") || lower.includes("45")
-            ? "36-50"
-            : lower.includes("26") || lower.includes("30") || lower.includes("35")
-              ? "26-35"
-              : "18-25";
+      const parsed = parseAgeText(answer);
+      if (parsed.kind === "under18") {
+        // Adults only — kind, honest, nothing stored, and setup does not proceed.
+        res.json(
+          SubmitOnboardingAnswerResponse.parse({
+            isComplete: false,
+            currentStep: "ageBand",
+            companionFirstMessage:
+              "Thank you for telling me honestly — that matters to me. Eos is made for adults, eighteen and over, so I can't set things up for you right now. If that was a typo, just tell me your real age. And if things feel heavy at the moment, please reach out to someone you trust — you deserve real, present support.",
+          }),
+        );
+        return;
+      }
+      if (parsed.kind === "invalid") {
+        res.json(
+          SubmitOnboardingAnswerResponse.parse({
+            isComplete: false,
+            currentStep: "ageBand",
+            companionFirstMessage:
+              "I didn't quite catch that — could you tell me your age as a number? Like 24 — or your birth year, if that's easier.",
+          }),
+        );
+        return;
+      }
+      if (parsed.kind === "band") {
+        // Legacy chip answers ("26-35") from sessions started before this change
+        updates.ageBand = parsed.band;
+      } else {
+        updates.birthYear = parsed.birthYear;
+        updates.ageBand = ageToBand(parsed.age);
+      }
       break;
     }
 

@@ -61,6 +61,8 @@ export const GetProfileResponse = zod.object({
   "companionGender": zod.string().describe('woman | man | nonbinary'),
   "userGender": zod.string().nullish().describe('man | woman | custom (legacy: other) — may be null'),
   "userGenderCustom": zod.string().nullish().describe('Their own words when userGender = custom — e.g. non-binary'),
+  "birthYear": zod.number().nullish().describe('Approximate birth year — adults only, null when not shared'),
+  "ageYears": zod.number().nullish().describe('Current age computed from birthYear — null when not shared'),
   "timezone": zod.string().describe('IANA timezone string e.g. America/New_York')
 })
 
@@ -81,6 +83,7 @@ export const UpdateProfileBody = zod.object({
   "companionGender": zod.string().optional(),
   "userGender": zod.string().optional(),
   "userGenderCustom": zod.string().optional(),
+  "ageYears": zod.union([zod.number(), zod.string()]).optional(),
   "timezone": zod.string().optional()
 })
 
@@ -101,6 +104,8 @@ export const UpdateProfileResponse = zod.object({
   "companionGender": zod.string().describe('woman | man | nonbinary'),
   "userGender": zod.string().nullish().describe('man | woman | custom (legacy: other) — may be null'),
   "userGenderCustom": zod.string().nullish().describe('Their own words when userGender = custom — e.g. non-binary'),
+  "birthYear": zod.number().nullish().describe('Approximate birth year — adults only, null when not shared'),
+  "ageYears": zod.number().nullish().describe('Current age computed from birthYear — null when not shared'),
   "timezone": zod.string().describe('IANA timezone string e.g. America/New_York')
 })
 

@@ -390,6 +390,12 @@ components:
         userGenderCustom:
           type: ["string", "null"]
           description: "The user's own words for their gender — only present when userGender is 'custom'"
+        birthYear:
+          type: ["integer", "null"]
+          description: "Approximate birth year (from age or DOB) — adults only, null when not shared"
+        ageYears:
+          type: ["integer", "null"]
+          description: "Current age computed from birthYear — null when not shared"
       required:
         - id
         - userName
@@ -432,6 +438,9 @@ components:
         userGenderCustom:
           type: string
           description: "The user's own words for their gender; persisted only when userGender is 'custom'"
+        ageYears:
+          type: ["integer", "string"]
+          description: "Age in years (18–120), or empty string / 0 to clear. Stored as birthYear; under-18 values are never stored."
 
     Message:
       type: object
