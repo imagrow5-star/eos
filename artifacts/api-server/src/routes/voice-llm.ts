@@ -28,6 +28,42 @@ const router: IRouter = Router();
 
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
+// Only known ElevenLabs SYSTEM tools may reach Claude. The endpoint is
+// internet-facing (HMAC-gated), so request-body tool definitions are otherwise
+// caller-controllable prompt surface, and an allowlist keeps the per-call tool
+// prefix byte-identical for prompt caching. Enabling a new system tool on the
+// agent requires adding it here DELIBERATELY (each needs prompt + persistence
+// thought, e.g. end_call).
+const VOICE_SYSTEM_TOOL_ALLOWLIST = new Set(["skip_turn"]);
+
+// ElevenLabs sends enabled system tools (skip_turn, …) as OpenAI function
+// definitions; Claude needs the Anthropic shape. Non-function entries,
+// malformed items, and non-allowlisted names are dropped. Exported for tests.
+export function openAiToolsToAnthropic(raw: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(raw)) return [];
+  const out: Array<Record<string, unknown>> = [];
+  for (const t of raw) {
+    const fn = (t as { type?: unknown; function?: unknown })?.type === "function"
+      ? ((t as { function?: unknown }).function as {
+          name?: unknown;
+          description?: unknown;
+          parameters?: unknown;
+        } | null)
+      : null;
+    if (!fn || typeof fn.name !== "string" || !fn.name) continue;
+    if (!VOICE_SYSTEM_TOOL_ALLOWLIST.has(fn.name)) continue;
+    out.push({
+      name: fn.name,
+      description: typeof fn.description === "string" ? fn.description : "",
+      input_schema:
+        fn.parameters && typeof fn.parameters === "object"
+          ? fn.parameters
+          : { type: "object", properties: {} },
+    });
+  }
+  return out;
+}
+
 // OpenAI message content may be a plain string or an array of typed parts.
 function contentToText(c: unknown): string {
   if (typeof c === "string") return c;
@@ -40,6 +76,24 @@ function contentToText(c: unknown): string {
       .trim();
   }
   return "";
+}
+
+// streamCompanionReply appends the final user turn itself, so the context must
+// not also end on user turns (Claude alternation). Trailing user turns are the
+// NORM after skip_turn — the agent said nothing between utterances, so the
+// transcript arrives as consecutive user messages. Fold them into the
+// MODEL-facing content only; the caller must persist just the fresh utterance
+// (earlier ones were persisted by their own requests). Exported for tests.
+export function mergeTrailingUserTurns(
+  context: ChatMsg[],
+  fresh: string,
+): { context: ChatMsg[]; content: string } {
+  const ctx = [...context];
+  let content = fresh;
+  while (ctx.length && ctx[ctx.length - 1]!.role === "user") {
+    content = `${ctx.pop()!.content}\n${content}`;
+  }
+  return { context: ctx, content };
 }
 
 // Claude requires strict user/assistant alternation starting with "user".
@@ -157,26 +211,30 @@ export async function persistVoiceTurn(args: {
       }
     }
 
-    const [assistantDupe] = await db
-      .select({ id: messagesTable.id })
-      .from(messagesTable)
-      .where(
-        and(
-          eq(messagesTable.userId, userId),
-          eq(messagesTable.role, "assistant"),
-          eq(messagesTable.content, fullText),
-          gte(messagesTable.createdAt, callStart),
-        ),
-      )
-      .limit(1);
-    if (!assistantDupe) {
-      await db
-        .insert(messagesTable)
-        .values({ userId, role: "assistant", content: fullText, isMorningNote: false });
-      // Anti-repetition state only for genuinely new replies — duplicate
-      // completions were double-appending phrases too.
-      await appendRecentPhrase(userId, fullText);
-      savedAssistant = true;
+    // A skip_turn reply is intentional silence — fullText is empty and there
+    // is nothing to store. Never insert empty assistant rows.
+    if (fullText.trim().length > 0) {
+      const [assistantDupe] = await db
+        .select({ id: messagesTable.id })
+        .from(messagesTable)
+        .where(
+          and(
+            eq(messagesTable.userId, userId),
+            eq(messagesTable.role, "assistant"),
+            eq(messagesTable.content, fullText),
+            gte(messagesTable.createdAt, callStart),
+          ),
+        )
+        .limit(1);
+      if (!assistantDupe) {
+        await db
+          .insert(messagesTable)
+          .values({ userId, role: "assistant", content: fullText, isMorningNote: false });
+        // Anti-repetition state only for genuinely new replies — duplicate
+        // completions were double-appending phrases too.
+        await appendRecentPhrase(userId, fullText);
+        savedAssistant = true;
+      }
     }
 
     // Extraction (commitments, habits, goals, memory) only on genuinely new
@@ -236,6 +294,10 @@ router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> =>
     let userContent = synthetic
       ? "(The user just joined the voice call and hasn't spoken yet. Greet them briefly and warmly — one short sentence.)"
       : turns[lastUserIdx]!.content;
+    // Persist/extract the utterance AS SPOKEN. After skip_turn silences, the
+    // model-facing userContent below becomes a merge of several utterances —
+    // persisting that would write cumulative "A", "A\nB", "A\nB\nC" rows.
+    const freshUserContent = userContent;
     const callContext = synthetic ? [...turns] : turns.slice(0, lastUserIdx);
 
     // ── Same brain as text chat: persona + this user's real memory ──
@@ -263,12 +325,9 @@ router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> =>
     // conversation prefix on every request.
     const allTurns = sanitizeTurns([...preCall, ...callContext]);
     const windowStart = allTurns.length > 29 ? Math.floor((allTurns.length - 20) / 10) * 10 : 0;
-    let contextMessages = allTurns.slice(windowStart);
-    // streamCompanionReply appends the final user turn itself — the context
-    // must not also end on a user turn (alternation).
-    while (contextMessages.length && contextMessages[contextMessages.length - 1]!.role === "user") {
-      userContent = `${contextMessages.pop()!.content}\n${userContent}`;
-    }
+    const merged = mergeTrailingUserTurns(allTurns.slice(windowStart), userContent);
+    const contextMessages = merged.context;
+    userContent = merged.content;
 
     // ── OpenAI-compatible response: streaming SSE or plain JSON ──
     const completionId = `chatcmpl-${crypto.randomUUID()}`;
@@ -291,6 +350,22 @@ router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> =>
       res.write(`data: ${chunkPayload({ role: "assistant" }, null)}\n\n`);
     }
 
+    const flushRes = () => {
+      if (typeof (res as { flush?: () => void }).flush === "function") {
+        (res as unknown as { flush: () => void }).flush();
+      }
+    };
+
+    // System tools ElevenLabs exposes for this agent (skip_turn today). When
+    // Claude invokes one, echo it back in OpenAI streaming format — ElevenLabs
+    // executes it (skip_turn = agent stays silent this turn).
+    const tools = openAiToolsToAnthropic(body.tools);
+    const toolCalls: Array<{
+      id: string;
+      type: "function";
+      function: { name: string; arguments: string };
+    }> = [];
+
     const fullText = await streamCompanionReply(
       systemPrompt,
       contextMessages,
@@ -299,16 +374,38 @@ router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> =>
       (chunk) => {
         if (wantStream) {
           res.write(`data: ${chunkPayload({ content: chunk }, null)}\n\n`);
-          if (typeof (res as { flush?: () => void }).flush === "function") {
-            (res as unknown as { flush: () => void }).flush();
-          }
+          flushRes();
         }
       },
-      { systemExtra: VOICE_CALL_ADDENDUM + toneExtra, callType: "voice", cacheConversation: true },
+      {
+        systemExtra: VOICE_CALL_ADDENDUM + toneExtra,
+        callType: "voice",
+        cacheConversation: true,
+        ...(tools.length
+          ? {
+              tools,
+              onToolCall: (id: string, name: string, argsJson: string) => {
+                const call = {
+                  id,
+                  type: "function" as const,
+                  function: { name, arguments: argsJson },
+                };
+                toolCalls.push(call);
+                if (wantStream) {
+                  res.write(
+                    `data: ${chunkPayload({ tool_calls: [{ index: toolCalls.length - 1, ...call }] }, null)}\n\n`,
+                  );
+                  flushRes();
+                }
+              },
+            }
+          : {}),
+      },
     );
 
+    const finishReason = toolCalls.length > 0 ? "tool_calls" : "stop";
     if (wantStream) {
-      res.write(`data: ${chunkPayload({}, "stop")}\n\n`);
+      res.write(`data: ${chunkPayload({}, finishReason)}\n\n`);
       res.write("data: [DONE]\n\n");
       res.end();
     } else {
@@ -318,7 +415,15 @@ router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> =>
         created,
         model,
         choices: [
-          { index: 0, message: { role: "assistant", content: fullText }, finish_reason: "stop" },
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: fullText || (toolCalls.length ? null : fullText),
+              ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+            },
+            finish_reason: finishReason,
+          },
         ],
         usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
       });
@@ -327,9 +432,14 @@ router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> =>
     // ── Persist the exchange (fire-and-forget, mirrors the text pipeline) so
     // voice turns land in chat history and future memory extraction. Dedup +
     // per-user serialization live in persistVoiceTurn.
-    void persistVoiceTurn({ userId, issuedAt, synthetic, userContent, fullText, profile }).catch(
-      (err) => logger.error({ err }, "voice-llm: persisting voice turn failed"),
-    );
+    void persistVoiceTurn({
+      userId,
+      issuedAt,
+      synthetic,
+      userContent: freshUserContent,
+      fullText,
+      profile,
+    }).catch((err) => logger.error({ err }, "voice-llm: persisting voice turn failed"));
   } catch (err) {
     logger.error({ err }, "voice-llm: completion failed");
     if (res.headersSent) {

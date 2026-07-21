@@ -20,7 +20,11 @@ import pg from "pg";
 import { eq } from "drizzle-orm";
 import { db, messagesTable, profileTable } from "@workspace/db";
 import app from "../app.js";
-import { persistVoiceTurn } from "../routes/voice-llm.js";
+import {
+  persistVoiceTurn,
+  openAiToolsToAnthropic,
+  mergeTrailingUserTurns,
+} from "../routes/voice-llm.js";
 import { getOrCreateProfileForUser } from "../routes/profile.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -227,4 +231,130 @@ describe("persistVoiceTurn — voice echo dedup", () => {
     },
     60_000,
   );
+
+  it(
+    "skip_turn (intentionally silent reply) saves the user turn but never an empty assistant row",
+    async () => {
+      const { userId, profile } = await makeUser("skipturn");
+      const issuedAt = callStart();
+
+      const r1 = await persistVoiceTurn({
+        userId,
+        issuedAt,
+        synthetic: false,
+        userContent: "I just… um…",
+        fullText: "", // Claude called skip_turn and wrote no text
+        profile,
+      });
+      // ElevenLabs re-sends the turn; whitespace-only replies must also be skipped.
+      const r2 = await persistVoiceTurn({
+        userId,
+        issuedAt,
+        synthetic: false,
+        userContent: "I just… um…",
+        fullText: "  \n",
+        profile,
+      });
+
+      expect(r1.savedUser).toBe(true);
+      expect(r1.savedAssistant).toBe(false);
+      expect(r2.savedUser).toBe(false);
+      expect(r2.savedAssistant).toBe(false);
+      expect(await countRows(userId, "user", "I just… um…")).toBe(1);
+      const n = await pool.query<{ n: string }>(
+        "SELECT count(*) AS n FROM messages WHERE user_id = $1 AND role = 'assistant'",
+        [userId],
+      );
+      expect(Number(n.rows[0]!.n)).toBe(0);
+    },
+    60_000,
+  );
+});
+
+// ─── openAiToolsToAnthropic — pure mapping, no DB ────────────────────────────
+
+describe("openAiToolsToAnthropic — ElevenLabs system-tool passthrough", () => {
+  it("maps a function tool and defaults missing parameters to an empty object schema", () => {
+    const out = openAiToolsToAnthropic([
+      { type: "function", function: { name: "skip_turn", description: "Skip the turn." } },
+    ]);
+    expect(out).toEqual([
+      {
+        name: "skip_turn",
+        description: "Skip the turn.",
+        input_schema: { type: "object", properties: {} },
+      },
+    ]);
+  });
+
+  it("keeps provided JSON-schema parameters as input_schema", () => {
+    const params = { type: "object", properties: { reason: { type: "string" } } };
+    const out = openAiToolsToAnthropic([
+      { type: "function", function: { name: "skip_turn", parameters: params } },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.input_schema).toEqual(params);
+  });
+
+  it("drops malformed and non-function entries", () => {
+    expect(openAiToolsToAnthropic(undefined)).toEqual([]);
+    expect(openAiToolsToAnthropic("nope")).toEqual([]);
+    expect(
+      openAiToolsToAnthropic([
+        { type: "retrieval" },
+        { type: "function" },
+        { type: "function", function: { name: "" } },
+        null,
+      ]),
+    ).toEqual([]);
+  });
+
+  it("drops tools not on the system-tool allowlist (endpoint is internet-facing)", () => {
+    expect(
+      openAiToolsToAnthropic([
+        { type: "function", function: { name: "delete_everything" } },
+        { type: "function", function: { name: "end_call" } }, // not allowlisted until deliberately supported
+        { type: "function", function: { name: "skip_turn" } },
+      ]).map((t) => t.name),
+    ).toEqual(["skip_turn"]);
+  });
+});
+
+// ─── mergeTrailingUserTurns — model content vs persisted content ─────────────
+
+describe("mergeTrailingUserTurns — consecutive user turns after skip_turn", () => {
+  it("folds trailing user turns into the model-facing content only", () => {
+    const { context, content } = mergeTrailingUserTurns(
+      [
+        { role: "assistant", content: "I'm here." },
+        { role: "user", content: "I keep thinking about her and…" },
+      ],
+      "sorry. It's been a hard week.",
+    );
+    expect(content).toBe("I keep thinking about her and…\nsorry. It's been a hard week.");
+    expect(context).toEqual([{ role: "assistant", content: "I'm here." }]);
+  });
+
+  it("handles multiple silent turns (A, B stacked before fresh C)", () => {
+    const { context, content } = mergeTrailingUserTurns(
+      [
+        { role: "user", content: "A" },
+        { role: "user", content: "B" },
+      ],
+      "C",
+    );
+    expect(content).toBe("A\nB\nC");
+    expect(context).toEqual([]);
+  });
+
+  it("leaves content and context untouched when context ends with assistant", () => {
+    const ctx = [
+      { role: "user" as const, content: "Hi." },
+      { role: "assistant" as const, content: "Hey you." },
+    ];
+    const { context, content } = mergeTrailingUserTurns(ctx, "How was your day?");
+    expect(content).toBe("How was your day?");
+    expect(context).toEqual(ctx);
+    expect(ctx).toHaveLength(2); // input not mutated
+  });
 });

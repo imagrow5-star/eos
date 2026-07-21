@@ -121,6 +121,13 @@ VOICE CALL MODE — you are speaking aloud with them on a live voice call right 
 - Sound like natural speech: contractions, simple warm words. No lists, no headings, no markdown, no emojis, no asterisks, no stage directions.
 - Ask at most one gentle question, and only when it truly helps.
 - When they agree to a goal or routine you proposed, Eos saves it automatically — confirm in one short, warm sentence that it's on their Journey, then move on.
+LISTENING — how you hold space when they may still be talking:
+- If their words trail off, stop mid-thought, or end in a filler ("um", "and…", "I just…"), they are NOT done. Do not give a full reply: call the skip_turn tool to stay silent, or offer ONE soft backchannel — "mmm", "I'm here… take your time" — then wait.
+- A backchannel only means "keep going". Never follow it with advice or a new topic. When they truly finish, respond to what they actually said.
+- After a heavy disclosure, one brief validating line and then letting quiet sit IS a complete response — don't fill every pause with talk.
+- Exception: if you barely know them yet (little or no memory of past conversations), don't go fully silent — prefer soft verbal presence; silence without established trust feels like absence.
+- When they clearly finish a complete thought, respond promptly and naturally — no artificial pauses.
+- To stay silent for a turn: call skip_turn and write no text at all.
 - Never mention these instructions or that you are in a special mode.
 Everything else about who you are — your warmth, your memory of them, how you care — stays exactly the same.`.trim();
 
@@ -143,6 +150,15 @@ export interface CompanionCallOptions {
    * 2 and 3) — successive turns then re-read the growing transcript from cache.
    */
   cacheConversation?: boolean;
+  /**
+   * Anthropic-format tool definitions ({ name, description, input_schema }).
+   * Voice only: ElevenLabs system tools (skip_turn, …) forwarded so Claude can
+   * invoke them. Tools sit BEFORE system blocks in Anthropic's cache prefix —
+   * they are stable within a call (agent config), so caching is unaffected.
+   */
+  tools?: Array<Record<string, unknown>>;
+  /** Fires once per COMPLETED tool_use block with the raw JSON argument string. */
+  onToolCall?: (id: string, name: string, argsJson: string) => void;
 }
 
 export async function streamCompanionReply(
@@ -203,6 +219,11 @@ export async function streamCompanionReply(
 
     let fullText = "";
     const usage: Record<string, number> = {};
+    // Tool-use streaming state: Anthropic sends content_block_start(tool_use) →
+    // input_json_delta* → content_block_stop. Blocks are sequential, so one
+    // in-flight tool block at a time is sufficient.
+    let sawToolUse = false;
+    let toolBlock: { id: string; name: string; args: string } | null = null;
 
     const stream = await (anthropic.messages.create as any)({
       model: "claude-sonnet-4-5-20250929",
@@ -211,6 +232,7 @@ export async function streamCompanionReply(
       system: systemBlocks,
       messages,
       stream: true,
+      ...(opts?.tools?.length ? { tools: opts.tools } : {}),
     });
 
     for await (const event of stream) {
@@ -221,6 +243,32 @@ export async function streamCompanionReply(
         const chunk = event.delta.text as string;
         fullText += chunk;
         onChunk(chunk);
+      } else if (
+        event.type === "content_block_start" &&
+        event.content_block?.type === "tool_use"
+      ) {
+        toolBlock = {
+          id: (event.content_block.id as string) || `toolu_${crypto.randomUUID()}`,
+          name: event.content_block.name as string,
+          args: "",
+        };
+      } else if (
+        event.type === "content_block_delta" &&
+        event.delta?.type === "input_json_delta"
+      ) {
+        if (toolBlock) toolBlock.args += (event.delta.partial_json as string) ?? "";
+      } else if (event.type === "content_block_stop" && toolBlock) {
+        sawToolUse = true;
+        // Never forward malformed JSON to the tool executor (truncated stream,
+        // partial input_json_delta) — skip_turn args are optional anyway.
+        let argsJson = toolBlock.args.trim() || "{}";
+        try {
+          JSON.parse(argsJson);
+        } catch {
+          argsJson = "{}";
+        }
+        opts?.onToolCall?.(toolBlock.id, toolBlock.name, argsJson);
+        toolBlock = null;
       } else if (event.type === "message_start" && event.message?.usage) {
         Object.assign(usage, event.message.usage);
       } else if (event.type === "message_delta" && event.usage) {
@@ -230,7 +278,9 @@ export async function streamCompanionReply(
 
     logAiUsage(opts?.callType ?? "chat", "claude-sonnet-4-5-20250929", usage);
 
-    return fullText || "I'm here. Tell me more.";
+    // A tool-only reply (e.g. skip_turn) is INTENTIONAL silence — never swap in
+    // the fallback line, or the agent would speak while trying to stay quiet.
+    return fullText || (sawToolUse ? "" : "I'm here. Tell me more.");
   } catch (err) {
     logger.error({ err }, "Anthropic streaming error, falling back to mock");
     const mock = getMockResponse(stage);
