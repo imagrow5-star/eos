@@ -16,7 +16,7 @@ import {
   generateMorningNoteContent,
   generateContextualGreeting,
   appendRecentPhrase,
-  VOICE_CALL_ADDENDUM,
+  buildVoiceCallAddendum,
 } from "../services/ai.js";
 import { calculateStage, todayInTimezone, getTimeContext, describeCommitmentTiming } from "../services/stage.js";
 import { getOrCreateProfileForUser } from "./profile.js";
@@ -97,7 +97,9 @@ router.post("/chat/stream", async (req, res): Promise<void> => {
       stage,
       (chunk) => sendEvent("delta", { text: chunk }),
       {
-        systemExtra: voiceMode ? VOICE_CALL_ADDENDUM : undefined,
+        // Classic voice engine has no ElevenLabs system tools — never include
+        // the listening/skip_turn rules here.
+        systemExtra: voiceMode ? buildVoiceCallAddendum(false) : undefined,
         callType: voiceMode ? "voice_fallback" : "chat",
       },
     );

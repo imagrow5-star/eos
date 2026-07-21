@@ -7,7 +7,7 @@ import {
   streamCompanionReply,
   appendRecentPhrase,
   runConversationExtractions,
-  VOICE_CALL_ADDENDUM,
+  buildVoiceCallAddendum,
 } from "../services/ai.js";
 import { calculateStage } from "../services/stage.js";
 import { getOrCreateProfileForUser } from "./profile.js";
@@ -378,7 +378,10 @@ router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> =>
         }
       },
       {
-        systemExtra: VOICE_CALL_ADDENDUM + toneExtra,
+        // Listening rules only when skip_turn actually arrived with the
+        // request (allowlist admits nothing else, so length>0 ⇔ skip_turn).
+        // Constant within a call → cached prompt prefix stays byte-identical.
+        systemExtra: buildVoiceCallAddendum(tools.length > 0) + toneExtra,
         callType: "voice",
         cacheConversation: true,
         ...(tools.length
