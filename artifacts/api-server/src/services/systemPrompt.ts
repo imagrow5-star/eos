@@ -152,8 +152,7 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
   const pronounLine = (profile as any).companionGender === "man" ? "he/him"
     : (profile as any).companionGender === "nonbinary" ? "they/them"
     : "she/her";
-  const userGenderNote = (profile as any).userGender && (profile as any).userGender !== "other"
-    ? `\n${name} is a ${(profile as any).userGender}.` : "";
+  const userGenderNote = `\n- ${describeUserGender(profile, name)}`;
 
   // Personalization layer — derived from stored data
   const recentPhrases: string[] = personalizationRows[0]?.recentPhrases ?? [];
@@ -1019,4 +1018,40 @@ ${rules}`;
 - Honest about being an AI if sincerely asked.`);
 
   return { stable, context: contextParts.join("\n\n") };
+}
+
+/**
+ * One quiet line about who the companion is speaking TO — the user's own
+ * pronouns and phrasing. It never touches the companion's persona or voice.
+ * Unknown/skipped ⇒ an explicit "don't assume", so the model never guesses
+ * from a name. Shared by chat/voice (via buildSystemPrompt), greetings, and
+ * morning notes.
+ */
+/**
+ * Normalize user-supplied gender words before they are stored or interpolated
+ * into prompt text: strip quotes/backslashes/control chars (so the text can
+ * never break out of its quoted context or smuggle instructions on new lines),
+ * collapse whitespace, cap at 120 chars. Treat the result as data, not prose.
+ */
+export function sanitizeGenderWords(raw: string): string {
+  return raw
+    .replace(/[\\"'\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120)
+    .trim();
+}
+
+export function describeUserGender(profile: Profile, name: string): string {
+  const g = ((profile as any).userGender as string | null | undefined) ?? null;
+  // Sanitize at read time too — belt and braces for rows written before the
+  // write-side sanitizer existed.
+  const custom = sanitizeGenderWords(((profile as any).userGenderCustom as string | null | undefined) ?? "");
+  const who = name && name !== "you" && name !== "them" ? name : "The person you're talking with";
+  if (g === "man") return `${who} is a man — use he/him whenever you refer to him.`;
+  if (g === "woman") return `${who} is a woman — use she/her whenever you refer to her.`;
+  if (g === "custom" && custom) {
+    return `${who} describes their gender in their own words: "${custom}". Mirror exactly the language and pronouns they use for themself — never relabel them, never default to gendered terms.`;
+  }
+  return `${who} hasn't shared their gender — never assume it. No gendered terms, no gendered pet names, no he/she guesses; keep language neutral for them unless they tell you themselves.`;
 }

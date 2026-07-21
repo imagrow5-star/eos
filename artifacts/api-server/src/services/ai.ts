@@ -18,6 +18,7 @@ import {
 import { logger } from "../lib/logger.js";
 import { todayInTimezone, describeCommitmentTiming } from "./stage.js";
 import type { SystemPromptParts } from "./systemPrompt.js";
+import { describeUserGender } from "./systemPrompt.js";
 
 // Anthropic client — lazy init so mock mode works without the key
 let _anthropic: import("@anthropic-ai/sdk").Anthropic | null = null;
@@ -429,6 +430,7 @@ This appears when they open the app in the morning. It should feel like it was w
 WHAT YOU KNOW:
 ${contextLines.join("\n\n")}
 ${pathNote}
+${describeUserGender(profile, profile.userName || "them")}
 
 RULES:
 • Reference 1–2 SPECIFIC things from what you know about them. Not vague warmth — their actual wins, facts, or habits. Specificity is what makes it land.
@@ -1294,7 +1296,8 @@ export async function generateContextualGreeting(
   const contextBlock =
     (contextLines.length > 0
       ? contextLines.join("\n\n")
-      : "(Still early days — respond with genuine warmth even without much data yet.)") + antiRepLine + appreciationConstraint;
+      : "(Still early days — respond with genuine warmth even without much data yet.)") +
+    `\n\n${describeUserGender(profile, name)}` + antiRepLine + appreciationConstraint;
 
   const pathNote = isBereavement
     ? "\nNote: They are grieving a loss. Presence and warmth only — never forward-push."

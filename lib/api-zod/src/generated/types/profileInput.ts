@@ -18,4 +18,5 @@ export interface ProfileInput {
   voiceTone?: string;
   companionGender?: string;
   userGender?: string;
+  userGenderCustom?: string;
 }

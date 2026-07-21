@@ -53,6 +53,11 @@ export interface Profile {
      * @nullable
      */
   userGender?: string | null;
+  /**
+     * Their own words when userGender = custom — e.g. non-binary
+     * @nullable
+     */
+  userGenderCustom?: string | null;
 }
 
 export interface ProfileInput {
@@ -66,6 +71,7 @@ export interface ProfileInput {
   voiceId?: string;
   companionGender?: string;
   userGender?: string;
+  userGenderCustom?: string;
 }
 
 export interface Message {

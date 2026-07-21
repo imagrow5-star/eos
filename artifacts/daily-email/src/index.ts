@@ -196,6 +196,33 @@ interface UserContext {
   pendingCommitment: string | null;
   pendingCommitmentId: number | null;
   recentPhrases: string[];
+  genderNote: string;
+}
+
+/**
+ * Mirrors the api-server systemPrompt helper — one line about who the note is
+ * FOR (their pronouns/phrasing), never about the companion. Unknown ⇒ an
+ * explicit "don't assume" so the model never guesses from a name.
+ */
+function describeUserGender(
+  p: { userGender: string | null; userGenderCustom: string | null },
+  name: string,
+): string {
+  // Collapse whitespace + strip quote/control chars defensively — rows are
+  // sanitized on write by the api-server, this guards any that predate it.
+  const custom = (p.userGenderCustom ?? "")
+    .replace(/[\\"'\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120)
+    .trim();
+  const who = name && name !== "there" ? name : "The person you're writing to";
+  if (p.userGender === "man") return `${who} is a man — use he/him whenever you refer to him.`;
+  if (p.userGender === "woman") return `${who} is a woman — use she/her whenever you refer to her.`;
+  if (p.userGender === "custom" && custom) {
+    return `${who} describes their gender in their own words: "${custom}". Mirror exactly the language and pronouns they use for themself — never relabel them, never default to gendered terms.`;
+  }
+  return `${who} hasn't shared their gender — never assume it. No gendered terms, no gendered pet names; keep language neutral for them.`;
 }
 
 async function gatherContext(
@@ -206,6 +233,8 @@ async function gatherContext(
     companionName: string;
     timezone: string;
     userPath: string;
+    userGender: string | null;
+    userGenderCustom: string | null;
     createdAt: Date;
   },
 ): Promise<UserContext | null> {
@@ -328,6 +357,7 @@ async function gatherContext(
     companionName: profile.companionName,
     timezone:    profile.timezone,
     userPath:    profile.userPath,
+    genderNote:  describeUserGender(profile, profile.userName || "there"),
     daysSinceStart,
     facts:       facts.map((f) => f.fact),
     wins:        wins.map((w) => w.content),
@@ -400,6 +430,7 @@ You are a specific, loving person who truly knows ${ctx.name}. Not a newsletter,
 WHAT YOU KNOW ABOUT ${ctx.name.toUpperCase()}:
 ${lines.join("\n\n")}
 ${pathNote}
+${ctx.genderNote}
 
 YOUR JOB — DELIVER ALL THREE OF THESE, THROUGH THE WORDS YOU CHOOSE:
 
@@ -547,11 +578,14 @@ async function generateNudgeText(
   content: string,
   timeDisplay: string,
   isLate: boolean,
+  genderNote: string,
 ): Promise<string> {
   const fallback = `${name} — ${timeDisplay}, like you planned: ${content}. I remembered.`;
   if (!ANTHROPIC_KEY) return fallback;
 
   const prompt = `You are ${companionName}, writing a 1–2 sentence email nudge to ${name}. They told you they'd do this today at ${timeDisplay}: "${content}". The email arrives ${isLate ? "a little after that time — do not pretend it is exactly that moment" : "right at that time"}.
+
+${genderNote}
 
 Write it warm, specific, quietly confident — a close friend keeping their word by remembering, not an alarm clock, not a cheerleader. Reference the actual plan in their words.
 
@@ -582,6 +616,7 @@ async function processTimedNudges(
   email: string,
   companionName: string,
   name: string,
+  genderNote: string,
   today: string,
   hour: number,
   noteCoveredCommitmentId: number | null,
@@ -631,7 +666,7 @@ async function processTimedNudges(
 
     try {
       const timeDisplay = formatClock(c.scheduledTime!);
-      const nudgeText = await generateNudgeText(companionName, name, c.content, timeDisplay, isLate);
+      const nudgeText = await generateNudgeText(companionName, name, c.content, timeDisplay, isLate, genderNote);
       const html = buildHtml(userId, nudgeText);
       await sendEmail(email, `${companionName} — you said ${timeDisplay}`, html);
       log("Nudge sent", { userId, commitmentId: c.id, at: timeDisplay, late: isLate });
@@ -682,6 +717,8 @@ async function run(): Promise<void> {
       companionName:    profileTable.companionName,
       timezone:         profileTable.timezone,
       userPath:         profileTable.userPath,
+      userGender:       profileTable.userGender,
+      userGenderCustom: profileTable.userGenderCustom,
       createdAt:        profileTable.createdAt,
       lastEmailDate:    profileTable.lastEmailDate,
       dailyEmailOptOut: profileTable.dailyEmailOptOut,
@@ -722,11 +759,13 @@ async function run(): Promise<void> {
     else try {
       // Gather personalized data
       const ctx = await gatherContext(user.userId, user.email, {
-        userName:      user.userName,
-        companionName: user.companionName,
-        timezone:      tz,
-        userPath:      user.userPath,
-        createdAt:     user.createdAt,
+        userName:         user.userName,
+        companionName:    user.companionName,
+        timezone:         tz,
+        userPath:         user.userPath,
+        userGender:       user.userGender,
+        userGenderCustom: user.userGenderCustom,
+        createdAt:        user.createdAt,
       });
 
       if (!ctx) {
@@ -785,6 +824,7 @@ async function run(): Promise<void> {
         user.email,
         user.companionName,
         user.userName || "there",
+        describeUserGender(user, user.userName || "there"),
         today,
         hour,
         noteCoveredCommitmentId,

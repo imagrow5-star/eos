@@ -10,6 +10,7 @@ import {
 import { logger } from "../lib/logger.js";
 import type { Profile } from "@workspace/db";
 import { getOrCreateProfileForUser } from "./profile.js";
+import { sanitizeGenderWords } from "../services/systemPrompt.js";
 
 const router: IRouter = Router();
 
@@ -90,7 +91,7 @@ function getStepQuestion(step: string, profile: Profile): string {
       return "And roughly how old are you? It helps me get the tone right.";
 
     case "userGender":
-      return "One last thing — and this is completely optional, so feel free to skip. What's your gender?";
+      return "One last thing — completely optional, so skip it if you like. What's your gender? Tap one below, or just tell me in your own words.";
 
     case "relationshipType":
       return "How would you like me to be with you — as a warm close friend, or something a little more tender? Just say 'friend' or 'romantic'.";
@@ -239,12 +240,23 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
 
     case "userGender": {
       const lower = answer.toLowerCase().trim();
-      const isSkip = lower === "skip" || lower.includes("prefer not") || lower.includes("not to say") || lower.includes("skip this");
+      const isSkip = lower === "skip" || lower.includes("prefer not") || lower.includes("not to say") || lower.includes("rather not") || lower.includes("skip this");
       if (!isSkip) {
-        updates.userGender =
-          lower.includes("woman") || lower.includes("female") ? "woman"
-          : lower.includes("man") || lower.includes("male") ? "man"
-          : "other";
+        // Order matters: "woman"/"female" contain "man"/"male".
+        if (lower.includes("woman") || lower.includes("female")) {
+          updates.userGender = "woman";
+          updates.userGenderCustom = null;
+        } else if (lower.includes("man") || lower.includes("male")) {
+          updates.userGender = "man";
+          updates.userGenderCustom = null;
+        } else {
+          // Their own words (e.g. "non-binary") — keep their language, but
+          // sanitized (quotes/newlines stripped, capped) before it ever
+          // reaches a prompt.
+          const words = sanitizeGenderWords(answer);
+          updates.userGender = "custom";
+          updates.userGenderCustom = words === "" ? null : words;
+        }
       }
       updates.isOnboardingComplete = true;
       break;

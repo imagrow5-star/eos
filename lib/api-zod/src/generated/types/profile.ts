@@ -35,4 +35,9 @@ export interface Profile {
      * @nullable
      */
   userGender?: string | null;
+  /**
+     * Their own words when userGender = custom — e.g. non-binary
+     * @nullable
+     */
+  userGenderCustom?: string | null;
 }

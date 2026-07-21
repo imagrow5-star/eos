@@ -114,9 +114,11 @@ const STEP_CHOICES: Record<string, Array<{ label: string; value: string }>> = {
     { label: "50 or over", value: "50+" },
   ],
   userGender: [
-    { label: "Man", value: "man" },
-    { label: "Woman", value: "woman" },
-    { label: "Other", value: "other" },
+    { label: "Male", value: "male" },
+    { label: "Female", value: "female" },
+    // Sentinel — intercepted in the button handler: opens the free-text path
+    // instead of sending, so people can say it exactly how they'd say it.
+    { label: "In my own words", value: "__custom__" },
     { label: "Skip this one", value: "skip" },
   ],
 };
@@ -364,6 +366,20 @@ export default function Chat() {
       setRenameValue(profile.companionName);
     }
   }, [profile?.companionName]);
+
+  // ── About you (gender) — settings chips + onboarding "in my own words" ────
+  const [genderChoice, setGenderChoice] = useState<"man" | "woman" | "custom" | null>(null);
+  const [genderCustomValue, setGenderCustomValue] = useState("");
+  const [customGenderMode, setCustomGenderMode] = useState(false);
+  useEffect(() => {
+    const g = profile?.userGender ?? null;
+    setGenderChoice(
+      g === "man" || g === "woman" ? g
+      : g === "custom" || g === "other" ? "custom"
+      : null,
+    );
+    setGenderCustomValue(profile?.userGenderCustom ?? "");
+  }, [profile?.userGender, profile?.userGenderCustom]);
 
   const form = useForm<ChatMessageFormValues>({
     resolver: zodResolver(chatMessageSchema),
@@ -639,6 +655,7 @@ export default function Chat() {
     if (!data.content.trim()) return;
     const content = data.content.trim();
     setStreamError(null);
+    setCustomGenderMode(false);
     form.reset();
 
     if (!onboarding?.isComplete) {
@@ -1307,6 +1324,40 @@ export default function Chat() {
     );
   };
 
+  // ─── Settings: about you (gender) ─────────────────────────────────────────
+
+  const refreshProfile = () =>
+    queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
+
+  const handleGenderSelect = (val: "man" | "woman" | "custom") => {
+    if (genderChoice === val) {
+      // Tap the active chip again to clear — back to "not shared"
+      setGenderChoice(null);
+      setGenderCustomValue("");
+      updateProfile.mutate(
+        { data: { userGender: "", userGenderCustom: "" } },
+        { onSuccess: refreshProfile },
+      );
+      return;
+    }
+    setGenderChoice(val);
+    if (val === "custom") return; // saved once they've written their words
+    setGenderCustomValue("");
+    updateProfile.mutate(
+      { data: { userGender: val, userGenderCustom: "" } },
+      { onSuccess: refreshProfile },
+    );
+  };
+
+  const handleSaveCustomGender = () => {
+    const words = genderCustomValue.trim();
+    if (!words) return;
+    updateProfile.mutate(
+      { data: { userGender: "custom", userGenderCustom: words } },
+      { onSuccess: refreshProfile },
+    );
+  };
+
   // ─── Settings: delete account ─────────────────────────────────────────────
 
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -1844,6 +1895,53 @@ export default function Chat() {
               </div>
             </div>
 
+            {/* ── About you ───────────────────────────────────────────────── */}
+            <div>
+              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
+                About you
+              </p>
+              <div className="flex gap-1.5 flex-wrap">
+                {([["man", "Male"], ["woman", "Female"], ["custom", "In my own words"]] as const).map(([val, label]) => (
+                  <button
+                    key={val}
+                    onClick={() => handleGenderSelect(val)}
+                    disabled={updateProfile.isPending}
+                    className={cn(
+                      "px-3 py-1.5 rounded-full text-[11px] font-medium tracking-wide border transition-all",
+                      genderChoice === val
+                        ? "bg-primary/20 border-primary/50 text-primary"
+                        : "border-primary/15 text-muted-foreground/55 hover:border-primary/30 hover:text-foreground/70",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {genderChoice === "custom" && (
+                <div className="flex gap-2 mt-2.5">
+                  <Input
+                    value={genderCustomValue}
+                    onChange={(e) => setGenderCustomValue(e.target.value)}
+                    placeholder="in your own words — e.g. non-binary"
+                    className="bg-background/60 border-primary/20 text-sm text-foreground/85 placeholder:text-muted-foreground/40 h-9 flex-1"
+                    onKeyDown={(e) => e.key === "Enter" && handleSaveCustomGender()}
+                    maxLength={120}
+                  />
+                  <Button
+                    size="sm"
+                    className="h-9 bg-primary/15 text-primary hover:bg-primary/25 border border-primary/25 px-4"
+                    onClick={handleSaveCustomGender}
+                    disabled={updateProfile.isPending || !genderCustomValue.trim()}
+                  >
+                    <Check className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+              <p className="text-[10.5px] text-muted-foreground/45 mt-2 leading-relaxed">
+                Optional — so {profile?.companionName || "she"} speaks to you the way you'd want. Tap the selected one again to clear it.
+              </p>
+            </div>
+
             {/* ── Account email ───────────────────────────────────────────── */}
             <div>
               <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
@@ -2321,7 +2419,14 @@ export default function Chat() {
               {stepChoices!.map((choice) => (
                 <button
                   key={choice.value}
-                  onClick={() => handleSend({ content: choice.value })}
+                  onClick={() => {
+                    if (choice.value === "__custom__") {
+                      setCustomGenderMode(true);
+                      return;
+                    }
+                    setCustomGenderMode(false);
+                    handleSend({ content: choice.value });
+                  }}
                   disabled={isTyping}
                   className="bg-card border border-primary/20 hover:border-primary/50 hover:bg-primary/8 text-foreground/80 hover:text-foreground text-[13.5px] px-4 py-3 rounded-xl text-left transition-all duration-200 font-sans leading-snug disabled:opacity-40"
                 >
@@ -2692,7 +2797,9 @@ export default function Chat() {
             {/* Show a subtle "or type your answer" hint when choice buttons are shown */}
             {showChoiceButtons && !isTyping && (
               <p className="text-center text-[11px] text-muted-foreground/40 mt-3 tracking-wide">
-                or type your own answer below
+                {customGenderMode
+                  ? "say it however feels right — e.g. non-binary"
+                  : "or type your own answer below"}
               </p>
             )}
             {showChoiceButtons && (
@@ -2706,7 +2813,9 @@ export default function Chat() {
                         <FormControl>
                           <Input
                             {...field}
-                            placeholder="Or type your own answer..."
+                            key={customGenderMode ? "gender-custom" : "std"}
+                            autoFocus={customGenderMode}
+                            placeholder={customGenderMode ? "In your own words…" : "Or type your own answer..."}
                             className="bg-card border-primary/20 text-sm text-foreground/80 placeholder:text-muted-foreground/40 h-9"
                             disabled={isTyping}
                             autoComplete="off"

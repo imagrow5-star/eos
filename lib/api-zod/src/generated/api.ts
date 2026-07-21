@@ -59,7 +59,8 @@ export const GetProfileResponse = zod.object({
   "voiceId": zod.string().describe('ElevenLabs voice ID'),
   "voiceTone": zod.string().optional().describe('Voice-call delivery: auto | gentle | calm | upbeat'),
   "companionGender": zod.string().describe('woman | man | nonbinary'),
-  "userGender": zod.string().nullish().describe('man | woman | other (optional — may be null)'),
+  "userGender": zod.string().nullish().describe('man | woman | custom (legacy: other) — may be null'),
+  "userGenderCustom": zod.string().nullish().describe('Their own words when userGender = custom — e.g. non-binary'),
   "timezone": zod.string().describe('IANA timezone string e.g. America/New_York')
 })
 
@@ -79,6 +80,7 @@ export const UpdateProfileBody = zod.object({
   "voiceTone": zod.string().optional(),
   "companionGender": zod.string().optional(),
   "userGender": zod.string().optional(),
+  "userGenderCustom": zod.string().optional(),
   "timezone": zod.string().optional()
 })
 
@@ -97,7 +99,8 @@ export const UpdateProfileResponse = zod.object({
   "voiceId": zod.string().describe('ElevenLabs voice ID'),
   "voiceTone": zod.string().optional().describe('Voice-call delivery: auto | gentle | calm | upbeat'),
   "companionGender": zod.string().describe('woman | man | nonbinary'),
-  "userGender": zod.string().nullish().describe('man | woman | other (optional — may be null)'),
+  "userGender": zod.string().nullish().describe('man | woman | custom (legacy: other) — may be null'),
+  "userGenderCustom": zod.string().nullish().describe('Their own words when userGender = custom — e.g. non-binary'),
   "timezone": zod.string().describe('IANA timezone string e.g. America/New_York')
 })
 

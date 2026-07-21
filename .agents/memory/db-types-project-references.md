@@ -1,6 +1,6 @@
 ---
-name: db-types via TS project references
-description: Why api-server typecheck consumes @workspace/db's built dist, not source, and how to keep it fresh
+name: Workspace lib types via TS project references
+description: Consumers typecheck against @workspace libs' built dist (db, api-zod, api-client-react), not source — how to keep it fresh
 ---
 
 # @workspace/db types come from built `dist/`, not source
@@ -27,3 +27,11 @@ and `tsc -p` fails with `TS6305: Output file ... has not been built`.
   root, not inside dist). To force a clean rebuild you must delete BOTH `dist/` and
   `tsconfig.tsbuildinfo`; deleting only dist makes `--build` skip emit and dist
   stays missing.
+- **Same trap with `lib/api-client-react` → aanya.** `artifacts/aanya/tsconfig.json`
+  references `../../lib/api-client-react`, so editing that lib's source (e.g. the
+  generated `api.schemas.ts`) does NOT reach aanya's typecheck until the lib is
+  rebuilt. It has **no package build script** — run `pnpm exec tsc --build
+  lib/api-client-react` from the workspace root. Symptom of staleness: TS2353
+  "property does not exist" in aanya for a field that's plainly present in the
+  lib's source. Vite/HMR is unaffected (bundles source), so the app can work
+  while typecheck lies.

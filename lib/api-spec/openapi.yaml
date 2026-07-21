@@ -386,7 +386,10 @@ components:
           description: "woman | man | nonbinary"
         userGender:
           type: ["string", "null"]
-          description: "man | woman | other (optional — may be null)"
+          description: "man | woman | custom (legacy rows may hold 'other') — null when not shared"
+        userGenderCustom:
+          type: ["string", "null"]
+          description: "The user's own words for their gender — only present when userGender is 'custom'"
       required:
         - id
         - userName
@@ -425,6 +428,10 @@ components:
           type: string
         userGender:
           type: string
+          description: "man | woman | custom — or empty string to clear back to 'not shared'"
+        userGenderCustom:
+          type: string
+          description: "The user's own words for their gender; persisted only when userGender is 'custom'"
 
     Message:
       type: object

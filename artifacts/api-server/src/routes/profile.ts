@@ -10,6 +10,7 @@ import {
 } from "@workspace/api-zod";
 import { calculateStage } from "../services/stage.js";
 import { todayString } from "../services/stage.js";
+import { sanitizeGenderWords } from "../services/systemPrompt.js";
 
 const router: IRouter = Router();
 
@@ -77,6 +78,7 @@ function buildProfilePayload(
     voiceTone: (profile as any).voiceTone ?? "auto",
     companionGender: (profile as any).companionGender ?? "woman",
     userGender: (profile as any).userGender ?? null,
+    userGenderCustom: (profile as any).userGenderCustom ?? null,
     timezone: (profile as any).timezone ?? "UTC",
     createdAt: profile.createdAt,
     daysSinceStart,
@@ -124,7 +126,30 @@ router.put("/profile", async (req, res): Promise<void> => {
     updates.voiceTone = (data as any).voiceTone;
   }
   if ((data as any).companionGender != null) updates.companionGender = (data as any).companionGender;
-  if ((data as any).userGender != null) updates.userGender = (data as any).userGender;
+  // userGender: "man" | "woman" | "custom" — or "" to clear (back to "not shared").
+  // Legacy rows may hold "other"; new writes are constrained to the three values.
+  if ((data as any).userGender != null) {
+    const g = String((data as any).userGender).trim().toLowerCase();
+    if (g === "") {
+      updates.userGender = null;
+      updates.userGenderCustom = null;
+    } else if (["man", "woman", "custom"].includes(g)) {
+      updates.userGender = g;
+      if (g !== "custom") updates.userGenderCustom = null; // presets clear stale custom words
+    }
+  }
+  if ((data as any).userGenderCustom != null) {
+    // Custom words may only persist alongside userGender === "custom" — whatever
+    // this request (or the stored row) says the gender is after this update.
+    // A combined payload like { userGender: "man", userGenderCustom: "…" } must
+    // never leave incoherent state behind.
+    const effectiveGender =
+      "userGender" in updates ? updates.userGender : (profile as any).userGender;
+    if (effectiveGender === "custom") {
+      const words = sanitizeGenderWords(String((data as any).userGenderCustom));
+      updates.userGenderCustom = words === "" ? null : words;
+    }
+  }
   if ((data as any).timezone != null) updates.timezone = (data as any).timezone;
 
   // Nothing valid to update (empty body, or only rejected values like an
