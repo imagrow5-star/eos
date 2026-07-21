@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useSpeechRecognition, speakText, stopSpeaking, unlockAudioOnGesture } from "@/lib/voice";
 import { startRealtimeCall, type RealtimeConversation, type RealtimeSessionInfo } from "@/lib/realtimeVoice";
+import { CaptionSyncEngine } from "@/lib/captionSync";
 import { cn } from "@/lib/utils";
 
 // ─── Voice catalogue ──────────────────────────────────────────────────────────
@@ -282,9 +283,27 @@ export default function Chat() {
   // Voice call live-caption state — words revealed in sync with ElevenLabs audio.
   const [voiceCallCaptionText,     setVoiceCallCaptionText]     = useState("");
   const [voiceCallCaptionRevealed, setVoiceCallCaptionRevealed] = useState(0);
+  // Realtime caption sync: the engine (lib/captionSync.ts) turns the session's
+  // alignment/audio/interruption events into an alignment-timed word reveal —
+  // the caption trails her actual voice and freezes where a barge-in stopped it.
+  const captionEngineRef = useRef<CaptionSyncEngine | null>(null);
   // What the user said — shown under "You said:" while the AI is thinking/speaking
   const [voiceCallRecognizedText, setVoiceCallRecognizedText] = useState("");
   useEffect(() => { continuousVoiceRef.current = continuousVoice; }, [continuousVoice]);
+  // Reveal loop for realtime captions — polls the engine and mirrors its
+  // snapshot into the caption states. ~12fps is plenty for word granularity;
+  // identical values bail out of re-rendering.
+  useEffect(() => {
+    if (voiceEngine !== "realtime" || !continuousVoice) return;
+    const id = window.setInterval(() => {
+      const engine = captionEngineRef.current;
+      if (!engine) return;
+      const snap = engine.snapshot();
+      setVoiceCallCaptionText((prev) => (prev === snap.text ? prev : snap.text));
+      setVoiceCallCaptionRevealed((prev) => (prev === snap.revealedWords ? prev : snap.revealedWords));
+    }, 80);
+    return () => window.clearInterval(id);
+  }, [voiceEngine, continuousVoice]);
   // NOTE: voiceCallPhaseRef is intentionally NOT synced via useEffect.
   // It must be set synchronously alongside every setVoiceCallPhase call so that
   // recognition callbacks (onend, onerror) that fire before React re-renders can
@@ -673,7 +692,9 @@ export default function Chat() {
     voicePendingRemainderRef.current = null;  // never speak the queued remainder
     stopSpeaking();                           // kill ElevenLabs audio + browser TTS + caption timers
     setIsSpeaking(false);
-    setVoiceCallCaptionRevealed(99999);       // reveal the full caption so the reply stays readable
+    // The caption FREEZES exactly where her voice stopped — the unspoken
+    // remainder must never appear. (stopSpeaking() above already killed the
+    // classic reveal timers; the full reply still lands in chat history.)
     setVoiceCallMessage(null);
     if (resume) {
       voiceCallPhaseRef.current = "listening";
@@ -927,6 +948,7 @@ export default function Chat() {
       voiceEngineRef.current = null;
       setVoiceEngine(null);
       setRealtimeNote(null);
+      captionEngineRef.current = null;
       voice.stopListening();
       stopSpeaking();
       micStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -949,6 +971,7 @@ export default function Chat() {
       voiceEngineRef.current = null;
       setVoiceEngine(null);
       setRealtimeNote(null);
+      captionEngineRef.current = null;
       voiceCallPhaseRef.current = "listening";
       setVoiceCallPhase("listening");
       setVoiceCallRecognizedText("");
@@ -968,6 +991,7 @@ export default function Chat() {
         realtimeGenRef.current++;
         voiceEngineRef.current = null;
         setVoiceEngine(null);
+        captionEngineRef.current = null;
         voiceCallPhaseRef.current = "listening";
         setVoiceCallPhase("listening");
         setVoiceCallRecognizedText("");
@@ -1024,9 +1048,15 @@ export default function Chat() {
 
         if (session?.available) {
           connectStage = "handshake";
+          // Fresh caption-sync engine for THIS call. Callbacks close over the
+          // instance (not the ref), so a stale session can only ever mutate
+          // its own dead engine — never a newer call's captions.
+          const captionEngine = new CaptionSyncEngine();
+          captionEngineRef.current = captionEngine;
           const convo = await startRealtimeCall(session, activeVoiceId, {
             onMode: (mode) => {
               if (realtimeGenRef.current !== rtGen || !continuousVoiceRef.current) return;
+              captionEngine.setMode(mode);
               voiceCallPhaseRef.current = mode;
               setVoiceCallPhase(mode);
               if (mode === "listening") setVoiceCallRecognizedText("");
@@ -1037,8 +1067,31 @@ export default function Chat() {
             },
             onAgentText: (text) => {
               if (realtimeGenRef.current !== rtGen || !continuousVoiceRef.current) return;
-              setVoiceCallCaptionText(text);
-              setVoiceCallCaptionRevealed(999999); // audio is realtime — show the full line
+              // Full reply text — kept only as the engine's pacing fallback.
+              // The visible caption is alignment-timed via the reveal loop, so
+              // the user can never read ahead of her voice. (Chat-history
+              // persistence is server-side and untouched by any of this.)
+              captionEngine.noteAgentResponse(text);
+            },
+            onAudioFormat: (format) => {
+              if (realtimeGenRef.current !== rtGen) return;
+              captionEngine.setAudioFormat(format);
+            },
+            onAudioAlignment: (alignment) => {
+              if (realtimeGenRef.current !== rtGen) return;
+              captionEngine.addAlignment(alignment);
+            },
+            onAudioBytes: (bytes) => {
+              if (realtimeGenRef.current !== rtGen) return;
+              captionEngine.addAudioChunk(bytes);
+            },
+            onInterruption: () => {
+              if (realtimeGenRef.current !== rtGen) return;
+              captionEngine.markInterrupted();
+            },
+            onCorrection: (correctedText, originalText) => {
+              if (realtimeGenRef.current !== rtGen) return;
+              captionEngine.applyCorrection(correctedText, originalText);
             },
             onDisconnect: (info) => {
               // Unexpected drop mid-call (network, agent hangup, auth): close
@@ -1052,6 +1105,7 @@ export default function Chat() {
               ) return;
               realtimeGenRef.current++; // this session is over — mute any stragglers
               realtimeConvoRef.current = null;
+              captionEngineRef.current = null;
               voiceEngineRef.current = null;
               setVoiceEngine(null);
               setContinuousVoice(false);
@@ -1059,6 +1113,8 @@ export default function Chat() {
               voiceCallPhaseRef.current = "listening";
               setVoiceCallPhase("listening");
               setVoiceCallRecognizedText("");
+              setVoiceCallCaptionText("");
+              setVoiceCallCaptionRevealed(0);
               setVoiceCallMessage(null);
               if (info.message && isQuotaFailure(info.message)) {
                 // Quota ran out mid-call: warm in-character note, no raw error.

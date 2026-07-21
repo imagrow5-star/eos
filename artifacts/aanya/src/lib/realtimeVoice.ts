@@ -1,4 +1,5 @@
 import { Conversation, type DisconnectionDetails } from "@elevenlabs/client";
+import type { AlignmentChunk } from "./captionSync";
 
 // ─── Realtime voice via ElevenLabs Conversational AI ─────────────────────────
 // The agent natively handles mic streaming, live transcription, turn-taking,
@@ -41,6 +42,20 @@ export type RealtimeHandlers = {
   onMode: (mode: "speaking" | "listening") => void;
   onUserText: (text: string) => void;
   onAgentText: (text: string) => void;
+  /**
+   * Per-chunk character alignment riding on audio events — powers the live
+   * caption sync (lib/captionSync.ts). NOTE: fires for EVERY incoming chunk,
+   * including post-interrupt stragglers the SDK never plays.
+   */
+  onAudioAlignment?: (alignment: AlignmentChunk) => void;
+  /** A chunk actually ACCEPTED for playback — length in decoded bytes. */
+  onAudioBytes?: (bytes: number) => void;
+  /** The user barged in — the agent's audio was cut off right now. */
+  onInterruption?: () => void;
+  /** Server-side truncation of an interrupted reply (its estimate of what was heard). */
+  onCorrection?: (correctedText: string, originalText: string) => void;
+  /** Agent audio output format from conversation metadata (e.g. "pcm_16000"). */
+  onAudioFormat?: (format: string) => void;
   /** Fired when the session ends. `message` is null for a clean/user-initiated end. */
   onDisconnect: (info: { message: string | null }) => void;
   onError: (message: string, context?: unknown) => void;
@@ -87,6 +102,25 @@ export async function startRealtimeCall(
       if (role === "user") handlers.onUserText(message);
       else handlers.onAgentText(message);
     },
+    // ── Caption-sync taps ────────────────────────────────────────────────────
+    // onAudioAlignment fires for every incoming chunk; onAudio only for chunks
+    // the SDK accepts for playback (stale post-interrupt chunks are dropped).
+    // The caption engine relies on exactly that distinction to ignore straggler
+    // alignments — see lib/captionSync.ts.
+    onAudioAlignment: (alignment: AlignmentChunk) => handlers.onAudioAlignment?.(alignment),
+    onAudio: (base64Audio: string) =>
+      handlers.onAudioBytes?.(Math.floor(base64Audio.length * 0.75)),
+    onInterruption: () => handlers.onInterruption?.(),
+    onAgentResponseCorrection: (correction: {
+      corrected_agent_response: string;
+      original_agent_response: string;
+    }) =>
+      handlers.onCorrection?.(
+        correction.corrected_agent_response,
+        correction.original_agent_response,
+      ),
+    onConversationMetadata: (metadata: { agent_output_audio_format: string }) =>
+      handlers.onAudioFormat?.(metadata.agent_output_audio_format),
     onDisconnect: (details: DisconnectionDetails) =>
       handlers.onDisconnect({ message: describeDisconnect(details) }),
     onError: (message: string, context?: unknown) => handlers.onError(message, context),

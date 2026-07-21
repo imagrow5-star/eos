@@ -4,6 +4,7 @@
 - [Voice infinite loop fix](voice-loop-fix.md) — useSpeechRecognition must use a ref for onResult callback; never put it in useEffect deps
 - [Voice barge-in architecture](voice-barge-in.md) — gen-counter guard on all call-mode TTS callbacks; spokenTextRef echo guard; stopListening must cancel start-retry; re-check refs after awaits
 - [Realtime voice](realtime-voice.md) — ElevenLabs agent owns audio; Claude the brain via custom-LLM; prod boot guard enforces agent config; validate with AUDIO probes, never text_only
+- [Caption sync](caption-sync.md) — live captions from alignment stream (chunk-relative times), playback-clock gated on mode; corrections only clamp; alignment fires even for unplayed straggler chunks
 - [Voice-call turn dedup](voice-turn-dedup.md) — ElevenLabs fires N completions per spoken turn; persistence must dedup by content since call start + serialize per user — "latest row" checks fail
 - [Voice tone & quota UX](voice-tone-quota.md) — tone frozen per call (cache prefix); ElevenLabs overrides deny-by-default per field; quota → warm in-text note, never classic fallback
 - [Goals route zod ban](goals-zod-ban.md) — api-server package has no zod dep; goals.ts must use plain JS validation, not z.object()
