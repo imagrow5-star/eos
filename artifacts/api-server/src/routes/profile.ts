@@ -74,6 +74,7 @@ function buildProfilePayload(
     country: profile.country,
     ageBand: profile.ageBand ?? "",
     voiceId: profile.voiceId ?? "EXAVITQu4vr4xnSDxMaL",
+    voiceTone: (profile as any).voiceTone ?? "auto",
     companionGender: (profile as any).companionGender ?? "woman",
     userGender: (profile as any).userGender ?? null,
     timezone: (profile as any).timezone ?? "UTC",
@@ -116,9 +117,27 @@ router.put("/profile", async (req, res): Promise<void> => {
   if (data.country != null) updates.country = data.country;
   if ((data as any).ageBand != null) updates.ageBand = (data as any).ageBand;
   if ((data as any).voiceId != null) updates.voiceId = (data as any).voiceId;
+  if (
+    (data as any).voiceTone != null &&
+    ["auto", "gentle", "calm", "upbeat"].includes((data as any).voiceTone)
+  ) {
+    updates.voiceTone = (data as any).voiceTone;
+  }
   if ((data as any).companionGender != null) updates.companionGender = (data as any).companionGender;
   if ((data as any).userGender != null) updates.userGender = (data as any).userGender;
   if ((data as any).timezone != null) updates.timezone = (data as any).timezone;
+
+  // Nothing valid to update (empty body, or only rejected values like an
+  // unknown voiceTone) — return the current profile unchanged instead of
+  // letting drizzle throw "No values to set" (500).
+  if (Object.keys(updates).length === 0) {
+    const stage = await calculateStage(profile);
+    const daysSinceStart = Math.floor(
+      (Date.now() - profile.createdAt.getTime()) / (1000 * 60 * 60 * 24),
+    );
+    res.json(UpdateProfileResponse.parse(buildProfilePayload(profile, daysSinceStart, stage)));
+    return;
+  }
 
   const [updated] = await db
     .update(profileTable)

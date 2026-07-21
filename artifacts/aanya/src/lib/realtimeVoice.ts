@@ -11,6 +11,8 @@ import { Conversation, type DisconnectionDetails } from "@elevenlabs/client";
 // customLlmExtraBody, so the backend knows whose memory to load. This requires
 // "Custom LLM extra body" to be enabled on the agent (see setup notes).
 
+export type VoiceTone = "auto" | "gentle" | "calm" | "upbeat";
+
 export type RealtimeSessionInfo = {
   available: boolean;
   reason?: string;
@@ -20,6 +22,19 @@ export type RealtimeSessionInfo = {
   signedUrl?: string;
   agentId?: string;
   userToken?: string;
+  /** "How Eos speaks" preference — maps to TTS delivery overrides below. */
+  tone?: VoiceTone;
+};
+
+// TTS delivery per tone preference. "auto" ships the gentle defaults with no
+// fixed prompt instruction — her situational adaptation leads. Requires the
+// stability/speed overrides to be enabled in the agent's security settings.
+// Delivery style only — the voiceId (which voice she IS) is never touched here.
+const TONE_TTS: Record<VoiceTone, { stability: number; speed: number }> = {
+  auto: { stability: 0.4, speed: 0.95 },
+  gentle: { stability: 0.4, speed: 0.95 },
+  calm: { stability: 0.75, speed: 0.9 },
+  upbeat: { stability: 0.45, speed: 1.05 },
 };
 
 export type RealtimeHandlers = {
@@ -77,22 +92,38 @@ export async function startRealtimeCall(
     onError: (message: string, context?: unknown) => handlers.onError(message, context),
   };
 
-  const attempt = (withVoice: boolean) => {
-    const overrides =
-      withVoice && voiceId ? { overrides: { tts: { voiceId } } } : {};
+  const attempt = (level: "full" | "voice" | "none") => {
+    const toneTts = TONE_TTS[session.tone ?? "auto"] ?? TONE_TTS.auto;
+    // The SDK's override typings lag the API — stability/speed are accepted
+    // when enabled in the agent's Security settings.
+    const tts: Record<string, unknown> = {};
+    if (level === "full") {
+      tts.stability = toneTts.stability;
+      tts.speed = toneTts.speed;
+    }
+    if (level !== "none" && voiceId) tts.voiceId = voiceId;
+    const overrides = Object.keys(tts).length > 0 ? { overrides: { tts: tts as never } } : {};
     return session.signedUrl
       ? Conversation.startSession({ signedUrl: session.signedUrl, ...shared, ...overrides })
       : Conversation.startSession({ agentId: session.agentId!, ...shared, ...overrides });
   };
 
   try {
-    // Prefer the user's chosen companion voice — requires the "TTS voice ID"
-    // override to be enabled in the agent's Security tab.
-    return await attempt(true);
+    // Chosen voice + tone delivery — requires the TTS overrides (voice ID,
+    // stability, speed) to be enabled in the agent's Security settings.
+    return await attempt("full");
   } catch (err) {
-    if (!voiceId) throw err;
-    // Voice override may be disabled on the agent — retry with its default voice.
-    console.warn("[realtime-voice] retrying without voice override:", err);
-    return await attempt(false);
+    // Tone fields may be rejected (e.g. override flags disabled on the agent).
+    // NEVER give up the user's chosen voice because of tone — retry with the
+    // voice override alone before falling back to agent defaults.
+    console.warn("[realtime-voice] retrying with voice-only override:", err);
+    try {
+      return await attempt("voice");
+    } catch (err2) {
+      // Without a voiceId, "voice" already meant no overrides — don't triple-dial.
+      if (!voiceId) throw err2;
+      console.warn("[realtime-voice] retrying without TTS overrides:", err2);
+      return await attempt("none");
+    }
   }
 }

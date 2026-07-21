@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import crypto from "node:crypto";
-import { eq, desc, and, lt } from "drizzle-orm";
+import { eq, desc, and, lt, gte } from "drizzle-orm";
 import { db, messagesTable, type Profile } from "@workspace/db";
 import { buildSystemPrompt, type SystemPromptParts } from "../services/systemPrompt.js";
 import {
@@ -68,7 +68,20 @@ function sanitizeTurns(turns: ChatMsg[]): ChatMsg[] {
 // every hit — an active call touches its entry every few seconds, so entries
 // outlive even very long calls and are swept only after ~15 min of silence.
 
-const frozenSystems = new Map<string, { parts: SystemPromptParts; at: number }>();
+// "How Eos speaks" — one delivery instruction per tone preference, injected
+// into the per-call frozen system extra so the whole call keeps ONE consistent
+// delivery and the prompt-cache prefix stays byte-identical. "auto" adds
+// nothing — the persona's situational adaptation leads.
+const TONE_DELIVERY: Record<string, string> = {
+  gentle:
+    "\n- DELIVERY STYLE (user preference — gentle & empathetic): extra-soft, tender pacing. Validate the feeling in warm, simple words before anything else; let sentences breathe.",
+  calm:
+    "\n- DELIVERY STYLE (user preference — calm & steady): slow, grounded, unhurried. Short steady sentences, small pauses, quiet reassurance — never rushed, never excitable.",
+  upbeat:
+    "\n- DELIVERY STYLE (user preference — warm & upbeat): warm with gentle brightness. Encouraging, hopeful phrasing and light energy — still soft and caring, never loud.",
+};
+
+const frozenSystems = new Map<string, { parts: SystemPromptParts; toneExtra: string; at: number }>();
 const FROZEN_SYSTEM_TTL_MS = 15 * 60 * 1000;
 
 async function getFrozenSystem(
@@ -76,7 +89,7 @@ async function getFrozenSystem(
   issuedAt: number,
   profile: Profile,
   stage: number,
-): Promise<SystemPromptParts> {
+): Promise<{ parts: SystemPromptParts; toneExtra: string }> {
   const now = Date.now();
   for (const [k, v] of frozenSystems) {
     if (now - v.at > FROZEN_SYSTEM_TTL_MS) frozenSystems.delete(k);
@@ -85,11 +98,104 @@ async function getFrozenSystem(
   const hit = frozenSystems.get(key);
   if (hit) {
     hit.at = now; // sliding TTL — keep the frozen prompt alive for the whole call
-    return hit.parts;
+    return { parts: hit.parts, toneExtra: hit.toneExtra };
   }
   const parts = await buildSystemPrompt(profile, stage);
-  frozenSystems.set(key, { parts, at: now });
-  return parts;
+  // Tone freezes with the prompt: a mid-call Settings change applies on the
+  // NEXT call, keeping this call's cached prefix byte-identical.
+  const toneExtra = TONE_DELIVERY[profile.voiceTone ?? "auto"] ?? "";
+  frozenSystems.set(key, { parts, toneExtra, at: now });
+  return { parts, toneExtra };
+}
+
+// ─── Voice-turn persistence with in-call dedup ────────────────────────────────
+// ElevenLabs fires MULTIPLE completion requests per spoken turn: rolling ASR
+// finals revise the user's sentence, interruptions regenerate replies, and
+// double-fires arrive in the same second. Persisting once per request wrote
+// duplicate rows (the tester-visible "echo"). Three defenses:
+//   1. per-user promise chain — concurrent requests persist strictly in order,
+//      closing the check-then-insert race (single-process server);
+//   2. user turns dedup by exact content since call start (issuedAt) — survives
+//      A→B→A transcript revisions, which defeated the old "latest row" check;
+//   3. assistant replies dedup the same way — exact duplicates are dropped,
+//      genuinely different regenerations still save (both were partly spoken).
+
+const persistChains = new Map<number, Promise<void>>();
+
+export async function persistVoiceTurn(args: {
+  userId: number;
+  issuedAt: number;
+  synthetic: boolean;
+  userContent: string;
+  fullText: string;
+  profile: Profile;
+}): Promise<{ savedUser: boolean; savedAssistant: boolean }> {
+  const { userId, issuedAt, synthetic, userContent, fullText, profile } = args;
+  const callStart = new Date(issuedAt);
+
+  let savedUser = false;
+  let savedAssistant = false;
+  const job = async () => {
+    if (!synthetic) {
+      const [userDupe] = await db
+        .select({ id: messagesTable.id })
+        .from(messagesTable)
+        .where(
+          and(
+            eq(messagesTable.userId, userId),
+            eq(messagesTable.role, "user"),
+            eq(messagesTable.content, userContent),
+            gte(messagesTable.createdAt, callStart),
+          ),
+        )
+        .limit(1);
+      if (!userDupe) {
+        await db
+          .insert(messagesTable)
+          .values({ userId, role: "user", content: userContent, isMorningNote: false });
+        savedUser = true;
+      }
+    }
+
+    const [assistantDupe] = await db
+      .select({ id: messagesTable.id })
+      .from(messagesTable)
+      .where(
+        and(
+          eq(messagesTable.userId, userId),
+          eq(messagesTable.role, "assistant"),
+          eq(messagesTable.content, fullText),
+          gte(messagesTable.createdAt, callStart),
+        ),
+      )
+      .limit(1);
+    if (!assistantDupe) {
+      await db
+        .insert(messagesTable)
+        .values({ userId, role: "assistant", content: fullText, isMorningNote: false });
+      // Anti-repetition state only for genuinely new replies — duplicate
+      // completions were double-appending phrases too.
+      await appendRecentPhrase(userId, fullText);
+      savedAssistant = true;
+    }
+
+    // Extraction (commitments, habits, goals, memory) only on genuinely new
+    // user turns — re-sent history must not extract twice.
+    if (savedUser) {
+      await runConversationExtractions(profile, userContent, fullText);
+    }
+  };
+
+  const prev = persistChains.get(userId) ?? Promise.resolve();
+  const tail = prev.then(job, job); // run even if the predecessor failed
+  persistChains.set(userId, tail);
+  tail
+    .catch(() => {})
+    .finally(() => {
+      if (persistChains.get(userId) === tail) persistChains.delete(userId);
+    });
+  await tail;
+  return { savedUser, savedAssistant };
 }
 
 router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> => {
@@ -143,7 +249,7 @@ router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> =>
         .orderBy(desc(messagesTable.createdAt))
         .limit(12),
     ]);
-    const systemPrompt = await getFrozenSystem(userId, issuedAt, profile, stage);
+    const { parts: systemPrompt, toneExtra } = await getFrozenSystem(userId, issuedAt, profile, stage);
 
     // Pre-call chat history (token issuedAt = call start, so in-call turns we
     // persist below are never double-counted) + the call transcript itself.
@@ -198,7 +304,7 @@ router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> =>
           }
         }
       },
-      { systemExtra: VOICE_CALL_ADDENDUM, callType: "voice", cacheConversation: true },
+      { systemExtra: VOICE_CALL_ADDENDUM + toneExtra, callType: "voice", cacheConversation: true },
     );
 
     if (wantStream) {
@@ -219,35 +325,11 @@ router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> =>
     }
 
     // ── Persist the exchange (fire-and-forget, mirrors the text pipeline) so
-    // voice turns land in chat history and future memory extraction.
-    void (async () => {
-      let freshUserTurn = false;
-      if (!synthetic) {
-        const [lastUserMsg] = await db
-          .select()
-          .from(messagesTable)
-          .where(and(eq(messagesTable.userId, userId), eq(messagesTable.role, "user")))
-          .orderBy(desc(messagesTable.createdAt))
-          .limit(1);
-        // The agent re-sends history after interruptions — don't double-insert.
-        if (!lastUserMsg || lastUserMsg.content !== userContent) {
-          await db
-            .insert(messagesTable)
-            .values({ userId, role: "user", content: userContent, isMorningNote: false });
-          freshUserTurn = true;
-        }
-      }
-      await db
-        .insert(messagesTable)
-        .values({ userId, role: "assistant", content: fullText, isMorningNote: false });
-      await appendRecentPhrase(userId, fullText);
-      // Voice turns feed the SAME extraction pipeline as text chat (commitments,
-      // habits, periodic memory). Only on fresh user turns — the agent re-sends
-      // history after interruptions and we must not extract twice.
-      if (freshUserTurn) {
-        await runConversationExtractions(profile, userContent, fullText);
-      }
-    })().catch((err) => logger.error({ err }, "voice-llm: persisting voice turn failed"));
+    // voice turns land in chat history and future memory extraction. Dedup +
+    // per-user serialization live in persistVoiceTurn.
+    void persistVoiceTurn({ userId, issuedAt, synthetic, userContent, fullText, profile }).catch(
+      (err) => logger.error({ err }, "voice-llm: persisting voice turn failed"),
+    );
   } catch (err) {
     logger.error({ err }, "voice-llm: completion failed");
     if (res.headersSent) {

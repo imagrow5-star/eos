@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { mintVoiceToken } from "../lib/voiceToken.js";
+import { getOrCreateProfileForUser } from "./profile.js";
 import { isVoiceCallEnabled } from "../lib/featureFlags.js";
 import { logger } from "../lib/logger.js";
 
@@ -31,12 +32,22 @@ router.post("/voice-agent/session", async (req, res): Promise<void> => {
 
   const userToken = mintVoiceToken(req.userId);
 
+  // "How Eos speaks" preference rides along so the client can set matching
+  // TTS delivery overrides (stability/speed) on the ElevenLabs session.
+  let tone = "auto";
+  try {
+    const profile = await getOrCreateProfileForUser(req.userId);
+    tone = (profile as { voiceTone?: string }).voiceTone ?? "auto";
+  } catch (err) {
+    logger.warn({ err }, "voice-agent: couldn't load tone preference — using auto");
+  }
+
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
     // No API key to sign with — only a PUBLIC agent can possibly work. Let the
     // browser try; if the agent is private the client will surface the drop.
     logger.warn("ELEVENLABS_API_KEY not set — attempting public-agent voice call");
-    res.json({ available: true, mode: "public", agentId, userToken });
+    res.json({ available: true, mode: "public", agentId, userToken, tone });
     return;
   }
 
@@ -49,7 +60,7 @@ router.post("/voice-agent/session", async (req, res): Promise<void> => {
     if (r.ok) {
       const data = (await r.json()) as { signed_url?: string };
       if (data?.signed_url) {
-        res.json({ available: true, mode: "signed", signedUrl: data.signed_url, userToken });
+        res.json({ available: true, mode: "signed", signedUrl: data.signed_url, userToken, tone });
         return;
       }
       logger.error({ data }, "ElevenLabs get-signed-url returned 200 without signed_url");
@@ -90,6 +101,14 @@ router.post("/voice-agent/session", async (req, res): Promise<void> => {
           : "api_key_invalid";
     } else if (r.status === 404) {
       reason = "agent_not_found";
+    }
+    // Voice-minute quota exhaustion must never render as a raw config error —
+    // the client shows a warm in-character note and returns to text chat.
+    if (
+      (typeof detail === "object" && detail?.status === "quota_exceeded") ||
+      /quota/i.test(elMessage)
+    ) {
+      reason = "quota_exceeded";
     }
     res.json({ available: false, reason, detail: elMessage });
   } catch (err) {

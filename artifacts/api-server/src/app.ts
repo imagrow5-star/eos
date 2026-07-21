@@ -73,6 +73,38 @@ pool
   })
   .catch((err) => logger.error({ err }, "Failed to dedupe profile rows"));
 
+// One-time repair: the voice custom-LLM endpoint used to persist the same
+// spoken turn more than once (ElevenLabs fires several completion requests per
+// turn — fixed with since-call-start dedup + per-user serialization in
+// voice-llm.ts). Collapse the rows it already wrote: same user, same role,
+// identical content, created within 8 seconds of the previous copy — keep the
+// earliest. Scope is deliberately narrow: the window is evidence-based (the
+// largest gap among the known duplicates is 6.3s), morning notes are excluded
+// (voice rows never are), and the date gate (< 2026-07-23, just after the fix
+// shipped) means rows written later can NEVER be touched — a legit rapid
+// "yes" "yes" in text chat must not be collapsed by future boots. No-op once
+// the old duplicates are gone.
+pool
+  .query(
+    `DELETE FROM messages WHERE id IN (
+       SELECT id FROM (
+         SELECT id,
+                created_at - lag(created_at) OVER (
+                  PARTITION BY user_id, role, content
+                  ORDER BY created_at, id
+                ) AS gap
+         FROM messages
+         WHERE created_at < '2026-07-23 00:00:00'
+           AND is_morning_note = false
+       ) ranked
+       WHERE gap IS NOT NULL AND gap <= interval '8 seconds'
+     )`,
+  )
+  .then((r) => {
+    if (r.rowCount) logger.warn({ removed: r.rowCount }, "Removed duplicate voice-call message rows");
+  })
+  .catch((err) => logger.error({ err }, "Failed to dedupe voice-call message rows"));
+
 // Safety-net: daily email opt-out and last-sent tracking columns.
 pool
   .query(`

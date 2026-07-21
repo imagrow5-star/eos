@@ -26,6 +26,8 @@ export interface Profile {
   currentStage: number;
   /** ElevenLabs voice ID */
   voiceId: string;
+  /** Voice-call delivery: auto | gentle | calm | upbeat */
+  voiceTone?: string;
   /** woman | man | nonbinary */
   companionGender: string;
   /**

@@ -65,6 +65,21 @@ const PREVIEW_SAMPLE = "I'm right here with you. Take all the time you need.";
 const DEFAULT_FEMALE_VOICE = "21m00Tcm4TlvDq8ikWAM"; // Rachel
 const DEFAULT_MALE_VOICE   = "pNInz6obpgDQGcFmaJgB"; // Adam
 
+// ─── "How Eos speaks" — voice-call delivery preference ───────────────────────
+const VOICE_TONE_OPTIONS = [
+  { value: "auto",   label: "Let Eos decide",      desc: "She adapts to the moment — softer when it's heavy, brighter when you are" },
+  { value: "gentle", label: "Gentle & empathetic", desc: "Extra-soft and tender — feelings come first" },
+  { value: "calm",   label: "Calm & steady",       desc: "Slow, grounded, unhurried" },
+  { value: "upbeat", label: "Warm & upbeat",       desc: "Encouraging, with gentle energy" },
+] as const;
+
+// ElevenLabs voice-minute quota exhausted (HTTP quota errors or WS close 1002)
+// — never surface a raw error for this; she just needs a rest.
+const VOICE_REST_MESSAGE =
+  "My voice needs a little rest right now — but I'm right here with you in text.";
+const isQuotaFailure = (s?: string | null) =>
+  !!s && (/quota/i.test(s) || /code\s*1002\b/i.test(s));
+
 // ─── Onboarding choice buttons ────────────────────────────────────────────────
 
 const STEP_CHOICES: Record<string, Array<{ label: string; value: string }>> = {
@@ -278,6 +293,7 @@ export default function Chat() {
   const isBereavement = profile?.userPath === "bereavement";
   const companionGender = (profile as any)?.companionGender ?? "woman";
   const activeVoiceId = (profile as any)?.voiceId ?? (companionGender === "man" ? DEFAULT_MALE_VOICE : DEFAULT_FEMALE_VOICE);
+  const activeVoiceTone: string = (profile as any)?.voiceTone ?? "auto";
 
   // Fetch romantic voice availability from the server
   const { data: voicesStatus } = useQuery<{ romantic: RomanticVoiceStatus[]; voiceCallEnabled?: boolean }>({
@@ -943,6 +959,22 @@ export default function Chat() {
       // captures it and no-ops if a newer call (or an end) has bumped it.
       const rtGen = ++realtimeGenRef.current;
 
+      // Quota exhaustion → no raw error, no classic fallback (classic TTS
+      // draws on the same ElevenLabs quota). Roll the call UI back and leave
+      // a warm in-character note in the chat instead.
+      const restVoiceAndReturnToText = () => {
+        setContinuousVoice(false);
+        continuousVoiceRef.current = false;
+        realtimeGenRef.current++;
+        voiceEngineRef.current = null;
+        setVoiceEngine(null);
+        voiceCallPhaseRef.current = "listening";
+        setVoiceCallPhase("listening");
+        setVoiceCallRecognizedText("");
+        setVoiceCallMessage(null);
+        setVoiceError(VOICE_REST_MESSAGE);
+      };
+
       // ── 0) Microphone permission BEFORE any connection attempt ──────────
       // Never open a session we can't feed audio into: ask for the mic first
       // and only connect once it's granted. The probe tracks are stopped
@@ -1028,7 +1060,11 @@ export default function Chat() {
               setVoiceCallPhase("listening");
               setVoiceCallRecognizedText("");
               setVoiceCallMessage(null);
-              if (info.message) {
+              if (info.message && isQuotaFailure(info.message)) {
+                // Quota ran out mid-call: warm in-character note, no raw error.
+                reportVoiceCallError("quota", info.message);
+                setVoiceError(VOICE_REST_MESSAGE);
+              } else if (info.message) {
                 setVoiceError(`Voice call disconnected: ${info.message}`);
                 reportVoiceCallError("disconnect", info.message);
               } else {
@@ -1069,6 +1105,16 @@ export default function Chat() {
           return;
         }
 
+        if (
+          session &&
+          !session.available &&
+          (session.reason === "quota_exceeded" || isQuotaFailure(session.detail))
+        ) {
+          reportVoiceCallError("quota", session.detail ?? "quota_exceeded");
+          restVoiceAndReturnToText();
+          return;
+        }
+
         // Hard configuration errors: show EXACTLY what to fix on the call
         // screen. No silent fallback that hides the problem — the server has
         // already logged the underlying ElevenLabs response.
@@ -1101,8 +1147,14 @@ export default function Chat() {
           setRealtimeNote("Realtime voice couldn't connect — using standard voice mode.");
         } else {
           // True ElevenLabs handshake/SDK failure: show the SPECIFIC cause on
-          // the call screen — a silent instant drop is never OK.
+          // the call screen — a silent instant drop is never OK. Exception:
+          // quota exhaustion gets the warm in-character note instead.
           const msg = err instanceof Error ? err.message : String(err);
+          if (isQuotaFailure(msg)) {
+            reportVoiceCallError("quota", msg);
+            restVoiceAndReturnToText();
+            return;
+          }
           voiceCallPhaseRef.current = "error";
           setVoiceCallPhase("error");
           setVoiceCallMessage(`Voice call couldn't connect: ${msg} — end the call and try again.`);
@@ -1353,6 +1405,17 @@ export default function Chat() {
   const handleVoiceSelect = (voiceId: string) => {
     updateProfile.mutate(
       { data: { voiceId } as any },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
+        },
+      },
+    );
+  };
+
+  const handleToneSelect = (voiceTone: string) => {
+    updateProfile.mutate(
+      { data: { voiceTone } as any },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
@@ -1893,6 +1956,53 @@ export default function Chat() {
               <p className="text-[10px] text-muted-foreground/35 mt-2 text-center">
                 Tap ▶ to hear a sample before choosing
               </p>
+            </div>
+
+            {/* ── How Eos speaks — voice-call delivery preference ──────── */}
+            <div>
+              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-1">
+                How Eos speaks
+              </p>
+              <p className="text-[11px] text-muted-foreground/45 mb-3">
+                Her delivery on voice calls — the voice itself stays the one you chose.
+              </p>
+              <div className="space-y-1.5">
+                {VOICE_TONE_OPTIONS.map((t) => {
+                  const isSelected = activeVoiceTone === t.value;
+                  return (
+                    <div
+                      key={t.value}
+                      onClick={() => handleToneSelect(t.value)}
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-pointer transition-all active:scale-[0.98]",
+                        isSelected
+                          ? "bg-primary/12 border-primary/45 shadow-[0_0_0_1px_hsl(40_56%_50%/0.15)]"
+                          : "bg-background/50 border-primary/12 hover:border-primary/30 hover:bg-primary/6",
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
+                          isSelected ? "border-primary bg-primary/30" : "border-foreground/20",
+                        )}
+                      >
+                        {isSelected && <div className="w-2 h-2 rounded-full bg-primary" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span
+                          className={cn(
+                            "text-[14px] font-medium",
+                            isSelected ? "text-foreground" : "text-foreground/70",
+                          )}
+                        >
+                          {t.label}
+                        </span>
+                        <p className="text-[11px] text-muted-foreground/50 mt-0.5">{t.desc}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {/* ── Your data ───────────────────────────────────────────── */}

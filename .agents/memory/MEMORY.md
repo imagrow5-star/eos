@@ -4,7 +4,8 @@
 - [Voice infinite loop fix](voice-loop-fix.md) — useSpeechRecognition must use a ref for onResult callback; never put it in useEffect deps
 - [Voice barge-in architecture](voice-barge-in.md) — gen-counter guard on all call-mode TTS callbacks; spokenTextRef echo guard; stopListening must cancel start-retry; re-check refs after awaits
 - [Realtime voice](realtime-voice.md) — ElevenLabs Conv-AI agent owns audio/barge-in; Claude stays the brain via custom-LLM endpoint; HMAC user_token in extra body; classic engine is the fallback
-- [Voice-call turn duplication](voice-turn-dedup.md) — ElevenLabs fires N completions per spoken turn (ASR revisions, double-fires); persist guard is single-row + racy, assistant insert unguarded → duplicate rows
+- [Voice-call turn dedup](voice-turn-dedup.md) — ElevenLabs fires N completions per spoken turn; persistence must dedup by content since call start + serialize per user — "latest row" checks fail
+- [Voice tone & quota UX](voice-tone-quota.md) — tone frozen per call (cache prefix); ElevenLabs overrides deny-by-default per field; quota → warm in-text note, never classic fallback
 - [Goals route zod ban](goals-zod-ban.md) — api-server package has no zod dep; goals.ts must use plain JS validation, not z.object()
 - [Voice choice & profile extras](voice-profile-extras.md) — voiceId saved on profile (default Sarah); TTS route accepts voiceId in body; ageBand + voiceId accepted via (data as any) cast in profile PUT since not in generated types
 - [Streaming architecture](streaming-architecture.md) — /api/chat/stream SSE endpoint; claude-sonnet-4-5; prompt caching on system block; fire-and-forget background extractions after res.end()

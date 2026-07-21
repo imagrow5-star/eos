@@ -15,6 +15,7 @@ export interface ProfileInput {
   country?: string;
   ageBand?: string;
   voiceId?: string;
+  voiceTone?: string;
   companionGender?: string;
   userGender?: string;
 }
