@@ -11,7 +11,7 @@ import {
 import { calculateStage } from "../services/stage.js";
 import { todayString } from "../services/stage.js";
 import { sanitizeGenderWords } from "../services/systemPrompt.js";
-import { ageToBand, isValidCountryCode, AGE_BANDS } from "../lib/basics.js";
+import { ageToBand, normalizeCountryForStorage, AGE_BANDS } from "../lib/basics.js";
 
 const router: IRouter = Router();
 
@@ -155,17 +155,20 @@ router.put("/profile", async (req, res): Promise<void> => {
   if (data.relationshipType != null) updates.relationshipType = data.relationshipType;
   if (data.energy != null) updates.energy = data.energy;
   if (data.userPath != null) updates.userPath = data.userPath;
-  // country: an ISO-3166 alpha-2 code ("UK" legacy alias welcome) — or "" to
-  // clear back to "not shared". Anything else is ignored — never guessed.
+  // country: an ISO-3166 alpha-2 code ("UK" stored for GB), the literal
+  // "other", or "" to clear back to "not shared". Legacy superseded codes
+  // (SU, ZR, BU, …) are normalized to their canonical modern code so the
+  // daily-email timezone fallback stays trustworthy. Anything else is a hard
+  // validation error — garbage must never reach the database.
   if (data.country != null) {
-    const c = String(data.country).trim().toUpperCase();
-    if (c === "") {
-      updates.country = "";
-    } else if (c === "UK" || c === "GB") {
-      updates.country = "UK";
-    } else if (/^[A-Z]{2}$/.test(c) && isValidCountryCode(c)) {
-      updates.country = c;
+    const normalized = normalizeCountryForStorage(String(data.country));
+    if (normalized === null) {
+      res.status(400).json({
+        error: `Invalid country code "${String(data.country)}". Use a two-letter country code (e.g. "IN", "UK"), "other", or "" to clear.`,
+      });
+      return;
     }
+    updates.country = normalized;
   }
   // ageBand: legacy surface — only the four known bands (or "" to clear) may
   // ever be stored. ageBand reaches system prompts, so free text must never

@@ -82,6 +82,47 @@ export function isValidCountryCode(code: string): boolean {
   return countryDisplayName(code) !== null;
 }
 
+// Legacy / superseded ISO-3166 codes that Intl.DisplayNames still names — the
+// picker can technically produce them, so they are normalized to their
+// canonical modern code at write time. Must stay in sync with
+// LEGACY_COUNTRY_ALIASES in the daily-email job (artifacts/daily-email/src/timezone.ts).
+// "UK" is deliberately NOT here: it is our storage alias for GB, handled first.
+export const LEGACY_COUNTRY_ALIASES: Record<string, string> = {
+  AN: "CW", // Netherlands Antilles → Curaçao
+  BU: "MM", // Burma → Myanmar
+  CS: "RS", // Serbia and Montenegro → Serbia
+  DD: "DE", // East Germany → Germany
+  DY: "BJ", // Dahomey → Benin
+  FX: "FR", // Metropolitan France → France
+  HV: "BF", // Upper Volta → Burkina Faso
+  NH: "VU", // New Hebrides → Vanuatu
+  RH: "ZW", // Rhodesia → Zimbabwe
+  SU: "RU", // Soviet Union → Russia
+  TP: "TL", // East Timor → Timor-Leste
+  VD: "VN", // North Vietnam → Vietnam
+  YD: "YE", // South Yemen → Yemen
+  YU: "RS", // Yugoslavia → Serbia
+  ZR: "CD", // Zaire → DR Congo
+};
+
+/**
+ * Validate + normalize a country value for storage. Accepts exactly what the
+ * picker can produce: an ISO-3166 alpha-2 code named by Intl.DisplayNames
+ * ("UK" stored for GB), the literal "other", or "" to clear. Legacy superseded
+ * codes (SU, ZR, BU, …) are normalized to their canonical modern code so the
+ * daily-email timezone fallback never sees them. Returns the storage value,
+ * or null when the input is invalid (caller should reject the write).
+ */
+export function normalizeCountryForStorage(raw: string): string | null {
+  const c = raw.trim().toUpperCase();
+  if (c === "") return "";
+  if (c === "OTHER") return "other";
+  if (c === "UK" || c === "GB") return "UK";
+  if (!/^[A-Z]{2}$/.test(c)) return null;
+  const canonical = LEGACY_COUNTRY_ALIASES[c] ?? c;
+  return isValidCountryCode(canonical) ? canonical : null;
+}
+
 // name (lowercased) → storage code. Built once by walking AA…ZZ through Intl.
 let nameToCode: Map<string, string> | null = null;
 function reverseMap(): Map<string, string> {
@@ -128,8 +169,8 @@ export function resolveCountryAnswer(raw: string): string | "skip" | null {
   }
   const up = t.toUpperCase();
   if (/^[A-Z]{2}$/.test(up)) {
-    if (up === "UK" || up === "GB") return "UK";
-    return isValidCountryCode(up) ? up : null;
+    const normalized = normalizeCountryForStorage(up);
+    return normalized ? normalized : null;
   }
   const exact = reverseMap().get(lower);
   if (exact) return exact;
