@@ -164,10 +164,32 @@ export async function sendPushToUser(userId: number, kind: PushKind, payload: Pu
         // Subscription is gone (browser revoked / app uninstalled) — prune it.
         await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.id, sub.id));
         logger.info({ userId, subId: sub.id, statusCode }, "push: pruned dead subscription");
+      } else if (statusCode === 401 || statusCode === 403) {
+        // Signature rejected — this subscription was created under a
+        // DIFFERENT VAPID keypair (key rotation) and can never succeed under
+        // the current one. Prune it; the client re-subscribes under the new
+        // key next time the user enables the toggle.
+        await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.id, sub.id));
+        logger.info({ userId, subId: sub.id, statusCode }, "push: pruned key-mismatch subscription");
       } else {
         await db.update(pushSubscriptionsTable).set({ failureCount: sub.failureCount + 1 }).where(eq(pushSubscriptionsTable.id, sub.id));
         logger.warn({ err, userId, subId: sub.id }, "push: delivery failed");
       }
+    }
+  }
+
+  if (delivered === 0) {
+    // If every device is gone (revoked, uninstalled, or invalidated by a key
+    // rotation), reflect reality in the profile so the Settings toggle shows
+    // OFF and the user can simply re-enable — mirrors the unsubscribe route's
+    // "remaining === 0" rule.
+    const remaining = await db
+      .select({ id: pushSubscriptionsTable.id })
+      .from(pushSubscriptionsTable)
+      .where(eq(pushSubscriptionsTable.userId, userId));
+    if (remaining.length === 0) {
+      await db.update(profileTable).set({ pushOptIn: false }).where(eq(profileTable.userId, userId));
+      logger.info({ userId }, "push: no devices remain — opt-in reset");
     }
   }
   return delivered > 0 ? "sent" : "all_failed";

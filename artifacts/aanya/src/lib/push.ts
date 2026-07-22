@@ -62,6 +62,18 @@ export async function enablePush(): Promise<EnableResult> {
   const { publicKey } = (await keyRes.json()) as { publicKey: string };
 
   let sub = await reg.pushManager.getSubscription();
+  // A subscription created under a DIFFERENT server key (e.g. after a VAPID
+  // key rotation) can no longer be signed for — drop it and subscribe fresh
+  // under the current key instead of re-binding a dead subscription.
+  if (sub) {
+    const current = new Uint8Array(sub.options.applicationServerKey ?? new ArrayBuffer(0));
+    const expected = urlBase64ToUint8Array(publicKey);
+    const sameKey = current.length === expected.length && current.every((b, i) => b === expected[i]);
+    if (!sameKey) {
+      await sub.unsubscribe().catch(() => {});
+      sub = null;
+    }
+  }
   if (!sub) {
     try {
       sub = await reg.pushManager.subscribe({
