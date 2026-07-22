@@ -46,7 +46,12 @@ const cspMetaPlugin = {
       "media-src 'self' blob: data:",
       // ElevenLabs realtime voice (websocket + REST, incl. regional/WebRTC hosts)
       "connect-src 'self' https://api.elevenlabs.io wss://api.elevenlabs.io https://*.elevenlabs.io wss://*.elevenlabs.io https://*.livekit.cloud wss://*.livekit.cloud",
-      "worker-src 'self'",
+      // ElevenLabs Conversational AI SDK inlines the rawAudioProcessor and
+      // audioConcatProcessor worklet source into the JS bundle, then loads it
+      // via URL.createObjectURL (blob:) with a data: base64 fallback for
+      // Safari iframes. Both schemes must be allowed here; no external origin
+      // is involved — the code comes entirely from our own bundle.
+      "worker-src 'self' blob: data:",
       "manifest-src 'self'",
       "object-src 'none'",
       "base-uri 'self'",
