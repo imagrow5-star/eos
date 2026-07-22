@@ -6,7 +6,8 @@
   "scripts": {
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
-    "dev": "tsx --tsconfig tsconfig.json src/index.ts"
+    "dev": "tsx --tsconfig tsconfig.json src/index.ts",
+    "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
@@ -17,6 +18,7 @@
     "@types/node": "catalog:",
     "esbuild": "0.27.3",
     "pg": "^8.22.0",
-    "tsx": "catalog:"
+    "tsx": "catalog:",
+    "vitest": "^4.1.10"
   }
 }

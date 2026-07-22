@@ -14,6 +14,8 @@
  *   SESSION_SECRET       — Signs unsubscribe tokens (same as api-server)
  *   APP_URL              — Production URL (optional)
  *   DAILY_EMAIL_ONLY_USER — (test hook, optional) process only this user id
+ *   DAILY_EMAIL_DRY_RUN  — (optional) "1"/"true": log every send decision but
+ *                          send nothing, write nothing, trigger nothing
  */
 
 import { createHmac } from "node:crypto";
@@ -34,6 +36,7 @@ import {
 } from "@workspace/db";
 import { eq, and, desc, sql, isNotNull, isNull, gte } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
+import { resolveSendZone } from "./timezone";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -55,6 +58,13 @@ const NUDGE_LATEST_HOUR = 11;
 const ONLY_USER = process.env.DAILY_EMAIL_ONLY_USER
   ? parseInt(process.env.DAILY_EMAIL_ONLY_USER, 10)
   : null;
+
+// Dry-run: compute and log every send decision, but never send an email,
+// write state, or call the api-server's internal triggers. Safe to run
+// anywhere, anytime — including against production for a first verification.
+const DRY_RUN = ["1", "true", "yes"].includes(
+  (process.env.DAILY_EMAIL_DRY_RUN ?? "").trim().toLowerCase(),
+);
 
 // ─── Logging ──────────────────────────────────────────────────────────────────
 
@@ -835,10 +845,14 @@ async function run(): Promise<void> {
   // decides who is inside their local Sunday-evening/Monday-morning window
   // and is idempotent per (user, week) — calling it every hour is safe.
   // Runs BEFORE the Resend guard so chapters generate even if email is down.
-  await triggerChapterSweep();
-  await triggerMorningPush();
+  if (DRY_RUN) {
+    log("DRY RUN — no emails, no state writes, no internal triggers");
+  } else {
+    await triggerChapterSweep();
+    await triggerMorningPush();
+  }
 
-  if (!RESEND_API_KEY) {
+  if (!RESEND_API_KEY && !DRY_RUN) {
     log("RESEND_API_KEY not set — exiting without sending");
     return;
   }
@@ -873,18 +887,34 @@ async function run(): Promise<void> {
 
   log(`Eligible users found`, { count: users.length });
 
-  let sent = 0, skipped = 0, failed = 0, nudged = 0;
+  let sent = 0, skipped = 0, failed = 0, nudged = 0, held = 0;
 
   for (const user of users) {
     if (!user.userId || !user.email) { skipped++; continue; }
 
     // Respect opt-out
-    if (user.dailyEmailOptOut) { skipped++; continue; }
+    if (user.dailyEmailOptOut) {
+      if (DRY_RUN) log("dry-run decision", { userId: user.userId, decision: "opted-out" });
+      skipped++;
+      continue;
+    }
 
     // Test hook: restrict processing to a single user id
     if (ONLY_USER !== null && user.userId !== ONLY_USER) { skipped++; continue; }
 
-    const tz    = user.timezone ?? "UTC";
+    // Device zone first (most precise). A stored "UTC" is the never-captured
+    // placeholder → fall back to the country's representative zone. With
+    // neither, hold everything for this user (note AND nudges) — timing them
+    // to 6–9 AM UTC would be the wrong morning almost everywhere.
+    const zone = resolveSendZone(user.timezone, user.country);
+    if (!zone.zone) {
+      log(DRY_RUN ? "dry-run decision" : "Held — no usable timezone", {
+        userId: user.userId, decision: "held", reason: zone.holdReason,
+      });
+      held++;
+      continue;
+    }
+    const tz    = zone.zone;
     const today = todayLocal(tz);
     const hour  = localHour(tz);
 
@@ -896,8 +926,40 @@ async function run(): Promise<void> {
     const shouldSendDailyNote =
       user.lastEmailDate !== today && hour >= SEND_HOUR_START && hour <= SEND_HOUR_END;
 
-    if (!shouldSendDailyNote) skipped++;
-    else try {
+    if (!shouldSendDailyNote) {
+      if (DRY_RUN) {
+        log("dry-run decision", {
+          userId: user.userId,
+          decision: user.lastEmailDate === today ? "already-sent-today" : "outside-window",
+          zoneSource: zone.source, zone: tz, localHour: hour,
+        });
+      }
+      skipped++;
+    } else if (DRY_RUN) {
+      // Same read-only context gathering as a real send, so the logged
+      // decision is the true one — but no generation, no email, no writes.
+      const ctx = await gatherContext(user.userId, user.email, {
+        userName:         user.userName,
+        companionName:    user.companionName,
+        timezone:         tz,
+        userPath:         user.userPath,
+        userGender:       user.userGender,
+        userGenderCustom: user.userGenderCustom,
+        birthYear:        user.birthYear,
+        country:          user.country,
+        ageBand:          user.ageBand,
+        createdAt:        user.createdAt,
+      }).catch((err) => {
+        logErr("dry-run: context gather failed", err, { userId: user.userId });
+        return null;
+      });
+      log("dry-run decision", {
+        userId: user.userId,
+        decision: ctx ? "would-send-daily-note" : "would-skip-not-enough-data",
+        zoneSource: zone.source, zone: tz, localHour: hour,
+      });
+      skipped++;
+    } else try {
       // Gather personalized data
       const ctx = await gatherContext(user.userId, user.email, {
         userName:         user.userName,
@@ -965,7 +1027,7 @@ async function run(): Promise<void> {
           }
         }
 
-        log("Email sent", { userId: user.userId, day: today });
+        log("Email sent", { userId: user.userId, day: today, zoneSource: zone.source, zone: tz });
         sent++;
       }
 
@@ -975,6 +1037,7 @@ async function run(): Promise<void> {
     }
 
     // ── Timed commitment nudge — fires at the commitment's own morning hour ──
+    if (DRY_RUN) continue; // dry-run: never claim, generate, or send nudges
     try {
       nudged += await processTimedNudges(
         user.userId,
@@ -992,7 +1055,7 @@ async function run(): Promise<void> {
     }
   }
 
-  log("Daily email job complete", { sent, skipped, failed, nudged });
+  log("Daily email job complete", { sent, skipped, failed, nudged, held, dryRun: DRY_RUN });
 }
 
 // ─── Entry point ─────────────────────────────────────────────────────────────

@@ -27,6 +27,11 @@ description: How user timezone is captured, stored, and used across the app for 
 - `memory.ts` — manual habit completion via Journey UI
 - `chat.ts` — morning note dedup check
 
+## Email send-zone fallback (daily-email job)
+- `resolveSendZone(deviceZone, country)` in `artifacts/daily-email/src/timezone.ts`: device zone wins unless it is the `"UTC"` placeholder (case-insensitive; `"Etc/UTC"` counts as genuine device); then country → representative zone via complete ISO map + legacy-alias table; neither ⇒ hold (no email) — 6–9 AM UTC is the wrong morning almost everywhere.
+- Genuine-UTC devices are indistinguishable from the placeholder ⇒ they get country timing; self-corrects on next app open (browser re-syncs the real zone).
+- Prod reality check: users exist whose device zone ≠ their country's obvious zone — device-first is not optional.
+
 ## What intentionally stays UTC
 - `profile.ts` visit date recording — coarse "days since start" measure
 - `journey.ts` streak / `calculateStreak` on visit dates — same coarse measure

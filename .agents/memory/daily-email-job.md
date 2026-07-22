@@ -12,7 +12,9 @@ description: Architecture and deployment notes for the Eos personalized morning 
 
 ## Key design decisions
 
-**Timezone-aware delivery**: runs hourly, checks `localHour(user.timezone)`, sends only in [6, 9] window. Much better than a single global 7AM UTC send.
+**Timezone-aware delivery**: runs hourly, sends only in the [6, 9] local window. The zone comes from `resolveSendZone(timezone, country)` in `src/timezone.ts`: device zone first; a stored `"UTC"` is the never-captured placeholder and falls back to the country's representative IANA zone (most-populous zone for multi-zone countries, legacy aliases like UK/SU/ZR normalized); neither ⇒ user is HELD (no email, logged). The resolved zone feeds ALL downstream date math (dedup date, commitment hints) — never mix zones. A picker-parity unit test enforces the map covers every code `Intl.DisplayNames` can produce.
+
+**Dry-run mode**: `DAILY_EMAIL_DRY_RUN=1` logs every per-user send decision but sends nothing, writes nothing, and skips the internal chapter/push triggers — the safe way to verify a deployment or prod data before the first live run.
 
 **Dedup guard**: `lastEmailDate` (YYYY-MM-DD in user's timezone) on profile — skip if already sent today.
 
@@ -34,4 +36,5 @@ Claude claude-sonnet-4-5, `temperature: 0.8`. Anti-cliché prompt — explicit f
 1. Build: `pnpm --filter @workspace/daily-email run build`
 2. In Replit Publishing → new deployment → Scheduled → cron `0 * * * *`
 3. Run: `node --enable-source-maps artifacts/daily-email/dist/index.mjs`
-4. Env vars: DATABASE_URL, ANTHROPIC_API_KEY, RESEND_API_KEY, RESEND_FROM_EMAIL, SESSION_SECRET, APP_URL
+4. Deployment secrets — required: DATABASE_URL (production DB), DATA_ENCRYPTION_KEY (same value as main app or nothing decrypts), SESSION_SECRET (same as main app — signs unsubscribe links AND the internal chapter/push triggers), ANTHROPIC_API_KEY, RESEND_API_KEY. Recommended: RESEND_FROM_EMAIL, APP_URL (both have correct branded/prod defaults). Optional hooks: DAILY_EMAIL_ONLY_USER (single-user first run), DAILY_EMAIL_DRY_RUN (decisions only, no sends).
+5. VAPID keys are NOT needed here — the job never touches push; it only pings the main app's internal endpoints over HTTPS. Least privilege: leave them out of the scheduled deployment.
