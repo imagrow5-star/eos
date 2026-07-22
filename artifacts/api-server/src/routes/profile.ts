@@ -86,11 +86,44 @@ function buildProfilePayload(
       : null,
     timezone: (profile as any).timezone ?? "UTC",
     pushOptIn: (profile as any).pushOptIn ?? false,
+    consentVersion: (profile as any).consentVersion ?? null,
+    consentAt: (profile as any).consentAt ?? null,
+    dataSharingOptIn: (profile as any).dataSharingOptIn ?? false,
     createdAt: profile.createdAt,
     daysSinceStart,
     currentStage: stage,
   };
 }
+
+// ─── Consent (Phase A privacy) ────────────────────────────────────────────────
+// Records WHICH consent copy the user accepted and WHEN (server clock — never
+// trust a client timestamp). Idempotent: accepting a newer version overwrites.
+// dataSharingOptIn is a placeholder for any future sharing feature: nothing is
+// shared today, and it only ever becomes true by explicit opt-in here or in
+// settings — never by default.
+router.post("/profile/consent", async (req, res): Promise<void> => {
+  const userId = req.userId;
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const version = typeof body.version === "string" ? body.version.trim() : "";
+  if (!version || version.length > 64) {
+    res.status(400).json({ error: "version is required" });
+    return;
+  }
+  const dataSharingOptIn = body.dataSharingOptIn === true;
+
+  const profile = await getOrCreateProfileForUser(userId);
+  const [updated] = await db
+    .update(profileTable)
+    .set({ consentVersion: version, consentAt: new Date(), dataSharingOptIn } as any)
+    .where(eq(profileTable.id, profile.id))
+    .returning();
+  res.json({
+    ok: true,
+    consentVersion: (updated as any).consentVersion,
+    consentAt: (updated as any).consentAt,
+    dataSharingOptIn: (updated as any).dataSharingOptIn,
+  });
+});
 
 router.get("/profile", async (req, res): Promise<void> => {
   const userId = req.userId;

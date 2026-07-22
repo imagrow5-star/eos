@@ -1,5 +1,6 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import helmet from "helmet";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import pinoHttp from "pino-http";
@@ -230,8 +231,73 @@ app.use(
   }),
 );
 
-// Allow credentials (cookies) for same-origin requests through the Replit proxy
-app.use(cors({ origin: true, credentials: true }));
+// ─── Security headers (Phase A privacy hardening) ─────────────────────────────
+// The API serves JSON plus one self-contained HTML page (the account report),
+// so the CSP here is locked down hard. frame-ancestors 'self' keeps the
+// in-app report iframe working while blocking third-party embedding. The
+// frontend bundle gets its own CSP via a <meta> tag injected at build time
+// (see artifacts/aanya/vite.config.ts) because it is served as static files.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'none'"],
+        styleSrc: ["'unsafe-inline'"], // the account report page uses one inline <style> block
+        imgSrc: ["'self'", "data:"],
+        frameAncestors: ["'self'"],
+        baseUri: ["'none'"],
+        formAction: ["'self'"],
+      },
+    },
+    // CSP frame-ancestors above covers embedding; X-Frame-Options can't say "self + nothing else" cleanly
+    frameguard: false,
+    // Don't break same-origin audio blob playback in the app
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: "same-origin" },
+    // HSTS only in production — the workspace preview domain rotates
+    strictTransportSecurity: process.env.NODE_ENV === "production" ? undefined : false,
+  }),
+);
+
+// ─── CORS allow-list (Phase A) ─────────────────────────────────────────────────
+// Replaces the previous reflect-any-origin policy. Requests WITHOUT an Origin
+// header (same-origin navigations, curl, ElevenLabs custom-LLM and scheduler
+// server-to-server calls) pass through untouched; cross-origin browser
+// requests only get CORS headers when the origin is one of ours.
+const CORS_ALLOWED_HOSTS = new Set(
+  [
+    "eoscompanion.com",
+    "www.eoscompanion.com",
+    "eos-companion.replit.app", // published fallback domain
+    process.env.REPLIT_DEV_DOMAIN ?? "", // workspace preview (dev only)
+    "localhost",
+    "127.0.0.1",
+  ]
+    .filter(Boolean)
+    .map((h) => h.toLowerCase()),
+);
+
+export function isAllowedOrigin(origin: string | undefined): boolean {
+  if (!origin) return true; // no Origin header — not a cross-origin browser request
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return false;
+    // EXACT hosts only. No wildcard suffixes: any repl gets a *.replit.dev
+    // domain, so a suffix rule would let attacker-controlled repls become
+    // trusted origins for credentialed requests (review finding). The
+    // workspace's own preview host is covered exactly via REPLIT_DEV_DOMAIN.
+    return CORS_ALLOWED_HOSTS.has(url.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+app.use(
+  cors({
+    origin: (origin, cb) => cb(null, isAllowedOrigin(origin ?? undefined)),
+    credentials: true,
+  }),
+);
 
 // ─── Session store (Postgres-backed, survives restarts) ───────────────────────
 const PgStore = connectPgSimple(session);

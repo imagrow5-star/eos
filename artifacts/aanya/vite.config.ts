@@ -27,9 +27,42 @@ if (!basePath) {
   );
 }
 
+// ─── Content-Security-Policy (Phase A privacy hardening) ──────────────────────
+// Injected as a <meta> tag into PRODUCTION builds only (`apply: 'build'`) —
+// the dev server needs Vite's inline HMR client, and the built app is served
+// as static files so there is no server to add the header. frame-ancestors
+// cannot be set via <meta>; noted on the API side instead.
+const cspMetaPlugin = {
+  name: 'inject-csp-meta',
+  apply: 'build' as const,
+  transformIndexHtml(html: string) {
+    const csp = [
+      "default-src 'self'",
+      "script-src 'self'",
+      // Tailwind/Framer set inline style attributes; Google Fonts serves the CSS
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "font-src 'self' https://fonts.gstatic.com data:",
+      "img-src 'self' data: blob:",
+      "media-src 'self' blob: data:",
+      // ElevenLabs realtime voice (websocket + REST, incl. regional/WebRTC hosts)
+      "connect-src 'self' https://api.elevenlabs.io wss://api.elevenlabs.io https://*.elevenlabs.io wss://*.elevenlabs.io https://*.livekit.cloud wss://*.livekit.cloud",
+      "worker-src 'self'",
+      "manifest-src 'self'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join('; ');
+    return html.replace(
+      '</title>',
+      `</title>\n    <meta http-equiv="Content-Security-Policy" content="${csp}">`,
+    );
+  },
+};
+
 export default defineConfig({
   base: basePath,
   plugins: [
+    cspMetaPlugin,
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),

@@ -21,9 +21,15 @@ export interface AgentStateView {
   skipTurnToolPresent: boolean;
   softTimeoutSeconds: number;
   speculativeTurn: boolean;
+  /** platform_settings.privacy.retention_days — 0 = delete after processing */
+  retentionDays: number;
 }
 
 export const DESIRED_AGENT_STATE: AgentStateView = {
+  // Privacy (Phase A): ElevenLabs must not keep transcripts or audio around.
+  // 0 = scheduled deletion right after processing (their documented minimum);
+  // -1 would mean unlimited and the ElevenLabs default is ~2 years.
+  retentionDays: 0,
   // Disabled: Claude over-skipped on short asks ("What do you think about
   // it?") and on speculative half-transcripts that always look unfinished.
   skipTurnToolPresent: false,
@@ -46,11 +52,16 @@ export function readAgentState(agentJson: unknown): AgentStateView {
   const cc = (agentJson as { conversation_config?: any })?.conversation_config ?? {};
   const prompt = cc.agent?.prompt ?? {};
   const tools: Array<{ name?: string }> = Array.isArray(prompt.tools) ? prompt.tools : [];
+  const platform = (agentJson as { platform_settings?: any })?.platform_settings ?? {};
   return {
     skipTurnToolPresent:
       tools.some((t) => t?.name === "skip_turn") || Boolean(prompt.built_in_tools?.skip_turn),
     softTimeoutSeconds: cc.turn?.soft_timeout_config?.timeout_seconds ?? -1,
     speculativeTurn: Boolean(cc.turn?.speculative_turn),
+    // Absent field ⇒ ElevenLabs default (~2 years) ⇒ report as -1 so the
+    // guard sees drift and pins it to the desired value.
+    retentionDays:
+      typeof platform.privacy?.retention_days === "number" ? platform.privacy.retention_days : -1,
   };
 }
 
@@ -74,12 +85,21 @@ export function computeAgentPatch(
   if (current.speculativeTurn !== desired.speculativeTurn) {
     turn.speculative_turn = desired.speculativeTurn;
   }
+  const privacy: Record<string, unknown> = {};
+  if (current.retentionDays !== desired.retentionDays) {
+    privacy.retention_days = desired.retentionDays;
+  }
 
-  if (!Object.keys(prompt).length && !Object.keys(turn).length) return null;
+  if (!Object.keys(prompt).length && !Object.keys(turn).length && !Object.keys(privacy).length) {
+    return null;
+  }
+  const body: Record<string, unknown> = {};
   const cc: Record<string, unknown> = {};
   if (Object.keys(prompt).length) cc.agent = { prompt };
   if (Object.keys(turn).length) cc.turn = turn;
-  return { conversation_config: cc };
+  if (Object.keys(cc).length) body.conversation_config = cc;
+  if (Object.keys(privacy).length) body.platform_settings = { privacy };
+  return body;
 }
 
 export async function reconcileAgentConfig(): Promise<

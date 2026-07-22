@@ -49,6 +49,10 @@ RESEND_FROM_EMAIL = "Eos <hello@eoscompanion.com>"
 VOICE_CALL_ENABLED = "true"
 
 [userenv.development]
+VAPID_PRIVATE_KEY = "6ReWXtQL9-OhtYKKoe2UGGQuODRbYVEuP-81mMpBG1k"
+VAPID_PUBLIC_KEY = "BFuc202uPge_Tg1jlSmykMpw1ErO6qGTBCQe-Q6edyTgBscFYc3miVLooVFktcyvuEcxyLmPGCNIPJPp1hbPpc4"
 
 [userenv.production]
 APP_URL = "https://eoscompanion.com"
+VAPID_PRIVATE_KEY = "mnfQYacUlCrBTP_1o123Q2nYaSqfsx-AuZLHpMrxbhg"
+VAPID_PUBLIC_KEY = "BCw--aHJ_abFmSYqVV1SvIJPGMxw70xbtAC2JRE-mdNXcJDxHykUGYhqB32Q6iYkyAbjWXPuMIJmLTQxAMzi5bE"

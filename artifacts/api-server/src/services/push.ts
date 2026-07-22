@@ -18,7 +18,6 @@ import {
   usersTable,
   pushSubscriptionsTable,
   pushEventsTable,
-  pushConfigTable,
 } from "@workspace/db";
 import { isNotNull } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
@@ -62,21 +61,21 @@ let _keys: { publicKey: string; privateKey: string } | null = null;
 
 export async function ensureVapidKeys(): Promise<{ publicKey: string; privateKey: string }> {
   if (_keys) return _keys;
-  const [existing] = await db.select().from(pushConfigTable).limit(1);
-  if (existing) {
-    _keys = { publicKey: existing.vapidPublicKey, privateKey: existing.vapidPrivateKey };
-    return _keys;
+  // Privacy (Phase A): VAPID signing keys live in environment secrets, NOT in
+  // the database. Database access must never be enough to push notifications
+  // to users' devices. Each environment (dev / prod) has its own pair.
+  // Legacy note: keys used to live in the push_config table; that row is now
+  // ignored (dev row removed; prod table dropped in a later cleanup pass).
+  const publicKey = process.env.VAPID_PUBLIC_KEY;
+  const privateKey = process.env.VAPID_PRIVATE_KEY;
+  if (!publicKey || !privateKey) {
+    throw new Error(
+      "VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY are not set for this environment. " +
+        "Web push cannot start without them — add them as environment secrets.",
+    );
   }
-  const generated = getWebPush().generateVAPIDKeys();
-  await db
-    .insert(pushConfigTable)
-    .values({ id: 1, vapidPublicKey: generated.publicKey, vapidPrivateKey: generated.privateKey })
-    .onConflictDoNothing();
-  // Re-read: if a concurrent boot won the insert race, use ITS keys.
-  const [row] = await db.select().from(pushConfigTable).limit(1);
-  if (!row) throw new Error("push_config insert failed");
-  _keys = { publicKey: row.vapidPublicKey, privateKey: row.vapidPrivateKey };
-  logger.info("push: VAPID keys ready");
+  _keys = { publicKey, privateKey };
+  logger.info("push: VAPID keys ready (env)");
   return _keys;
 }
 

@@ -9,7 +9,10 @@ import Chapters from "@/pages/Chapters";
 import Memory from "@/pages/Memory";
 import { AuthScreen } from "@/pages/AuthScreen";
 import { EmailVerificationGate } from "@/pages/EmailVerificationGate";
+import { ConsentGate } from "@/pages/ConsentGate";
+import { Privacy } from "@/pages/Privacy";
 import { SplashScreen } from "@/components/SplashScreen";
+import { CONSENT_VERSION } from "@/lib/consent";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -89,6 +92,25 @@ function AuthGate() {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Consent check (Phase A privacy) — runs only once authenticated + verified.
+  // New users see the consent screen BEFORE onboarding asks anything personal;
+  // existing users see it once when the consent copy version changes.
+  const authedAndVerified = Boolean(data?.emailVerified);
+  const {
+    data: consentProfile,
+    isLoading: consentLoading,
+    isError: consentError,
+  } = useQuery({
+    queryKey: ["/api/profile", "consent-gate"],
+    enabled: authedAndVerified,
+    queryFn: async () => {
+      const r = await apiFetch(`${import.meta.env.BASE_URL}api/profile`);
+      if (!r.ok) throw new Error("Profile unavailable");
+      return r.json() as Promise<{ consentVersion?: string | null; userName?: string }>;
+    },
+    staleTime: Infinity,
+  });
+
   // Loading state (initial fetch or verifying token)
   if (isLoading || verifying) {
     return (
@@ -113,6 +135,44 @@ function AuthGate() {
     );
   }
 
+  // Consent gate — resolve before any page can collect or show personal data.
+  // Explicit error branch (review finding): never spinner-lock users when the
+  // profile fetch fails — offer a reload, which also recovers dead sessions.
+  if (consentError) {
+    return (
+      <div className="min-h-[100dvh] bg-background flex flex-col items-center justify-center gap-5 px-6">
+        <p className="text-sm text-muted-foreground/70 text-center max-w-xs leading-relaxed">
+          We couldn't load your profile. Please check your connection and try again.
+        </p>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-6 py-2.5 rounded-xl border border-primary/40 text-primary text-sm hover:bg-primary/10 transition-colors"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+  if (consentLoading || !consentProfile) {
+    return (
+      <div className="min-h-[100dvh] bg-background flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+      </div>
+    );
+  }
+  if (consentProfile.consentVersion !== CONSENT_VERSION) {
+    return (
+      <ConsentGate
+        isReturningUser={Boolean(consentProfile.userName)}
+        onDone={async () => {
+          // Resolves when the refetch settles; on failure the consentError
+          // branch above takes over, so the gate can never hang silently.
+          await qc.invalidateQueries({ queryKey: ["/api/profile", "consent-gate"] });
+        }}
+      />
+    );
+  }
+
   // Authenticated + verified — show the companion app inside the router
   return (
     <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "") || ""}>
@@ -124,6 +184,13 @@ function AuthGate() {
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 function App() {
+  // Public privacy page — reachable without an account so the sign-up screen
+  // and the consent step can link to it. Plain pathname check (full-page
+  // navigation) keeps it outside the authed router entirely.
+  const isPrivacyPage =
+    typeof window !== "undefined" &&
+    window.location.pathname.replace(/\/+$/, "").endsWith("/privacy");
+
   // Show splash once per browser session — sessionStorage resets when the tab
   // is closed, so the user sees it on every fresh visit but not on in-app nav.
   const [showSplash, setShowSplash] = useState(() => {
@@ -159,6 +226,10 @@ function App() {
     } catch {}
     setShowSplash(false);
   };
+
+  if (isPrivacyPage) {
+    return <Privacy />;
+  }
 
   return (
     <QueryClientProvider client={queryClient}>

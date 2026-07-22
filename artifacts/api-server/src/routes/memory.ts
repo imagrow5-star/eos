@@ -51,6 +51,27 @@ router.get("/memory/facts", async (req, res): Promise<void> => {
   res.json(GetMemoryFactsResponse.parse(facts));
 });
 
+// ─── Forget this (Phase A privacy) ───────────────────────────────────────────
+// Permanently deletes ONE remembered fact. Hard delete, ownership-checked —
+// it disappears from the system prompt on the very next message.
+router.delete("/memory/facts/:id", async (req, res): Promise<void> => {
+  const userId = req.userId;
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "invalid id" });
+    return;
+  }
+  const deleted = await db
+    .delete(memoryFactsTable)
+    .where(and(eq(memoryFactsTable.id, id), eq(memoryFactsTable.userId, userId)))
+    .returning({ id: memoryFactsTable.id });
+  if (deleted.length === 0) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
 // ─── Personality signals ─────────────────────────────────────────────────────
 
 router.get("/memory/signals", async (req, res): Promise<void> => {

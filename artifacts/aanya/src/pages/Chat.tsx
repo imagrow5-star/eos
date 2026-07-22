@@ -212,6 +212,23 @@ export default function Chat() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [continuousVoice, setContinuousVoice] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // "Forget this" (Phase A privacy) — tap a message to arm, confirm to delete
+  const [forgetArmedId, setForgetArmedId] = useState<number | null>(null);
+  const [forgetBusyId, setForgetBusyId] = useState<number | null>(null);
+  const handleForgetMessage = async (id: number) => {
+    setForgetBusyId(id);
+    try {
+      const r = await apiFetch(`${import.meta.env.BASE_URL}api/chat/messages/${id}`, {
+        method: "DELETE",
+      });
+      if (r.ok) {
+        setForgetArmedId(null);
+        queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
+      }
+    } finally {
+      setForgetBusyId(null);
+    }
+  };
   const [renameValue, setRenameValue] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
@@ -827,15 +844,15 @@ export default function Chat() {
       if (phase === "speaking") {
         // Mic was armed for barge-in while she talks — filter out her own voice.
         if (isLikelyEcho(text)) {
-          console.log("[voice-call] ignored echo:", JSON.stringify(text));
+          console.log("[voice-call] ignored echo (len " + text.length + ")");
           return;
         }
         // Genuine barge-in: cut her off and treat this as the user's turn.
-        console.log("[voice-call] barge-in (final):", JSON.stringify(text));
+        console.log("[voice-call] barge-in (final, len " + text.length + ")");
         interruptSpeech({ resumeListening: false });
       } else if (phase === "thinking") {
         // Already processing a turn — a late final result would double-send.
-        console.log("[voice-call] ignored transcript during thinking:", JSON.stringify(text));
+        console.log("[voice-call] ignored transcript during thinking (len " + text.length + ")");
         return;
       }
 
@@ -850,7 +867,7 @@ export default function Chat() {
       setVoiceCallPhase("thinking");
       setVoiceCallRecognizedText(text);   // show what was heard on screen
       setVoiceCallMessage(null);
-      console.log("[voice-call] transcript →", JSON.stringify(text));
+      console.log("[voice-call] transcript received (len " + text.length + ")");
       handleSend({ content: text });
     } else {
       form.setValue("content", text);
@@ -871,7 +888,7 @@ export default function Chat() {
         text.trim().split(/\s+/).length >= 2 &&
         !isLikelyEcho(text)
       ) {
-        console.log("[voice-call] barge-in (interim):", JSON.stringify(text));
+        console.log("[voice-call] barge-in (interim, len " + text.length + ")");
         interruptSpeech({ resumeListening: true });
       }
       return;
@@ -987,7 +1004,7 @@ export default function Chat() {
       }
       return;
     }
-    console.log("[voice-call] speaking reply:", JSON.stringify(text.slice(0, 60)));
+    console.log("[voice-call] speaking reply (len " + text.length + ")");
     spokenTextRef.current = text; // echo-guard reference for barge-in
     speakText(text, {
       voiceId: activeVoiceId,
@@ -1739,6 +1756,9 @@ export default function Chat() {
                   </span>
                 )}
                 <div
+                  onClick={() =>
+                    setForgetArmedId((cur) => (cur === msg.id ? null : msg.id))
+                  }
                   className={cn(
                     "px-[18px] py-3 leading-relaxed relative",
                     isCompanion
@@ -1772,6 +1792,35 @@ export default function Chat() {
                     </span>
                   )}
                 </div>
+
+                {/* ── Forget this (Phase A privacy) — tap bubble to arm ── */}
+                {forgetArmedId === msg.id && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -2 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={cn(
+                      "flex items-center gap-3 mt-1.5",
+                      isCompanion ? "ml-1" : "mr-1",
+                    )}
+                  >
+                    <span className="text-[10px] text-muted-foreground/50">
+                      Forget this message — permanently?
+                    </span>
+                    <button
+                      onClick={() => handleForgetMessage(msg.id)}
+                      disabled={forgetBusyId === msg.id}
+                      className="text-[10px] uppercase tracking-wider text-amber-400/90 hover:text-amber-300 transition-colors disabled:opacity-50"
+                    >
+                      {forgetBusyId === msg.id ? "Forgetting…" : "Forget"}
+                    </button>
+                    <button
+                      onClick={() => setForgetArmedId(null)}
+                      className="text-[10px] uppercase tracking-wider text-muted-foreground/50 hover:text-muted-foreground/80 transition-colors"
+                    >
+                      Keep
+                    </button>
+                  </motion.div>
+                )}
 
                 {/* ── Per-message speaker button ── */}
                 {isCompanion && (
@@ -2235,6 +2284,27 @@ export default function Chat() {
               {pushNote && (
                 <p className="text-[10.5px] text-amber-400/70 mt-2 leading-relaxed">{pushNote}</p>
               )}
+            </div>
+
+            {/* ── Privacy ─────────────────────────────────────────────────── */}
+            <div>
+              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
+                Privacy
+              </p>
+              <p className="text-[13px] text-foreground/75">Your words stay yours</p>
+              <p className="text-[10.5px] text-muted-foreground/45 mt-1 leading-relaxed">
+                What's kept, who helps run Eos, and how to take anything back — in plain language.
+                To make her forget something specific, tap any message in your conversation, or a
+                memory on the Memory page.
+              </p>
+              <a
+                href={`${import.meta.env.BASE_URL}privacy`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-block mt-2 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors"
+              >
+                Read the privacy page
+              </a>
             </div>
 
             {/* ── Voice picker ────────────────────────────────────────────── */}

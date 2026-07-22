@@ -472,7 +472,13 @@ export function AuthScreen() {
         animate={{ opacity: 1 }}
         transition={{ delay: 0.4 }}
       >
-        Your conversations and memories are completely private — visible only to you.
+        Your conversations and memories are completely private — visible only to you.{" "}
+        <a
+          href={`${import.meta.env.BASE_URL}privacy`}
+          className="text-primary/60 hover:text-primary underline underline-offset-2 transition-colors"
+        >
+          How your data is handled
+        </a>
       </motion.p>
     </div>
   );

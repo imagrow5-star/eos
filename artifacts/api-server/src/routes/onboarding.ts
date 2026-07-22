@@ -368,7 +368,8 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
       isMorningNote: false,
     });
 
-    logger.info({ companionName, name, userPath: updated.userPath }, "Onboarding complete — first greeting saved");
+    // Privacy: companionName/name are user-supplied — log ids and path only.
+    logger.info({ userId, userPath: updated.userPath }, "Onboarding complete — first greeting saved");
   }
 
   const nextQuestion = updated ? getStepQuestion(updated.onboardingStep, updated as Profile) : null;

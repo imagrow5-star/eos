@@ -33,6 +33,10 @@ export const profileTable = pgTable("profile", {
   pushOptIn: boolean("push_opt_in").notNull().default(false),
   lastEmailDate: text("last_email_date"), // YYYY-MM-DD — last date we sent a daily email, per their timezone
   lastGreetingAt: timestamp("last_greeting_at"), // when we last generated a contextual greeting (morning/evening/night)
+  // ── Privacy & consent (Phase A) ───────────────────────────────────────────
+  consentVersion: text("consent_version"), // version tag of the consent copy the user accepted (null = never consented)
+  consentAt: timestamp("consent_at"), // server timestamp when they accepted
+  dataSharingOptIn: boolean("data_sharing_opt_in").notNull().default(false), // placeholder for future data-sharing — nothing shares today; default OFF
 });
 
 export const insertProfileSchema = createInsertSchema(profileTable).omit({ id: true });

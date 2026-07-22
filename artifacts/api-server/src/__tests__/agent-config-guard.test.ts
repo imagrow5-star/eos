@@ -9,7 +9,12 @@ import {
 } from "../services/agentConfigGuard.js";
 import { buildVoiceCallAddendum } from "../services/ai.js";
 
-const SAFE_STATE = { skipTurnToolPresent: false, softTimeoutSeconds: -1, speculativeTurn: false };
+const SAFE_STATE = {
+  skipTurnToolPresent: false,
+  softTimeoutSeconds: -1,
+  speculativeTurn: false,
+  retentionDays: 0, // Phase A privacy: ElevenLabs deletes transcripts/audio after processing
+};
 
 describe("readAgentState — ElevenLabs agent JSON → view", () => {
   it("reads the July-2026 incident state (tool on, filler 1s, speculative on)", () => {
@@ -24,7 +29,20 @@ describe("readAgentState — ElevenLabs agent JSON → view", () => {
         turn: { speculative_turn: true, soft_timeout_config: { timeout_seconds: 1 } },
       },
     });
-    expect(view).toEqual({ skipTurnToolPresent: true, softTimeoutSeconds: 1, speculativeTurn: true });
+    expect(view).toEqual({
+      skipTurnToolPresent: true,
+      softTimeoutSeconds: 1,
+      speculativeTurn: true,
+      retentionDays: -1, // absent from fixture ⇒ unknown ⇒ reported as -1 (drift)
+    });
+  });
+
+  it("reads retention_days from platform_settings.privacy", () => {
+    const view = readAgentState({
+      conversation_config: {},
+      platform_settings: { privacy: { retention_days: 730 } },
+    });
+    expect(view.retentionDays).toBe(730);
   });
 
   it("detects skip_turn via built_in_tools even when the tools array is empty", () => {
@@ -37,8 +55,9 @@ describe("readAgentState — ElevenLabs agent JSON → view", () => {
     expect(view.skipTurnToolPresent).toBe(true);
   });
 
-  it("defaults to the safe state on missing fields", () => {
-    expect(readAgentState({})).toEqual(SAFE_STATE);
+  it("defaults to the safe conversation state on missing fields — but retention reads as unknown", () => {
+    // Missing retention must NOT read as safe: -1 forces the guard to pin it.
+    expect(readAgentState({})).toEqual({ ...SAFE_STATE, retentionDays: -1 });
   });
 });
 
@@ -60,11 +79,28 @@ describe("computeAgentPatch — minimal drift correction", () => {
       skipTurnToolPresent: false,
       softTimeoutSeconds: 1,
       speculativeTurn: true,
+      retentionDays: 0,
     });
     expect(patch).toEqual({
       conversation_config: {
         turn: { soft_timeout_config: { timeout_seconds: -1 }, speculative_turn: false },
       },
+    });
+  });
+
+  it("pins ElevenLabs retention to 0 via platform_settings when drifted (Phase A privacy)", () => {
+    const patch = computeAgentPatch({ ...SAFE_STATE, retentionDays: -1 });
+    expect(patch).toEqual({ platform_settings: { privacy: { retention_days: 0 } } });
+    // Default 2-year retention must also be corrected
+    const patch2 = computeAgentPatch({ ...SAFE_STATE, retentionDays: 730 });
+    expect(patch2).toEqual({ platform_settings: { privacy: { retention_days: 0 } } });
+  });
+
+  it("merges conversation and privacy drift into one PATCH body", () => {
+    const patch = computeAgentPatch({ ...SAFE_STATE, speculativeTurn: true, retentionDays: -1 });
+    expect(patch).toEqual({
+      conversation_config: { turn: { speculative_turn: false } },
+      platform_settings: { privacy: { retention_days: 0 } },
     });
   });
 

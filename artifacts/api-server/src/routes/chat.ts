@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, asc, sql, and } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { messagesTable, profileTable, commitmentsTable, habitsTable, moodScoresTable, habitCompletionsTable, personalizationStateTable } from "@workspace/db";
+import { messagesTable, profileTable, commitmentsTable, habitsTable, moodScoresTable, habitCompletionsTable, personalizationStateTable, storyThreadsTable, chapterQuoteDismissalsTable } from "@workspace/db";
+import type { StoryRetelling } from "@workspace/db";
 import {
   GetMessagesResponse,
   SendMessageBody,
@@ -33,6 +34,69 @@ router.get("/chat/messages", async (req, res): Promise<void> => {
     .orderBy(asc(messagesTable.createdAt));
 
   res.json(GetMessagesResponse.parse(messages));
+});
+
+// ─── Forget this (Phase A privacy) ───────────────────────────────────────────
+// Hard-deletes ONE message and scrubs everywhere its words could resurface:
+//   • the messages row itself (which also removes it from the verbatim quote
+//     pool future weekly chapters draw from — generation reads messages live)
+//   • story_threads retellings that quote it verbatim (question text nulled,
+//     summary/framing stay — they are neutral paraphrases, never quotes)
+//   • chapter_quote_dismissals rows that reference it (housekeeping)
+// One transaction — a message must never vanish while a thread still quotes
+// it. Already-written chapters keep their wording (documented on /privacy).
+router.delete("/chat/messages/:id", async (req, res): Promise<void> => {
+  const userId = req.userId;
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "invalid id" });
+    return;
+  }
+  const result = await db.transaction(async (tx) => {
+    const deleted = await tx
+      .delete(messagesTable)
+      .where(and(eq(messagesTable.id, id), eq(messagesTable.userId, userId)))
+      .returning({ id: messagesTable.id });
+    if (deleted.length === 0) return { ok: false };
+
+    await tx
+      .delete(chapterQuoteDismissalsTable)
+      .where(
+        and(
+          eq(chapterQuoteDismissalsTable.userId, userId),
+          eq(chapterQuoteDismissalsTable.messageId, id),
+        ),
+      );
+
+    const threads = await tx
+      .select()
+      .from(storyThreadsTable)
+      .where(eq(storyThreadsTable.userId, userId));
+    for (const thread of threads) {
+      const retellings = (thread.retellings ?? []) as StoryRetelling[];
+      let touched = false;
+      const scrubbed = retellings.map((r) => {
+        if (r.questionMessageId === id) {
+          touched = true;
+          return { ...r, question: null, questionMessageId: null };
+        }
+        return r;
+      });
+      if (touched) {
+        await tx
+          .update(storyThreadsTable)
+          .set({ retellings: scrubbed, updatedAt: new Date() })
+          .where(eq(storyThreadsTable.id, thread.id));
+      }
+    }
+    return { ok: true };
+  });
+  if (!result.ok) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  logger.info({ userId, messageId: id }, "Message forgotten on request");
+  res.json({ ok: true });
 });
 
 // ─── Streaming chat endpoint ─────────────────────────────────────────────────

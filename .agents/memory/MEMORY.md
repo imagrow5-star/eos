@@ -30,6 +30,7 @@
 - [Conversational goal-setting](conversational-goal-setting.md) — extraction needs agreement + CHRONOLOGY gates (proposal turn must not create); declines → 7-day cooldown; Publish auto-syncs prod schema, never hand-migrate
 - [Profile basics (age+country)](profile-basics.md) — birthYear + derived band, UK alias, never-guess country; adults-only gate re-checked server-side on every late step; AGE_BANDS whitelist guards prompts
 - [Weekly chapters](weekly-chapters.md) — verbatim-quote + crisis + kind-truth hard gates; HMAC hourly trigger via email job; new user tables must satisfy deletion/export/summary guards
-- [Web push](web-push.md) — VAPID in DB per env; 2/day cap + morning dedup claimed under advisory xact-lock (conditional INSERT alone races); iOS needs A2HS; pushOptIn must be in zod profile schema
+- [Web push](web-push.md) — VAPID env-only (never DB); 2/day cap + morning dedup claimed under advisory xact-lock (conditional INSERT alone races); iOS needs A2HS; pushOptIn must be in zod profile schema
 - [Sealed notes & story threads](sealed-notes-story-threads.md) — paired chapter↔note transitions need one transaction + row-count asserts; crisis-at-write care reply; frozen threads never in chapters
 - [E2E stale bundle](e2e-stale-bundle.md) — after frontend edits + restart, tester browser may still run the old bundle; re-run in a fresh context before debugging
+- [Privacy hardening](privacy-hardening.md) — consent version gate (bump = re-consent all), forget-this scrub cascade, exact-host CORS (never *.replit.dev wildcard), env VAPID, ElevenLabs retention 0

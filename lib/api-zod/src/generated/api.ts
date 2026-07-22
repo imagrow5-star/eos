@@ -64,7 +64,10 @@ export const GetProfileResponse = zod.object({
   "birthYear": zod.number().nullish().describe('Approximate birth year — adults only, null when not shared'),
   "ageYears": zod.number().nullish().describe('Current age computed from birthYear — null when not shared'),
   "timezone": zod.string().describe('IANA timezone string e.g. America/New_York'),
-  "pushOptIn": zod.boolean().optional().describe('Web-push notifications enabled (opt-in only, default false)')
+  "pushOptIn": zod.boolean().optional().describe('Web-push notifications enabled (opt-in only, default false)'),
+  "consentVersion": zod.string().nullish().describe('Version tag of the consent copy the user accepted — null = never consented'),
+  "consentAt": zod.coerce.date().nullish().describe('Server timestamp when consent was recorded'),
+  "dataSharingOptIn": zod.boolean().optional().describe('Placeholder for future data-sharing — nothing shares today; default false')
 })
 
 

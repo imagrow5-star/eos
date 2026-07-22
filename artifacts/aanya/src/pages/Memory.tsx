@@ -1,12 +1,34 @@
-import { useGetProfile, useGetMemoryFacts, useGetPersonalitySignals } from "@workspace/api-client-react";
+import { useState } from "react";
+import { useGetProfile, useGetMemoryFacts, useGetPersonalitySignals, getGetMemoryFactsQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Sparkles, BookOpen, Check, Eye } from "lucide-react";
+import { Sparkles, BookOpen, Check, Eye, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api";
 
 export default function Memory() {
   const { data: profile } = useGetProfile();
   const { data: facts = [] } = useGetMemoryFacts();
   const { data: signals = [] } = useGetPersonalitySignals();
+  const queryClient = useQueryClient();
+
+  // "Forget this" (Phase A privacy) — first tap arms, second tap deletes.
+  const [armedFactId, setArmedFactId] = useState<number | null>(null);
+  const [busyFactId, setBusyFactId] = useState<number | null>(null);
+  const forgetFact = async (id: number) => {
+    setBusyFactId(id);
+    try {
+      const r = await apiFetch(`${import.meta.env.BASE_URL}api/memory/facts/${id}`, {
+        method: "DELETE",
+      });
+      if (r.ok) {
+        await queryClient.invalidateQueries({ queryKey: getGetMemoryFactsQueryKey() });
+      }
+    } finally {
+      setBusyFactId(null);
+      setArmedFactId(null);
+    }
+  };
 
   const companionName = profile?.companionName || "Asha";
 
@@ -136,9 +158,26 @@ export default function Memory() {
                         {categoryFacts.map((fact) => (
                           <span
                             key={fact.id}
-                            className="inline-flex px-3 py-1.5 bg-card border border-primary/15 rounded-full text-[13px] text-foreground/75 font-serif"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-card border border-primary/15 rounded-full text-[13px] text-foreground/75 font-serif"
                           >
                             {fact.fact}
+                            {armedFactId === fact.id ? (
+                              <button
+                                onClick={() => forgetFact(fact.id)}
+                                disabled={busyFactId === fact.id}
+                                className="text-[9px] uppercase tracking-[0.15em] text-amber-400/90 hover:text-amber-300 font-sans transition-colors disabled:opacity-50"
+                              >
+                                {busyFactId === fact.id ? "…" : "forget?"}
+                              </button>
+                            ) : (
+                              <button
+                                aria-label={`Forget "${fact.fact}"`}
+                                onClick={() => setArmedFactId(fact.id)}
+                                className="opacity-35 hover:opacity-90 transition-opacity"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
                           </span>
                         ))}
                       </div>

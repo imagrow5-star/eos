@@ -572,7 +572,8 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
       const raw = textBlock.text.replace(/```(?:json)?\n?/g, "").trim();
       extracted = JSON.parse(raw) as ExtractedMemory;
     } catch {
-      logger.warn({ text: textBlock.text }, "Failed to parse memory extraction JSON");
+      // Privacy: never log the raw LLM output — it can quote the user's words.
+      logger.warn({ rawLength: textBlock.text.length }, "Failed to parse memory extraction JSON");
       return;
     }
 
@@ -765,7 +766,7 @@ RULES — read carefully:
         scheduledTime: validTime(result.newCommitment.scheduledTime),
         state: "open",
       });
-      logger.info({ content: result.newCommitment.content }, "New commitment saved");
+      logger.info({ userId }, "New commitment saved");
     }
 
     // Apply state updates
@@ -997,7 +998,7 @@ RULES:
         isActive: true,
         streak: 0,
       });
-      logger.info({ name: result.newHabit.name }, "New habit created from conversation");
+      logger.info({ userId }, "New habit created from conversation");
     }
 
     // Create new goal if agreed upon — identical to a Journey-form goal from
@@ -1007,7 +1008,7 @@ RULES:
       const description =
         typeof result.newGoal.description === "string" ? result.newGoal.description : "";
       await createGoalWithTasks(userId, title, description, { dedupeActive: true });
-      logger.info({ title }, "New goal created from conversation");
+      logger.info({ userId }, "New goal created from conversation");
     }
 
     // Offer declined → start the re-offer cooldown the system prompt reads.
@@ -1189,7 +1190,7 @@ export async function createGoalWithTasks(
     const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
     const dup = existing.find((g) => norm(g.title) === norm(cleanTitle));
     if (dup) {
-      logger.info({ goalId: dup.id, title: cleanTitle }, "Goal creation skipped — active duplicate");
+      logger.info({ goalId: dup.id }, "Goal creation skipped — active duplicate");
       const tasks = await db
         .select()
         .from(goalTasksTable)
