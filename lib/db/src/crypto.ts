@@ -25,7 +25,8 @@
  *
  * ─── KEY LOSS = DATA LOSS ────────────────────────────────────────────────────
  * The master key lives ONLY in the DATA_ENCRYPTION_KEY environment secret
- * (32 bytes, base64). It is never written to the database or the repo.
+ * (32 random bytes — 44-char base64 or 64-char hex). It is never written to
+ * the database or the repo.
  * If this key is lost, every encrypted row becomes permanently unreadable —
  * there is no recovery path. The founder must keep a secure offline backup
  * of the key value for each environment.
@@ -55,10 +56,15 @@ export function loadDataKey(): Buffer | null {
     cachedKey = null;
     return null;
   }
-  const buf = Buffer.from(raw.trim(), "base64");
+  // Accept 32 random bytes in either common encoding: 64 hex chars
+  // (openssl rand -hex 32) or standard base64 (openssl rand -base64 32).
+  // Hex must be tested FIRST — a hex string also base64-decodes, but to 48
+  // (wrong) bytes. Surrounding quotes from copy-paste are tolerated.
+  const t = raw.trim().replace(/^["']|["']$/g, "");
+  const buf = /^[0-9a-fA-F]{64}$/.test(t) ? Buffer.from(t, "hex") : Buffer.from(t, "base64");
   if (buf.length !== 32) {
     throw new DataEncryptionError(
-      `DATA_ENCRYPTION_KEY must be 32 bytes of base64 (got ${buf.length} bytes after decode)`,
+      `DATA_ENCRYPTION_KEY must be 32 bytes — 44-char base64 or 64-char hex (got ${buf.length} bytes after decode)`,
     );
   }
   cachedKey = buf;

@@ -34,3 +34,4 @@
 - [Sealed notes & story threads](sealed-notes-story-threads.md) — paired chapter↔note transitions need one transaction + row-count asserts; crisis-at-write care reply; frozen threads never in chapters
 - [E2E stale bundle](e2e-stale-bundle.md) — after frontend edits + restart, tester browser may still run the old bundle; re-run in a fresh context before debugging
 - [Privacy hardening](privacy-hardening.md) — consent version gate (bump = re-consent all), forget-this scrub cascade, exact-host CORS (never *.replit.dev wildcard), env VAPID, ElevenLabs retention 0
+- [Data encryption at rest](data-encryption-at-rest.md) — enc:v1 GCM+AAD via drizzle customType; SQL can't peek encrypted cols (move checks to app code); keys via Secrets flow ONLY — setEnvVars→.replit leak burned a key

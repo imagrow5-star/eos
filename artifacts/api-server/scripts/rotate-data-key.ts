@@ -31,8 +31,13 @@ const TAG_LEN = 16;
 function loadKey(name: string): Buffer {
   const raw = process.env[name];
   if (!raw) throw new Error(`${name} is required`);
-  const key = Buffer.from(raw.trim(), "base64");
-  if (key.length !== 32) throw new Error(`${name} must be 32 bytes of base64`);
+  // Accept both encodings of 32 random bytes: 64 hex chars (openssl rand
+  // -hex 32) or standard base64 (openssl rand -base64 32). Hex must be
+  // tested first — a hex string is base64-decodable, but to the wrong length.
+  const t = raw.trim().replace(/^["']|["']$/g, "");
+  if (/^[0-9a-fA-F]{64}$/.test(t)) return Buffer.from(t, "hex");
+  const key = Buffer.from(t, "base64");
+  if (key.length !== 32) throw new Error(`${name} must be 32 bytes (base64 or 64 hex chars)`);
   return key;
 }
 
