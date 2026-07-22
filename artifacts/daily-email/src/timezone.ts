@@ -63,7 +63,7 @@ export function resolveSendZone(
 // Legacy / superseded ISO-3166 codes that Intl.DisplayNames still resolves to
 // a real country name. The country picker is built on DisplayNames, so these
 // are storable — each maps to the canonical code used in COUNTRY_DEFAULT_ZONE.
-const LEGACY_COUNTRY_ALIASES: Record<string, string> = {
+export const LEGACY_COUNTRY_ALIASES: Record<string, string> = {
   UK: "GB", // deliberate storage alias for United Kingdom
   AN: "CW", // Netherlands Antilles → Curaçao
   BU: "MM", // Burma → Myanmar
