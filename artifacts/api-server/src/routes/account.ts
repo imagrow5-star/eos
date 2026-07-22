@@ -65,8 +65,9 @@ function buildHtmlReport(data: {
   reminders: ExportRow[];
   personalitySignals: ExportRow[];
   personalizationState: ExportRow | null;
+  weeklyChapters: ExportRow[];
 }): string {
-  const { exportedAt, range, profile, messages, memoryFacts, wins, habits, habitCompletions, goals, moodScores, commitments, reminders, personalitySignals, personalizationState } = data;
+  const { exportedAt, range, profile, messages, memoryFacts, wins, habits, habitCompletions, goals, moodScores, commitments, reminders, personalitySignals, personalizationState, weeklyChapters } = data;
   const companionName = esc(profile?.companion_name ?? "Eos");
   const userPath = pathLabel(profile?.user_path as string);
 
@@ -157,6 +158,25 @@ function buildHtmlReport(data: {
   const signalsHtml = personalitySignals.length === 0
     ? `<p class="empty">No personality signals observed yet.</p>`
     : `<ul>${personalitySignals.map((s) => `<li>${esc(s.signal)}</li>`).join("")}</ul>`;
+
+  // ── Weekly chapters ───────────────────────────────────────────────────────────
+  const chaptersHtml = weeklyChapters.length === 0
+    ? `<p class="empty">No weekly chapters written yet.</p>`
+    : weeklyChapters
+        .map((ch) => {
+          const themes = Array.isArray(ch.themes) ? (ch.themes as Array<Record<string, unknown>>) : [];
+          const themeHtml = themes
+            .map((t) => {
+              const quotes = Array.isArray(t.quotes) ? (t.quotes as Array<Record<string, unknown>>) : [];
+              const quoteHtml = quotes
+                .map((q) => `<li>&ldquo;${esc(String(q.text ?? ""))}&rdquo; <span class="ts">${esc(String(q.date ?? ""))}</span></li>`)
+                .join("");
+              return `<p><span class="win-title">${esc(String(t.title ?? ""))}</span></p><ul>${quoteHtml}</ul>${t.reflection ? `<p>${esc(String(t.reflection))}</p>` : ""}`;
+            })
+            .join("");
+          return `<p><span class="win-title">Week of ${fmtDate(ch.week_start as string)}</span></p><p>${esc(String(ch.thread_opening ?? ""))}</p>${themeHtml}`;
+        })
+        .join("\n");
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -398,6 +418,11 @@ function buildHtmlReport(data: {
   </div>
 
   <div class="section">
+    <div class="section-title">Weekly chapters (${weeklyChapters.length})</div>
+    ${chaptersHtml}
+  </div>
+
+  <div class="section">
     <div class="section-title">Personalization state</div>
     ${personalizationState
       ? `<p>${esc(JSON.stringify(personalizationState))}</p>`
@@ -468,6 +493,9 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
   const commitmentsRange = buildRangeClause("created_at", false, range, 2);
   const remindersRange = buildRangeClause("created_at", false, range, 2);
   const signalsRange = buildRangeClause("created_at", false, range, 2);
+  const chaptersRange = buildRangeClause("created_at", false, range, 2);
+  const dismissalsRange = buildRangeClause("dismissed_at", false, range, 2);
+  const offerEventsRange = buildRangeClause("created_at", false, range, 2);
 
   const [
     messagesResult,
@@ -482,6 +510,9 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
     remindersResult,
     personalitySignalsResult,
     personalizationStateResult,
+    weeklyChaptersResult,
+    chapterDismissalsResult,
+    chapterOfferEventsResult,
   ] = await Promise.all([
     pool.query(
       `SELECT role, content, is_morning_note, created_at FROM messages WHERE user_id = $1${messagesRange.clause} ORDER BY created_at ASC`,
@@ -533,6 +564,19 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
       `SELECT recent_phrases, updated_at FROM personalization_state WHERE user_id = $1`,
       [userId],
     ),
+    pool.query(
+      `SELECT week_start, week_end, status, thread_opening, threshold_question, threshold_answer, threshold_mood, threshold_loneliness, threshold_skipped, themes, goal_review, micro_offer, generated_at, revealed_at, created_at
+       FROM weekly_chapters WHERE user_id = $1${chaptersRange.clause} ORDER BY week_start ASC`,
+      [userId, ...chaptersRange.params],
+    ),
+    pool.query(
+      `SELECT message_id, dismissed_at FROM chapter_quote_dismissals WHERE user_id = $1${dismissalsRange.clause} ORDER BY dismissed_at ASC`,
+      [userId, ...dismissalsRange.params],
+    ),
+    pool.query(
+      `SELECT chapter_id, action, created_at FROM chapter_offer_events WHERE user_id = $1${offerEventsRange.clause} ORDER BY created_at ASC`,
+      [userId, ...offerEventsRange.params],
+    ),
   ]);
 
   return {
@@ -550,6 +594,9 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
     reminders: remindersResult.rows,
     personalitySignals: personalitySignalsResult.rows,
     personalizationState: personalizationStateResult.rows[0] ?? null,
+    weeklyChapters: weeklyChaptersResult.rows,
+    chapterQuoteDismissals: chapterDismissalsResult.rows,
+    chapterOfferEvents: chapterOfferEventsResult.rows,
   };
 }
 
@@ -664,6 +711,9 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
       reminderResult,
       signalResult,
       habitCompletionResult,
+      weeklyChapterResult,
+      chapterDismissalResult,
+      chapterOfferEventResult,
     ] = await Promise.all([
       pool.query(
         `SELECT COUNT(*) AS count,
@@ -710,6 +760,18 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
          WHERE h.user_id = $1`,
         [userId],
       ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM weekly_chapters WHERE user_id = $1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM chapter_quote_dismissals WHERE user_id = $1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM chapter_offer_events WHERE user_id = $1`,
+        [userId],
+      ),
     ]);
 
     res.json({
@@ -723,6 +785,9 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
       reminderCount: parseInt(reminderResult.rows[0].count, 10),
       personalitySignalCount: parseInt(signalResult.rows[0].count, 10),
       habitCompletionCount: parseInt(habitCompletionResult.rows[0].count, 10),
+      weeklyChapterCount: parseInt(weeklyChapterResult.rows[0].count, 10),
+      chapterQuoteDismissalCount: parseInt(chapterDismissalResult.rows[0].count, 10),
+      chapterOfferEventCount: parseInt(chapterOfferEventResult.rows[0].count, 10),
       firstMessageAt: msgResult.rows[0].first_at ?? null,
       lastMessageAt:  msgResult.rows[0].last_at  ?? null,
     });

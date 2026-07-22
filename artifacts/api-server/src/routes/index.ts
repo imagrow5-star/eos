@@ -15,6 +15,7 @@ import commitmentsRouter from "./commitments";
 import accountRouter from "./account";
 import voiceLlmRouter from "./voice-llm";
 import voiceAgentRouter from "./voice-agent";
+import chaptersRouter, { chaptersInternalRouter } from "./chapters";
 
 const router: IRouter = Router();
 
@@ -25,6 +26,9 @@ router.use(emailRouter);  // one-click unsubscribe — no auth
 // ElevenLabs Conversational AI custom-LLM callback — called by ElevenLabs
 // servers (no browser session); authenticated per-call via HMAC voice token.
 router.use(voiceLlmRouter);
+// Weekly-chapter sweep — called hourly by the daily-email scheduled job;
+// authenticated per-call via HMAC internal token (no browser session).
+router.use(chaptersInternalRouter);
 
 // ─── Protected routes — valid session + verified email required ───────────────
 // requireAuth sets req.userId; requireVerified checks emailVerifiedAt in the DB.
@@ -41,5 +45,6 @@ router.use(goalsRouter);
 router.use(commitmentsRouter);
 router.use(accountRouter);
 router.use(voiceAgentRouter);
+router.use(chaptersRouter);
 
 export default router;

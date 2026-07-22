@@ -605,6 +605,7 @@ describe("GET /api/account/export?format=html", () => {
       reminders: "Reminders",
       personalitySignals: "Personality insights",
       personalizationState: "Personalization state",
+      weeklyChapters: "Weekly chapters",
     };
 
     // Payload keys that are intentionally NOT their own report section, with the
@@ -615,6 +616,10 @@ describe("GET /api/account/export?format=html", () => {
       range: "Optional date-range metadata — rendered in the cover, not a data category.",
       profile: "Rendered in the report cover (companion name, journey) rather than a standalone section.",
       habitCompletions: "Folded into the Habits section as per-habit completion counts, not a standalone section.",
+      chapterQuoteDismissals:
+        "Administrative preference records (which quotes the user hid) — no readable content; present in the JSON export.",
+      chapterOfferEvents:
+        "Administrative accept/decline log for chapter offers — the goals themselves render in the Goals section; present in the JSON export.",
     };
 
     const agentA = request.agent(app);

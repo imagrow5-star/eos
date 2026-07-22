@@ -29,3 +29,4 @@
 - [Email bounce & test pollution](email-bounce-and-test-pollution.md) — triage via Resend last_event (bounced = bad address, don't resend); tests stub Resend fetch; prod replica hides bad-column errors
 - [Conversational goal-setting](conversational-goal-setting.md) — extraction needs agreement + CHRONOLOGY gates (proposal turn must not create); declines → 7-day cooldown; Publish auto-syncs prod schema, never hand-migrate
 - [Profile basics (age+country)](profile-basics.md) — birthYear + derived band, UK alias, never-guess country; adults-only gate re-checked server-side on every late step; AGE_BANDS whitelist guards prompts
+- [Weekly chapters](weekly-chapters.md) — verbatim-quote + crisis + kind-truth hard gates; HMAC hourly trigger via email job; new user tables must satisfy deletion/export/summary guards

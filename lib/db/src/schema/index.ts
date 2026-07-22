@@ -9,3 +9,4 @@ export * from "./passwordResetTokens";
 export * from "./emailVerificationTokens";
 export * from "./userSessions";
 export * from "./personalizationState";
+export * from "./weeklyChapters";

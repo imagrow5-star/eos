@@ -456,6 +456,9 @@ describe("DELETE /api/auth/account", () => {
       "password_reset_tokens",
       "email_verification_tokens",
       "personalization_state",
+      "weekly_chapters",
+      "chapter_quote_dismissals",
+      "chapter_offer_events",
     ]);
 
     // ── INDIRECT tables: store the user's id WITHOUT a `user_id` column, so the

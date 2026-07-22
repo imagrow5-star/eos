@@ -30,8 +30,9 @@ import {
   personalizationStateTable,
   goalsTable,
   goalTasksTable,
+  weeklyChaptersTable,
 } from "@workspace/db";
-import { eq, and, desc, sql, isNotNull } from "drizzle-orm";
+import { eq, and, desc, sql, isNotNull, isNull, gte } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -198,6 +199,8 @@ interface UserContext {
   recentPhrases: string[];
   genderNote: string;
   basicsNote: string;
+  /** id of a freshly generated weekly chapter they haven't opened yet */
+  chapterWaitingId: number | null;
 }
 
 /**
@@ -390,6 +393,21 @@ async function gatherContext(
     (Date.now() - profile.createdAt.getTime()) / (1000 * 60 * 60 * 24),
   );
 
+  // Weekly chapter waiting? (generated recently, not yet opened, not yet
+  // mentioned in an email) — the note gets ONE warm line about it.
+  const chapterCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const waitingChapters = await db
+    .select({ id: weeklyChaptersTable.id })
+    .from(weeklyChaptersTable)
+    .where(and(
+      eq(weeklyChaptersTable.userId, userId),
+      eq(weeklyChaptersTable.status, "ready"),
+      gte(weeklyChaptersTable.generatedAt, chapterCutoff),
+      isNull(weeklyChaptersTable.emailMentionedAt),
+    ))
+    .orderBy(desc(weeklyChaptersTable.generatedAt))
+    .limit(1);
+
   return {
     userId,
     email,
@@ -410,6 +428,7 @@ async function gatherContext(
       : null,
     pendingCommitmentId: pending[0]?.id ?? null,
     recentPhrases: personalizationRows[0]?.recentPhrases ?? [],
+    chapterWaitingId: waitingChapters[0]?.id ?? null,
   };
 }
 
@@ -508,7 +527,9 @@ CRITICAL: Do NOT invent people, places, events, or memories. Every specific deta
 ${ctx.recentPhrases.length > 0 ? `
 ANTI-REPETITION — these are opening lines from recent emails to ${ctx.name}. Do NOT start with any of these or similar phrasings — vary the structure, rhythm, and entry point completely each time:
 ${ctx.recentPhrases.slice(-8).map((p) => `• "${p}"`).join("\n")}` : ""}
-
+${ctx.chapterWaitingId ? `
+THEIR NEW WEEKLY CHAPTER:
+A new chapter — a short letter about their week, written from their own words — is waiting for them in their Journey space. Fold ONE natural, unhurried sentence into the note letting them know it's there whenever they're ready (in the spirit of "your new chapter is waiting when you want it"). No urgency, no homework framing, and never call it a report or analysis.` : ""}
 Write only the note text itself — nothing else.`;
 
   const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
@@ -740,10 +761,50 @@ async function markSent(userId: number, date: string): Promise<void> {
     .where(eq(profileTable.userId, userId));
 }
 
+// ─── Weekly-chapter sweep trigger ─────────────────────────────────────────────
+// Authenticated the same shared-secret way as unsubscribe links: an HMAC of
+// the current UTC hour under SESSION_SECRET (api-server accepts the previous
+// hour too, so clock edges are safe).
+
+async function triggerChapterSweep(): Promise<void> {
+  if (!SESSION_SECRET) {
+    log("SESSION_SECRET not set — skipping chapter sweep trigger");
+    return;
+  }
+  try {
+    const stamp = new Date().toISOString().slice(0, 13); // YYYY-MM-DDTHH
+    const token = createHmac("sha256", SESSION_SECRET)
+      .update(`chapters-run:${stamp}`)
+      .digest("hex");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 240_000);
+    const resp = await fetch(`${APP_URL}/api/internal/chapters/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-internal-token": token },
+      // Honor the single-user test hook so local runs never fan out.
+      body: JSON.stringify(ONLY_USER !== null ? { userId: ONLY_USER } : {}),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const body: unknown = await resp.json().catch(() => null);
+    log("Chapter sweep triggered", { status: resp.status, result: body as Record<string, unknown> | null });
+  } catch (err) {
+    logErr("Chapter sweep trigger failed (non-fatal)", err);
+  }
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function run(): Promise<void> {
   log("Daily email job starting");
+
+  // ── Weekly-chapter sweep trigger ────────────────────────────────────────
+  // This hourly job is the reliable ticker for the api-server's chapter
+  // engine (autoscale servers can't run their own cron). The endpoint itself
+  // decides who is inside their local Sunday-evening/Monday-morning window
+  // and is idempotent per (user, week) — calling it every hour is safe.
+  // Runs BEFORE the Resend guard so chapters generate even if email is down.
+  await triggerChapterSweep();
 
   if (!RESEND_API_KEY) {
     log("RESEND_API_KEY not set — exiting without sending");
@@ -834,6 +895,19 @@ async function run(): Promise<void> {
         await sendEmail(user.email, subject, html);
         await markSent(user.userId, today);
         noteCoveredCommitmentId = ctx.pendingCommitmentId;
+
+        // The note mentioned their waiting chapter — remember, so tomorrow's
+        // note doesn't repeat it (non-fatal if it fails).
+        if (ctx.chapterWaitingId) {
+          try {
+            await db
+              .update(weeklyChaptersTable)
+              .set({ emailMentionedAt: new Date() })
+              .where(eq(weeklyChaptersTable.id, ctx.chapterWaitingId));
+          } catch (err) {
+            logErr("Could not mark chapter as email-mentioned", err, { userId: user.userId });
+          }
+        }
 
         // Track the email opening phrase for anti-repetition on future emails (non-fatal)
         const emailOpener = noteText.split(/(?<=[.!?])\s+/)[0]?.trim()?.slice(0, 80) ?? "";

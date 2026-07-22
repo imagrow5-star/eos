@@ -62,6 +62,9 @@ interface SummaryBody {
   reminderCount: number;
   personalitySignalCount: number;
   habitCompletionCount: number;
+  weeklyChapterCount: number;
+  chapterQuoteDismissalCount: number;
+  chapterOfferEventCount: number;
   firstMessageAt: string | null;
   lastMessageAt: string | null;
 }
@@ -354,6 +357,9 @@ describe("GET /api/account/export/summary", () => {
       ["commitmentCount", "commitments"],
       ["reminderCount", "reminders"],
       ["personalitySignalCount", "personalitySignals"],
+      ["weeklyChapterCount", "weeklyChapters"],
+      ["chapterQuoteDismissalCount", "chapterQuoteDismissals"],
+      ["chapterOfferEventCount", "chapterOfferEvents"],
     ];
 
     for (const [countKey, arrayKey] of pairs) {

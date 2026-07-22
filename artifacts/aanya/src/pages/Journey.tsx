@@ -28,6 +28,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { WeeklyChapterSection } from "@/components/journey/WeeklyChapterSection";
 
 // ─── Day label helpers ────────────────────────────────────────────────────────
 
@@ -747,7 +748,10 @@ export default function Journey() {
           </div>
         </div>
 
-        {/* ── 1% Better growth indicator — the centrepiece ─────────────────── */}
+        {/* ── This week's chapter — the centrepiece ────────────────────────── */}
+        <WeeklyChapterSection />
+
+        {/* ── 1% Better growth indicator ────────────────────────────────────── */}
         <GrowthIndicatorCard score={growthScore} />
 
         {/* ── Stat grid ─────────────────────────────────────────────────────── */}
