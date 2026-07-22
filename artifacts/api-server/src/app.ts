@@ -247,6 +247,14 @@ app.use(
         frameAncestors: ["'self'"],
         baseUri: ["'none'"],
         formAction: ["'self'"],
+        // ElevenLabs Conversational AI SDK inlines the rawAudioProcessor and
+        // audioConcatProcessor worklet source, then loads it via
+        // URL.createObjectURL (blob:) with a data: base64 fallback for Safari.
+        // Without an explicit worker-src the browser falls back to default-src
+        // 'none', blocking the worklet even when the frontend meta-tag CSP
+        // allows blob:. Both policies are enforced simultaneously; the stricter
+        // wins, so this must match the frontend meta-tag allowance exactly.
+        workerSrc: ["'self'", "blob:", "data:"],
       },
     },
     // CSP frame-ancestors above covers embedding; X-Frame-Options can't say "self + nothing else" cleanly
