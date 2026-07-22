@@ -29,8 +29,12 @@ const SKIP_EXT = /\.(png|jpe?g|gif|webp|ico|svg|woff2?|ttf|otf|eot|mp[34]|webm|w
 const PLACEHOLDER = /(example|placeholder|your[-_ ]|changeme|dummy|fake|redacted|masked|<[^>]+>|\$\{|\bprocess\.env\b|\bimport\.meta\b)/i;
 
 const SENSITIVE_NAME = /(KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|PRIVATE)/i;
-// name = "long-literal"  or  name: 'long-literal'
-const ASSIGNMENT = /([A-Za-z0-9_.-]*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|PRIVATE)[A-Za-z0-9_.-]*)\s*[:=]\s*["'`]([A-Za-z0-9+/_=-]{24,})["'`]/gi;
+// name = "long-literal", name: 'long-literal', or unquoted dotenv-style
+// NAME=long-literal (quotes optional — .env files don't quote). Threat model:
+// ACCIDENTAL commits of whole keys (tooling writing config, copy-paste).
+// Adversarial obfuscation (concatenation, encoding) is out of scope for a
+// line scanner; the vendor-fingerprint layer still catches pasted real keys.
+const ASSIGNMENT = /([A-Za-z0-9_.-]*(?:KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|PRIVATE)[A-Za-z0-9_.-]*)\s*[:=]\s*["'`]?([A-Za-z0-9+/_=-]{24,})["'`]?/gi;
 
 const VENDOR_PATTERNS: Array<{ name: string; re: RegExp }> = [
   { name: "openai-style sk- key", re: /\bsk-[A-Za-z0-9_-]{20,}\b/ },
@@ -54,6 +58,20 @@ function entropy(s: string): number {
     h -= p * Math.log2(p);
   }
   return h;
+}
+
+/**
+ * Key material is machine-generated: long hex, or base64-ish with high
+ * entropy. Separator-joined word phrases (advisory-lock names, fixtures like
+ * "completely-made-up-token") satisfy the charset but score word-like
+ * entropy — skip those. Hex is flagged on shape alone: a 16-symbol alphabet
+ * tops out at 4 bits/char, so entropy cannot distinguish random hex from
+ * prose and must not be asked to.
+ */
+function looksLikeKeyMaterial(v: string): boolean {
+  if (/^[a-z0-9]+([-_.:][a-z0-9]+)+$/i.test(v) && entropy(v) < 4.3) return false;
+  if (/^[0-9a-fA-F]{32,}$/.test(v)) return true;
+  return /^[A-Za-z0-9+/_-]{24,}={0,2}$/.test(v) && entropy(v) >= 4.3;
 }
 
 type Finding = { file: string; line: number; what: string; valueLength: number };
@@ -90,11 +108,11 @@ function scan(): Finding[] {
 
       if (isSelf) return;
 
-      // Layer 2: sensitive-named assignment of a long high-entropy literal.
+      // Layer 2: sensitive-named assignment of a key-shaped literal.
       for (const m of line.matchAll(ASSIGNMENT)) {
         const value = m[2]!;
         if (PLACEHOLDER.test(line)) continue;
-        if (entropy(value) < 3.5) continue; // prose/identifiers score lower than key material
+        if (!looksLikeKeyMaterial(value)) continue;
         findings.push({ file, line: i + 1, what: `assignment to ${m[1]}`, valueLength: value.length });
       }
 

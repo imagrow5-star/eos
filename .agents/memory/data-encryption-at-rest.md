@@ -21,8 +21,9 @@ description: Field-level AES-256-GCM encryption pattern, its SQL-blindness conse
 
 # Key handling incident (July 2026)
 **Rule:** encryption keys and other secrets must ONLY go through the Replit Secrets flow (`requestSecrets` — user pastes, value never transits chat/context). NEVER `setEnvVars` — that writes plaintext into tracked `.replit`, which lives in git history and checkpoints ⇒ key is burned, full rotation required.
-**Why:** exactly this happened with the first `DATA_ENCRYPTION_KEY` pair; architect review caught it pre-publish; dev DB was re-encrypted under a founder-supplied replacement, exposed keys discarded.
-**Note:** VAPID keys still sit in `.replit` the same way (pre-existing; rotating breaks push subscriptions — founder's call, flagged).
+**Why:** exactly this happened with the first `DATA_ENCRYPTION_KEY` pair; architect review caught it pre-publish; dev DB was re-encrypted under a founder-supplied replacement, exposed keys discarded. The VAPID pair had the same exposure and was rotated the same way (fresh founder-generated pair, burned pair deleted, subscriptions invalidated by design).
+**Enforcement:** the api-server suite now has a secret-scan test failing on key-shaped values in ANY git-tracked file (layers: .replit sensitive-name+literal signature; key-shaped assignments incl. unquoted dotenv; vendor fingerprints). Scanner lesson: hex tops out at 4 bits/char, so entropy thresholds CANNOT detect hex keys — flag long hex on shape alone; exclude separator-joined word phrases (lock names, fixtures) or the check drowns in false positives. Threat model = accidental commits, not adversarial obfuscation.
+**Env tooling:** `.replit` env sections are `[userenv.development]` / `[userenv.production]`; `deleteEnvVars` callback takes `{ keys: [...], environment }` (one env per call).
 
 # Operational
 - KEY LOSS = DATA LOSS. Founder keeps offline backup. Server refuses boot without a valid key.

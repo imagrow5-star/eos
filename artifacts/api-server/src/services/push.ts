@@ -24,6 +24,12 @@ import { logger } from "../lib/logger.js";
 
 export const PUSH_DAILY_CAP = 2; // per user, rolling 24h, ALL kinds combined
 
+// Transient delivery failures tolerated before a subscription is pruned.
+// Bounded so a permanently-broken device can't sit behind an ON toggle
+// forever, but wide enough that one flaky push-service day never unsubscribes
+// anyone (with the 2/day cap this is ~2.5 days of consecutive failures).
+export const MAX_CONSECUTIVE_FAILURES = 5;
+
 export type PushKind = "chapter_ready" | "morning_note" | "test";
 
 export interface PushPayload {
@@ -160,20 +166,46 @@ export async function sendPushToUser(userId: number, kind: PushKind, payload: Pu
       await db.update(pushSubscriptionsTable).set({ lastSuccessAt: new Date(), failureCount: 0 }).where(eq(pushSubscriptionsTable.id, sub.id));
     } catch (err) {
       const statusCode = (err as { statusCode?: number })?.statusCode;
+      // Guard every prune/update with the credentials we actually failed to
+      // deliver to. If the device re-subscribed mid-send, the row now holds
+      // FRESH p256dh/auth under the same id — a stale-snapshot delete must
+      // not kill it.
+      const sameRowWeFailed = and(
+        eq(pushSubscriptionsTable.id, sub.id),
+        eq(pushSubscriptionsTable.p256dh, sub.p256dh),
+        eq(pushSubscriptionsTable.auth, sub.auth),
+      );
       if (statusCode === 404 || statusCode === 410) {
         // Subscription is gone (browser revoked / app uninstalled) — prune it.
-        await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.id, sub.id));
+        await db.delete(pushSubscriptionsTable).where(sameRowWeFailed);
         logger.info({ userId, subId: sub.id, statusCode }, "push: pruned dead subscription");
-      } else if (statusCode === 401 || statusCode === 403) {
+      } else if (statusCode === 403) {
         // Signature rejected — this subscription was created under a
         // DIFFERENT VAPID keypair (key rotation) and can never succeed under
         // the current one. Prune it; the client re-subscribes under the new
-        // key next time the user enables the toggle.
-        await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.id, sub.id));
+        // key next time the user enables the toggle. (401 is NOT pruned here:
+        // push services also return it for transient JWT problems like clock
+        // skew — those fall through to the bounded-retry path below.)
+        await db.delete(pushSubscriptionsTable).where(sameRowWeFailed);
         logger.info({ userId, subId: sub.id, statusCode }, "push: pruned key-mismatch subscription");
       } else {
-        await db.update(pushSubscriptionsTable).set({ failureCount: sub.failureCount + 1 }).where(eq(pushSubscriptionsTable.id, sub.id));
-        logger.warn({ err, userId, subId: sub.id }, "push: delivery failed");
+        // Transient (5xx, network, 401 skew): bounded retry. SQL-side
+        // increment so concurrent senders can't lose counts; prune once the
+        // ceiling is hit so a permanently-broken subscription can't linger
+        // as an invisible ON toggle forever.
+        const [updated] = await db
+          .update(pushSubscriptionsTable)
+          .set({ failureCount: sql`${pushSubscriptionsTable.failureCount} + 1` })
+          .where(sameRowWeFailed)
+          .returning({ failureCount: pushSubscriptionsTable.failureCount });
+        logger.warn({ err, userId, subId: sub.id, statusCode }, "push: delivery failed");
+        if (updated && updated.failureCount >= MAX_CONSECUTIVE_FAILURES) {
+          await db.delete(pushSubscriptionsTable).where(sameRowWeFailed);
+          logger.info(
+            { userId, subId: sub.id, failures: updated.failureCount },
+            "push: pruned persistently-failing subscription",
+          );
+        }
       }
     }
   }
@@ -182,13 +214,17 @@ export async function sendPushToUser(userId: number, kind: PushKind, payload: Pu
     // If every device is gone (revoked, uninstalled, or invalidated by a key
     // rotation), reflect reality in the profile so the Settings toggle shows
     // OFF and the user can simply re-enable — mirrors the unsubscribe route's
-    // "remaining === 0" rule.
-    const remaining = await db
-      .select({ id: pushSubscriptionsTable.id })
-      .from(pushSubscriptionsTable)
-      .where(eq(pushSubscriptionsTable.userId, userId));
-    if (remaining.length === 0) {
-      await db.update(profileTable).set({ pushOptIn: false }).where(eq(profileTable.userId, userId));
+    // "remaining === 0" rule. Single statement with NOT EXISTS: a concurrent
+    // re-subscribe either already inserted its row (we skip) or will set
+    // pushOptIn = true after we run (their write wins) — no separate
+    // check-then-update window that could strand a fresh opt-in at false.
+    const reset = await db.execute(sql`
+      UPDATE profile SET push_opt_in = false
+      WHERE user_id = ${userId} AND push_opt_in = true
+        AND NOT EXISTS (SELECT 1 FROM push_subscriptions WHERE user_id = ${userId})
+      RETURNING user_id
+    `);
+    if ((reset.rows?.length ?? 0) > 0) {
       logger.info({ userId }, "push: no devices remain — opt-in reset");
     }
   }

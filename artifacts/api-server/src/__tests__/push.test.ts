@@ -272,6 +272,59 @@ describe("sendPushToUser", () => {
     );
     expect(subs.rowCount).toBe(1);
     expect(subs.rows[0]!.failure_count).toBe(1);
+    // A surviving device means opt-in must NOT be reset.
+    const prof = await pool.query<{ push_opt_in: boolean }>(
+      "SELECT push_opt_in FROM profile WHERE user_id = $1",
+      [userId],
+    );
+    expect(prof.rows[0]!.push_opt_in).toBe(true);
+  });
+
+  it("prunes a key-mismatch subscription on 403 and resets opt-in (VAPID rotation)", async () => {
+    const { agent, userId } = await signupUser("rotated");
+    await agent.post("/api/push/subscribe").send({ subscription: fakeSubscription("burned-key") });
+    useMockTransport(async () => {
+      throw Object.assign(new Error("VapidPkHashMismatch"), { statusCode: 403 });
+    });
+
+    const outcome = await sendPushToUser(userId, "test", { title: "t", body: "b", url: "/" });
+    expect(outcome).toBe("all_failed");
+    // Subscription signed under the old keypair can never be delivered to —
+    // it must be pruned, not retried forever.
+    const subs = await pool.query("SELECT id FROM push_subscriptions WHERE user_id = $1", [userId]);
+    expect(subs.rowCount).toBe(0);
+    // With no devices left, the Settings toggle must show OFF so the user can
+    // simply re-enable under the new key.
+    const prof = await pool.query<{ push_opt_in: boolean }>(
+      "SELECT push_opt_in FROM profile WHERE user_id = $1",
+      [userId],
+    );
+    expect(prof.rows[0]!.push_opt_in).toBe(false);
+  });
+
+  it("prunes a persistently-failing subscription once the failure ceiling is hit", async () => {
+    const { MAX_CONSECUTIVE_FAILURES } = await import("../services/push.js");
+    const { agent, userId } = await signupUser("ceiling");
+    await agent.post("/api/push/subscribe").send({ subscription: fakeSubscription("always-502") });
+    await pool.query("UPDATE push_subscriptions SET failure_count = $1 WHERE user_id = $2", [
+      MAX_CONSECUTIVE_FAILURES - 1,
+      userId,
+    ]);
+    useMockTransport(async () => {
+      throw Object.assign(new Error("bad gateway"), { statusCode: 502 });
+    });
+
+    const outcome = await sendPushToUser(userId, "test", { title: "t", body: "b", url: "/" });
+    expect(outcome).toBe("all_failed");
+    // Ceiling reached — pruned so a dead device can't sit behind an ON
+    // toggle forever, and the empty device list resets opt-in.
+    const subs = await pool.query("SELECT id FROM push_subscriptions WHERE user_id = $1", [userId]);
+    expect(subs.rowCount).toBe(0);
+    const prof = await pool.query<{ push_opt_in: boolean }>(
+      "SELECT push_opt_in FROM profile WHERE user_id = $1",
+      [userId],
+    );
+    expect(prof.rows[0]!.push_opt_in).toBe(false);
   });
 });
 
