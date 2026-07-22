@@ -521,8 +521,11 @@ chaptersInternalRouter.post("/internal/chapters/run", async (req, res): Promise<
   }
   const force = body.force === true;
   const ignoreWindow = body.ignoreWindow === true;
+  // dryRun: preview-only sweep — logs one decision per candidate user,
+  // writes nothing, pushes nothing, never calls the model. Safe anywhere.
+  const dryRun = body.dryRun === true;
 
-  const result = await runWeeklySweep({ onlyUserId, force, ignoreWindow });
+  const result = await runWeeklySweep({ onlyUserId, force, ignoreWindow, dryRun });
   logger.info(result, "chapter sweep finished");
   res.json(result);
 });

@@ -138,7 +138,10 @@ internalRouter.post("/internal/push/morning-run", async (req, res): Promise<void
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
-  const result = await runMorningPushSweep();
+  // dryRun: preview-only sweep — logs one decision per candidate user,
+  // writes nothing, never touches the push transport. Safe anywhere.
+  const dryRun = ((req.body ?? {}) as Record<string, unknown>).dryRun === true;
+  const result = await runMorningPushSweep(new Date(), { dryRun });
   logger.info(result, "push: morning sweep complete");
   res.json(result);
 });

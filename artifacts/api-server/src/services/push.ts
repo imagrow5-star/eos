@@ -247,10 +247,18 @@ const MORNING_LINES = [
   "Your morning note is ready when you are.",
 ];
 
+export interface SweepDryRunDecision {
+  userId: number;
+  decision: string;
+}
+
 export interface MorningSweepResult {
   considered: number;
   sent: number;
   skipped: Record<string, number>;
+  /** Present only when the sweep ran in dry-run mode. */
+  dryRun?: boolean;
+  decisions?: SweepDryRunDecision[];
 }
 
 /**
@@ -258,8 +266,17 @@ export interface MorningSweepResult {
  * the 6–9 AM window and who haven't received one in the last 20 hours.
  * Mirrors the daily-email window so app note + email + push feel like one
  * morning ritual, not three systems.
+ *
+ * Dry run (opts.dryRun): mirrors the daily-email DAILY_EMAIL_DRY_RUN
+ * guarantee — logs exactly one decision per candidate user, performs ZERO
+ * writes, and never touches the web-push transport or VAPID keys. Every
+ * check below the dry-run gate is read-only by construction.
  */
-export async function runMorningPushSweep(now: Date = new Date()): Promise<MorningSweepResult> {
+export async function runMorningPushSweep(
+  now: Date = new Date(),
+  opts: { dryRun?: boolean } = {},
+): Promise<MorningSweepResult> {
+  const dryRun = opts.dryRun === true;
   const users = await db
     .select({ userId: profileTable.userId, timezone: profileTable.timezone, userName: profileTable.userName })
     .from(profileTable)
@@ -267,10 +284,23 @@ export async function runMorningPushSweep(now: Date = new Date()): Promise<Morni
     .where(and(isNotNull(usersTable.emailVerifiedAt), eq(profileTable.isOnboardingComplete, true), eq(profileTable.pushOptIn, true)));
 
   const result: MorningSweepResult = { considered: 0, sent: 0, skipped: {} };
+  if (dryRun) {
+    result.dryRun = true;
+    result.decisions = [];
+    logger.info({ dryRun: true, candidates: users.length }, "DRY RUN — morning push sweep: no push will be sent, nothing will be written");
+  }
+  const recordDecision = (userId: number, decision: string) => {
+    result.decisions!.push({ userId, decision });
+    logger.info({ dryRun: true, sweep: "push-morning", userId, decision }, "dry-run decision");
+  };
+
   for (const u of users) {
     if (!u.userId) continue;
     const hour = localHour(u.timezone || "UTC", now);
-    if (hour < 6 || hour > 9) continue;
+    if (hour < 6 || hour > 9) {
+      if (dryRun) recordDecision(u.userId, "outside-window");
+      continue;
+    }
     result.considered++;
 
     // Once per day: skip if a morning_note push went out in the last 20h.
@@ -282,7 +312,28 @@ export async function runMorningPushSweep(now: Date = new Date()): Promise<Morni
       LIMIT 1
     `);
     if ((recent.rows?.length ?? 0) > 0) {
-      result.skipped.already_sent = (result.skipped.already_sent ?? 0) + 1;
+      if (dryRun) recordDecision(u.userId, "already-sent");
+      else result.skipped.already_sent = (result.skipped.already_sent ?? 0) + 1;
+      continue;
+    }
+
+    if (dryRun) {
+      // Read-only preview of sendPushToUser's own gates — same order, no claim.
+      const subs = await db
+        .select({ id: pushSubscriptionsTable.id })
+        .from(pushSubscriptionsTable)
+        .where(eq(pushSubscriptionsTable.userId, u.userId))
+        .limit(1);
+      if (subs.length === 0) {
+        recordDecision(u.userId, "no-subscriptions");
+        continue;
+      }
+      const capRes = await db.execute(sql`
+        SELECT COUNT(*)::int AS n FROM push_events
+        WHERE user_id = ${u.userId} AND sent_at > now() - interval '24 hours'
+      `);
+      const capCount = Number((capRes.rows?.[0] as { n?: number } | undefined)?.n ?? 0);
+      recordDecision(u.userId, capCount >= PUSH_DAILY_CAP ? "capped" : "would-send-morning-push");
       continue;
     }
 

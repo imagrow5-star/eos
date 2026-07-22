@@ -1063,20 +1063,73 @@ export async function generateChapterForUser(
 
 // ─── Weekly sweep (called hourly via internal endpoint) ───────────────────────
 
+export interface SweepDryRunDecision {
+  userId: number;
+  decision: string;
+}
+
 export interface SweepResult {
   considered: number;
   generated: number;
   skipped: Record<string, number>;
   failed: number;
+  /** Present only when the sweep ran in dry-run mode. */
+  dryRun?: boolean;
+  decisions?: SweepDryRunDecision[];
+}
+
+/**
+ * Read-only preview of generateChapterForUser's cheap eligibility gates —
+ * same order, zero writes, zero AI calls. Deliberately selects only
+ * id/role/createdAt from messages (never content) so no decryption or
+ * quote work happens; "would-generate-chapter" therefore means "the real
+ * run would ATTEMPT generation" (it could still skip on no_valid_themes,
+ * which is unknowable without calling the model).
+ */
+async function previewChapterDecision(userId: number, tz: string, now: Date, force: boolean): Promise<string> {
+  if (!process.env.ANTHROPIC_API_KEY) return "no_ai";
+  const { weekStart, weekEnd } = weekBoundsFor(tz, now);
+
+  const existing = await db
+    .select({ id: weeklyChaptersTable.id })
+    .from(weeklyChaptersTable)
+    .where(and(eq(weeklyChaptersTable.userId, userId), eq(weeklyChaptersTable.weekStart, weekStart)));
+  if (existing.length > 0 && !force) return "exists";
+
+  const rows = await db
+    .select({ id: messagesTable.id, role: messagesTable.role, createdAt: messagesTable.createdAt })
+    .from(messagesTable)
+    .where(eq(messagesTable.userId, userId))
+    .orderBy(asc(messagesTable.createdAt));
+  const userMsgs = rows.filter((m) => m.role === "user");
+  if (userMsgs.length === 0) return "cold_start";
+  const firstDate = localYmd(tz, userMsgs[0]!.createdAt);
+  const weeksTogether = Math.floor(
+    (new Date(`${localYmd(tz, now)}T12:00:00Z`).getTime() - new Date(`${firstDate}T12:00:00Z`).getTime()) / (7 * 86_400_000),
+  );
+  if (weeksTogether < 3) return "cold_start";
+  const weekMsgCount = userMsgs.filter((m) => {
+    const d = localYmd(tz, m.createdAt);
+    return d >= weekStart && d <= weekEnd;
+  }).length;
+  if (weekMsgCount < 5) return "quiet_week";
+  return "would-generate-chapter";
 }
 
 /**
  * Generates chapters for every eligible user whose LOCAL clock is inside the
  * delivery window: Sunday 18:00 → Monday 09:59. UNIQUE(userId, weekStart)
  * makes repeated hourly calls naturally idempotent.
+ *
+ * Dry run (opts.dryRun): mirrors the daily-email DAILY_EMAIL_DRY_RUN
+ * guarantee — logs exactly one decision per candidate user, performs ZERO
+ * writes, pushes nothing, and never calls the model.
  */
-export async function runWeeklySweep(opts: { now?: Date; onlyUserId?: number; ignoreWindow?: boolean; force?: boolean } = {}): Promise<SweepResult> {
+export async function runWeeklySweep(
+  opts: { now?: Date; onlyUserId?: number; ignoreWindow?: boolean; force?: boolean; dryRun?: boolean } = {},
+): Promise<SweepResult> {
   const now = opts.now ?? new Date();
+  const dryRun = opts.dryRun === true;
   const users = await db
     .select({ userId: profileTable.userId, timezone: profileTable.timezone })
     .from(profileTable)
@@ -1084,6 +1137,16 @@ export async function runWeeklySweep(opts: { now?: Date; onlyUserId?: number; ig
     .where(and(isNotNull(usersTable.emailVerifiedAt), eq(profileTable.isOnboardingComplete, true)));
 
   const result: SweepResult = { considered: 0, generated: 0, skipped: {}, failed: 0 };
+  if (dryRun) {
+    result.dryRun = true;
+    result.decisions = [];
+    logger.info({ dryRun: true, candidates: users.length }, "DRY RUN — weekly chapter sweep: nothing will be generated, written, or pushed");
+  }
+  const recordDecision = (userId: number, decision: string) => {
+    result.decisions!.push({ userId, decision });
+    logger.info({ dryRun: true, sweep: "chapters", userId, decision }, "dry-run decision");
+  };
+
   for (const u of users) {
     if (!u.userId) continue;
     if (opts.onlyUserId && u.userId !== opts.onlyUserId) continue;
@@ -1093,7 +1156,21 @@ export async function runWeeklySweep(opts: { now?: Date; onlyUserId?: number; ig
       const weekday = localWeekday(tz, now);
       const hour = localHour(tz, now);
       const inWindow = (weekday === "Sunday" && hour >= 18) || (weekday === "Monday" && hour <= 9);
-      if (!inWindow) continue;
+      if (!inWindow) {
+        if (dryRun) recordDecision(u.userId, "outside-window");
+        continue;
+      }
+    }
+
+    if (dryRun) {
+      result.considered++;
+      try {
+        recordDecision(u.userId, await previewChapterDecision(u.userId, tz, now, opts.force === true));
+      } catch (err) {
+        result.failed++;
+        logger.error({ err, userId: u.userId }, "chapter dry run: preview failed");
+      }
+      continue;
     }
 
     result.considered++;
