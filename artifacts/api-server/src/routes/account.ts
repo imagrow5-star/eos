@@ -66,8 +66,9 @@ function buildHtmlReport(data: {
   personalitySignals: ExportRow[];
   personalizationState: ExportRow | null;
   weeklyChapters: ExportRow[];
+  sealedNotes: ExportRow[];
 }): string {
-  const { exportedAt, range, profile, messages, memoryFacts, wins, habits, habitCompletions, goals, moodScores, commitments, reminders, personalitySignals, personalizationState, weeklyChapters } = data;
+  const { exportedAt, range, profile, messages, memoryFacts, wins, habits, habitCompletions, goals, moodScores, commitments, reminders, personalitySignals, personalizationState, weeklyChapters, sealedNotes } = data;
   const companionName = esc(profile?.companion_name ?? "Eos");
   const userPath = pathLabel(profile?.user_path as string);
 
@@ -176,6 +177,19 @@ function buildHtmlReport(data: {
             .join("");
           return `<p><span class="win-title">Week of ${fmtDate(ch.week_start as string)}</span></p><p>${esc(String(ch.thread_opening ?? ""))}</p>${themeHtml}`;
         })
+        .join("\n");
+
+  // ── Sealed notes ──────────────────────────────────────────────────────────────
+  const sealedNotesHtml = sealedNotes.length === 0
+    ? `<p class="empty">No sealed notes yet.</p>`
+    : sealedNotes
+        .map((n) => `
+        <div class="goal-card">
+          ${n.prompt ? `<div class="goal-desc">${esc(n.prompt)}</div>` : ""}
+          <div class="goal-title">&ldquo;${esc(n.text)}&rdquo;</div>
+          <span class="goal-status">${n.status === "resolved" ? `opened${n.resolved_at ? ` ${fmtDate(n.resolved_at as string)}` : ""}` : "still sealed"}</span>
+          <span class="ts">written ${fmtDate(n.created_at as string)}</span>
+        </div>`)
         .join("\n");
 
   return `<!DOCTYPE html>
@@ -423,6 +437,11 @@ function buildHtmlReport(data: {
   </div>
 
   <div class="section">
+    <div class="section-title">Sealed notes (${sealedNotes.length})</div>
+    ${sealedNotesHtml}
+  </div>
+
+  <div class="section">
     <div class="section-title">Personalization state</div>
     ${personalizationState
       ? `<p>${esc(JSON.stringify(personalizationState))}</p>`
@@ -496,6 +515,10 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
   const chaptersRange = buildRangeClause("created_at", false, range, 2);
   const dismissalsRange = buildRangeClause("dismissed_at", false, range, 2);
   const offerEventsRange = buildRangeClause("created_at", false, range, 2);
+  const sealedNotesRange = buildRangeClause("created_at", false, range, 2);
+  const storyThreadsRange = buildRangeClause("created_at", false, range, 2);
+  const pushSubsRange = buildRangeClause("created_at", false, range, 2);
+  const pushEventsRange = buildRangeClause("sent_at", false, range, 2);
 
   const [
     messagesResult,
@@ -513,6 +536,10 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
     weeklyChaptersResult,
     chapterDismissalsResult,
     chapterOfferEventsResult,
+    sealedNotesResult,
+    storyThreadsResult,
+    pushSubscriptionsResult,
+    pushEventsResult,
   ] = await Promise.all([
     pool.query(
       `SELECT role, content, is_morning_note, created_at FROM messages WHERE user_id = $1${messagesRange.clause} ORDER BY created_at ASC`,
@@ -565,7 +592,7 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
       [userId],
     ),
     pool.query(
-      `SELECT week_start, week_end, status, thread_opening, threshold_question, threshold_answer, threshold_mood, threshold_loneliness, threshold_skipped, themes, goal_review, micro_offer, generated_at, revealed_at, created_at
+      `SELECT week_start, week_end, status, thread_opening, threshold_question, threshold_answer, threshold_mood, threshold_loneliness, threshold_skipped, themes, goal_review, micro_offer, note_invite, seal_resolution, working_through, generated_at, revealed_at, created_at
        FROM weekly_chapters WHERE user_id = $1${chaptersRange.clause} ORDER BY week_start ASC`,
       [userId, ...chaptersRange.params],
     ),
@@ -576,6 +603,27 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
     pool.query(
       `SELECT chapter_id, action, created_at FROM chapter_offer_events WHERE user_id = $1${offerEventsRange.clause} ORDER BY created_at ASC`,
       [userId, ...offerEventsRange.params],
+    ),
+    pool.query(
+      `SELECT kind, prompt, text, crisis_flagged, status, deferrals, resolved_at, created_at
+       FROM sealed_notes WHERE user_id = $1${sealedNotesRange.clause} ORDER BY created_at ASC`,
+      [userId, ...sealedNotesRange.params],
+    ),
+    pool.query(
+      `SELECT slug, label, state, frozen_streak, retellings, first_seen_week, last_seen_week, raised_at, support_suggested_at, created_at, updated_at
+       FROM story_threads WHERE user_id = $1${storyThreadsRange.clause} ORDER BY created_at ASC`,
+      [userId, ...storyThreadsRange.params],
+    ),
+    // p256dh/auth are the browser's crypto key material — delivery plumbing, not
+    // readable user data; the endpoint + timestamps are what identify the device.
+    pool.query(
+      `SELECT endpoint, user_agent, created_at, last_success_at, failure_count
+       FROM push_subscriptions WHERE user_id = $1${pushSubsRange.clause} ORDER BY created_at ASC`,
+      [userId, ...pushSubsRange.params],
+    ),
+    pool.query(
+      `SELECT kind, sent_at FROM push_events WHERE user_id = $1${pushEventsRange.clause} ORDER BY sent_at ASC`,
+      [userId, ...pushEventsRange.params],
     ),
   ]);
 
@@ -597,6 +645,10 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
     weeklyChapters: weeklyChaptersResult.rows,
     chapterQuoteDismissals: chapterDismissalsResult.rows,
     chapterOfferEvents: chapterOfferEventsResult.rows,
+    sealedNotes: sealedNotesResult.rows,
+    storyThreads: storyThreadsResult.rows,
+    pushSubscriptions: pushSubscriptionsResult.rows,
+    pushEvents: pushEventsResult.rows,
   };
 }
 
@@ -714,6 +766,10 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
       weeklyChapterResult,
       chapterDismissalResult,
       chapterOfferEventResult,
+      sealedNoteResult,
+      storyThreadResult,
+      pushSubscriptionResult,
+      pushEventResult,
     ] = await Promise.all([
       pool.query(
         `SELECT COUNT(*) AS count,
@@ -772,6 +828,22 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
         `SELECT COUNT(*) AS count FROM chapter_offer_events WHERE user_id = $1`,
         [userId],
       ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM sealed_notes WHERE user_id = $1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM story_threads WHERE user_id = $1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM push_subscriptions WHERE user_id = $1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM push_events WHERE user_id = $1`,
+        [userId],
+      ),
     ]);
 
     res.json({
@@ -788,6 +860,10 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
       weeklyChapterCount: parseInt(weeklyChapterResult.rows[0].count, 10),
       chapterQuoteDismissalCount: parseInt(chapterDismissalResult.rows[0].count, 10),
       chapterOfferEventCount: parseInt(chapterOfferEventResult.rows[0].count, 10),
+      sealedNoteCount: parseInt(sealedNoteResult.rows[0].count, 10),
+      storyThreadCount: parseInt(storyThreadResult.rows[0].count, 10),
+      pushSubscriptionCount: parseInt(pushSubscriptionResult.rows[0].count, 10),
+      pushEventCount: parseInt(pushEventResult.rows[0].count, 10),
       firstMessageAt: msgResult.rows[0].first_at ?? null,
       lastMessageAt:  msgResult.rows[0].last_at  ?? null,
     });

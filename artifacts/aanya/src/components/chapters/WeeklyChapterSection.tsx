@@ -45,6 +45,32 @@ interface MicroOffer {
   status: "pending" | "accepted" | "declined";
 }
 
+interface NoteInvite {
+  prompt: string;
+}
+
+interface SealResolutionShape {
+  noteId: number;
+  noteKind: string;
+  notePrompt: string | null;
+  noteText: string | null; // null for crisis-flagged notes — never quoted back
+  crisisFlagged: boolean;
+  text: string;
+}
+
+interface WorkingThroughEntryShape {
+  weekLabel: string;
+  text: string;
+  verbatim: boolean;
+  date?: string;
+}
+
+interface WorkingThroughShape {
+  label: string;
+  entries: WorkingThroughEntryShape[];
+  reflection: string;
+}
+
 interface Chapter {
   id: number;
   weekStart: string;
@@ -57,6 +83,10 @@ interface Chapter {
   themes: ChapterTheme[];
   goalReview: { items: ReviewItem[] } | null;
   microOffer: MicroOffer | null;
+  noteInvite: NoteInvite | null;
+  sealResolution: SealResolutionShape | null;
+  workingThrough: WorkingThroughShape | null;
+  noteSealed?: boolean;
   generatedAt: string;
   revealedAt: string | null;
 }
@@ -282,6 +312,254 @@ function OfferCard({ offer, chapterId }: { offer: MicroOffer; chapterId: number 
   );
 }
 
+// ─── Working it through — evolving story timeline ─────────────────────────────
+
+function WorkingThroughBlock({ wt }: { wt: WorkingThroughShape }) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] uppercase tracking-[0.22em] text-secondary/75">Working it through</span>
+        <span className="text-[11px] tracking-wide text-foreground/45">{wt.label}</span>
+      </div>
+      <div className="space-y-4">
+        {wt.entries.map((e, i) => (
+          <div key={i} className="pl-4 border-l border-primary/25">
+            <div className="text-[9px] uppercase tracking-[0.2em] text-primary/60 mb-1">{e.weekLabel}</div>
+            <p
+              className={cn(
+                "font-serif text-[15px] leading-relaxed",
+                e.verbatim ? "italic text-foreground/85" : "text-foreground/65",
+              )}
+            >
+              {e.verbatim ? <>“{e.text}”</> : e.text}
+            </p>
+          </div>
+        ))}
+      </div>
+      <p className="font-serif text-[15px] leading-relaxed text-foreground/75">{wt.reflection}</p>
+    </div>
+  );
+}
+
+// ─── Sealed-note resolution — the seal-breaking ritual ────────────────────────
+
+function SealResolutionCard({ chapterId, seal }: { chapterId: number; seal: SealResolutionShape }) {
+  const queryClient = useQueryClient();
+  const storageKey = `eos-seal-broken-${chapterId}`;
+  const [broken, setBroken] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(storageKey) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [deferred, setDeferred] = useState(false);
+
+  const defer = useMutation({
+    mutationFn: () =>
+      apiFetch(`${base()}/${chapterId}/seal/defer`, { method: "POST" }).then((r) => {
+        if (!r.ok) throw new Error("could not defer");
+        return r.json();
+      }),
+    onSuccess: () => {
+      setDeferred(true);
+      queryClient.invalidateQueries({ queryKey: ["chapters"] });
+    },
+  });
+
+  const breakSeal = () => {
+    setBroken(true);
+    try {
+      localStorage.setItem(storageKey, "1");
+    } catch {
+      /* private mode — the ritual just won't persist across reloads */
+    }
+  };
+
+  if (deferred) {
+    return (
+      <div className="rounded-2xl border border-primary/15 bg-card p-5">
+        <p className="font-serif text-[14px] leading-relaxed text-foreground/60">
+          Kept sealed. It'll be waiting in next week's chapter — there's no hurry at all.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-secondary/30 bg-primary/5 overflow-hidden">
+      <AnimatePresence mode="wait">
+        {!broken ? (
+          <motion.div
+            key="sealed"
+            exit={{ opacity: 0, scale: 0.97 }}
+            transition={{ duration: 0.3 }}
+            className="p-6 text-center space-y-4"
+          >
+            <motion.div
+              animate={{ scale: [1, 1.05, 1] }}
+              transition={{ duration: 2.4, repeat: Infinity, repeatDelay: 2 }}
+              className="w-14 h-14 mx-auto rounded-full bg-gradient-to-br from-secondary/85 to-secondary/50 border border-secondary/60 shadow-[0_0_24px_rgba(201,162,75,0.25)] flex items-center justify-center"
+            >
+              <Feather className="w-5 h-5 text-background/80" />
+            </motion.div>
+            <div>
+              <p className="font-serif text-[16px] text-foreground/90">A note from a past you is waiting.</p>
+              <p className="text-[11px] text-muted-foreground/60 mt-1 tracking-wide">
+                You sealed it at the end of an earlier chapter.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-3 pt-1 flex-wrap">
+              <Button onClick={breakSeal} className="rounded-full px-6">
+                Break the seal
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={defer.isPending}
+                onClick={() => defer.mutate()}
+                className="rounded-full px-4 text-foreground/50"
+              >
+                Not yet — keep it sealed
+              </Button>
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="open"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+            className="p-6 space-y-4"
+          >
+            <div className="text-[10px] uppercase tracking-[0.22em] text-secondary/75">The note you sealed</div>
+            {seal.notePrompt && !seal.crisisFlagged && (
+              <p className="text-[12px] leading-relaxed italic text-foreground/50">{seal.notePrompt}</p>
+            )}
+            {seal.noteText && (
+              <div className="pl-4 border-l border-secondary/40">
+                <p className="font-serif text-[16px] leading-relaxed italic text-foreground/90">“{seal.noteText}”</p>
+              </div>
+            )}
+            <p className="font-serif text-[15px] leading-relaxed text-foreground/80">{seal.text}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── End-of-chapter note invite — write & seal ────────────────────────────────
+
+function NoteInviteCard({ chapterId, prompt }: { chapterId: number; prompt: string }) {
+  const queryClient = useQueryClient();
+  const [text, setText] = useState("");
+  const [mode, setMode] = useState<"prediction" | "free">("prediction");
+  const [sealed, setSealed] = useState(false);
+  const [care, setCare] = useState<{ message: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const sealNote = useMutation({
+    mutationFn: () =>
+      apiFetch(`${base()}/${chapterId}/note`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: mode, text: text.trim() }),
+      }).then(async (r) => {
+        const body = (await r.json().catch(() => ({}))) as { error?: string; care?: { message: string } | null };
+        if (!r.ok) throw new Error(body?.error || "Could not seal your note — try again.");
+        return body;
+      }),
+    onSuccess: (body) => {
+      setSealed(true);
+      setCare(body.care ?? null);
+      queryClient.invalidateQueries({ queryKey: ["chapters"] });
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  if (sealed) {
+    return (
+      <div className="rounded-2xl border border-secondary/35 bg-card p-6">
+        {care ? (
+          <p className="font-serif text-[15px] leading-relaxed text-foreground/85 whitespace-pre-line">{care.message}</p>
+        ) : (
+          <div className="text-center space-y-3">
+            <motion.div
+              initial={{ scale: 0, rotate: -30 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ type: "spring", stiffness: 260, damping: 14 }}
+              className="w-12 h-12 mx-auto rounded-full bg-gradient-to-br from-secondary/85 to-secondary/55 border border-secondary/60 shadow-[0_0_20px_rgba(201,162,75,0.3)] flex items-center justify-center"
+            >
+              <Feather className="w-4 h-4 text-background/80" />
+            </motion.div>
+            <p className="font-serif text-[15px] text-foreground/85">Sealed. I'll hand it back in a future chapter.</p>
+            <p className="text-[11px] text-muted-foreground/55 tracking-wide">Not even I will peek before then.</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-primary/25 bg-card p-6 space-y-4">
+      <div className="text-[10px] uppercase tracking-[0.22em] text-secondary/75">
+        Before you go — a note to a future you
+      </div>
+      <div className="flex gap-1.5">
+        {(
+          [
+            ["prediction", "Answer her question"],
+            ["free", "Write anything"],
+          ] as const
+        ).map(([val, label]) => (
+          <button
+            key={val}
+            type="button"
+            onClick={() => setMode(val)}
+            className={cn(
+              "px-3 py-1 rounded-full text-[10.5px] font-medium tracking-wide border transition-all",
+              mode === val
+                ? "bg-primary/20 border-primary/50 text-primary"
+                : "border-primary/15 text-muted-foreground/55 hover:border-primary/30 hover:text-foreground/70",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="font-serif text-[15px] leading-relaxed italic text-foreground/75">
+        {mode === "prediction" ? prompt : "Anything you'd like a future you to open — one sentence is plenty."}
+      </p>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={2}
+        maxLength={280}
+        placeholder="One honest sentence…"
+        className="w-full rounded-xl bg-background/60 border border-primary/20 px-4 py-3 text-[14px] text-foreground/85 placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/45 resize-none font-serif"
+      />
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-muted-foreground/40 tracking-wide">{text.trim().length}/280</span>
+        <Button
+          size="sm"
+          disabled={sealNote.isPending || text.trim().length < 3}
+          onClick={() => {
+            setError(null);
+            sealNote.mutate();
+          }}
+          className="rounded-full px-6"
+        >
+          Seal it
+        </Button>
+      </div>
+      {error && <p className="text-[11px] text-amber-400/80 leading-relaxed">{error}</p>}
+      <p className="text-[10px] text-muted-foreground/45 leading-relaxed">
+        It stays sealed — even from me — until I hand it back inside a future chapter.
+      </p>
+    </div>
+  );
+}
+
 // ─── Threshold (sealed) state ─────────────────────────────────────────────────
 
 function SealedChapter({ chapter }: { chapter: Chapter }) {
@@ -368,7 +646,7 @@ function SealedChapter({ chapter }: { chapter: Chapter }) {
 
 // ─── Revealed reader ──────────────────────────────────────────────────────────
 
-function ChapterReader({ chapter }: { chapter: Chapter }) {
+function ChapterReader({ chapter, isCurrent }: { chapter: Chapter; isCurrent?: boolean }) {
   const review = chapter.goalReview?.items ?? [];
   return (
     <div className="bg-card border border-primary/20 rounded-2xl p-6 space-y-8">
@@ -418,6 +696,27 @@ function ChapterReader({ chapter }: { chapter: Chapter }) {
         <div className="space-y-4">
           <div className="h-px bg-primary/12" />
           <OfferCard offer={chapter.microOffer} chapterId={chapter.id} />
+        </div>
+      )}
+
+      {chapter.workingThrough && (
+        <div className="space-y-4">
+          <div className="h-px bg-primary/12" />
+          <WorkingThroughBlock wt={chapter.workingThrough} />
+        </div>
+      )}
+
+      {chapter.sealResolution && (
+        <div className="space-y-4">
+          <div className="h-px bg-primary/12" />
+          <SealResolutionCard chapterId={chapter.id} seal={chapter.sealResolution} />
+        </div>
+      )}
+
+      {isCurrent && chapter.noteInvite?.prompt && !chapter.noteSealed && (
+        <div className="space-y-4">
+          <div className="h-px bg-primary/12" />
+          <NoteInviteCard chapterId={chapter.id} prompt={chapter.noteInvite.prompt} />
         </div>
       )}
     </div>
@@ -525,7 +824,11 @@ export function WeeklyChapterSection() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35 }}
           >
-            {current.status === "ready" ? <SealedChapter chapter={current} /> : <ChapterReader chapter={current} />}
+            {current.status === "ready" ? (
+              <SealedChapter chapter={current} />
+            ) : (
+              <ChapterReader chapter={current} isCurrent />
+            )}
           </motion.div>
         </AnimatePresence>
       )}

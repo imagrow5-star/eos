@@ -26,6 +26,7 @@ import {
   weeklyChaptersTable,
   chapterQuoteDismissalsTable,
   chapterOfferEventsTable,
+  sealedNotesTable,
 } from "@workspace/db";
 import { isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/logger.js";
@@ -39,6 +40,22 @@ import {
   type ValidatedQuote,
 } from "./quotes.js";
 import { checkKindTruth, deterministicViolations, type ProseSection } from "./kindTruth.js";
+import {
+  fetchPendingSealedNote,
+  resolutionPrompt,
+  CRISIS_NOTE_RESOLUTION,
+  FALLBACK_RESOLUTION,
+  FALLBACK_NOTE_PROMPT,
+} from "./sealedNotes.js";
+import {
+  updateStoryThreads,
+  pickWorkingThroughThread,
+  buildWorkingThroughEntries,
+  FALLBACK_WORKING_REFLECTION,
+  type WorkingThrough,
+  type WorkingThroughEntry,
+} from "./storyThreads.js";
+import { sendPushToUser } from "../push.js";
 
 // ─── Public shapes (stored as jsonb on weekly_chapters) ───────────────────────
 
@@ -75,6 +92,22 @@ export interface MicroOffer {
   goalTitle: string;
   goalDescription: string;
   status: "pending" | "accepted" | "declined";
+}
+
+export interface NoteInvite {
+  /** Eos's gentle prediction question for the end-of-chapter sealed note. */
+  prompt: string;
+}
+
+export interface SealResolution {
+  noteId: number;
+  noteKind: string; // free | prediction
+  notePrompt: string | null;
+  /** The user's verbatim words — null for crisis-flagged notes (never quoted back). */
+  noteText: string | null;
+  crisisFlagged: boolean;
+  /** Eos's warm resolution paragraph, shown after the seal breaks. */
+  text: string;
 }
 
 export type SkipReason =
@@ -385,12 +418,31 @@ function validateThemes(
 interface RawCompose {
   threadOpening?: string;
   thresholdQuestion?: string;
+  notePrompt?: string;
   reviewItems?: Array<{ refKind?: string; refId?: number; text?: string }>;
   offer?: { messageId?: number; excerpt?: string; offerText?: string; goalTitle?: string; goalDescription?: string } | null;
 }
 
 const FALLBACK_QUESTION = "What took up the most room in your head this week?";
 const FALLBACK_OPENING = "Another week, and here we are — still talking. That's the part that matters, and the rest of this letter is just me showing you what I noticed.";
+
+function workingReflectionPrompt(opts: {
+  companionName: string;
+  userName: string;
+  label: string;
+  entries: WorkingThroughEntry[];
+}): string {
+  const timeline = opts.entries.map((e) => `${e.weekLabel}: ${e.verbatim ? `"${e.text}"` : e.text}`).join("\n");
+  return `You are ${opts.companionName}. In ${opts.userName}'s weekly chapter there is a small section called "Working it through" about "${opts.label}" — a story they have returned to more than once. It shows how THEIR OWN question about it has moved:
+
+${timeline}
+
+Write 2–3 sentences of quiet relief-framing: the movement of their questions IS them working it through.
+
+HARD RULES: never imply an earlier question was wrong or a worse version of them; no digits, no counts, no clinical words ("processing", "rumination", "trauma"), no advice, no homework; never suggest they are stuck or slow; the point is motion, not verdict. End on warmth, not a lesson.
+
+Respond with ONLY the paragraph text.`;
+}
 
 function composePrompt(opts: {
   companionName: string;
@@ -423,10 +475,12 @@ Rules: if it's working — specific appreciation tied to what it gives them, no 
 ${opts.offerBrief}
 Copy the seed line VERBATIM into "excerpt" with its messageId. Then write "offerText": start from what they said (the UI shows the quote and its date first), ask if it's still true, and offer one small concrete promise before Sunday with the promise that you'll ask them about it — e.g. 'Is that still true? Want to promise yourself one run before Sunday? I'll ask.' Keep it that small. "goalTitle" (max 8 words) and "goalDescription" (one sentence) describe the tiny promise itself. If NO seed candidate genuinely fits, set "offer": null — a generic offer is worse than none.` : ""}
 
+5. "notePrompt" — ONE gentle forward-looking question inviting them to seal a one-sentence guess for next-week's self, anchored to whichever theme above feels most alive (in the spirit of "Where do you think the apartment worry will sit by next Sunday?"). Soft, curious, zero pressure, zero digits. It should feel like a small game, not an assignment.
+
 VOICE RULES for every piece: no clinical language, no verdicts, no counts or timestamps of their behavior, no generic self-help advice, nothing that reads as a score. Kindness that tells the truth.
 ${opts.retryFeedback ? `\nPREVIOUS ATTEMPT FAILED REVIEW:\n${opts.retryFeedback}\nRewrite the failing pieces obeying every rule.\n` : ""}
 Respond with ONLY valid JSON:
-{"threadOpening":"...","thresholdQuestion":"...","reviewItems":[{"refKind":"goal","refId":1,"text":"..."}],"offer":null}`;
+{"threadOpening":"...","thresholdQuestion":"...","notePrompt":"...","reviewItems":[{"refKind":"goal","refId":1,"text":"..."}],"offer":null}`;
 }
 
 // ─── Data loading ─────────────────────────────────────────────────────────────
@@ -660,6 +714,7 @@ export async function generateChapterForUser(
   // ── Compose ──
   let opening = FALLBACK_OPENING;
   let question = FALLBACK_QUESTION;
+  let notePromptText = FALLBACK_NOTE_PROMPT;
   let reviewItems: GoalReviewItem[] = [];
   let microOffer: MicroOffer | null = null;
 
@@ -674,6 +729,7 @@ export async function generateChapterForUser(
   if (compose) {
     if (typeof compose.threadOpening === "string" && compose.threadOpening.trim().length >= 20) opening = compose.threadOpening.trim();
     if (typeof compose.thresholdQuestion === "string" && compose.thresholdQuestion.trim().length >= 10) question = compose.thresholdQuestion.trim().slice(0, 200);
+    if (typeof compose.notePrompt === "string" && compose.notePrompt.trim().length >= 10) notePromptText = compose.notePrompt.trim().slice(0, 240);
 
     for (const ri of compose.reviewItems ?? []) {
       const match = reviewCandidates.find((c) => c.refKind === ri.refKind && c.refId === ri.refId);
@@ -724,6 +780,92 @@ export async function generateChapterForUser(
     }
   }
 
+  // ── Story threads (processing vs stuck) — weekly indexing pass ──
+  // Failures here never block the chapter: threads are enrichment; the letter
+  // is the product. Frozen threads are structurally excluded from chapters.
+  let workingThrough: WorkingThrough | null = null;
+  try {
+    const { threads } = await updateStoryThreads({
+      userId,
+      weekStart,
+      weekMessages: nowRows,
+      llm: (prompt, maxTokens, temperature) => callClaude(anthropic, "chapter_story_threads", prompt, maxTokens, temperature),
+      parseJson,
+    });
+    const chosen = pickWorkingThroughThread(threads);
+    if (chosen) {
+      const entries = buildWorkingThroughEntries(chosen, weekStart);
+      if (entries.length >= 2) {
+        let reflection = FALLBACK_WORKING_REFLECTION;
+        try {
+          const raw = await callClaude(
+            anthropic,
+            "chapter_working_through",
+            workingReflectionPrompt({ companionName, userName, label: chosen.label, entries }),
+            400,
+            0.7,
+          );
+          if (raw.trim().length >= 30) reflection = raw.trim();
+        } catch (err) {
+          logger.warn({ err, userId }, "chapter: working-through reflection failed — using fallback");
+        }
+        workingThrough = { label: chosen.label, entries, reflection };
+      }
+    }
+  } catch (err) {
+    logger.warn({ err, userId }, "chapter: story-thread pass failed — continuing without");
+  }
+
+  // ── Sealed note from the last chapter → resolution in this one ──
+  let sealResolution: SealResolution | null = null;
+  try {
+    const pendingNote = await fetchPendingSealedNote(userId);
+    if (pendingNote) {
+      if (pendingNote.crisisFlagged) {
+        // A crisis-flagged note is NEVER quoted back — fixed warm acknowledgment.
+        sealResolution = {
+          noteId: pendingNote.id,
+          noteKind: pendingNote.kind,
+          notePrompt: pendingNote.prompt,
+          noteText: null,
+          crisisFlagged: true,
+          text: CRISIS_NOTE_RESOLUTION,
+        };
+      } else {
+        let text = FALLBACK_RESOLUTION;
+        try {
+          const raw = await callClaude(
+            anthropic,
+            "chapter_seal_resolution",
+            resolutionPrompt({
+              companionName,
+              userName,
+              noteKind: pendingNote.kind,
+              notePrompt: pendingNote.prompt,
+              noteText: pendingNote.text,
+              weekBrief: themesSummary,
+            }),
+            500,
+            0.7,
+          );
+          if (raw.trim().length >= 30) text = raw.trim();
+        } catch (err) {
+          logger.warn({ err, userId }, "chapter: seal-resolution call failed — using fallback");
+        }
+        sealResolution = {
+          noteId: pendingNote.id,
+          noteKind: pendingNote.kind,
+          notePrompt: pendingNote.prompt,
+          noteText: pendingNote.text,
+          crisisFlagged: false,
+          text,
+        };
+      }
+    }
+  } catch (err) {
+    logger.warn({ err, userId }, "chapter: sealed-note lookup failed — continuing without");
+  }
+
   // ── Kind-truth check with one repair round, then fallbacks ──
   const sections: ProseSection[] = [
     { name: "opening", text: opening },
@@ -731,6 +873,9 @@ export async function generateChapterForUser(
     ...themes.map((t, i) => ({ name: `theme:${i}`, text: `${t.reflection}${t.eraNote ? `\n${t.eraNote}` : ""}` })),
     ...reviewItems.map((r) => ({ name: `review:${r.refKind}:${r.refId}`, text: r.text })),
     ...(microOffer ? [{ name: "offer", text: microOffer.text }] : []),
+    ...(workingThrough ? [{ name: "workingThrough", text: workingThrough.reflection }] : []),
+    ...(sealResolution && !sealResolution.crisisFlagged ? [{ name: "sealResolution", text: sealResolution.text }] : []),
+    { name: "noteInvite", text: notePromptText },
   ];
   let verdicts = await checkKindTruth(sections, anthropic as never);
   let failing = verdicts.filter((v) => !v.pass);
@@ -780,9 +925,24 @@ export async function generateChapterForUser(
       } else if (name.startsWith("review:")) {
         const [, refKind, refIdStr] = name.split(":");
         const item = reviewItems.find((r) => r.refKind === refKind && r.refId === Number(refIdStr));
-        if (item) item.text = `"${item.title}" is still yours, and there's no scorecard here. Whenever you want, we can look at how it's sitting together.`;
+        if (item) {
+          item.text = `"${item.title}" is still yours, and there's no scorecard here. Whenever you want, we can look at how it's sitting together.`;
+          // Keep sections in sync so the fold-back below can't resurrect the
+          // failing text over this safe fallback.
+          const i = sections.findIndex((s) => s.name === name);
+          if (i !== -1) sections[i] = { name, text: item.text };
+        }
       } else if (name === "offer") {
         microOffer = null;
+      } else if (name === "workingThrough") {
+        const i = sections.findIndex((s) => s.name === name);
+        if (i !== -1) sections[i] = { name, text: FALLBACK_WORKING_REFLECTION };
+      } else if (name === "sealResolution") {
+        const i = sections.findIndex((s) => s.name === name);
+        if (i !== -1) sections[i] = { name, text: FALLBACK_RESOLUTION };
+      } else if (name === "noteInvite") {
+        const i = sections.findIndex((s) => s.name === name);
+        if (i !== -1) sections[i] = { name, text: FALLBACK_NOTE_PROMPT };
       }
     }
   }
@@ -817,6 +977,15 @@ export async function generateChapterForUser(
     const repaired = sectionText("offer");
     if (repaired) microOffer.text = repaired;
   }
+  if (workingThrough) {
+    const repaired = sectionText("workingThrough");
+    if (repaired) workingThrough.reflection = repaired;
+  }
+  if (sealResolution && !sealResolution.crisisFlagged) {
+    const repaired = sectionText("sealResolution");
+    if (repaired) sealResolution.text = repaired;
+  }
+  notePromptText = sectionText("noteInvite") ?? notePromptText;
 
   if (finalThemes.length === 0) {
     logger.warn({ userId, weekStart }, "chapter: all themes failed kind-truth — skipping week");
@@ -846,21 +1015,44 @@ export async function generateChapterForUser(
     return { userId, weekStart, skipped: "no_valid_themes" };
   }
 
-  const [inserted] = await db
-    .insert(weeklyChaptersTable)
-    .values({
-      userId,
-      weekStart,
-      weekEnd,
-      status: "ready",
-      threadOpening: opening,
-      thresholdQuestion: question,
-      themes: persistThemes,
-      goalReview: reviewItems.length ? { items: reviewItems } : null,
-      microOffer,
-    })
-    .onConflictDoNothing()
-    .returning({ id: weeklyChaptersTable.id });
+  // Chapter insert + note resolution move together or not at all — a chapter
+  // that claims to resolve a note which stays 'sealed' (or vice versa) would
+  // let a later week resolve the same note twice.
+  const resolutionForTx = sealResolution;
+  const inserted = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(weeklyChaptersTable)
+      .values({
+        userId,
+        weekStart,
+        weekEnd,
+        status: "ready",
+        threadOpening: opening,
+        thresholdQuestion: question,
+        themes: persistThemes,
+        goalReview: reviewItems.length ? { items: reviewItems } : null,
+        microOffer,
+        noteInvite: { prompt: notePromptText },
+        sealResolution: resolutionForTx,
+        workingThrough,
+      })
+      .onConflictDoNothing()
+      .returning({ id: weeklyChaptersTable.id });
+
+    // Mark the note resolved only when THIS insert actually created the chapter
+    // (onConflictDoNothing → no id → another writer won; leave the note sealed).
+    if (row?.id && resolutionForTx) {
+      const updated = await tx
+        .update(sealedNotesTable)
+        .set({ status: "resolved", resolvedChapterId: row.id, resolvedAt: new Date() })
+        .where(and(eq(sealedNotesTable.id, resolutionForTx.noteId), eq(sealedNotesTable.status, "sealed")))
+        .returning({ id: sealedNotesTable.id });
+      // The note vanished or was already resolved by another writer — roll the
+      // whole chapter back rather than persist a resolution pointing nowhere.
+      if (updated.length === 0) throw new Error(`sealed note ${resolutionForTx.noteId} not resolvable`);
+    }
+    return row;
+  });
 
   logger.info(
     { userId, weekStart, chapterId: inserted?.id, themes: persistThemes.length, hasOffer: !!microOffer, reviewItems: reviewItems.length },
@@ -907,8 +1099,20 @@ export async function runWeeklySweep(opts: { now?: Date; onlyUserId?: number; ig
     result.considered++;
     try {
       const r = await generateChapterForUser(u.userId, { now, force: opts.force });
-      if (r.chapterId) result.generated++;
-      else if (r.skipped) result.skipped[r.skipped] = (result.skipped[r.skipped] ?? 0) + 1;
+      if (r.chapterId) {
+        result.generated++;
+        // r.chapterId is set only on a REAL insert → this fires at most once
+        // per user per week. The atomic daily cap still applies underneath.
+        try {
+          await sendPushToUser(u.userId, "chapter_ready", {
+            title: "Eos",
+            body: "Your chapter is ready — a letter from your week, in your own words.",
+            url: "/chapters",
+          });
+        } catch (err) {
+          logger.warn({ err, userId: u.userId }, "chapter: ready-push failed");
+        }
+      } else if (r.skipped) result.skipped[r.skipped] = (result.skipped[r.skipped] ?? 0) + 1;
     } catch (err) {
       result.failed++;
       logger.error({ err, userId: u.userId }, "chapter: generation failed");

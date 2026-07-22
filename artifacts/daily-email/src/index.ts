@@ -793,6 +793,37 @@ async function triggerChapterSweep(): Promise<void> {
   }
 }
 
+// ─── Morning push-nudge trigger ───────────────────────────────────────────────
+// Same shared-secret scheme, different stamp prefix. The api-server decides
+// who is inside their local 6–9 AM window, dedups per day, and enforces the
+// hard 2-pushes/day cap — calling this every hour is safe.
+
+async function triggerMorningPush(): Promise<void> {
+  if (!SESSION_SECRET) {
+    log("SESSION_SECRET not set — skipping morning push trigger");
+    return;
+  }
+  try {
+    const stamp = new Date().toISOString().slice(0, 13); // YYYY-MM-DDTHH
+    const token = createHmac("sha256", SESSION_SECRET)
+      .update(`push-morning:${stamp}`)
+      .digest("hex");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120_000);
+    const resp = await fetch(`${APP_URL}/api/internal/push/morning-run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-internal-token": token },
+      body: "{}",
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const body: unknown = await resp.json().catch(() => null);
+    log("Morning push sweep triggered", { status: resp.status, result: body as Record<string, unknown> | null });
+  } catch (err) {
+    logErr("Morning push trigger failed (non-fatal)", err);
+  }
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function run(): Promise<void> {
@@ -805,6 +836,7 @@ async function run(): Promise<void> {
   // and is idempotent per (user, week) — calling it every hour is safe.
   // Runs BEFORE the Resend guard so chapters generate even if email is down.
   await triggerChapterSweep();
+  await triggerMorningPush();
 
   if (!RESEND_API_KEY) {
     log("RESEND_API_KEY not set — exiting without sending");

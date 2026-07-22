@@ -5,6 +5,7 @@ import { Route, Switch, Router as WouterRouter } from "wouter";
 import { Shell } from "@/components/layout/Shell";
 import Chat from "@/pages/Chat";
 import Journey from "@/pages/Journey";
+import Chapters from "@/pages/Chapters";
 import Memory from "@/pages/Memory";
 import { AuthScreen } from "@/pages/AuthScreen";
 import { EmailVerificationGate } from "@/pages/EmailVerificationGate";
@@ -37,6 +38,7 @@ function AppRouter() {
       <Switch>
         <Route path="/" component={Chat} />
         <Route path="/journey" component={Journey} />
+        <Route path="/chapters" component={Chapters} />
         <Route path="/memory" component={Memory} />
         <Route>
           <div className="flex h-full items-center justify-center text-muted-foreground">

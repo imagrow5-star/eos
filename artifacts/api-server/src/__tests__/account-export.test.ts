@@ -606,6 +606,7 @@ describe("GET /api/account/export?format=html", () => {
       personalitySignals: "Personality insights",
       personalizationState: "Personalization state",
       weeklyChapters: "Weekly chapters",
+      sealedNotes: "Sealed notes",
     };
 
     // Payload keys that are intentionally NOT their own report section, with the
@@ -620,6 +621,12 @@ describe("GET /api/account/export?format=html", () => {
         "Administrative preference records (which quotes the user hid) — no readable content; present in the JSON export.",
       chapterOfferEvents:
         "Administrative accept/decline log for chapter offers — the goals themselves render in the Goals section; present in the JSON export.",
+      storyThreads:
+        "Internal narrative-indexing records (thread state machine) — evolving threads already render inside their chapter's Working-it-through section; raw states/streaks are diagnostic, present in the JSON export.",
+      pushSubscriptions:
+        "Browser push endpoint records (device tokens) — technical delivery plumbing with no readable content; present in the JSON export.",
+      pushEvents:
+        "Notification delivery log (kind + timestamp) — administrative cap-enforcement records; present in the JSON export.",
     };
 
     const agentA = request.agent(app);

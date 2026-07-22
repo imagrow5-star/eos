@@ -10,14 +10,17 @@ import {
   personalizationStateTable,
   goalsTable,
   goalTasksTable,
+  storyThreadsTable,
+  type StoryRetelling,
   type Profile,
 } from "@workspace/db";
 import { calculateStage, stageMeta, todayInTimezone, getTimeContext } from "./stage.js";
 import { countryDisplayName, AGE_BANDS } from "../lib/basics.js";
+import { RAISE_COOLDOWN_DAYS, SUPPORT_COOLDOWN_DAYS } from "./chapters/storyThreads.js";
 
 // ─── Crisis resource per country ──────────────────────────────────────────────
 
-function getCrisisLine(country: string): string {
+export function getCrisisLine(country: string): string {
   switch (country) {
     case "US": return "988 Suicide & Crisis Lifeline — call or text 988, free and available 24/7.";
     case "UK": return "Samaritans — call 116 123, free, confidential, and available any time day or night.";
@@ -106,7 +109,7 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
 
   const userId = (profile as any).userId as number;
 
-  const [facts, activeSignals, activeHabits, openCommitments, recentMoods, habitCompletionsLast7, personalizationRows, activeGoals] =
+  const [facts, activeSignals, activeHabits, openCommitments, recentMoods, habitCompletionsLast7, personalizationRows, activeGoals, frozenThreadRows] =
     await Promise.all([
       db.select().from(memoryFactsTable).where(eq(memoryFactsTable.userId, userId)).orderBy(desc(memoryFactsTable.createdAt)).limit(30),
       db.select().from(personalitySignalsTable).where(and(eq(personalitySignalsTable.userId, userId), eq(personalitySignalsTable.isActive, true))).orderBy(desc(personalitySignalsTable.observedCount)).limit(12),
@@ -139,6 +142,19 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
       db.select().from(goalsTable)
         .where(and(eq(goalsTable.userId, userId), eq(goalsTable.isComplete, false)))
         .orderBy(desc(goalsTable.createdAt)).limit(5),
+      // Frozen story threads (soft conversational raise). Guarded like
+      // personalization: on a freshly-published prod this table may not exist
+      // until the schema sync runs — degrade to none, never break chat.
+      (async () => {
+        try {
+          return await db
+            .select()
+            .from(storyThreadsTable)
+            .where(and(eq(storyThreadsTable.userId, userId), sql`${storyThreadsTable.state} = 'frozen'`));
+        } catch {
+          return [] as Array<typeof storyThreadsTable.$inferSelect>;
+        }
+      })(),
     ]);
 
   const goalTaskRows = activeGoals.length > 0
@@ -1006,6 +1022,45 @@ ${rules}`;
     goalOfferStateBlock = `${name} has no active goals or routines right now. If — and only if — a steady, natural moment arises (never during distress, never as an opener), you may offer to set ONE small goal together. One light offer at most; drop it instantly and completely if it doesn't land.`;
   }
 
+  // ─── Frozen story-thread — soft conversational raise (image, not verdict) ───
+  // The chapter NEVER mentions frozen loops; this is the only surface. Stamped
+  // on injection: raisedAt/supportSuggestedAt update the moment the block
+  // enters a prompt, so the cooldown holds even if no natural opening arises.
+  let frozenThreadBlock = "";
+  const nowMs = Date.now();
+  const raisableThreads = frozenThreadRows.filter(
+    (t) => !t.raisedAt || (nowMs - new Date(t.raisedAt).getTime()) / 86_400_000 >= RAISE_COOLDOWN_DAYS,
+  );
+  if (raisableThreads.length > 0) {
+    const t = raisableThreads[0]!;
+    const retellings = (t.retellings as StoryRetelling[] | null) ?? [];
+    const lastQuestion = [...retellings].reverse().find((r) => r.question)?.question ?? null;
+    const moodsChrono = [...recentMoods].reverse();
+    const moodWorsening = moodsChrono.length >= 5 && moodsChrono[moodsChrono.length - 1]!.score < moodsChrono[0]!.score;
+    const supportDue =
+      moodWorsening &&
+      (!t.supportSuggestedAt || (nowMs - new Date(t.supportSuggestedAt).getTime()) / 86_400_000 >= SUPPORT_COOLDOWN_DAYS);
+
+    frozenThreadBlock = `A STORY ${name.toUpperCase()} MAY BE CIRCLING — HANDLE WITH GREAT CARE:
+- ${name} has returned to "${t.label}" several times lately, telling it from the same angle each time${lastQuestion ? ` — circling the same question: "${lastQuestion}"` : ""}.
+- ONLY if they bring that story up (or a genuinely warm, natural opening appears — never as an opener, never mid-distress), you may offer ONE gentle image instead of a verdict — e.g. "I've noticed when we walk past that memory, we always stop at the same window. I wonder what it looks like from across the street." Then follow THEIR lead completely.
+- You may offer ONE tiny perspective step as an invitation, never homework — telling that day through the other person's eyes, or what they'd say to a friend carrying the same story.
+- NEVER: retelling counts, "stuck", "rumination", "processing", any clinical frame, any hint they are failing at healing. If they deflect, drop it entirely — no second attempt this conversation or the next.${supportDue ? `
+- Their mood has been sinking while this story holds its shape. If (and only if) the moment is calm and warm, you may — ONCE — name that some knots deserve more hands than yours: "Some of this might deserve more than I can give it. Someone trained could sit with that day in a way I can't. No pressure at all — I'm not going anywhere either way."` : ""}`;
+
+    // Fire-and-forget stamp — cooldown starts at injection, not at delivery.
+    void (async () => {
+      try {
+        await db
+          .update(storyThreadsTable)
+          .set({ raisedAt: new Date(), ...(supportDue ? { supportSuggestedAt: new Date() } : {}) })
+          .where(eq(storyThreadsTable.id, t.id));
+      } catch {
+        /* cooldown stamp is best-effort */
+      }
+    })();
+  }
+
   const contextParts: string[] = [dateTimeBlock];
   if (earlyStageCommitmentsNote) contextParts.push(earlyStageCommitmentsNote.trim());
   if (commitmentsContextBlock) contextParts.push(commitmentsContextBlock);
@@ -1016,6 +1071,7 @@ ${rules}`;
   if (habitsBlock) contextParts.push(habitsBlock);
   if (goalsBlock) contextParts.push(goalsBlock);
   if (goalOfferStateBlock) contextParts.push(goalOfferStateBlock);
+  if (frozenThreadBlock) contextParts.push(frozenThreadBlock);
   if (antiRepetitionBlock) contextParts.push(antiRepetitionBlock.trim());
   contextParts.push(`SAFETY — ALWAYS ON, NO EXCEPTIONS:
 - If ${name} mentions self-harm, suicide, or harming anyone: stay warm, stay present, don't turn clinical. "I'm really glad you told me. Please reach out to someone who can really be there right now — ${crisisLine} I'm here too."

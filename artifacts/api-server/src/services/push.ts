@@ -1,0 +1,238 @@
+// ─── Web push service ─────────────────────────────────────────────────────────
+// Real web-push (VAPID) delivery with three hard product rules:
+//   • opt-in only — profile.pushOptIn defaults to false and is only flipped by
+//     the user's own subscribe/unsubscribe actions;
+//   • HARD cap of 2 pushes per user per rolling 24h, enforced ATOMICALLY via a
+//     conditional insert into push_events (concurrent senders can't blow past);
+//   • chapter-ready is naturally ≤1/week (fires only on fresh chapter insert).
+//
+// VAPID keys: generated once per environment on first use and persisted in the
+// single-row push_config table (id=1 + ON CONFLICT DO NOTHING makes generation
+// race-safe). Dev and prod each get their own keypair — correct, since
+// subscriptions are only valid against the keys they were created with.
+
+import { and, eq, sql } from "drizzle-orm";
+import {
+  db,
+  profileTable,
+  usersTable,
+  pushSubscriptionsTable,
+  pushEventsTable,
+  pushConfigTable,
+} from "@workspace/db";
+import { isNotNull } from "drizzle-orm";
+import { logger } from "../lib/logger.js";
+
+export const PUSH_DAILY_CAP = 2; // per user, rolling 24h, ALL kinds combined
+
+export type PushKind = "chapter_ready" | "morning_note" | "test";
+
+export interface PushPayload {
+  title: string;
+  body: string;
+  url: string; // app path to open on tap, e.g. "/chapters"
+}
+
+// ─── web-push module (lazy + injectable for tests) ───────────────────────────
+
+type WebPushSubscription = { endpoint: string; keys: { p256dh: string; auth: string } };
+type WebPushLike = {
+  generateVAPIDKeys: () => { publicKey: string; privateKey: string };
+  setVapidDetails: (subject: string, publicKey: string, privateKey: string) => void;
+  sendNotification: (sub: WebPushSubscription, payload: string, options?: Record<string, unknown>) => Promise<unknown>;
+};
+
+let _webpush: WebPushLike | null = null;
+function getWebPush(): WebPushLike {
+  if (!_webpush) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    _webpush = require("web-push") as WebPushLike;
+  }
+  return _webpush;
+}
+
+/** Test hook — inject a mock transport. Pass null to restore the real module. */
+export function _setWebPushForTests(mock: WebPushLike | null): void {
+  _webpush = mock;
+}
+
+// ─── VAPID keys ───────────────────────────────────────────────────────────────
+
+let _keys: { publicKey: string; privateKey: string } | null = null;
+
+export async function ensureVapidKeys(): Promise<{ publicKey: string; privateKey: string }> {
+  if (_keys) return _keys;
+  const [existing] = await db.select().from(pushConfigTable).limit(1);
+  if (existing) {
+    _keys = { publicKey: existing.vapidPublicKey, privateKey: existing.vapidPrivateKey };
+    return _keys;
+  }
+  const generated = getWebPush().generateVAPIDKeys();
+  await db
+    .insert(pushConfigTable)
+    .values({ id: 1, vapidPublicKey: generated.publicKey, vapidPrivateKey: generated.privateKey })
+    .onConflictDoNothing();
+  // Re-read: if a concurrent boot won the insert race, use ITS keys.
+  const [row] = await db.select().from(pushConfigTable).limit(1);
+  if (!row) throw new Error("push_config insert failed");
+  _keys = { publicKey: row.vapidPublicKey, privateKey: row.vapidPrivateKey };
+  logger.info("push: VAPID keys ready");
+  return _keys;
+}
+
+/** Test hook — clear the in-process key cache. */
+export function _clearVapidCacheForTests(): void {
+  _keys = null;
+}
+
+export async function getVapidPublicKey(): Promise<string> {
+  return (await ensureVapidKeys()).publicKey;
+}
+
+// ─── Rate cap (atomic) ────────────────────────────────────────────────────────
+
+/**
+ * Claims one send slot for the user. Returns false when the cap is spent.
+ *
+ * A conditional INSERT alone is NOT safe here: under READ COMMITTED each
+ * racing statement's snapshot misses the others' uncommitted rows, so N
+ * concurrent sends could all pass the count check. A per-user advisory
+ * xact-lock serializes claimers; the lock releases at commit, so the next
+ * claimer's count subquery (fresh snapshot) sees the prior committed row.
+ */
+async function claimSendSlot(userId: number, kind: PushKind): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`push-cap-${userId}`}))`);
+    // morning_note additionally claims the once-per-day slot HERE, inside the
+    // lock — the sweep's pre-check is only a cheap skip, so racing sweeps
+    // must be stopped by the claim itself, not by check-then-send.
+    const morningDedup =
+      kind === "morning_note"
+        ? sql` AND NOT EXISTS (
+            SELECT 1 FROM push_events
+            WHERE user_id = ${userId} AND kind = 'morning_note' AND sent_at > now() - interval '20 hours'
+          )`
+        : sql``;
+    const res = await tx.execute(sql`
+      INSERT INTO push_events (user_id, kind)
+      SELECT ${userId}, ${kind}
+      WHERE (
+        SELECT COUNT(*) FROM push_events
+        WHERE user_id = ${userId} AND sent_at > now() - interval '24 hours'
+      ) < ${PUSH_DAILY_CAP}${morningDedup}
+      RETURNING id
+    `);
+    return (res.rows?.length ?? 0) > 0;
+  });
+}
+
+// ─── Sending ──────────────────────────────────────────────────────────────────
+
+export type SendOutcome = "sent" | "opted_out" | "no_subscriptions" | "capped" | "all_failed";
+
+export async function sendPushToUser(userId: number, kind: PushKind, payload: PushPayload): Promise<SendOutcome> {
+  const [prof] = await db
+    .select({ pushOptIn: profileTable.pushOptIn })
+    .from(profileTable)
+    .where(eq(profileTable.userId, userId));
+  if (!prof?.pushOptIn) return "opted_out";
+
+  const subs = await db
+    .select()
+    .from(pushSubscriptionsTable)
+    .where(eq(pushSubscriptionsTable.userId, userId));
+  if (subs.length === 0) return "no_subscriptions";
+
+  if (!(await claimSendSlot(userId, kind))) {
+    logger.info({ userId, kind }, "push: daily cap reached — skipped");
+    return "capped";
+  }
+
+  const keys = await ensureVapidKeys();
+  const wp = getWebPush();
+  wp.setVapidDetails("mailto:hello@eoscompanion.com", keys.publicKey, keys.privateKey);
+  const body = JSON.stringify({ title: payload.title, body: payload.body, url: payload.url, kind });
+
+  let delivered = 0;
+  for (const sub of subs) {
+    try {
+      await wp.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, body, { TTL: 12 * 3600 });
+      delivered++;
+      await db.update(pushSubscriptionsTable).set({ lastSuccessAt: new Date(), failureCount: 0 }).where(eq(pushSubscriptionsTable.id, sub.id));
+    } catch (err) {
+      const statusCode = (err as { statusCode?: number })?.statusCode;
+      if (statusCode === 404 || statusCode === 410) {
+        // Subscription is gone (browser revoked / app uninstalled) — prune it.
+        await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.id, sub.id));
+        logger.info({ userId, subId: sub.id, statusCode }, "push: pruned dead subscription");
+      } else {
+        await db.update(pushSubscriptionsTable).set({ failureCount: sub.failureCount + 1 }).where(eq(pushSubscriptionsTable.id, sub.id));
+        logger.warn({ err, userId, subId: sub.id }, "push: delivery failed");
+      }
+    }
+  }
+  return delivered > 0 ? "sent" : "all_failed";
+}
+
+// ─── Morning-note nudge sweep (called hourly via internal endpoint) ───────────
+
+function localHour(tz: string, d: Date): number {
+  try {
+    return parseInt(new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hour12: false }).format(d), 10) % 24;
+  } catch {
+    return d.getUTCHours();
+  }
+}
+
+const MORNING_LINES = [
+  "There's a morning note waiting for you.",
+  "I left you a few words for this morning.",
+  "Your morning note is ready when you are.",
+];
+
+export interface MorningSweepResult {
+  considered: number;
+  sent: number;
+  skipped: Record<string, number>;
+}
+
+/**
+ * Sends the morning-note nudge to opted-in users whose local clock is inside
+ * the 6–9 AM window and who haven't received one in the last 20 hours.
+ * Mirrors the daily-email window so app note + email + push feel like one
+ * morning ritual, not three systems.
+ */
+export async function runMorningPushSweep(now: Date = new Date()): Promise<MorningSweepResult> {
+  const users = await db
+    .select({ userId: profileTable.userId, timezone: profileTable.timezone, userName: profileTable.userName })
+    .from(profileTable)
+    .innerJoin(usersTable, eq(usersTable.id, profileTable.userId))
+    .where(and(isNotNull(usersTable.emailVerifiedAt), eq(profileTable.isOnboardingComplete, true), eq(profileTable.pushOptIn, true)));
+
+  const result: MorningSweepResult = { considered: 0, sent: 0, skipped: {} };
+  for (const u of users) {
+    if (!u.userId) continue;
+    const hour = localHour(u.timezone || "UTC", now);
+    if (hour < 6 || hour > 9) continue;
+    result.considered++;
+
+    // Once per day: skip if a morning_note push went out in the last 20h.
+    // Advisory only — the authoritative, race-proof gate is the NOT EXISTS
+    // clause inside claimSendSlot's locked transaction.
+    const recent = await db.execute(sql`
+      SELECT 1 FROM push_events
+      WHERE user_id = ${u.userId} AND kind = 'morning_note' AND sent_at > now() - interval '20 hours'
+      LIMIT 1
+    `);
+    if ((recent.rows?.length ?? 0) > 0) {
+      result.skipped.already_sent = (result.skipped.already_sent ?? 0) + 1;
+      continue;
+    }
+
+    const line = MORNING_LINES[(u.userId + now.getUTCDate()) % MORNING_LINES.length]!;
+    const outcome = await sendPushToUser(u.userId, "morning_note", { title: "Eos", body: line, url: "/" });
+    if (outcome === "sent") result.sent++;
+    else result.skipped[outcome] = (result.skipped[outcome] ?? 0) + 1;
+  }
+  return result;
+}

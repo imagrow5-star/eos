@@ -8,8 +8,13 @@ import {
   chapterOfferEventsTable,
   messagesTable,
   personalizationStateTable,
+  sealedNotesTable,
+  profileTable,
 } from "@workspace/db";
 import { createGoalWithTasks } from "../services/ai.js";
+import { isCrisisText } from "../services/chapters/crisis.js";
+import { crisisCareMessage, NOTE_MAX_LENGTH } from "../services/chapters/sealedNotes.js";
+import { getCrisisLine } from "../services/systemPrompt.js";
 import {
   runWeeklySweep,
   type ChapterTheme,
@@ -45,11 +50,24 @@ router.get("/chapters", async (req, res): Promise<void> => {
     : 0;
 
   const current = rows[0] ?? null;
+
+  // Whether the reader already sealed a note on the current chapter — drives
+  // the end-of-letter invite (one note per chapter, enforced by UNIQUE too).
+  let noteSealed = false;
+  if (current) {
+    const [noteRow] = await db
+      .select({ id: sealedNotesTable.id })
+      .from(sealedNotesTable)
+      .where(eq(sealedNotesTable.chapterId, current.id))
+      .limit(1);
+    noteSealed = !!noteRow;
+  }
+
   res.json({
     coldStart: !current && weeksTogether < 3,
     weeksTogether,
     unread: current?.status === "ready",
-    current,
+    current: current ? { ...current, noteSealed } : null,
     archive: rows.slice(1).map((r) => ({
       id: r.id,
       weekStart: r.weekStart,
@@ -78,7 +96,12 @@ router.get("/chapters/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Chapter not found" });
     return;
   }
-  res.json(chapter);
+  const [noteRow] = await db
+    .select({ id: sealedNotesTable.id })
+    .from(sealedNotesTable)
+    .where(eq(sealedNotesTable.chapterId, chapter.id))
+    .limit(1);
+  res.json({ ...chapter, noteSealed: !!noteRow });
 });
 
 // ─── POST /chapters/:id/threshold — answer (or skip) the one-question gate ────
@@ -138,6 +161,138 @@ router.post("/chapters/:id/threshold", async (req, res): Promise<void> => {
     .returning();
 
   res.json(updated);
+});
+
+// ─── POST /chapters/:id/note — seal one sentence for next-week's you ─────────
+// Crisis language is checked IMMEDIATELY at write time: a flagged note still
+// saves (their words are never rejected), but the response carries a caring
+// message + crisis line for the UI to show right now — never a seven-day
+// timer. Flagged notes are never quoted back at resolution time.
+
+router.post("/chapters/:id/note", async (req, res): Promise<void> => {
+  const userId = req.userId;
+  const id = parseInt(req.params.id ?? "0", 10);
+  if (!id) {
+    res.status(400).json({ error: "Invalid chapter id" });
+    return;
+  }
+  const body = (req.body ?? {}) as { kind?: unknown; text?: unknown };
+  const kind = body.kind === "prediction" ? "prediction" : body.kind === "free" ? "free" : null;
+  const text = typeof body.text === "string" ? body.text.trim() : "";
+  if (!kind) {
+    res.status(400).json({ error: "kind must be 'free' or 'prediction'" });
+    return;
+  }
+  if (text.length < 3 || text.length > NOTE_MAX_LENGTH) {
+    res.status(400).json({ error: `Your note should be one sentence — up to ${NOTE_MAX_LENGTH} characters` });
+    return;
+  }
+
+  const [chapter] = await db
+    .select()
+    .from(weeklyChaptersTable)
+    .where(and(eq(weeklyChaptersTable.id, id), eq(weeklyChaptersTable.userId, userId)));
+  if (!chapter) {
+    res.status(404).json({ error: "Chapter not found" });
+    return;
+  }
+  if (chapter.status !== "revealed") {
+    res.status(409).json({ error: "Read the chapter before sealing a note" });
+    return;
+  }
+
+  const crisisFlagged = isCrisisText(text);
+  const notePrompt = kind === "prediction" ? ((chapter.noteInvite as { prompt?: string } | null)?.prompt ?? null) : null;
+
+  let note: typeof sealedNotesTable.$inferSelect | undefined;
+  try {
+    [note] = await db
+      .insert(sealedNotesTable)
+      .values({ userId, chapterId: chapter.id, weekStart: chapter.weekStart, kind, prompt: notePrompt, text, crisisFlagged })
+      .returning();
+  } catch (err) {
+    // UNIQUE(chapter_id) — one note per chapter (pg SQLSTATE sits at cause.code).
+    if ((err as { cause?: { code?: string } })?.cause?.code === "23505") {
+      res.status(409).json({ error: "A note is already sealed on this chapter" });
+      return;
+    }
+    throw err;
+  }
+
+  let care: { message: string; crisisLine: string } | null = null;
+  if (crisisFlagged) {
+    const [prof] = await db
+      .select({ userName: profileTable.userName, country: profileTable.country })
+      .from(profileTable)
+      .where(eq(profileTable.userId, userId));
+    const line = getCrisisLine(prof?.country ?? "");
+    care = { message: crisisCareMessage(prof?.userName ?? "", line), crisisLine: line };
+    logger.warn({ userId, chapterId: id }, "sealed-note: crisis language at write time — caring response returned");
+  }
+
+  res.json({ note: { id: note!.id, kind: note!.kind, status: note!.status, createdAt: note!.createdAt }, care });
+});
+
+// ─── POST /chapters/:id/seal/defer — "keep it sealed another week" ────────────
+// Un-resolves atomically: clears THIS chapter's sealResolution and returns the
+// note to 'sealed', so next week's chapter picks it up again. The conditional
+// UPDATE on the chapter row is the claim — double-clicks collapse to one defer.
+
+router.post("/chapters/:id/seal/defer", async (req, res): Promise<void> => {
+  const userId = req.userId;
+  const id = parseInt(req.params.id ?? "0", 10);
+  if (!id) {
+    res.status(400).json({ error: "Invalid chapter id" });
+    return;
+  }
+
+  const [chapter] = await db
+    .select()
+    .from(weeklyChaptersTable)
+    .where(and(eq(weeklyChaptersTable.id, id), eq(weeklyChaptersTable.userId, userId)));
+  if (!chapter) {
+    res.status(404).json({ error: "Chapter not found" });
+    return;
+  }
+  const seal = chapter.sealResolution as { noteId?: number } | null;
+  if (!seal?.noteId) {
+    res.status(409).json({ error: "This chapter has no sealed note to defer" });
+    return;
+  }
+  const noteId = seal.noteId; // narrowed copy — the tx closure below can't see the guard
+
+  // Chapter un-claim + note un-resolve move together or not at all: if the
+  // note update can't land, the claim rolls back too, so the two rows can
+  // never disagree about whether the resolution happened.
+  const outcome = await db.transaction(async (tx) => {
+    const claimed = await tx
+      .update(weeklyChaptersTable)
+      .set({ sealResolution: null })
+      .where(
+        and(
+          eq(weeklyChaptersTable.id, id),
+          eq(weeklyChaptersTable.userId, userId),
+          sql`${weeklyChaptersTable.sealResolution} IS NOT NULL`,
+        ),
+      )
+      .returning({ id: weeklyChaptersTable.id });
+    if (claimed.length === 0) return "already" as const;
+
+    const reverted = await tx
+      .update(sealedNotesTable)
+      .set({ status: "sealed", resolvedChapterId: null, resolvedAt: null, deferrals: sql`${sealedNotesTable.deferrals} + 1` })
+      .where(and(eq(sealedNotesTable.id, noteId), eq(sealedNotesTable.userId, userId)))
+      .returning({ id: sealedNotesTable.id });
+    if (reverted.length === 0) throw new Error(`sealed note ${noteId} missing during defer`);
+    return "deferred" as const;
+  });
+  if (outcome === "already") {
+    res.status(409).json({ error: "Already kept sealed" });
+    return;
+  }
+
+  logger.info({ userId, chapterId: id, noteId: seal.noteId }, "sealed-note: deferred another week");
+  res.json({ ok: true });
 });
 
 // ─── POST /chapters/:id/quotes/dismiss — one-tap permanent dismissal ──────────

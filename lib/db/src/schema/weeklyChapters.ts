@@ -40,6 +40,10 @@ export const weeklyChaptersTable = pgTable(
     themes: jsonb("themes").notNull(), // ChapterTheme[] — see api-server services/chapters
     goalReview: jsonb("goal_review"), // { items: [...] } | null
     microOffer: jsonb("micro_offer"), // seed-quote-anchored offer | null
+    // Phase 2 — the sealed-note ritual + processing engine (all nullable/additive):
+    noteInvite: jsonb("note_invite"), // { prompt: string } | null — Eos-drafted gentle prediction question offered at the end of THIS chapter
+    sealResolution: jsonb("seal_resolution"), // { noteId, noteKind, notePrompt|null, noteText, resolutionText } | null — set when THIS chapter resolves an earlier sealed note; cleared if the user defers
+    workingThrough: jsonb("working_through"), // { label, entries: [{ weekLabel, text, verbatim, messageId|null, date }], reflection } | null — evolving-story relief framing
     generatedAt: timestamp("generated_at").notNull().defaultNow(),
     revealedAt: timestamp("revealed_at"),
     readAt: timestamp("read_at"),

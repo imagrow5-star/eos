@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2, Square } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { enablePush, disablePush, sendTestPush, needsInstallFirst } from "@/lib/push";
 
 import {
   useGetOnboardingStatus,
@@ -383,6 +384,39 @@ export default function Chat() {
   useEffect(() => {
     setSettingsAge(profile?.ageYears ? String(profile.ageYears) : "");
   }, [profile?.ageYears]);
+
+  // ── Notifications (web push) — settings toggle ────────────────────────────
+  const pushOn = !!(profile as unknown as { pushOptIn?: boolean } | undefined)?.pushOptIn;
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushNote, setPushNote] = useState<string | null>(null);
+
+  const handlePushToggle = async () => {
+    if (pushBusy) return;
+    setPushBusy(true);
+    setPushNote(null);
+    try {
+      if (pushOn) {
+        await disablePush();
+        setPushNote("Notifications are off for this account.");
+      } else {
+        const r = await enablePush();
+        if (!r.ok) setPushNote(r.reason);
+      }
+      queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const handleSendTestPush = async () => {
+    setPushNote("Sending a test…");
+    const ok = await sendTestPush();
+    setPushNote(
+      ok
+        ? "Sent — it should appear on this device in a moment."
+        : "Couldn't send right now — you may have reached today's limit of two.",
+    );
+  };
 
   const form = useForm<ChatMessageFormValues>({
     resolver: zodResolver(chatMessageSchema),
@@ -2147,6 +2181,59 @@ export default function Chat() {
                     Cancel
                   </button>
                 </div>
+              )}
+            </div>
+
+            {/* ── Notifications ───────────────────────────────────────────── */}
+            <div>
+              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
+                Notifications
+              </p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] text-foreground/75">Gentle nudges on this device</p>
+                  <p className="text-[10.5px] text-muted-foreground/45 mt-1 leading-relaxed">
+                    At most two a day — your Sunday chapter, and a morning note. Nothing else, ever.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={pushOn}
+                  aria-label="Toggle notifications"
+                  onClick={handlePushToggle}
+                  disabled={pushBusy}
+                  className={cn(
+                    "relative w-11 h-6 rounded-full border transition-all shrink-0",
+                    pushOn ? "bg-primary/40 border-primary/60" : "bg-background/60 border-primary/25",
+                    pushBusy && "opacity-50",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-transform duration-200",
+                      pushOn ? "translate-x-5 bg-primary" : "translate-x-0 bg-foreground/30",
+                    )}
+                  />
+                </button>
+              </div>
+              {!pushOn && needsInstallFirst() && (
+                <p className="text-[10.5px] text-muted-foreground/45 mt-2 leading-relaxed">
+                  On iPhone or iPad: first add Eos to your Home Screen (Share → Add to Home Screen), then turn
+                  this on from the installed app.
+                </p>
+              )}
+              {pushOn && (
+                <button
+                  type="button"
+                  onClick={handleSendTestPush}
+                  className="mt-2 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors"
+                >
+                  Send a test
+                </button>
+              )}
+              {pushNote && (
+                <p className="text-[10.5px] text-amber-400/70 mt-2 leading-relaxed">{pushNote}</p>
               )}
             </div>
 

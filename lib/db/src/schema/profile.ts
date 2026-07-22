@@ -29,6 +29,8 @@ export const profileTable = pgTable("profile", {
   timezone: text("timezone").notNull().default("UTC"), // IANA timezone e.g. "America/New_York"
   // Daily email preferences
   dailyEmailOptOut: boolean("daily_email_opt_out").notNull().default(false),
+  // Web push — opt-in only, default OFF; flipped by subscribe/unsubscribe routes
+  pushOptIn: boolean("push_opt_in").notNull().default(false),
   lastEmailDate: text("last_email_date"), // YYYY-MM-DD — last date we sent a daily email, per their timezone
   lastGreetingAt: timestamp("last_greeting_at"), // when we last generated a contextual greeting (morning/evening/night)
 });

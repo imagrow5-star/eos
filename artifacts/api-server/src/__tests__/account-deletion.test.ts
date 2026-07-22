@@ -459,6 +459,10 @@ describe("DELETE /api/auth/account", () => {
       "weekly_chapters",
       "chapter_quote_dismissals",
       "chapter_offer_events",
+      "sealed_notes",
+      "story_threads",
+      "push_subscriptions",
+      "push_events",
     ]);
 
     // ── INDIRECT tables: store the user's id WITHOUT a `user_id` column, so the

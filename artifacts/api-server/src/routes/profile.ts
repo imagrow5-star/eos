@@ -85,6 +85,7 @@ function buildProfilePayload(
       ? new Date().getFullYear() - (profile as any).birthYear
       : null,
     timezone: (profile as any).timezone ?? "UTC",
+    pushOptIn: (profile as any).pushOptIn ?? false,
     createdAt: profile.createdAt,
     daysSinceStart,
     currentStage: stage,

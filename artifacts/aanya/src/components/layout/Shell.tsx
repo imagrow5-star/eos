@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { apiFetch } from "@/lib/api";
-import { MessageSquare, Sparkles, Map, LogOut } from "lucide-react";
+import { MessageSquare, Sparkles, Map, Feather, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -11,6 +11,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const navItems = [
     { href: "/", icon: MessageSquare, label: "Chat" },
     { href: "/journey", icon: Map, label: "Journey" },
+    { href: "/chapters", icon: Feather, label: "Chapters" },
     { href: "/memory", icon: Sparkles, label: "Memory" },
   ];
 

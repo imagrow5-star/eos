@@ -65,6 +65,10 @@ interface SummaryBody {
   weeklyChapterCount: number;
   chapterQuoteDismissalCount: number;
   chapterOfferEventCount: number;
+  sealedNoteCount: number;
+  storyThreadCount: number;
+  pushSubscriptionCount: number;
+  pushEventCount: number;
   firstMessageAt: string | null;
   lastMessageAt: string | null;
 }
@@ -360,6 +364,10 @@ describe("GET /api/account/export/summary", () => {
       ["weeklyChapterCount", "weeklyChapters"],
       ["chapterQuoteDismissalCount", "chapterQuoteDismissals"],
       ["chapterOfferEventCount", "chapterOfferEvents"],
+      ["sealedNoteCount", "sealedNotes"],
+      ["storyThreadCount", "storyThreads"],
+      ["pushSubscriptionCount", "pushSubscriptions"],
+      ["pushEventCount", "pushEvents"],
     ];
 
     for (const [countKey, arrayKey] of pairs) {

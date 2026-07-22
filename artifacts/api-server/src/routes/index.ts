@@ -16,6 +16,7 @@ import accountRouter from "./account";
 import voiceLlmRouter from "./voice-llm";
 import voiceAgentRouter from "./voice-agent";
 import chaptersRouter, { chaptersInternalRouter } from "./chapters";
+import pushRouter, { pushInternalRouter } from "./push";
 
 const router: IRouter = Router();
 
@@ -29,6 +30,8 @@ router.use(voiceLlmRouter);
 // Weekly-chapter sweep — called hourly by the daily-email scheduled job;
 // authenticated per-call via HMAC internal token (no browser session).
 router.use(chaptersInternalRouter);
+// Morning push-nudge sweep — same caller, same HMAC scheme.
+router.use(pushInternalRouter);
 
 // ─── Protected routes — valid session + verified email required ───────────────
 // requireAuth sets req.userId; requireVerified checks emailVerifiedAt in the DB.
@@ -46,5 +49,6 @@ router.use(commitmentsRouter);
 router.use(accountRouter);
 router.use(voiceAgentRouter);
 router.use(chaptersRouter);
+router.use(pushRouter);
 
 export default router;

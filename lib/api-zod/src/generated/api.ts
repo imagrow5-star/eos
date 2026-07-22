@@ -63,7 +63,8 @@ export const GetProfileResponse = zod.object({
   "userGenderCustom": zod.string().nullish().describe('Their own words when userGender = custom — e.g. non-binary'),
   "birthYear": zod.number().nullish().describe('Approximate birth year — adults only, null when not shared'),
   "ageYears": zod.number().nullish().describe('Current age computed from birthYear — null when not shared'),
-  "timezone": zod.string().describe('IANA timezone string e.g. America/New_York')
+  "timezone": zod.string().describe('IANA timezone string e.g. America/New_York'),
+  "pushOptIn": zod.boolean().optional().describe('Web-push notifications enabled (opt-in only, default false)')
 })
 
 
