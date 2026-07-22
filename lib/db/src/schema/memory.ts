@@ -2,11 +2,12 @@ import { pgTable, serial, text, boolean, timestamp, integer } from "drizzle-orm/
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
+import { encryptedText } from "../encryptedColumns";
 
 export const memoryFactsTable = pgTable("memory_facts", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => usersTable.id),
-  fact: text("fact").notNull(),
+  fact: encryptedText("fact", "memory_facts.fact").notNull(), // encrypted at rest
   category: text("category").notNull().default("life"), // life | preference | event | person | goal
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -14,7 +15,7 @@ export const memoryFactsTable = pgTable("memory_facts", {
 export const personalitySignalsTable = pgTable("personality_signals", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => usersTable.id),
-  signal: text("signal").notNull(),
+  signal: encryptedText("signal", "personality_signals.signal").notNull(), // encrypted at rest
   observedCount: integer("observed_count").notNull().default(1),
   isActive: boolean("is_active").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -23,7 +24,7 @@ export const personalitySignalsTable = pgTable("personality_signals", {
 export const winsTable = pgTable("wins", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => usersTable.id),
-  content: text("content").notNull(),
+  content: encryptedText("content", "wins.content").notNull(), // encrypted at rest
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

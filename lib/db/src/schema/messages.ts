@@ -2,12 +2,13 @@ import { pgTable, serial, text, boolean, timestamp, integer } from "drizzle-orm/
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
+import { encryptedText } from "../encryptedColumns";
 
 export const messagesTable = pgTable("messages", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => usersTable.id),
   role: text("role").notNull(), // user | assistant
-  content: text("content").notNull(),
+  content: encryptedText("content", "messages.content").notNull(), // encrypted at rest
   isMorningNote: boolean("is_morning_note").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

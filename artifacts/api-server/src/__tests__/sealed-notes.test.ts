@@ -14,6 +14,7 @@ import { describe, it, expect, afterEach, afterAll } from "vitest";
 import request from "supertest";
 import pg from "pg";
 import app from "../app.js";
+import { decryptText } from "@workspace/db";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -107,7 +108,9 @@ describe("POST /api/chapters/:id/note", () => {
     );
     expect(row.rowCount).toBe(1);
     expect(row.rows[0]!.kind).toBe("prediction");
-    expect(row.rows[0]!.prompt).toContain("next Sunday");
+    // Stored encrypted; the readable prompt only exists after decryption.
+    expect(row.rows[0]!.prompt).toMatch(/^enc:v1:/);
+    expect(decryptText(row.rows[0]!.prompt!, "sealed_notes.prompt")).toContain("next Sunday");
     expect(row.rows[0]!.crisis_flagged).toBe(false);
   });
 

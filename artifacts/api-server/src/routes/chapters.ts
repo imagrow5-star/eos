@@ -386,23 +386,31 @@ router.post("/chapters/:id/offer", async (req, res): Promise<void> => {
     return;
   }
 
-  // Atomic claim: the conditional update below only wins while the stored
-  // offer is still 'pending', so two concurrent requests (double-tap, two
-  // tabs) can't both act on the same offer — the loser gets a 409. A
-  // concurrent quote-dismissal that nulls the offer also makes the claim fail.
+  // Atomic claim: only one caller may move the offer out of 'pending', so two
+  // concurrent requests (double-tap, two tabs) can't both act on the same
+  // offer — the loser gets a 409. A concurrent quote-dismissal that nulls the
+  // offer also makes the claim fail.
+  // micro_offer is encrypted at rest, so SQL can no longer peek at
+  // ->>'status' for the old conditional-UPDATE guard. Same atomicity, new
+  // mechanism: SELECT ... FOR UPDATE serializes claimants on the row lock and
+  // the status check happens in app code on the decrypted value inside the
+  // same transaction.
   const claimOffer = async (updatedOffer: MicroOffer) => {
-    const [claimed] = await db
-      .update(weeklyChaptersTable)
-      .set({ microOffer: updatedOffer })
-      .where(
-        and(
-          eq(weeklyChaptersTable.id, id),
-          eq(weeklyChaptersTable.userId, userId),
-          sql`${weeklyChaptersTable.microOffer}->>'status' = 'pending'`,
-        ),
-      )
-      .returning();
-    return claimed;
+    return db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select()
+        .from(weeklyChaptersTable)
+        .where(and(eq(weeklyChaptersTable.id, id), eq(weeklyChaptersTable.userId, userId)))
+        .for("update");
+      const lockedOffer = (locked?.microOffer as MicroOffer | null) ?? null;
+      if (!lockedOffer || lockedOffer.status !== "pending") return undefined;
+      const [claimed] = await tx
+        .update(weeklyChaptersTable)
+        .set({ microOffer: updatedOffer })
+        .where(and(eq(weeklyChaptersTable.id, id), eq(weeklyChaptersTable.userId, userId)))
+        .returning();
+      return claimed;
+    });
   };
 
   if (action === "accept") {

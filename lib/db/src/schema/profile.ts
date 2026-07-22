@@ -2,11 +2,12 @@ import { pgTable, serial, text, boolean, timestamp, integer } from "drizzle-orm/
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
+import { encryptedText } from "../encryptedColumns";
 
 export const profileTable = pgTable("profile", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => usersTable.id),
-  userName: text("user_name").notNull().default(""),
+  userName: encryptedText("user_name", "profile.user_name").notNull().default(""), // encrypted at rest
   companionName: text("companion_name").notNull().default("Asha"),
   relationshipType: text("relationship_type").notNull().default("friend"), // friend | romantic
   energy: text("energy").notNull().default("calm"), // playful | calm | deep
@@ -25,7 +26,7 @@ export const profileTable = pgTable("profile", {
   voiceTone: text("voice_tone").notNull().default("auto"), // Voice-call delivery: auto | gentle | calm | upbeat
   companionGender: text("companion_gender").notNull().default("woman"), // woman | man | nonbinary
   userGender: text("user_gender"), // man | woman | custom (legacy: other) — nullable, optional
-  userGenderCustom: text("user_gender_custom"), // their own words when userGender = "custom" (e.g. "non-binary")
+  userGenderCustom: encryptedText("user_gender_custom", "profile.user_gender_custom"), // their own words when userGender = "custom" (e.g. "non-binary") — encrypted at rest
   timezone: text("timezone").notNull().default("UTC"), // IANA timezone e.g. "America/New_York"
   // Daily email preferences
   dailyEmailOptOut: boolean("daily_email_opt_out").notNull().default(false),

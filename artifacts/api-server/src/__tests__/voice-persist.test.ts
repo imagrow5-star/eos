@@ -18,6 +18,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
 import pg from "pg";
 import { eq } from "drizzle-orm";
+import { decryptText } from "@workspace/db";
 import { db, messagesTable, profileTable } from "@workspace/db";
 import app from "../app.js";
 import {
@@ -76,11 +77,13 @@ afterEach(async () => {
 });
 
 async function countRows(userId: number, role: string, content: string): Promise<number> {
-  const r = await pool.query<{ n: string }>(
-    "SELECT count(*) AS n FROM messages WHERE user_id = $1 AND role = $2 AND content = $3",
-    [userId, role, content],
+  // content is encrypted at rest with a per-row IV, so SQL equality can never
+  // match — fetch the user's rows and compare after decrypting.
+  const r = await pool.query<{ content: string }>(
+    "SELECT content FROM messages WHERE user_id = $1 AND role = $2",
+    [userId, role],
   );
-  return Number(r.rows[0]!.n);
+  return r.rows.filter((row) => decryptText(row.content, "messages.content") === content).length;
 }
 
 // issuedAt slightly in the past so DB-vs-node clock skew can't hide in-call rows.

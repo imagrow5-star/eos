@@ -9,6 +9,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
+import { encryptedJsonb, encryptedText } from "../encryptedColumns";
 
 // ─── Weekly growth chapters ───────────────────────────────────────────────────
 // One row per user per analyzed week (Mon–Sun). Entirely additive — nothing in
@@ -31,19 +32,19 @@ export const weeklyChaptersTable = pgTable(
     weekStart: text("week_start").notNull(), // YYYY-MM-DD (Monday of analyzed week)
     weekEnd: text("week_end").notNull(), // YYYY-MM-DD (Sunday)
     status: text("status").notNull().default("ready"), // ready | revealed
-    threadOpening: text("thread_opening").notNull().default(""),
-    thresholdQuestion: text("threshold_question").notNull(),
-    thresholdAnswer: text("threshold_answer"),
+    threadOpening: encryptedText("thread_opening", "weekly_chapters.thread_opening").notNull().default(""),
+    thresholdQuestion: encryptedText("threshold_question", "weekly_chapters.threshold_question").notNull(),
+    thresholdAnswer: encryptedText("threshold_answer", "weekly_chapters.threshold_answer"),
     thresholdMood: integer("threshold_mood"), // 1–10, optional one-tap slider
     thresholdLoneliness: integer("threshold_loneliness"), // 1–10, optional
     thresholdSkipped: boolean("threshold_skipped").notNull().default(false),
-    themes: jsonb("themes").notNull(), // ChapterTheme[] — see api-server services/chapters
-    goalReview: jsonb("goal_review"), // { items: [...] } | null
-    microOffer: jsonb("micro_offer"), // seed-quote-anchored offer | null
+    themes: encryptedJsonb("themes", "weekly_chapters.themes").notNull(), // ChapterTheme[] — see api-server services/chapters — encrypted at rest
+    goalReview: encryptedJsonb("goal_review", "weekly_chapters.goal_review"), // { items: [...] } | null — encrypted at rest
+    microOffer: encryptedJsonb("micro_offer", "weekly_chapters.micro_offer"), // seed-quote-anchored offer | null — encrypted at rest
     // Phase 2 — the sealed-note ritual + processing engine (all nullable/additive):
-    noteInvite: jsonb("note_invite"), // { prompt: string } | null — Eos-drafted gentle prediction question offered at the end of THIS chapter
-    sealResolution: jsonb("seal_resolution"), // { noteId, noteKind, notePrompt|null, noteText, resolutionText } | null — set when THIS chapter resolves an earlier sealed note; cleared if the user defers
-    workingThrough: jsonb("working_through"), // { label, entries: [{ weekLabel, text, verbatim, messageId|null, date }], reflection } | null — evolving-story relief framing
+    noteInvite: encryptedJsonb("note_invite", "weekly_chapters.note_invite"), // { prompt: string } | null — Eos-drafted gentle prediction question offered at the end of THIS chapter — encrypted at rest
+    sealResolution: encryptedJsonb("seal_resolution", "weekly_chapters.seal_resolution"), // { noteId, noteKind, notePrompt|null, noteText, resolutionText } | null — set when THIS chapter resolves an earlier sealed note; cleared if the user defers — encrypted at rest
+    workingThrough: encryptedJsonb("working_through", "weekly_chapters.working_through"), // { label, entries: [{ weekLabel, text, verbatim, messageId|null, date }], reflection } | null — evolving-story relief framing — encrypted at rest
     generatedAt: timestamp("generated_at").notNull().defaultNow(),
     revealedAt: timestamp("revealed_at"),
     readAt: timestamp("read_at"),

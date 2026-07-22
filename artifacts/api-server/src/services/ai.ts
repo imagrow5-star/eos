@@ -594,27 +594,34 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
     }
 
     if (extracted.signals && extracted.signals.length > 0) {
+      // signal is encrypted at rest, so the old SQL `lower(...) LIKE %head%`
+      // dedup can no longer see the content. Fetch the user's signals once
+      // (drizzle decrypts on read) and do the same substring match in app
+      // code; the local array mirrors DB writes so repeated signals within
+      // one batch behave exactly as the per-iteration query did.
+      const existingSignals = await db
+        .select()
+        .from(personalitySignalsTable)
+        .where(eq(personalitySignalsTable.userId, userId));
       for (const signal of extracted.signals) {
         if (!signal || signal.length < 5) continue;
-        const existing = await db
-          .select()
-          .from(personalitySignalsTable)
-          .where(
-            and(
-              eq(personalitySignalsTable.userId, userId),
-              sql`lower(${personalitySignalsTable.signal}) like ${"%" + signal.toLowerCase().slice(0, 15) + "%"}`,
-            ),
-          );
+        const needle = signal.toLowerCase().slice(0, 15);
+        const current = existingSignals.find((e) => e.signal.toLowerCase().includes(needle));
 
-        if (existing.length > 0) {
-          const current = existing[0]!;
+        if (current) {
           const newCount = current.observedCount + 1;
+          current.observedCount = newCount;
+          current.isActive = newCount >= 3;
           await db
             .update(personalitySignalsTable)
             .set({ observedCount: newCount, isActive: newCount >= 3 })
             .where(eq(personalitySignalsTable.id, current.id));
         } else {
-          await db.insert(personalitySignalsTable).values({ signal, observedCount: 1, isActive: false, userId });
+          const [inserted] = await db
+            .insert(personalitySignalsTable)
+            .values({ signal, observedCount: 1, isActive: false, userId })
+            .returning();
+          if (inserted) existingSignals.push(inserted);
         }
       }
     }

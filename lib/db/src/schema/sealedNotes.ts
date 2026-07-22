@@ -8,6 +8,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
+import { encryptedText } from "../encryptedColumns";
 
 // ─── Sealed notes — the chapter's closing ritual ─────────────────────────────
 // At the end of a chapter the user may (never must) leave one sentence for
@@ -32,8 +33,8 @@ export const sealedNotesTable = pgTable(
     chapterId: integer("chapter_id").notNull(), // chapter at whose end this was written
     weekStart: text("week_start").notNull(), // that chapter's analyzed week (YYYY-MM-DD)
     kind: text("kind").notNull(), // free | prediction
-    prompt: text("prompt"), // Eos's prediction question when kind = prediction
-    text: text("text").notNull(), // the user's own sentence — quoted verbatim at resolution
+    prompt: encryptedText("prompt", "sealed_notes.prompt"), // Eos's prediction question when kind = prediction — encrypted at rest
+    text: encryptedText("text", "sealed_notes.text").notNull(), // the user's own sentence — quoted verbatim at resolution — encrypted at rest
     crisisFlagged: boolean("crisis_flagged").notNull().default(false),
     status: text("status").notNull().default("sealed"), // sealed | resolved
     deferrals: integer("deferrals").notNull().default(0), // "keep it sealed another week" count

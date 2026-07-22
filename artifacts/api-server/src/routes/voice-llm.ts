@@ -191,18 +191,20 @@ export async function persistVoiceTurn(args: {
   let savedAssistant = false;
   const job = async () => {
     if (!synthetic) {
-      const [userDupe] = await db
-        .select({ id: messagesTable.id })
+      // content is encrypted at rest with a random IV per row, so SQL
+      // equality (eq(content, x)) can never match — fetch the call window's
+      // rows (drizzle decrypts on read) and compare in app code instead.
+      const recentUserRows = await db
+        .select({ content: messagesTable.content })
         .from(messagesTable)
         .where(
           and(
             eq(messagesTable.userId, userId),
             eq(messagesTable.role, "user"),
-            eq(messagesTable.content, userContent),
             gte(messagesTable.createdAt, callStart),
           ),
-        )
-        .limit(1);
+        );
+      const userDupe = recentUserRows.some((r) => r.content === userContent);
       if (!userDupe) {
         await db
           .insert(messagesTable)
@@ -214,18 +216,18 @@ export async function persistVoiceTurn(args: {
     // A skip_turn reply is intentional silence — fullText is empty and there
     // is nothing to store. Never insert empty assistant rows.
     if (fullText.trim().length > 0) {
-      const [assistantDupe] = await db
-        .select({ id: messagesTable.id })
+      // Same as above: content equality must happen on decrypted rows.
+      const recentAssistantRows = await db
+        .select({ content: messagesTable.content })
         .from(messagesTable)
         .where(
           and(
             eq(messagesTable.userId, userId),
             eq(messagesTable.role, "assistant"),
-            eq(messagesTable.content, fullText),
             gte(messagesTable.createdAt, callStart),
           ),
-        )
-        .limit(1);
+        );
+      const assistantDupe = recentAssistantRows.some((r) => r.content === fullText);
       if (!assistantDupe) {
         await db
           .insert(messagesTable)

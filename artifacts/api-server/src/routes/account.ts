@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { pool } from "@workspace/db";
+import { pool, decryptText, decryptJson, decryptTextArray } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { EMBEDDED_FONTS_CSS } from "./report-fonts.js";
 
@@ -627,26 +627,76 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
     ),
   ]);
 
+  // ── Decrypt for export ─────────────────────────────────────────────────────
+  // These queries bypass drizzle (raw SQL for breadth), so sensitive values
+  // arrive as stored — encrypted. The export exists to give the user their own
+  // data in READABLE form, so every encrypted field is decrypted here. Values
+  // written before the encryption rollout pass through unchanged.
+  const dText = (v: unknown, aad: string): unknown =>
+    v == null ? v : decryptText(v as string, aad);
+  const dJson = (v: unknown, aad: string): unknown => (v == null ? v : decryptJson(v, aad));
+
+  const rawProfile = profileResult.rows[0];
+  const profileRow = rawProfile
+    ? {
+        ...rawProfile,
+        user_gender_custom: dText(rawProfile.user_gender_custom, "profile.user_gender_custom"),
+      }
+    : null;
+  const rawPersonalization = personalizationStateResult.rows[0];
+  const personalizationRow = rawPersonalization
+    ? {
+        ...rawPersonalization,
+        recent_phrases: Array.isArray(rawPersonalization.recent_phrases)
+          ? decryptTextArray(rawPersonalization.recent_phrases, "personalization_state.recent_phrases")
+          : rawPersonalization.recent_phrases,
+      }
+    : null;
+
   return {
     exportedAt: new Date().toISOString(),
     range: range.from || range.to ? { from: range.from ?? null, to: range.to ?? null } : null,
-    profile: profileResult.rows[0] ?? null,
-    messages: messagesResult.rows,
-    memoryFacts: memoryResult.rows,
-    wins: winsResult.rows,
+    profile: profileRow,
+    messages: messagesResult.rows.map((r) => ({
+      ...r,
+      content: dText(r.content, "messages.content"),
+    })),
+    memoryFacts: memoryResult.rows.map((r) => ({ ...r, fact: dText(r.fact, "memory_facts.fact") })),
+    wins: winsResult.rows.map((r) => ({ ...r, content: dText(r.content, "wins.content") })),
     habits: habitsResult.rows,
     habitCompletions: habitCompletionsResult.rows,
     goals: goalsResult.rows,
     moodScores: moodResult.rows,
     commitments: commitmentsResult.rows,
     reminders: remindersResult.rows,
-    personalitySignals: personalitySignalsResult.rows,
-    personalizationState: personalizationStateResult.rows[0] ?? null,
-    weeklyChapters: weeklyChaptersResult.rows,
+    personalitySignals: personalitySignalsResult.rows.map((r) => ({
+      ...r,
+      signal: dText(r.signal, "personality_signals.signal"),
+    })),
+    personalizationState: personalizationRow,
+    weeklyChapters: weeklyChaptersResult.rows.map((r) => ({
+      ...r,
+      thread_opening: dText(r.thread_opening, "weekly_chapters.thread_opening"),
+      threshold_question: dText(r.threshold_question, "weekly_chapters.threshold_question"),
+      threshold_answer: dText(r.threshold_answer, "weekly_chapters.threshold_answer"),
+      themes: dJson(r.themes, "weekly_chapters.themes"),
+      goal_review: dJson(r.goal_review, "weekly_chapters.goal_review"),
+      micro_offer: dJson(r.micro_offer, "weekly_chapters.micro_offer"),
+      note_invite: dJson(r.note_invite, "weekly_chapters.note_invite"),
+      seal_resolution: dJson(r.seal_resolution, "weekly_chapters.seal_resolution"),
+      working_through: dJson(r.working_through, "weekly_chapters.working_through"),
+    })),
     chapterQuoteDismissals: chapterDismissalsResult.rows,
     chapterOfferEvents: chapterOfferEventsResult.rows,
-    sealedNotes: sealedNotesResult.rows,
-    storyThreads: storyThreadsResult.rows,
+    sealedNotes: sealedNotesResult.rows.map((r) => ({
+      ...r,
+      prompt: dText(r.prompt, "sealed_notes.prompt"),
+      text: dText(r.text, "sealed_notes.text"),
+    })),
+    storyThreads: storyThreadsResult.rows.map((r) => ({
+      ...r,
+      retellings: dJson(r.retellings, "story_threads.retellings"),
+    })),
     pushSubscriptions: pushSubscriptionsResult.rows,
     pushEvents: pushEventsResult.rows,
   };

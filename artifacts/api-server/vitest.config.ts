@@ -9,6 +9,10 @@ export default defineConfig({
     hookTimeout: 30_000,
     include: ["src/__tests__/**/*.test.ts"],
     // Keep test runs from sending real emails (see the setup file's rationale)
-    setupFiles: ["src/__tests__/setup/suppress-resend.ts", "src/__tests__/setup/vapid-env.ts"],
+    setupFiles: [
+      "src/__tests__/setup/suppress-resend.ts",
+      "src/__tests__/setup/vapid-env.ts",
+      "src/__tests__/setup/encryption-env.ts",
+    ],
   },
 });

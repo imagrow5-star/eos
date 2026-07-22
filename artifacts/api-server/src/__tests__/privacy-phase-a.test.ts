@@ -11,6 +11,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import request from "supertest";
 import pg from "pg";
 import app, { isAllowedOrigin } from "../app.js";
+import { decryptJson } from "@workspace/db";
 import { ensureVapidKeys } from "../services/push.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -272,7 +273,9 @@ describe("DELETE /api/chat/messages/:id", () => {
       "SELECT retellings FROM story_threads WHERE id = $1",
       [threadId],
     );
-    const after = thread.rows[0]!.retellings;
+    // The scrub rewrites retellings through drizzle, which re-encrypts the
+    // jsonb — decryptJson also passes legacy plaintext arrays through.
+    const after = decryptJson<any[]>(thread.rows[0]!.retellings, "story_threads.retellings");
     expect(after).toHaveLength(2);
     expect(after[0].question).toBeNull(); // verbatim quote scrubbed
     expect(after[0].questionMessageId).toBeNull();
