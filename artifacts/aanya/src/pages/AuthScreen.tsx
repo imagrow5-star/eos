@@ -3,20 +3,69 @@ import { apiFetch } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { PasswordInput } from "@/components/PasswordInput";
+import {
+  AUTH_DRAFT_KEY as DRAFT_KEY,
+  RESET_TOKEN_KEY,
+  clearSessionDrafts,
+} from "@/lib/sessionDrafts";
 
 type Tab = "login" | "signup" | "forgot" | "reset" | "cancelled" | "emailChangeCancelled";
 
+// Non-sensitive in-progress auth state survives mobile tab discards and
+// reloads via sessionStorage (per-tab, cleared when the tab closes).
+// Passwords are NEVER persisted anywhere. The reset token is kept here too:
+// we strip it from the URL for privacy, but mobile browsers routinely discard
+// backgrounded tabs — without this, coming back from the email app reloaded
+// the page tokenless and dumped the user on the login tab mid-reset.
+function readDraft(): { tab?: Tab; email?: string } {
+  try {
+    const raw = sessionStorage.getItem(DRAFT_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as { tab?: string; email?: string };
+    const restorable: Tab[] = ["login", "signup", "forgot", "reset"];
+    return {
+      tab: restorable.includes(parsed.tab as Tab) ? (parsed.tab as Tab) : undefined,
+      email: typeof parsed.email === "string" ? parsed.email : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function readStoredResetToken(): string | null {
+  try {
+    return sessionStorage.getItem(RESET_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export function AuthScreen() {
-  const [tab, setTab] = useState<Tab>("login");
-  const [email, setEmail] = useState("");
+  const [tab, setTab] = useState<Tab>(() => {
+    // A pending reset (user arrived from the email link, possibly reloaded
+    // since) takes precedence over any other remembered tab.
+    if (readStoredResetToken()) return "reset";
+    const draftTab = readDraft().tab;
+    return draftTab === "reset" ? "login" : (draftTab ?? "login");
+  });
+  const [email, setEmail] = useState(() => readDraft().email ?? "");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [expiredToken, setExpiredToken] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [resetToken, setResetToken] = useState<string | null>(null);
+  const [resetToken, setResetToken] = useState<string | null>(readStoredResetToken);
   const queryClient = useQueryClient();
+
+  // Keep the draft current (tab + email only — never passwords).
+  useEffect(() => {
+    try {
+      if (tab === "cancelled" || tab === "emailChangeCancelled") return;
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ tab, email }));
+    } catch {}
+  }, [tab, email]);
 
   // Detect reset token or cancel-reset token in the URL on mount
   useEffect(() => {
@@ -28,7 +77,12 @@ export function AuthScreen() {
     if (token) {
       setResetToken(token);
       setTab("reset");
-      // Clean the token from the URL so it isn't accidentally shared
+      // Keep it in per-tab storage so a reload (mobile tab discard, back
+      // button) doesn't strand the user without the token…
+      try {
+        sessionStorage.setItem(RESET_TOKEN_KEY, token);
+      } catch {}
+      // …and clean it from the URL so it isn't accidentally shared
       const url = new URL(window.location.href);
       url.searchParams.delete("resetToken");
       window.history.replaceState({}, "", url.toString());
@@ -66,6 +120,13 @@ export function AuthScreen() {
   }, []);
 
   const switchTab = (t: Tab) => {
+    if (tab === "reset" && t !== "reset") {
+      // Leaving the reset flow discards the locally-held link token.
+      try {
+        sessionStorage.removeItem(RESET_TOKEN_KEY);
+      } catch {}
+      setResetToken(null);
+    }
     setTab(t);
     setError(null);
     setExpiredToken(false);
@@ -119,6 +180,9 @@ export function AuthScreen() {
         }
         setSuccess("Your password has been updated. You can now sign in.");
         setResetToken(null);
+        try {
+          sessionStorage.removeItem(RESET_TOKEN_KEY);
+        } catch {}
         setPassword("");
         setConfirmPassword("");
         setTimeout(() => switchTab("login"), 2000);
@@ -139,6 +203,11 @@ export function AuthScreen() {
         setError(data.error ?? "Something went wrong. Please try again.");
         return;
       }
+
+      // Fresh session: wipe per-tab drafts so nothing from the signed-out
+      // context (auth-form email, a chat draft from another account, a
+      // pending reset token) leaks into it — matters on shared devices.
+      clearSessionDrafts();
 
       // Invalidate the /auth/me query — the AuthGate will re-fetch and show the app
       await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
@@ -208,7 +277,9 @@ export function AuthScreen() {
           )}
 
           {/* Sub-screen heading for forgot / reset */}
-          {(tab === "forgot" || tab === "reset") && !expiredToken && (
+          {(tab === "forgot" || tab === "reset") &&
+            !expiredToken &&
+            !(tab === "reset" && !resetToken && !success) && (
             <div className="mb-8">
               <h2 className="text-xl font-serif text-foreground mb-1">
                 {tabLabels[tab]}
@@ -244,6 +315,40 @@ export function AuthScreen() {
                   setConfirmPassword("");
                   switchTab("forgot");
                 }}
+                className="w-full bg-primary text-background py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all mt-2"
+              >
+                Request a new link
+              </button>
+              <button
+                type="button"
+                onClick={() => switchTab("login")}
+                className="w-full text-xs text-muted-foreground hover:text-primary transition-colors underline underline-offset-2 pb-1"
+              >
+                ← Back to sign in
+              </button>
+            </motion.div>
+          )}
+
+          {/* Reset link no longer on hand (e.g. opened in a different tab or
+              the stored token was cleared) — dead-end prevention: without this
+              the form would submit token:null and fail with a generic error. */}
+          {tab === "reset" && !expiredToken && !resetToken && !success && (
+            <motion.div
+              key="tokenMissing"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="text-center space-y-5 py-2"
+            >
+              <div className="text-4xl">🔗</div>
+              <h2 className="text-xl font-serif text-foreground">Link not available</h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                This reset link isn't available on this device anymore. Request a fresh
+                one below — it only takes a moment.
+              </p>
+              <button
+                type="button"
+                onClick={() => switchTab("forgot")}
                 className="w-full bg-primary text-background py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all mt-2"
               >
                 Request a new link
@@ -313,7 +418,10 @@ export function AuthScreen() {
           )}
 
           <AnimatePresence mode="wait">
-          {tab !== "cancelled" && tab !== "emailChangeCancelled" && !(tab === "reset" && expiredToken) && (
+          {tab !== "cancelled" &&
+            tab !== "emailChangeCancelled" &&
+            !(tab === "reset" && expiredToken) &&
+            !(tab === "reset" && !resetToken && !success) && (
             <motion.form
               key={tab}
               onSubmit={handleSubmit}
@@ -347,8 +455,7 @@ export function AuthScreen() {
                   <label className="block text-[10px] text-muted-foreground tracking-widest uppercase mb-2">
                     {tab === "reset" ? "New password" : "Password"}
                   </label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={tab === "login" ? "Your password" : "Minimum 8 characters"}
@@ -365,8 +472,7 @@ export function AuthScreen() {
                   <label className="block text-[10px] text-muted-foreground tracking-widest uppercase mb-2">
                     Confirm new password
                   </label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="Repeat your new password"

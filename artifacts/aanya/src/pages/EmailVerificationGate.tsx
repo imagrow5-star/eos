@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { clearSessionDrafts } from "@/lib/sessionDrafts";
 import { motion } from "framer-motion";
 import { ChangeEmailForm } from "@/components/ChangeEmailForm";
 
@@ -36,6 +37,8 @@ export function EmailVerificationGate({ email, onVerified }: Props) {
 
   const handleLogout = async () => {
     await apiFetch(`${import.meta.env.BASE_URL}api/auth/logout`, { method: "POST" });
+    // Same shared-device hygiene as the main logout: drop per-tab drafts.
+    clearSessionDrafts();
     onVerified(); // triggers re-check of /auth/me → will show auth screen
   };
 

@@ -21,6 +21,7 @@ import {
 import { useContextualGreeting } from "@/api/contextualGreeting";
 import { ChangeEmailForm } from "@/components/ChangeEmailForm";
 import { chatMessageSchema, type ChatMessageFormValues } from "@/lib/schemas";
+import { CHAT_DRAFT_KEY } from "@/lib/sessionDrafts";
 import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -437,8 +438,31 @@ export default function Chat() {
 
   const form = useForm<ChatMessageFormValues>({
     resolver: zodResolver(chatMessageSchema),
-    defaultValues: { content: "" },
+    // Restore an unsent draft — mobile browsers discard backgrounded tabs, and
+    // losing a half-written message to an app switch hurts in a companion app.
+    // Per-tab storage: cleared on send and when the tab closes.
+    defaultValues: {
+      content: (() => {
+        try {
+          return sessionStorage.getItem(CHAT_DRAFT_KEY) ?? "";
+        } catch {
+          return "";
+        }
+      })(),
+    },
   });
+
+  // Keep the draft current as the user types; form.reset() on send empties it.
+  useEffect(() => {
+    const sub = form.watch((values) => {
+      try {
+        const c = values.content ?? "";
+        if (c) sessionStorage.setItem(CHAT_DRAFT_KEY, c);
+        else sessionStorage.removeItem(CHAT_DRAFT_KEY);
+      } catch {}
+    });
+    return () => sub.unsubscribe();
+  }, [form]);
 
   const contextualGreetingMutate = contextualGreeting.mutate;
 
@@ -710,7 +734,10 @@ export default function Chat() {
     const content = data.content.trim();
     setStreamError(null);
     setCustomGenderMode(false);
-    form.reset();
+    // Explicit empty values: a bare reset() would restore defaultValues,
+    // which may hold a draft restored from sessionStorage — the sent message
+    // would reappear in the box (and get re-persisted by the watcher).
+    form.reset({ content: "" });
 
     if (!onboarding?.isComplete) {
       // Onboarding uses the regular mutation — no streaming needed

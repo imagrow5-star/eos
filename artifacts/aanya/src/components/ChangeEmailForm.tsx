@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { PasswordInput } from "@/components/PasswordInput";
 
 interface Props {
   /** The account's current email address, shown for context. */
@@ -91,8 +92,7 @@ export function ChangeEmailForm({ currentEmail, compact }: Props) {
         className={inputCls}
         disabled={status === "sending"}
       />
-      <input
-        type="password"
+      <PasswordInput
         autoComplete="current-password"
         value={password}
         onChange={(e) => { setPassword(e.target.value); setError(null); }}

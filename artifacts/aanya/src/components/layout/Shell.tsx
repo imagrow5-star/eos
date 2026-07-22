@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { apiFetch } from "@/lib/api";
+import { clearSessionDrafts } from "@/lib/sessionDrafts";
 import { MessageSquare, Sparkles, Map, Feather, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
@@ -19,6 +20,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
     try {
       await apiFetch(`${import.meta.env.BASE_URL}api/auth/logout`, { method: "POST" });
     } catch {}
+    // Logout = "done on this device": wipe per-tab drafts (chat draft, auth
+    // form state, any pending reset token) so nothing carries into the next
+    // session — matters on shared devices.
+    clearSessionDrafts();
     // Invalidate auth query — AuthGate will redirect to login screen
     queryClient.setQueryData(["/api/auth/me"], null);
     await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
