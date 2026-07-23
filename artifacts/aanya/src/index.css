@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;500;600&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:opsz,wght@14..32,300;400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
@@ -36,7 +36,8 @@
   --color-destructive-foreground: hsl(var(--destructive-foreground));
 
   --font-sans: 'Inter', sans-serif;
-  --font-serif: 'Cormorant Garamond', serif;
+  --font-serif: 'Playfair Display', serif;
+  --font-mono: 'IBM Plex Mono', monospace;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -48,91 +49,92 @@
 
 :root {
   /* ─────────────────────────────────────────────────────────────────────────
-     INTIMATE DUSK
-     A quiet, warm room lit by a single candle — the user speaks from the
-     dark; the companion answers in the light.
+     DEEP CHARCOAL / GOLD
+     Near-black charcoal base (#0D0B10), warm cream text (#F0E9DC),
+     accent gold (#DDB264) — matched to the marketing landing palette.
      ───────────────────────────────────────────────────────────────────────── */
 
-  /* Deep warm charcoal #1B1922 — the night, the room */
-  --background: 253 15% 12%;
-  /* Warm cream #EFE6D6 — the light she speaks in */
-  --foreground: 38 44% 89%;
+  /* Deep near-black charcoal #0D0B10 */
+  --background: 264 19% 5%;
+  /* Warm cream #F0E9DC */
+  --foreground: 39 40% 90%;
 
-  /* #2B2735 — her message card surfaces (twilight panels) */
-  --card: 257 15% 18%;
-  --card-foreground: 38 44% 89%;
-  --card-border: 35 20% 32%;
+  /* Card surface #16131C */
+  --card: 259 19% 9%;
+  --card-foreground: 39 40% 90%;
+  --card-border: 38 20% 20%;
 
-  /* #252230 — lifted surfaces (input bar, popovers) */
-  --popover: 253 20% 16%;
-  --popover-foreground: 38 44% 89%;
-  --popover-border: 35 12% 28%;
+  /* Raised surface #121016 */
+  --popover: 260 16% 7%;
+  --popover-foreground: 39 40% 90%;
+  --popover-border: 39 10% 15%;
 
-  /* Candlelit antique gold #C79A5B — wordmark, send button, active states only */
-  --primary: 35 49% 57%;
-  --primary-foreground: 253 15% 10%;
+  /* Accent gold #DDB264 */
+  --primary: 39 64% 63%;
+  /* Dark button text #291D07 */
+  --primary-foreground: 39 71% 9%;
 
-  /* Dimmer cream #C8BEAC — user-message text, secondary labels */
-  --secondary: 39 24% 73%;
-  --secondary-foreground: 253 15% 12%;
+  /* Secondary text #B9B0A1 */
+  --secondary: 38 15% 68%;
+  --secondary-foreground: 264 19% 5%;
 
-  /* #211E2B — header/muted panel surfaces */
-  --muted: 254 18% 14%;
-  /* #8A8194 — supporting text, labels, placeholders */
-  --muted-foreground: 268 8% 54%;
+  /* Muted panel #121016 */
+  --muted: 260 16% 7%;
+  /* Muted text #837B6E */
+  --muted-foreground: 37 9% 47%;
 
-  /* Slightly lifted hover/active surface */
-  --accent: 253 18% 20%;
-  --accent-foreground: 38 44% 89%;
+  /* Hover/active surface — slightly lifted above card */
+  --accent: 259 15% 12%;
+  --accent-foreground: 39 40% 90%;
 
   /* Soft crimson — rarely used */
   --destructive: 0 42% 32%;
-  --destructive-foreground: 38 44% 89%;
+  --destructive-foreground: 39 40% 90%;
 
-  /* Warm hairline — rgba(200,180,150,0.12) approximated */
-  --border: 35 14% 26%;
+  /* Warm hairline — approximates rgba(232,222,205,.08) on dark */
+  --border: 39 10% 16%;
   /* Input surface */
-  --input: 253 20% 16%;
-  --ring: 35 49% 57%;
+  --input: 260 16% 7%;
+  --ring: 39 64% 63%;
 
   /* Chart */
-  --chart-1: 35 49% 57%;    /* candlelit gold */
-  --chart-2: 38 44% 89%;    /* warm cream */
-  --chart-3: 39 24% 73%;    /* dimmer cream */
-  --chart-4: 268 8% 54%;    /* muted purple-gray */
-  --chart-5: 253 20% 16%;   /* deep surface */
+  --chart-1: 39 64% 63%;    /* accent gold #DDB264 */
+  --chart-2: 39 40% 90%;    /* warm cream */
+  --chart-3: 38 15% 68%;    /* secondary text */
+  --chart-4: 37 9% 47%;     /* muted */
+  --chart-5: 259 19% 9%;    /* card surface */
 
   --radius: 0.75rem;
 }
 
 /* Single palette — no dark-mode toggle needed */
 .dark {
-  --background: 253 15% 12%;
-  --foreground: 38 44% 89%;
-  --card: 257 15% 18%;
-  --card-foreground: 38 44% 89%;
-  --card-border: 35 20% 32%;
-  --popover: 253 20% 16%;
-  --popover-foreground: 38 44% 89%;
-  --popover-border: 35 12% 28%;
-  --primary: 35 49% 57%;
-  --primary-foreground: 253 15% 10%;
-  --secondary: 39 24% 73%;
-  --secondary-foreground: 253 15% 12%;
-  --muted: 254 18% 14%;
-  --muted-foreground: 268 8% 54%;
-  --accent: 253 18% 20%;
-  --accent-foreground: 38 44% 89%;
+  --background: 264 19% 5%;
+  --foreground: 39 40% 90%;
+  --card: 259 19% 9%;
+  --card-foreground: 39 40% 90%;
+  --card-border: 38 20% 20%;
+  --popover: 260 16% 7%;
+  --popover-foreground: 39 40% 90%;
+  --popover-border: 39 10% 15%;
+  --primary: 39 64% 63%;
+  --primary-foreground: 39 71% 9%;
+  --secondary: 38 15% 68%;
+  --secondary-foreground: 264 19% 5%;
+  --muted: 260 16% 7%;
+  --muted-foreground: 37 9% 47%;
+  --accent: 259 15% 12%;
+  --accent-foreground: 39 40% 90%;
   --destructive: 0 42% 32%;
-  --destructive-foreground: 38 44% 89%;
-  --border: 35 14% 26%;
-  --input: 253 20% 16%;
-  --ring: 35 49% 57%;
-  --chart-1: 35 49% 57%;
-  --chart-2: 38 44% 89%;
-  --chart-3: 39 24% 73%;
-  --chart-4: 268 8% 54%;
-  --chart-5: 253 20% 16%;
+  --destructive-foreground: 39 40% 90%;
+  --border: 39 10% 16%;
+  --input: 260 16% 7%;
+  --ring: 39 64% 63%;
+  --chart-1: 39 64% 63%;
+  --chart-2: 39 40% 90%;
+  --chart-3: 38 15% 68%;
+  --chart-4: 37 9% 47%;
+  --chart-5: 259 19% 9%;
 }
 
 @layer base {
@@ -143,19 +145,18 @@
   body {
     @apply font-sans antialiased text-foreground;
     /*
-     * Intimate Dusk: flat warm charcoal. No gradients, no glows.
-     * The warmth comes from the typography and the gold accent alone.
+     * Deep charcoal #0D0B10 — matches landing page base exactly.
      */
-    background-color: #1B1922;
+    background-color: #0D0B10;
   }
 
   /* Companion messages always render in serif */
   .companion-message {
-    font-family: 'Cormorant Garamond', serif;
+    font-family: 'Playfair Display', serif;
   }
 }
 
-/* ── Scrollbar — warm charcoal palette ─────────────────────────────────────── */
+/* ── Scrollbar — charcoal palette ─────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
@@ -172,44 +173,43 @@
 }
 
 /* ── Companion message bubble ─────────────────────────────────────────────────
-   Her card: card surface, subtle shadow, 2px antique-gold left border.
-   The left border is the "candle edge" — light entering from one side.
+   Her card: card surface, subtle shadow, 2px gold left border.
+   Hairlines use rgba(232,222,205,.08) — the landing-page spec value.
 ─────────────────────────────────────────────────────────────────────────────── */
 .companion-bubble {
   background-color: hsl(var(--card));
-  border-top: 1px solid rgba(200, 180, 150, 0.07);
-  border-right: 1px solid rgba(200, 180, 150, 0.07);
-  border-bottom: 1px solid rgba(200, 180, 150, 0.07);
+  border-top: 1px solid rgba(232, 222, 205, 0.08);
+  border-right: 1px solid rgba(232, 222, 205, 0.08);
+  border-bottom: 1px solid rgba(232, 222, 205, 0.08);
   border-left: 2px solid hsl(var(--primary) / 0.65);
   box-shadow: 0 2px 14px rgba(0, 0, 0, 0.28), 0 1px 4px rgba(0, 0, 0, 0.18);
 }
 
 /* ── User message bubble ──────────────────────────────────────────────────────
    Recessed dark: the user speaks from the darkness.
-   Dimmer cream text so the contrast hierarchy is preserved.
 ─────────────────────────────────────────────────────────────────────────────── */
 .user-bubble {
-  background-color: #141219;
-  border: 1px solid rgba(200, 180, 150, 0.07);
+  background-color: #0D0B10;
+  border: 1px solid rgba(232, 222, 205, 0.08);
 }
 
 /* ── Hairline divider utility ───────────────────────────────────────────────── */
 .hairline {
-  border-color: rgba(200, 180, 150, 0.10);
+  border-color: rgba(232, 222, 205, 0.08);
 }
 
 /* ── Warm hairline hr ───────────────────────────────────────────────────────── */
 .warm-rule {
-  background-color: rgba(200, 180, 150, 0.10);
+  background-color: rgba(232, 222, 205, 0.08);
   height: 1px;
   border: none;
 }
 
 /* ── Voice mode pulse — gold variant ────────────────────────────────────────── */
 @keyframes voice-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(199, 154, 91, 0.35); }
-  70%  { box-shadow: 0 0 0 14px rgba(199, 154, 91, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(199, 154, 91, 0); }
+  0%   { box-shadow: 0 0 0 0 rgba(221, 178, 100, 0.35); }
+  70%  { box-shadow: 0 0 0 14px rgba(221, 178, 100, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(221, 178, 100, 0); }
 }
 .voice-active {
   animation: voice-pulse 2s infinite;
