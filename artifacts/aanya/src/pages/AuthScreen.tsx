@@ -41,13 +41,13 @@ function readStoredResetToken(): string | null {
   }
 }
 
-export function AuthScreen() {
+export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "signup" }) {
   const [tab, setTab] = useState<Tab>(() => {
     // A pending reset (user arrived from the email link, possibly reloaded
     // since) takes precedence over any other remembered tab.
     if (readStoredResetToken()) return "reset";
     const draftTab = readDraft().tab;
-    return draftTab === "reset" ? "login" : (draftTab ?? "login");
+    return draftTab === "reset" ? "login" : (draftTab ?? initialTab);
   });
   const [email, setEmail] = useState(() => readDraft().email ?? "");
   const [password, setPassword] = useState("");

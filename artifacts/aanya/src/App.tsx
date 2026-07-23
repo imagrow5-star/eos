@@ -11,6 +11,7 @@ import { AuthScreen } from "@/pages/AuthScreen";
 import { EmailVerificationGate } from "@/pages/EmailVerificationGate";
 import { ConsentGate } from "@/pages/ConsentGate";
 import { Privacy } from "@/pages/Privacy";
+import { LandingPage } from "@/pages/LandingPage";
 import { SplashScreen } from "@/components/SplashScreen";
 import { CONSENT_VERSION } from "@/lib/consent";
 
@@ -55,9 +56,17 @@ function AppRouter() {
 
 // ─── Auth gate — sits between QueryClientProvider and the main app ────────────
 
+// View shown to logged-out visitors before they touch the auth flow.
+// "landing" = marketing homepage; "login" / "signup" = auth screen.
+type UnauthView = "landing" | "login" | "signup";
+
 function AuthGate() {
   const qc = useQueryClient();
   const [verifying, setVerifying] = useState(false);
+
+  // Landing page → auth screen navigation (no URL change needed; the
+  // public landing page IS the root, so we just switch React state).
+  const [unauthView, setUnauthView] = useState<UnauthView>("landing");
 
   // Handle ?verifyToken= in the URL — consume it immediately on mount
   useEffect(() => {
@@ -120,9 +129,17 @@ function AuthGate() {
     );
   }
 
-  // Not authenticated — show sign-in / sign-up screen
+  // Not authenticated — landing page for the root, auth screen for login/signup
   if (!data) {
-    return <AuthScreen />;
+    if (unauthView === "landing") {
+      return (
+        <LandingPage
+          onLogin={() => setUnauthView("login")}
+          onSignup={() => setUnauthView("signup")}
+        />
+      );
+    }
+    return <AuthScreen initialTab={unauthView === "signup" ? "signup" : "login"} />;
   }
 
   // Authenticated but email not yet verified
