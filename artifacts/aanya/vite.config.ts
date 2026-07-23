@@ -49,8 +49,11 @@ const cspMetaPlugin = {
       // ElevenLabs Conversational AI SDK inlines the rawAudioProcessor and
       // audioConcatProcessor worklet source into the JS bundle, then loads it
       // via URL.createObjectURL (blob:) with a data: base64 fallback for
-      // Safari iframes. Both schemes must be allowed here; no external origin
-      // is involved — the code comes entirely from our own bundle.
+      // Safari iframes. Chrome enforces script-src-elem (not worker-src) for
+      // AudioWorklet module scripts; without an explicit script-src-elem it
+      // falls back to script-src 'self', blocking the blob: worklet. Setting
+      // script-src-elem explicitly keeps script-src tight.
+      "script-src-elem 'self' blob: data:",
       "worker-src 'self' blob: data:",
       "manifest-src 'self'",
       "object-src 'none'",

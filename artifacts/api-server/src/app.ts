@@ -250,10 +250,12 @@ app.use(
         // ElevenLabs Conversational AI SDK inlines the rawAudioProcessor and
         // audioConcatProcessor worklet source, then loads it via
         // URL.createObjectURL (blob:) with a data: base64 fallback for Safari.
-        // Without an explicit worker-src the browser falls back to default-src
-        // 'none', blocking the worklet even when the frontend meta-tag CSP
-        // allows blob:. Both policies are enforced simultaneously; the stricter
-        // wins, so this must match the frontend meta-tag allowance exactly.
+        // Chrome enforces script-src-elem (not worker-src) for AudioWorklet
+        // module scripts loaded from a blob: URL. Without an explicit
+        // script-src-elem Chrome falls back to script-src 'self', which blocks
+        // the blob: worklet. Setting script-src-elem explicitly here prevents
+        // that fallback and keeps script-src tight.
+        scriptSrcElem: ["'self'", "blob:", "data:"],
         workerSrc: ["'self'", "blob:", "data:"],
       },
     },
