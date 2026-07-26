@@ -1,6 +1,7 @@
-import express, { type Express } from "express";
+import express, { type Express, type ErrorRequestHandler } from "express";
 import cors from "cors";
 import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import pinoHttp from "pino-http";
@@ -320,6 +321,57 @@ app.use(
   }),
 );
 
+// ─── Rate limiting for auth endpoints ─────────────────────────────────────────
+// Keyed on req.ip (trust proxy is set above, so this is the real client IP on
+// Render). GET/HEAD/OPTIONS are exempt from the general limiter so normal app
+// traffic (/auth/me on every load, verify-email link clicks, CORS preflights)
+// can never lock a user out — the credential-carrying POSTs are what need
+// throttling, and the tokens themselves are 256-bit so GET brute force is moot.
+// Limits are env-overridable so the test suite can exercise the 429 path
+// deterministically without waiting out a 15-minute window.
+const AUTH_RATE_LIMIT_MAX = Number(process.env.AUTH_RATE_LIMIT_MAX ?? 20);
+const FORGOT_RATE_LIMIT_MAX = Number(process.env.FORGOT_RATE_LIMIT_MAX ?? 5);
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+
+const skipReads = (req: express.Request): boolean =>
+  req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS";
+
+// Stricter limiter for forgot-password: each request fans out to two emails
+// (reset link + security alert), so it is the cheapest email-bombing vector.
+// Mounted BEFORE the general limiter so its rejects don't consume the shared
+// general budget.
+app.use(
+  "/api/auth/forgot-password",
+  rateLimit({
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    limit: FORGOT_RATE_LIMIT_MAX,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: skipReads,
+    handler: (_req, res) => {
+      res.status(429).json({
+        error: "Too many password reset requests. Please wait a few minutes and try again.",
+      });
+    },
+  }),
+);
+
+app.use(
+  "/api/auth",
+  rateLimit({
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    limit: AUTH_RATE_LIMIT_MAX,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: skipReads,
+    handler: (_req, res) => {
+      res.status(429).json({
+        error: "Too many attempts. Please wait a few minutes and try again.",
+      });
+    },
+  }),
+);
+
 // ─── Session store (Postgres-backed, survives restarts) ───────────────────────
 const PgStore = connectPgSimple(session);
 
@@ -353,6 +405,13 @@ app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", apiCsp, router);
+
+// JSON 404 for any /api path no route matched. Without this, unmatched API
+// requests fall through to Express's default HTML 404 page, which API clients
+// (the SPA does res.json() on everything) misreport as a network error.
+app.use("/api", (_req, res) => {
+  res.status(404).json({ error: "Not found" });
+});
 
 // ─── Serve the built frontend (single-origin deployment) ──────────────────────
 // This server also serves the compiled Aanya SPA so the whole app lives on ONE
@@ -399,5 +458,31 @@ if (fs.existsSync(frontendIndex)) {
     "Frontend bundle not found — serving API only (set FRONTEND_DIR or build @workspace/aanya)",
   );
 }
+
+// ─── JSON error handler for the API (must be registered last) ─────────────────
+// Catches errors thrown anywhere on an /api request — including body-parser
+// JSON syntax errors raised by the global express.json() middleware — and
+// answers in JSON. Express's default handler returns an HTML page, which the
+// SPA's unconditional res.json() turns into a misleading "Network error"
+// message. Non-/api paths (the SPA itself) keep the default handler.
+const apiErrorHandler: ErrorRequestHandler = (err, _req, res, next) => {
+  if (res.headersSent) return next(err);
+  const status =
+    typeof err?.status === "number" ? err.status
+    : typeof err?.statusCode === "number" ? err.statusCode
+    : 500;
+  if (status >= 500) {
+    logger.error({ err }, "Unhandled API error");
+    res.status(status).json({ error: "Something went wrong. Please try again." });
+    return;
+  }
+  const message =
+    err?.type === "entity.parse.failed" ? "Invalid JSON in request body."
+    : err?.type === "entity.too.large" ? "Request body is too large."
+    : typeof err?.message === "string" && err.message ? err.message
+    : "Bad request.";
+  res.status(status).json({ error: message });
+};
+app.use("/api", apiErrorHandler);
 
 export default app;

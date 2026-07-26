@@ -42,6 +42,14 @@ import { resolveSendZone } from "./timezone";
 
 const RESEND_API_KEY  = process.env.RESEND_API_KEY;
 const RESEND_FROM     = process.env.RESEND_FROM_EMAIL ?? "Eos <hello@eoscompanion.com>";
+// In production APP_URL must be explicit: this job builds user-facing links
+// (unsubscribe, "Open Eos") AND calls the app's internal trigger endpoints
+// (/api/internal/*), so a silent default targets the wrong deployment.
+if (!process.env.APP_URL?.trim() && process.env.NODE_ENV === "production") {
+  throw new Error(
+    "APP_URL must be set in production — daily-email links and internal triggers would otherwise target the wrong host.",
+  );
+}
 const APP_URL         = (process.env.APP_URL ?? "https://eoscompanion.com").replace(/\/$/, "");
 const SESSION_SECRET  = process.env.SESSION_SECRET ?? "";
 const ANTHROPIC_KEY   = process.env.ANTHROPIC_API_KEY;

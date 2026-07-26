@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import bcrypt from "bcryptjs";
 import { eq, and, gt, isNull, desc, sql } from "drizzle-orm";
 import { randomBytes } from "crypto";
@@ -25,7 +25,7 @@ const router: IRouter = Router();
  * deployments — so production emails linked to http://localhost:3000 and
  * users could never verify or reset from a real inbox.
  */
-function getAppBaseUrl(): string {
+export function getAppBaseUrl(): string {
   const explicit = process.env.APP_URL?.trim();
   if (explicit) return explicit.replace(/\/$/, "");
 
@@ -37,6 +37,15 @@ function getAppBaseUrl(): string {
 
   if (process.env.REPLIT_DEV_DOMAIN) {
     return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  }
+
+  // On non-Replit hosts (Render) none of the fallbacks above exist, so a
+  // missing APP_URL would silently regress to localhost email links — the
+  // exact historical bug this helper was written to fix. Fail loudly instead.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "APP_URL must be set in production — email links would otherwise point to localhost.",
+    );
   }
 
   return "http://localhost:3000";
@@ -247,6 +256,14 @@ const VERIFICATION_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 /** Minimum gap between verification emails to one account (anti-flooding). */
 const RESEND_COOLDOWN_MS = 60 * 1000;
 
+/**
+ * Minimum gap between password-reset requests for one account. Each request
+ * sends TWO emails (reset link + security alert), so without a per-address
+ * cooldown the endpoint is an email-bombing vector even behind the per-IP
+ * rate limit. The response stays the generic {ok:true} either way.
+ */
+const RESET_EMAIL_COOLDOWN_MS = 60 * 1000;
+
 /** Creates a verification token in the DB and fires off the email (no throw). */
 async function issueAndSendVerification(userId: number, email: string): Promise<void> {
   try {
@@ -310,6 +327,17 @@ async function replaceVerificationTokenAtomic(userId: number): Promise<string | 
   });
 }
 
+/**
+ * Issues a fresh session ID before an identity is attached to the session.
+ * Without this, the session ID from before authentication carries over into
+ * the authenticated session (session fixation).
+ */
+function regenerateSession(req: Request): Promise<void> {
+  return new Promise((resolve, reject) =>
+    req.session.regenerate((err) => (err ? reject(err) : resolve())),
+  );
+}
+
 // ─── POST /auth/signup ────────────────────────────────────────────────────────
 
 router.post("/auth/signup", async (req, res): Promise<void> => {
@@ -347,6 +375,7 @@ router.post("/auth/signup", async (req, res): Promise<void> => {
       .values({ email: cleanEmail, hashedPassword })
       .returning({ id: usersTable.id, email: usersTable.email });
 
+    await regenerateSession(req);
     req.session.userId = user!.id;
     logger.info({ userId: user!.id }, "New user signed up");
 
@@ -397,6 +426,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       return;
     }
 
+    await regenerateSession(req);
     req.session.userId = user.id;
     logger.info({ userId: user.id }, "User logged in");
     res.json({
@@ -879,6 +909,20 @@ router.post("/auth/forgot-password", async (req, res): Promise<void> => {
 
     if (!user) {
       // No account — silently do nothing (already responded 200)
+      return;
+    }
+
+    // Per-address cooldown: if a reset token was issued moments ago, skip the
+    // send silently (the caller already got the generic success response).
+    const [latestToken] = await db
+      .select({ createdAt: passwordResetTokensTable.createdAt })
+      .from(passwordResetTokensTable)
+      .where(eq(passwordResetTokensTable.userId, user.id))
+      .orderBy(desc(passwordResetTokensTable.createdAt))
+      .limit(1);
+
+    if (latestToken && Date.now() - latestToken.createdAt.getTime() < RESET_EMAIL_COOLDOWN_MS) {
+      logger.info({ userId: user.id }, "Password reset re-requested within cooldown — send skipped");
       return;
     }
 
