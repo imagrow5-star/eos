@@ -7,6 +7,8 @@ import pinoHttp from "pino-http";
 import { pool } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import path from "node:path";
+import fs from "node:fs";
 
 // SESSION_SECRET is required — fail fast rather than silently use a weak fallback
 if (!process.env.SESSION_SECRET) {
@@ -239,27 +241,13 @@ app.use(
 // (see artifacts/aanya/vite.config.ts) because it is served as static files.
 app.use(
   helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'none'"],
-        styleSrc: ["'unsafe-inline'"], // the account report page uses one inline <style> block
-        imgSrc: ["'self'", "data:"],
-        frameAncestors: ["'self'"],
-        baseUri: ["'none'"],
-        formAction: ["'self'"],
-        // ElevenLabs Conversational AI SDK inlines the rawAudioProcessor and
-        // audioConcatProcessor worklet source, then loads it via
-        // URL.createObjectURL (blob:) with a data: base64 fallback for Safari.
-        // Chrome enforces script-src-elem (not worker-src) for AudioWorklet
-        // module scripts loaded from a blob: URL. Without an explicit
-        // script-src-elem Chrome falls back to script-src 'self', which blocks
-        // the blob: worklet. Setting script-src-elem explicitly here prevents
-        // that fallback and keeps script-src tight.
-        scriptSrcElem: ["'self'", "blob:", "data:"],
-        workerSrc: ["'self'", "blob:", "data:"],
-      },
-    },
-    // CSP frame-ancestors above covers embedding; X-Frame-Options can't say "self + nothing else" cleanly
+    // The strict API CSP is applied per-route to /api below (apiCsp). It is NOT
+    // set globally, because this server now also serves the frontend SPA, which
+    // ships its own (looser) CSP via a <meta> tag injected at build time. A
+    // global default-src 'none' header would combine with the SPA's meta CSP and
+    // block its own scripts/styles, breaking the app.
+    contentSecurityPolicy: false,
+    // CSP frame-ancestors (in apiCsp) covers embedding; X-Frame-Options can't say "self + nothing else" cleanly
     frameguard: false,
     // Don't break same-origin audio blob playback in the app
     crossOriginEmbedderPolicy: false,
@@ -268,6 +256,29 @@ app.use(
     strictTransportSecurity: process.env.NODE_ENV === "production" ? undefined : false,
   }),
 );
+
+// Strict CSP for API responses only (incl. the self-contained account-report
+// HTML page). Mounted on /api below so it never touches the SPA's static files.
+const apiCsp = helmet.contentSecurityPolicy({
+  directives: {
+    defaultSrc: ["'none'"],
+    styleSrc: ["'unsafe-inline'"], // the account report page uses one inline <style> block
+    imgSrc: ["'self'", "data:"],
+    frameAncestors: ["'self'"],
+    baseUri: ["'none'"],
+    formAction: ["'self'"],
+    // ElevenLabs Conversational AI SDK inlines the rawAudioProcessor and
+    // audioConcatProcessor worklet source, then loads it via
+    // URL.createObjectURL (blob:) with a data: base64 fallback for Safari.
+    // Chrome enforces script-src-elem (not worker-src) for AudioWorklet
+    // module scripts loaded from a blob: URL. Without an explicit
+    // script-src-elem Chrome falls back to script-src 'self', which blocks
+    // the blob: worklet. Setting script-src-elem explicitly here prevents
+    // that fallback and keeps script-src tight.
+    scriptSrcElem: ["'self'", "blob:", "data:"],
+    workerSrc: ["'self'", "blob:", "data:"],
+  },
+});
 
 // ─── CORS allow-list (Phase A) ─────────────────────────────────────────────────
 // Replaces the previous reflect-any-origin policy. Requests WITHOUT an Origin
@@ -341,6 +352,52 @@ app.use(
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-app.use("/api", router);
+app.use("/api", apiCsp, router);
+
+// ─── Serve the built frontend (single-origin deployment) ──────────────────────
+// This server also serves the compiled Aanya SPA so the whole app lives on ONE
+// origin. That is what the frontend expects: it calls /api/* with relative URLs
+// and relies on same-site session cookies. Splitting the SPA onto a separate
+// host breaks both (the relative calls hit the static host, and the lax cookie
+// is not sent cross-site). The SPA is built to artifacts/aanya/dist/public.
+//
+// FRONTEND_DIR can override the location; otherwise resolve it relative to the
+// server's working directory (artifacts/api-server when started via pnpm).
+const frontendDir = process.env.FRONTEND_DIR
+  ? path.resolve(process.env.FRONTEND_DIR)
+  : path.resolve(process.cwd(), "../aanya/dist/public");
+
+const frontendIndex = path.join(frontendDir, "index.html");
+
+if (fs.existsSync(frontendIndex)) {
+  // Hashed assets are safe to cache hard; index.html must stay fresh so new
+  // deploys are picked up.
+  app.use(
+    express.static(frontendDir, {
+      index: false,
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith("index.html")) {
+          res.setHeader("Cache-Control", "no-cache");
+        }
+      },
+    }),
+  );
+
+  // SPA fallback: any non-/api GET that didn't match a static file returns
+  // index.html so client-side routing (wouter) can take over.
+  app.use((req, res, next) => {
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    if (req.path.startsWith("/api")) return next();
+    res.setHeader("Cache-Control", "no-cache");
+    res.sendFile(frontendIndex);
+  });
+
+  logger.info({ frontendDir }, "Serving frontend static bundle");
+} else {
+  logger.warn(
+    { frontendDir },
+    "Frontend bundle not found — serving API only (set FRONTEND_DIR or build @workspace/aanya)",
+  );
+}
 
 export default app;
