@@ -147,8 +147,8 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
           body: JSON.stringify({ email: email.trim() }),
         });
         if (!r.ok) {
-          const data = await r.json();
-          setError(data.error ?? "Something went wrong. Please try again.");
+          const data = (await r.json().catch(() => null)) as { error?: string } | null;
+          setError(data?.error ?? "Something went wrong. Please try again.");
           return;
         }
         setSuccess(
@@ -168,13 +168,15 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token: resetToken, password }),
         });
-        const data = await r.json();
+        const data = (await r.json().catch(() => null)) as
+          | { error?: string; code?: string }
+          | null;
         if (!r.ok) {
-          if (data.code === "TOKEN_EXPIRED") {
+          if (data?.code === "TOKEN_EXPIRED") {
             setExpiredToken(true);
             setError(null);
           } else {
-            setError(data.error ?? "Something went wrong. Please try again.");
+            setError(data?.error ?? "Something went wrong. Please try again.");
           }
           return;
         }
@@ -197,10 +199,10 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
         body: JSON.stringify({ email: email.trim(), password }),
       });
 
-      const data = await r.json();
+      const data = (await r.json().catch(() => null)) as { error?: string } | null;
 
       if (!r.ok) {
-        setError(data.error ?? "Something went wrong. Please try again.");
+        setError(data?.error ?? "Something went wrong. Please try again.");
         return;
       }
 

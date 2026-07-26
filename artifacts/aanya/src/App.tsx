@@ -60,9 +60,14 @@ function AppRouter() {
 // "landing" = marketing homepage; "login" / "signup" = auth screen.
 type UnauthView = "landing" | "login" | "signup";
 
+// Outcome of consuming a ?verifyToken link — drives the feedback banner so an
+// expired/invalid link is never a silent dead-end.
+type VerifyNotice = { kind: "ok" | "failed"; message: string };
+
 function AuthGate() {
   const qc = useQueryClient();
   const [verifying, setVerifying] = useState(false);
+  const [verifyNotice, setVerifyNotice] = useState<VerifyNotice | null>(null);
 
   // Landing page → auth screen navigation (no URL change needed; the
   // public landing page IS the root, so we just switch React state).
@@ -82,13 +87,36 @@ function AuthGate() {
     setVerifying(true);
     apiFetch(`${import.meta.env.BASE_URL}api/auth/verify-email?token=${encodeURIComponent(token)}`)
       .then(async (r) => {
+        const body = (await r.json().catch(() => null)) as { error?: string } | null;
         if (r.ok) {
+          setVerifyNotice({ kind: "ok", message: "Email verified — you can sign in." });
           await qc.invalidateQueries({ queryKey: ["/api/auth/me"] });
+        } else {
+          setVerifyNotice({
+            kind: "failed",
+            message: body?.error ?? "This verification link is invalid or has expired.",
+          });
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        setVerifyNotice({
+          kind: "failed",
+          message: "We couldn't verify your email. Please check your connection and try again.",
+        });
+      })
       .finally(() => setVerifying(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The banner dismisses itself; failures linger longer so the user can read
+  // why the link didn't work before the resend option in front of them.
+  useEffect(() => {
+    if (!verifyNotice) return;
+    const t = setTimeout(
+      () => setVerifyNotice(null),
+      verifyNotice.kind === "ok" ? 8000 : 15000,
+    );
+    return () => clearTimeout(t);
+  }, [verifyNotice]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["/api/auth/me"],
@@ -129,26 +157,63 @@ function AuthGate() {
     );
   }
 
+  // Feedback for a consumed ?verifyToken link, overlaid on whichever screen
+  // the user lands on (landing page, auth screen, or the verification gate).
+  const verifyBanner = verifyNotice && (
+    <div
+      role="status"
+      className={
+        "fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-sm rounded-xl border px-4 py-3 text-sm shadow-xl backdrop-blur-md " +
+        (verifyNotice.kind === "ok"
+          ? "bg-emerald-400/10 border-emerald-400/30 text-emerald-400"
+          : "bg-red-400/10 border-red-400/30 text-red-400")
+      }
+    >
+      <div className="flex items-start gap-3">
+        <p className="flex-1 leading-relaxed">{verifyNotice.message}</p>
+        <button
+          type="button"
+          aria-label="Dismiss"
+          onClick={() => setVerifyNotice(null)}
+          className="opacity-60 hover:opacity-100 transition-opacity"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+
   // Not authenticated — landing page for the root, auth screen for login/signup
   if (!data) {
     if (unauthView === "landing") {
       return (
-        <LandingPage
-          onLogin={() => setUnauthView("login")}
-          onSignup={() => setUnauthView("signup")}
-        />
+        <>
+          {verifyBanner}
+          <LandingPage
+            onLogin={() => setUnauthView("login")}
+            onSignup={() => setUnauthView("signup")}
+          />
+        </>
       );
     }
-    return <AuthScreen initialTab={unauthView === "signup" ? "signup" : "login"} />;
+    return (
+      <>
+        {verifyBanner}
+        <AuthScreen initialTab={unauthView === "signup" ? "signup" : "login"} />
+      </>
+    );
   }
 
   // Authenticated but email not yet verified
   if (!data.emailVerified) {
     return (
-      <EmailVerificationGate
-        email={data.user.email}
-        onVerified={() => qc.invalidateQueries({ queryKey: ["/api/auth/me"] })}
-      />
+      <>
+        {verifyBanner}
+        <EmailVerificationGate
+          email={data.user.email}
+          onVerified={() => qc.invalidateQueries({ queryKey: ["/api/auth/me"] })}
+        />
+      </>
     );
   }
 
