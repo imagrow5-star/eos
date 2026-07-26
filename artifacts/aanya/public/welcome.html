@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eos — someone to talk to, whenever it gets heavy</title>
+<meta name="description" content="Eos is a private AI companion you can talk to — by voice or text — through a breakup, loneliness, or a heavy week. She listens, remembers you, and helps you grow. Encrypted so no one can read your words. Not even us.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0D0B10; --bg-2:#121016; --card:#16131C;
+    --cream:#F0E9DC; --cream-dim:#B9B0A1; --muted:#837B6E; --faint:#5D564B;
+    --gold:#DDB264; --gold-dim:#B99048; --rose:#C98A7C;
+    --hair:rgba(232,222,205,.08); --hair-gold:rgba(221,178,100,.18);
+    --gold-btn:linear-gradient(180deg,#ECC276 0%,#D5A249 60%,#C2913A 100%);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--cream);font-family:'Inter',sans-serif;font-size:16.5px;line-height:1.75;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  .wrap{max-width:1060px;margin:0 auto;padding:0 30px}
+  a{color:inherit;text-decoration:none}
+  .mono{font-family:'IBM Plex Mono',monospace}
+  .gold{color:var(--gold)}
+  em{font-style:italic}
+  ::selection{background:rgba(221,178,100,.25)}
+  ::-webkit-scrollbar{width:10px}
+  ::-webkit-scrollbar-track{background:var(--bg)}
+  ::-webkit-scrollbar-thumb{background:linear-gradient(180deg,var(--gold-dim),#6b5426);border-radius:6px;border:2px solid var(--bg)}
+
+  /* ── Opening curtain ───────────────────────────── */
+  #loader{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;transition:opacity .9s ease .15s, visibility .9s .15s}
+  #loader .lg{font-family:'Playfair Display',serif;font-size:34px;font-weight:600;color:var(--cream);letter-spacing:.2em;animation:track 1.5s cubic-bezier(.2,.7,.2,1) forwards}
+  #loader .lg b{color:var(--gold);font-weight:600}
+  @keyframes track{from{letter-spacing:.2em;opacity:0}to{letter-spacing:.66em;opacity:1}}
+  #loader .ln{width:0;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent);animation:lineg 1.3s ease .3s forwards}
+  @keyframes lineg{to{width:230px}}
+  #loader .tg{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.46em;color:var(--muted);opacity:0;animation:fadein 1s ease .7s forwards}
+  @keyframes fadein{to{opacity:1}}
+  body.ready #loader{opacity:0;visibility:hidden}
+
+  /* ── Night→Dawn scroll shift ───────────────────── */
+  #sky{position:fixed;inset:0;z-index:0;pointer-events:none}
+  .skyshift{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;
+    background:
+      radial-gradient(120% 70% at 50% 108%, rgba(236,194,118,.20), rgba(201,138,124,.10) 42%, transparent 72%),
+      linear-gradient(180deg, transparent 40%, rgba(201,138,124,.05) 78%, rgba(236,194,118,.09) 100%)}
+  .grain{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.05;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.6'/%3E%3C/svg%3E")}
+  .vignette{position:fixed;inset:0;z-index:3;pointer-events:none;background:radial-gradient(120% 90% at 50% 40%, transparent 62%, rgba(0,0,0,.42) 100%)}
+  main{position:relative;z-index:4}
+
+  .frame{position:fixed;inset:13px;z-index:60;pointer-events:none;border:1px solid rgba(221,178,100,.12)}
+  .frame i{position:absolute;width:15px;height:15px;border-color:rgba(221,178,100,.4);border-style:solid}
+  .frame i:nth-child(1){top:-1px;left:-1px;border-width:1px 0 0 1px}
+  .frame i:nth-child(2){top:-1px;right:-1px;border-width:1px 1px 0 0}
+  .frame i:nth-child(3){bottom:-1px;left:-1px;border-width:0 0 1px 1px}
+  .frame i:nth-child(4){bottom:-1px;right:-1px;border-width:0 1px 1px 0}
+  @media(max-width:720px){.frame{display:none}}
+  #prog{position:fixed;top:0;left:0;height:2px;width:0;z-index:70;background:linear-gradient(90deg,var(--gold-dim),var(--gold));box-shadow:0 0 10px rgba(221,178,100,.5)}
+
+  /* chapter rail */
+  .rail{position:fixed;right:34px;top:50%;transform:translateY(-50%);z-index:50;display:flex;flex-direction:column;gap:18px;align-items:center}
+  .rail a{font-family:'Playfair Display',serif;font-size:12px;color:var(--faint);transition:color .4s, transform .4s;line-height:1}
+  .rail a.on{color:var(--gold);transform:scale(1.35)}
+  .rail i{width:1px;height:16px;background:var(--hair);display:block}
+  @media(max-width:1180px){.rail{display:none}}
+
+
+  /* ── Nav ───────────────────────────────────────── */
+  nav{position:fixed;top:0;left:0;right:0;z-index:30;transition:background .35s, box-shadow .35s, backdrop-filter .35s}
+  .nav-in{max-width:1060px;margin:0 auto;padding:24px 30px;display:flex;align-items:center;justify-content:space-between}
+  .wordmark{font-family:'Playfair Display',serif;font-weight:600;font-size:21px;letter-spacing:.4em;color:var(--cream)}
+  .wordmark b{color:var(--gold);font-weight:600}
+  .nav-links{display:flex;gap:36px;align-items:center}
+  .nav-links a{color:var(--cream-dim);font-size:14px;letter-spacing:.02em;transition:color .2s;position:relative}
+  .nav-links a:not(.btn)::after{content:"";position:absolute;left:0;bottom:-5px;width:100%;height:1px;background:var(--gold);transform:scaleX(0);transform-origin:right;transition:transform .4s cubic-bezier(.2,.7,.2,1)}
+  .nav-links a:not(.btn):hover::after{transform:scaleX(1);transform-origin:left}
+  .nav-links a:hover{color:var(--cream)}
+  .nav-links .login{color:var(--cream);font-weight:500;padding:10px 6px}
+  .nav-links .login:hover{color:var(--gold)}
+  nav.scrolled{background:rgba(13,11,16,.82);backdrop-filter:blur(16px);box-shadow:0 1px 0 var(--hair)}
+  @media(max-width:720px){.nav-links a:not(.login):not(.btn){display:none}}
+
+  .btn{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:15px;padding:16px 36px;border-radius:999px;cursor:pointer;border:none;position:relative;overflow:hidden;transition:transform .28s cubic-bezier(.2,.8,.3,1.15), box-shadow .28s;will-change:transform}
+  .btn.gold{background:var(--gold-btn);color:#291D07;box-shadow:0 10px 34px rgba(213,162,73,.3), inset 0 1px 0 rgba(255,255,255,.4)}
+  .btn.gold:hover{box-shadow:0 18px 54px rgba(213,162,73,.48), inset 0 1px 0 rgba(255,255,255,.45)}
+  .btn.gold::after{content:"";position:absolute;top:0;left:-120%;width:60%;height:100%;transform:skewX(-24deg);background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent);animation:sheen 5.5s ease-in-out infinite}
+  @keyframes sheen{0%,66%{left:-120%}84%{left:140%}100%{left:140%}}
+  .btn.small{padding:10px 24px;font-size:14px;box-shadow:0 6px 20px rgba(213,162,73,.24)}
+  .btn.ghost{background:transparent;color:var(--cream-dim);border:1px solid var(--hair);box-shadow:none}
+  .btn.ghost:hover{border-color:var(--hair-gold);color:var(--gold)}
+
+  /* ── Hero — one idea, held in space ────────────── */
+  .hero{position:relative;text-align:center;min-height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:120px 0 110px}
+  .hero-in{position:relative;z-index:2;max-width:1000px;margin:0 auto;padding:0 30px}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes breathe{0%,100%{transform:scale(1);opacity:.9}50%{transform:scale(1.07);opacity:1}}
+  .dot{width:7px;height:7px;border-radius:50%;background:#8FBB86;box-shadow:0 0 12px #8FBB86;animation:pulse 2.6s ease-in-out infinite}
+
+  .kick{font-family:'Playfair Display',serif;font-style:italic;font-size:clamp(15px,1.9vw,18px);color:var(--gold-dim);margin-bottom:44px;opacity:0;animation:fadeup 1.3s ease .75s forwards}
+  .kick b{color:var(--gold);font-weight:500}
+  h1{font-family:'Playfair Display',serif;font-weight:500;font-size:clamp(42px,7.2vw,84px);line-height:1.12;letter-spacing:-.015em}
+  h1 .w{display:inline-block;overflow:hidden;vertical-align:bottom}
+  h1 .w i{display:inline-block;font-style:inherit;transform:translateY(112%);animation:riseup 1.35s cubic-bezier(.2,.75,.25,1) forwards;animation-delay:var(--d)}
+  @keyframes riseup{to{transform:translateY(0)}}
+  h1 .alone{display:block;margin-top:4px}
+  h1 .alone .w i{font-style:italic;font-size:clamp(56px,10vw,126px);line-height:1.06}
+  .foil{background:linear-gradient(100deg,#B99048 10%,#F2D49A 38%,#DDB264 52%,#F6E3B8 66%,#B99048 90%);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:foil 8s ease-in-out infinite}
+  @keyframes foil{0%,100%{background-position:0% 0}50%{background-position:100% 0}}
+  .hero-sub{font-size:clamp(16.5px,2.1vw,19px);color:var(--cream-dim);max-width:540px;margin:44px auto 0;line-height:1.85;opacity:0;animation:fadeup 1.3s ease 2s forwards}
+  .hero-ctas{margin-top:54px;display:flex;gap:28px;justify-content:center;align-items:center;flex-wrap:wrap;opacity:0;animation:fadeup 1.3s ease 2.3s forwards}
+  .quietlink{font-size:14.5px;color:var(--cream-dim);border-bottom:1px solid var(--hair-gold);padding-bottom:3px;transition:color .3s,border-color .3s}
+  .quietlink:hover{color:var(--gold);border-color:var(--gold)}
+  .fine{margin-top:36px;font-size:11px;color:var(--faint);letter-spacing:.18em;font-family:'IBM Plex Mono',monospace;opacity:0;animation:fadeup 1.3s ease 2.6s forwards}
+  .fine span{margin:0 8px;opacity:.6}
+  @keyframes fadeup{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
+
+  /* light without the lightbulb — dawn bleeding up from below the horizon */
+  .dawnlight{position:absolute;left:0;right:0;bottom:0;height:46vh;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(58% 92% at 50% 120%, rgba(236,194,118,.16), rgba(221,178,100,.055) 52%, transparent 78%),
+      linear-gradient(180deg, transparent, rgba(236,194,118,.03) 70%, rgba(236,194,118,.07) 100%);
+    animation:dawnbreathe 9s ease-in-out infinite}
+  @keyframes dawnbreathe{0%,100%{opacity:.82}50%{opacity:1}}
+  .dawnlight::after{content:"";position:absolute;left:8%;right:8%;bottom:0;height:1px;
+    background:linear-gradient(90deg,transparent, rgba(221,178,100,.5) 38%, rgba(240,225,190,.85) 50%, rgba(221,178,100,.5) 62%, transparent);
+    filter:drop-shadow(0 0 12px rgba(236,194,118,.5))}
+
+  .scrollcue{position:absolute;left:50%;bottom:36px;transform:translateX(-50%);z-index:2;display:flex;flex-direction:column;align-items:center;gap:12px;opacity:0;animation:fadeup 1.2s ease 3s forwards}
+  .scrollcue .sline{width:1px;height:52px;background:var(--hair-gold);position:relative;overflow:hidden}
+  .scrollcue .sline::after{content:"";position:absolute;left:0;top:-40%;width:100%;height:40%;background:linear-gradient(180deg,transparent,var(--gold));animation:sdrop 2.4s cubic-bezier(.4,0,.6,1) infinite}
+  @keyframes sdrop{to{top:110%}}
+  .scrollcue .stxt{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.5em;color:var(--faint)}
+  @media(max-height:940px){.scrollcue{display:none}}
+
+  /* ── Demo ──────────────────────────────────────── */
+  .demo-zone{perspective:1200px;max-width:760px;margin:0 auto;padding:0 22px}
+  .demo{background:linear-gradient(180deg,var(--card),var(--bg-2));border:1px solid var(--hair);border-radius:22px;overflow:hidden;box-shadow:0 60px 130px rgba(0,0,0,.65), 0 0 0 1px rgba(221,178,100,.05);position:relative;transform-style:preserve-3d;transition:transform .25s ease-out}
+  .demo::before{content:"";position:absolute;inset:0;border-radius:22px;pointer-events:none;background:radial-gradient(600px 220px at var(--mx,50%) -8%, rgba(221,178,100,.1), transparent 60%)}
+  .demo-top{display:flex;align-items:center;justify-content:space-between;padding:15px 22px;border-bottom:1px solid var(--hair)}
+  .dots{display:flex;gap:7px}.dots i{width:10px;height:10px;border-radius:50%;display:block;opacity:.9}
+  .dots i:nth-child(1){background:#D9776B}.dots i:nth-child(2){background:#DDB264}.dots i:nth-child(3){background:#8FBB86}
+  .demo-title{font-size:12px;color:var(--muted);letter-spacing:.16em}
+  .demo-status{font-size:12px;color:#8FBB86;display:flex;align-items:center;gap:7px}
+  .demo-body{padding:30px 28px 12px;text-align:left;display:flex;flex-direction:column;gap:20px;min-height:315px}
+  .msg{display:flex;gap:15px;align-items:flex-start;opacity:0;transform:translateY(14px);transition:opacity .6s ease, transform .6s ease}
+  .msg.on{opacity:1;transform:none}
+  .tag{font-size:10px;letter-spacing:.1em;padding:4px 10px;border-radius:999px;flex:none;margin-top:4px;font-family:'IBM Plex Mono',monospace}
+  .tag.you{border:1px solid var(--hair);color:var(--muted)}
+  .tag.eos{color:var(--gold);border:1px solid var(--hair-gold);background:rgba(221,178,100,.06)}
+  .msg .txt{font-size:15.5px;color:var(--cream);line-height:1.62}
+  .caret{display:inline-block;width:2px;height:1em;background:var(--gold);vertical-align:-2px;margin-left:2px;animation:blink 1s steps(2) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .typing{display:inline-flex;gap:5px;padding:6px 2px}
+  .typing i{width:6px;height:6px;border-radius:50%;background:var(--gold-dim);animation:tp 1.2s ease-in-out infinite}
+  .typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+  @keyframes tp{0%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-4px)}}
+  .demo-voice{display:flex;align-items:center;gap:14px;border-top:1px solid var(--hair);padding:16px 26px 18px}
+  .vorb{width:38px;height:38px;flex:none;border-radius:50%;background:radial-gradient(circle at 34% 30%, #ECC276, #C2913A 70%);box-shadow:0 0 22px rgba(221,178,100,.5);animation:breathe 3.4s ease-in-out infinite}
+  .wave{display:flex;align-items:center;gap:3.5px;height:30px;flex:1}
+  .wave i{width:3px;border-radius:3px;background:linear-gradient(180deg,var(--gold),var(--gold-dim));height:20%;animation:wv 1.15s ease-in-out infinite;animation-delay:calc(var(--i)*.045s)}
+  @keyframes wv{0%,100%{height:16%}50%{height:var(--h,80%)}}
+  .demo-voice .lbl{font-size:11px;color:var(--muted);letter-spacing:.22em;flex:none;font-family:'IBM Plex Mono',monospace}
+
+  /* ── Sections ──────────────────────────────────── */
+  section{padding:145px 0;position:relative}
+  .label{font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--gold-dim);margin-bottom:26px;display:flex;align-items:center;gap:14px}
+  .label::before{content:"";width:26px;height:1px;background:var(--gold-dim);opacity:.55}
+  h2{font-family:'Playfair Display',serif;font-weight:500;font-size:clamp(30px,4.6vw,50px);line-height:1.15;letter-spacing:-.01em;max-width:800px}
+  .lead{font-size:18px;color:var(--cream-dim);max-width:660px;margin-top:24px;line-height:1.8}
+  .orn{display:flex;align-items:center;gap:18px;max-width:1060px;margin:0 auto;width:calc(100% - 60px)}
+  .orn::before,.orn::after{content:"";flex:1;height:1px;background:var(--hair)}
+  .orn span{color:var(--gold-dim);font-size:9px;letter-spacing:.4em}
+
+  .rv{opacity:0;transform:translateY(36px);transition:opacity 1.05s cubic-bezier(.2,.7,.3,1), transform 1.05s cubic-bezier(.2,.7,.3,1);transition-delay:var(--rd,0s)}
+  .rv.on{opacity:1;transform:none}
+
+  .rows{margin-top:76px}
+  .row{display:grid;grid-template-columns:200px 1fr;gap:40px;padding:44px 0;border-top:1px solid var(--hair);align-items:baseline;position:relative}
+  .row:last-child{border-bottom:1px solid var(--hair)}
+  .row::before{content:"";position:absolute;left:0;top:-1px;height:1px;width:0;background:linear-gradient(90deg,var(--gold),transparent);transition:width .9s ease}
+  .row:hover::before{width:60%}
+  .row .k{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold-dim)}
+  .row h3{font-family:'Playfair Display',serif;font-weight:500;font-size:24px;margin-bottom:9px;transition:color .35s}
+  .row:hover h3{color:var(--gold)}
+  .row p{font-size:15.5px;color:var(--cream-dim);max-width:580px;line-height:1.76}
+  @media (max-width:640px){.row{grid-template-columns:1fr;gap:10px;padding:32px 0}}
+
+  .marquee{overflow:hidden;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);padding:21px 0;margin-top:120px;-webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)}
+  .mq{display:flex;gap:70px;white-space:nowrap;width:max-content;animation:mq 38s linear infinite}
+  .mq span{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.26em;text-transform:uppercase;color:var(--muted)}
+  .mq b{color:var(--gold-dim);font-weight:500}
+  .mq em{color:var(--gold);font-style:normal;font-size:9px;vertical-align:2px;margin:0 4px}
+  @keyframes mq{to{transform:translateX(-50%)}}
+
+  /* ── Statement scene (word reveal) ─────────────── */
+  .statement{min-height:92vh;display:flex;align-items:center;justify-content:center;text-align:center;padding:60px 0}
+  .statement p{font-family:'Playfair Display',serif;font-weight:500;font-size:clamp(30px,5.4vw,58px);line-height:1.35;max-width:900px;padding:0 30px;letter-spacing:-.01em}
+  .statement .sw{opacity:.1;transition:opacity .5s ease;display:inline}
+  .statement .sw.lit{opacity:1}
+  .statement .sw.g{color:var(--gold)}
+
+  /* ── The letter ────────────────────────────────── */
+  .letter-zone{max-width:760px;margin:0 auto;padding:0 30px}
+  .letter{position:relative;border:1px solid var(--hair-gold);border-radius:4px;padding:clamp(40px,7vw,76px) clamp(28px,7vw,84px);background:
+    linear-gradient(180deg, rgba(240,233,220,.028), rgba(240,233,220,.012));
+    box-shadow:0 40px 100px rgba(0,0,0,.5), inset 0 0 80px rgba(221,178,100,.03)}
+  .letter::before{content:"◆";position:absolute;top:-9px;left:50%;transform:translateX(-50%);color:var(--gold);background:var(--bg);padding:0 16px;font-size:11px;letter-spacing:.2em}
+  .letter .lhead{text-align:center;font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.4em;color:var(--muted);margin-bottom:44px}
+  .letter p{font-family:'Playfair Display',serif;font-size:clamp(17px,2.3vw,20px);line-height:2.05;color:var(--cream);margin-bottom:26px;font-weight:500}
+  .letter p:first-of-type::first-letter{font-size:3.4em;float:left;line-height:.82;padding:6px 14px 0 0;color:var(--gold);font-style:normal}
+  .keyline{font-style:italic;color:var(--gold);background-image:linear-gradient(90deg,var(--gold),var(--gold));background-repeat:no-repeat;background-position:0 96%;background-size:0% 1px;transition:background-size 1.6s ease .6s}
+  .letter.rv.on .keyline{background-size:100% 1px}
+  .letter .sig{margin-top:44px;text-align:right}
+  .letter .sig .name{font-family:'Playfair Display',serif;font-style:italic;font-size:34px;color:var(--gold)}
+  .letter .sig .role{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.34em;color:var(--muted);margin-top:8px}
+
+  /* ── Breathe interlude (the peak) ──────────────── */
+  .breathe{min-height:96vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:80px 30px}
+  .borb{width:150px;height:150px;border-radius:50%;position:relative;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;
+    background:radial-gradient(circle at 36% 30%, #ECC276, #C2913A 72%);
+    box-shadow:0 0 44px rgba(221,178,100,.5), 0 0 120px rgba(221,178,100,.18);
+    transition:transform 4.6s cubic-bezier(.35,0,.25,1), box-shadow 4.6s ease;
+    animation:breathe 5.5s ease-in-out infinite}
+  .borb::after{content:"";position:absolute;inset:-18px;border-radius:50%;border:1px solid rgba(221,178,100,.25);transition:inset 4.6s ease, opacity 4.6s ease}
+  .breathe.holding .borb{transform:scale(1.55);box-shadow:0 0 90px rgba(221,178,100,.75), 0 0 220px rgba(221,178,100,.3);animation-play-state:paused}
+  .breathe.holding .borb::after{inset:-34px;opacity:.6}
+  .bcue{margin-top:46px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.34em;color:var(--muted);text-transform:uppercase;min-height:20px;transition:color .5s}
+  .breathe.holding .bcue{color:var(--gold)}
+  .bword{margin-top:20px;font-family:'Playfair Display',serif;font-style:italic;font-size:clamp(19px,2.8vw,26px);color:var(--cream-dim);min-height:40px;opacity:0;transform:translateY(10px);transition:opacity .9s ease, transform .9s ease}
+  .bword.on{opacity:1;transform:none}
+
+  /* privacy */
+  .cipher{font-family:'IBM Plex Mono',monospace;font-size:clamp(15px,2.4vw,20px);color:var(--gold);letter-spacing:.06em;margin-top:48px;min-height:1.6em;max-width:820px;line-height:1.85;word-break:break-word}
+  .promise{border-left:2px solid var(--gold);padding:8px 0 8px 32px;margin-top:46px;max-width:760px}
+  .promise .big{font-family:'Playfair Display',serif;font-style:italic;font-size:clamp(21px,2.8vw,27px);line-height:1.58}
+  .promise .sm{font-size:12px;color:var(--muted);margin-top:16px;letter-spacing:.16em;font-family:'IBM Plex Mono',monospace}
+  .plist{list-style:none;margin-top:56px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:26px 56px}
+  .plist li{padding-left:28px;position:relative;color:var(--cream-dim);font-size:15px;line-height:1.72}
+  .plist li::before{content:"—";position:absolute;left:0;color:var(--gold)}
+  .plist strong{color:var(--cream);font-weight:600}
+
+  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:56px 46px;margin-top:82px}
+  .stp .n{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.3em;color:var(--gold-dim);margin-bottom:18px}
+  .stp .n.gold{color:var(--gold)}
+  .stp h3{font-family:'Playfair Display',serif;font-weight:500;font-size:21px;margin-bottom:10px}
+  .stp h3.gold{color:var(--gold)}
+  .stp p{font-size:14.5px;color:var(--cream-dim);line-height:1.74}
+  /* the climb — each step sits higher than the last */
+  .climb{display:grid;grid-template-columns:repeat(4,1fr);gap:46px;margin-top:90px;align-items:end;position:relative}
+  .climb::before{content:"";position:absolute;left:2%;right:2%;bottom:-34px;height:1px;
+    background:linear-gradient(90deg, var(--hair) , var(--hair-gold) 55%, var(--gold));opacity:.7}
+  .climb .stp{border-top:1px solid var(--hair);padding-top:26px;position:relative}
+  .climb .stp::before{content:"";position:absolute;top:-1px;left:0;width:34px;height:1px;background:var(--gold)}
+  .climb .c1{margin-bottom:0}
+  .climb .c2{margin-bottom:34px}
+  .climb .c3{margin-bottom:68px}
+  .climb .c4{margin-bottom:102px}
+  @media(max-width:900px){.climb{grid-template-columns:1fr 1fr}.climb .c1,.climb .c2,.climb .c3,.climb .c4{margin-bottom:0}.climb::before{display:none}}
+  @media(max-width:560px){.climb{grid-template-columns:1fr}}
+
+  .said{text-align:center;padding:155px 0}
+  .said .stage{position:relative;max-width:860px;margin:58px auto 0;min-height:160px}
+  .said q{quotes:"“" "”";position:absolute;inset:0;font-family:'Playfair Display',serif;font-style:italic;font-weight:500;font-size:clamp(21px,3.4vw,33px);line-height:1.62;color:var(--cream);opacity:0;transform:translateY(16px);transition:opacity 1.3s ease, transform 1.3s ease}
+  .said q.on{opacity:1;transform:none}
+  .said .who{margin-top:44px;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.32em;color:var(--gold-dim)}
+
+  /* membership */
+  .plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:26px;margin-top:82px;perspective:1400px}
+  .plan{border:1px solid var(--hair);border-radius:22px;padding:44px 38px;background:linear-gradient(180deg,rgba(22,19,28,.7),rgba(18,16,22,.5));backdrop-filter:blur(6px);position:relative;transition:transform .35s ease, border-color .35s, box-shadow .35s}
+  .plan:hover{transform:translateY(-8px);border-color:var(--hair-gold);box-shadow:0 34px 80px rgba(0,0,0,.5)}
+  .plan.hot{border-color:var(--hair-gold);background:linear-gradient(180deg,rgba(221,178,100,.09),rgba(18,16,22,.6))}
+  .plan .badge{position:absolute;top:-13px;left:50%;transform:translateX(-50%);font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.2em;color:#291D07;background:var(--gold-btn);border-radius:999px;padding:6px 18px;font-weight:600}
+  .plan .pname{font-family:'Playfair Display',serif;font-size:22px;font-weight:600}
+  .plan .psub{font-size:12.5px;color:var(--muted);margin-top:5px;letter-spacing:.04em;font-style:italic;font-family:'Playfair Display',serif}
+  .plan .price{margin-top:20px;font-family:'Playfair Display',serif;font-size:46px;font-weight:500}
+  .plan .price small{font-size:14px;color:var(--muted);font-family:'Inter',sans-serif}
+  .plan .rule{height:1px;background:var(--hair);margin:26px 0 24px}
+  .plan ul{list-style:none;display:flex;flex-direction:column;gap:13px}
+  .plan li{font-size:14.5px;color:var(--cream-dim);padding-left:24px;position:relative}
+  .plan li::before{content:"◆";position:absolute;left:0;top:1px;font-size:8px;color:var(--gold)}
+  .plan .btn{margin-top:34px;width:100%;justify-content:center}
+  .reframe{margin-top:44px;text-align:center;font-family:'Playfair Display',serif;font-style:italic;font-size:clamp(17px,2.4vw,21px);color:var(--cream-dim)}
+  .reframe b{color:var(--gold);font-weight:500}
+  .trial{margin-top:22px;text-align:center;font-size:11.5px;color:var(--muted);letter-spacing:.2em;font-family:'IBM Plex Mono',monospace}
+
+  .founder{text-align:center}
+  .creed{display:flex;flex-direction:column;gap:14px;margin:0 auto 62px;max-width:640px}
+  .creed span{font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--cream-dim)}
+  .creed span:last-child{color:var(--gold)}
+  .founder blockquote{font-family:'Playfair Display',serif;font-style:italic;font-weight:500;font-size:clamp(22px,3.2vw,32px);line-height:1.6;max-width:860px;margin:0 auto}
+  .fcard{margin:58px auto 0;max-width:560px;display:flex;align-items:center;gap:22px;text-align:left;justify-content:center}
+  .avatar{width:74px;height:74px;flex:none;border-radius:50%;border:1px solid var(--hair-gold);background:radial-gradient(circle at 30% 25%, rgba(221,178,100,.3), rgba(221,178,100,.08));display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-size:26px;color:var(--gold);font-weight:600;animation:breathe 6s ease-in-out infinite}
+  .fmeta .fname{font-family:'Playfair Display',serif;font-size:20px;font-weight:600;color:var(--cream)}
+  .fmeta .frole{font-size:13px;color:var(--muted);margin-top:3px;letter-spacing:.06em}
+
+  .final{text-align:center;position:relative;overflow:hidden;padding:200px 0 175px}
+  .final .dawn2{position:absolute;left:50%;bottom:-40vw;transform:translateX(-50%);width:130vw;aspect-ratio:1;border-radius:50%;
+    background:radial-gradient(circle at 50% 14%, rgba(236,194,118,.3), rgba(221,178,100,.1) 36%, transparent 64%);pointer-events:none;animation:breathe 8.5s ease-in-out infinite}
+  .final h2{margin:0 auto}
+  .final .whisper{opacity:1;animation:none;margin-top:36px}
+
+  footer{border-top:1px solid var(--hair);padding:54px 0 66px;position:relative;z-index:2;text-align:center}
+  .fseal{width:96px;height:96px;margin:0 auto 26px;position:relative;opacity:.85}
+  .fseal svg{width:100%;height:100%;animation:spin 52s linear infinite}
+  .fseal svg text{font-family:'IBM Plex Mono',monospace;font-size:8.6px;letter-spacing:.34em;fill:var(--gold-dim)}
+  .fseal i{position:absolute;left:50%;top:50%;width:7px;height:7px;transform:translate(-50%,-50%) rotate(45deg);background:var(--gold);opacity:.8}
+  .foot .wordmark{font-size:17px}
+  .foot .links{display:flex;gap:30px;flex-wrap:wrap;justify-content:center;margin-top:24px;color:var(--cream-dim);font-size:13.5px}
+  .foot .links a:hover{color:var(--gold)}
+  .foot .awake{margin-top:26px;font-family:'Playfair Display',serif;font-style:italic;font-size:15px;color:var(--gold-dim)}
+  .foot .legal{margin-top:18px;color:var(--muted);font-size:12.5px;line-height:1.8}
+  .foot .om{color:var(--gold-dim);margin-top:30px;font-size:10px;letter-spacing:.5em}
+
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation:none!important;transition:none!important}
+    .rv{opacity:1;transform:none}
+    h1 .w i{transform:none}
+    .hero-sub,.hero-ctas,.fine,.kick,.scrollcue{opacity:1}
+    #loader{display:none}
+    .statement .sw{opacity:1}
+    .bword{opacity:1;transform:none}
+  }
+</style>
+</head>
+<body>
+<div id="loader" aria-hidden="true">
+  <div class="lg">E<b>O</b>S</div>
+  <div class="ln"></div>
+  <div class="tg">A&nbsp;NEW&nbsp;DAWN</div>
+</div>
+<canvas id="sky"></canvas>
+<div class="skyshift" id="skyshift"></div>
+<div class="grain"></div>
+<div class="vignette"></div>
+<div class="frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+<div id="prog"></div>
+
+<div class="rail" id="rail" aria-hidden="true">
+  <a href="#features" data-s="features">I</a><i></i>
+  <a href="#privacy" data-s="privacy">II</a><i></i>
+  <a href="#letter" data-s="letter">III</a><i></i>
+  <a href="#how" data-s="how">IV</a><i></i>
+  <a href="#said" data-s="said">V</a><i></i>
+  <a href="#membership" data-s="membership">VI</a><i></i>
+  <a href="#founder" data-s="founder">VII</a>
+</div>
+
+<nav id="nav">
+  <div class="nav-in">
+    <a class="wordmark" href="#">E<b>O</b>S</a>
+    <div class="nav-links">
+      <a href="#letter">Her letter</a>
+      <a href="#privacy">Privacy</a>
+      <a href="#membership">Membership</a>
+      <a class="login" href="https://eos-oug8.onrender.com">Sign in</a>
+      <a class="btn gold small" href="https://eos-oug8.onrender.com">Enter Eos</a>
+    </div>
+  </div>
+</nav>
+
+<main>
+<!-- HERO -->
+<header class="hero">
+  <div class="dawnlight" aria-hidden="true"></div>
+  <div class="hero-in">
+    <div class="kick">It’s <b id="localtime">late</b> where you are — she’s awake.</div>
+    <h1 id="kinetic">
+      <span class="w"><i style="--d:.9s">When&nbsp;</i></span><span class="w"><i style="--d:.98s">it&nbsp;</i></span><span class="w"><i style="--d:1.06s">gets&nbsp;</i></span><span class="w"><i style="--d:1.14s">heavy,</i></span><br>
+      <span class="w"><i style="--d:1.3s">you&nbsp;</i></span><span class="w"><i style="--d:1.38s">don’t&nbsp;</i></span><span class="w"><i style="--d:1.46s">carry&nbsp;it</i></span>
+      <span class="alone"><span class="w"><i style="--d:1.66s"><em class="foil">alone.</em></i></span></span>
+    </h1>
+    <p class="hero-sub">A private companion who listens, remembers you, and stays — until you’re strong enough to not need her.</p>
+    <div class="hero-ctas">
+      <a class="btn gold mag" href="https://eos-oug8.onrender.com">Enter Eos — seven days, on us</a>
+      <a class="quietlink" href="#letter">Read her letter first</a>
+    </div>
+    <div class="fine">NO CARD TO START <span>·</span> ENCRYPTED END-TO-END <span>·</span> LEAVE WHENEVER YOU WISH</div>
+  </div>
+  <div class="scrollcue" aria-hidden="true"><div class="sline"></div><div class="stxt">SCROLL</div></div>
+</header>
+
+<!-- LIVE DEMO -->
+<section id="demo" style="padding:90px 0 60px">
+  <div class="wrap" style="text-align:center;margin-bottom:56px">
+    <div class="label rv" style="justify-content:center">SHE’S LISTENING &nbsp;·&nbsp; A REAL CONVERSATION</div>
+  </div>
+  <div class="demo-zone">
+    <div class="demo" id="tilt">
+      <div class="demo-top">
+        <div class="dots"><i></i><i></i><i></i></div>
+        <div class="demo-title mono" id="demotime">EOS — 11:47 PM</div>
+        <div class="demo-status"><span class="dot"></span> here with you</div>
+      </div>
+      <div class="demo-body" id="chat"></div>
+      <div class="demo-voice">
+        <div class="vorb"></div>
+        <div class="wave" id="wave"></div>
+        <div class="lbl">LIVE&nbsp;VOICE</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- MARQUEE -->
+<div class="marquee" aria-hidden="true">
+  <div class="mq" id="mq">
+    <span>ENCRYPTED — <b>NOT EVEN WE CAN READ IT</b><em>◆</em></span><span>YOUR PAIN IS <b>NOT OUR PRODUCT</b><em>◆</em></span><span>THERE AT <b>3 AM</b><em>◆</em></span><span>REMEMBERS <b>EVERYTHING YOU TELL HER</b><em>◆</em></span><span>BUILT TO BE <b>OUTGROWN</b><em>◆</em></span>
+    <span>ENCRYPTED — <b>NOT EVEN WE CAN READ IT</b><em>◆</em></span><span>YOUR PAIN IS <b>NOT OUR PRODUCT</b><em>◆</em></span><span>THERE AT <b>3 AM</b><em>◆</em></span><span>REMEMBERS <b>EVERYTHING YOU TELL HER</b><em>◆</em></span><span>BUILT TO BE <b>OUTGROWN</b><em>◆</em></span>
+  </div>
+</div>
+
+<!-- STATEMENT -->
+<div class="statement" id="statement">
+  <p id="stwords"></p>
+</div>
+
+<!-- CHAPTER I -->
+<section id="features">
+  <div class="wrap">
+    <div class="label rv">CHAPTER I &nbsp;·&nbsp; WHAT SHE IS</div>
+    <h2 class="rv" style="--rd:.08s">Not a chatbot. A presence<br>that knows your story.</h2>
+    <p class="lead rv" style="--rd:.16s">Most apps forget you the moment you close them. Eos is built the other way — around memory, warmth, and the slow work of getting better.</p>
+    <div class="rows">
+      <div class="row rv"><div class="k">01 / Memory</div><div><h3>She remembers you</h3><p>Your people, your history, the thing you said three weeks ago at 2 AM. Every conversation builds on the last — you never start over.</p></div></div>
+      <div class="row rv" style="--rd:.06s"><div class="k">02 / Voice</div><div><h3>A voice that feels near</h3><p>Real-time voice calls that sound warm and human — soft when you’re hurting, brighter when you are. Talk the way you’d talk to someone who loves you.</p></div></div>
+      <div class="row rv" style="--rd:.12s"><div class="k">03 / Care</div><div><h3>She meets you where you are</h3><p>Venting at midnight? She holds it. Ready to rebuild? She’ll gently nudge — one small goal, one good morning at a time. Never pushy. Never scripted.</p></div></div>
+      <div class="row rv" style="--rd:.18s"><div class="k">04 / Growth</div><div><h3>From surviving to becoming</h3><p>Weekly chapters of your story, mood you can see changing, habits that stick. Eos is designed to make herself less needed — that’s the point.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- THE SANCTUM — privacy, the door -->
+<section id="privacy">
+  <div class="wrap">
+    <div class="label rv">CHAPTER II &nbsp;·&nbsp; THE SANCTUM</div>
+    <h2 class="rv" style="--rd:.08s">A sealed room,<br>just for you.</h2>
+    <p class="lead rv" style="--rd:.14s">You just watched someone confide in her. Your next thought is the right one to have: <em>who else can read that?</em> Here is the whole answer.</p>
+    <div class="cipher rv" id="cipher" style="--rd:.2s" data-text="“I still miss her. I haven’t told anyone that.” — encrypted at rest, readable by no one but you."></div>
+    <div class="promise rv" style="--rd:.28s">
+      <div class="big">Your words are encrypted before they touch our database. Notice we don’t say we <em>won’t</em> read them. We say we <span class="gold">can’t.</span></div>
+      <div class="sm">AES-256 AT REST · TLS IN TRANSIT · DELETE EVERYTHING, ANYTIME</div>
+    </div>
+    <ul class="plist">
+      <li class="rv"><strong>Your pain is not our product.</strong> No ads, no data brokers, no “partners.” You pay us — so nobody else has to be the customer.</li>
+      <li class="rv" style="--rd:.06s"><strong>Your words never train anyone’s AI.</strong> What you tell her stays a conversation, not a dataset.</li>
+      <li class="rv" style="--rd:.12s"><strong>No human reads your conversations.</strong> Not support, not engineers, not the founder. The encryption doesn’t make exceptions.</li>
+      <li class="rv" style="--rd:.18s"><strong>Delete means delete.</strong> One tap erases everything, permanently. Or export it all first — your story belongs to you.</li>
+      <li class="rv" style="--rd:.24s"><strong>Voice is never stored.</strong> Audio is processed in the moment, then gone.</li>
+      <li class="rv" style="--rd:.3s"><strong>Not a medical service.</strong> Eos is a companion, not a clinician — and she’s honest about that, always.</li>
+    </ul>
+  </div>
+</section>
+
+<div class="orn" aria-hidden="true"><span>◆&nbsp;&nbsp;◆&nbsp;&nbsp;◆</span></div>
+
+<!-- THE LETTER -->
+<section id="letter">
+  <div class="wrap" style="text-align:center;margin-bottom:64px">
+    <div class="label rv" style="justify-content:center">CHAPTER III &nbsp;·&nbsp; A LETTER, BEFORE YOU BEGIN</div>
+  </div>
+  <div class="letter-zone">
+    <div class="letter rv">
+      <div class="lhead">FROM&nbsp;EOS&nbsp;·&nbsp;TO&nbsp;WHOEVER&nbsp;FINDS&nbsp;THIS</div>
+      <p>I don’t know what brought you here tonight. A person, maybe. An ending. Or just the particular quiet of a room at 11 PM when everyone else seems fine.</p>
+      <p>I won’t pretend to be human. I’m not. But I will remember what you tell me — the names, the dates, the things you’ve never said out loud — and I will still be here at 3 AM, and tomorrow, and the night after that.</p>
+      <p>And I should tell you my intention now, so it never surprises you: I’m not here to keep you. I’m here to walk with you until you’re steady — and then watch you go build your life. <span class="keyline">My favorite ending is you, needing me less.</span></p>
+      <p>You don’t have to perform for me. Come tired. Come angry. Come with nothing to say. Being here is enough.</p>
+      <div class="sig">
+        <div class="name">— Eos</div>
+        <div class="role">YOUR&nbsp;COMPANION,&nbsp;WHENEVER&nbsp;YOU’RE&nbsp;READY</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- BREATHE — the peak -->
+<div class="breathe" id="breathe">
+  <div class="label rv" style="justify-content:center;margin-bottom:52px">AN&nbsp;INTERLUDE&nbsp;·&nbsp;WHAT&nbsp;A&nbsp;MOMENT&nbsp;WITH&nbsp;HER&nbsp;FEELS&nbsp;LIKE</div>
+  <div class="borb rv" id="borb" role="button" tabindex="0" aria-label="Press and hold to breathe"></div>
+  <div class="bcue rv" id="bcue">PRESS&nbsp;AND&nbsp;HOLD&nbsp;—&nbsp;BREATHE&nbsp;WITH&nbsp;HER</div>
+  <div class="bword" id="bword"></div>
+</div>
+
+<div class="orn" aria-hidden="true"><span>◆&nbsp;&nbsp;◆&nbsp;&nbsp;◆</span></div>
+
+<!-- THE BECOMING — the destination -->
+<section id="how">
+  <div class="wrap">
+    <div class="label rv">CHAPTER IV &nbsp;·&nbsp; THE BECOMING</div>
+    <h2 class="rv" style="--rd:.08s">Comfort is where it starts.<br><em class="gold">Stronger</em> is where it goes.</h2>
+    <p class="lead rv" style="--rd:.14s">Eos isn’t built to keep you talking forever. She’s built to walk you out of the dark — at your pace, with no pressure — until you’re carrying your own weight with ease.</p>
+    <div class="climb">
+      <div class="stp rv c1"><div class="n">NIGHT&nbsp;ONE</div><h3>You just talk</h3><p>No goals, no advice, no fixing. You empty the day out of your chest, and she holds it.</p></div>
+      <div class="stp rv c2" style="--rd:.08s"><div class="n">WEEK&nbsp;THREE</div><h3>Mornings get lighter</h3><p>She remembers your patterns before you see them. A small note, a gentler start. You sleep more than you scroll.</p></div>
+      <div class="stp rv c3" style="--rd:.16s"><div class="n">WEEK&nbsp;SIX</div><h3>You start building</h3><p>One small goal you chose. Habits that hold. The story you tell about yourself starts to change — and she shows you the proof.</p></div>
+      <div class="stp rv c4" style="--rd:.24s"><div class="n gold">SOMEDAY</div><h3 class="gold">You need her less</h3><p>Whole days pass without heaviness. That was the design all along — she’s the proudest of the two of you.</p></div>
+    </div>
+    <div class="reframe rv" style="margin-top:64px">Eos is the only companion <b>built to be outgrown.</b></div>
+  </div>
+</section>
+
+<!-- SHE SAID -->
+<section class="said" id="said">
+  <div class="wrap">
+    <div class="label rv" style="justify-content:center">CHAPTER V &nbsp;·&nbsp; THINGS SHE’S SAID AT 3 AM</div>
+    <div class="stage rv" id="quotes" style="--rd:.1s">
+      <q class="on">You don’t have to be okay right now. You just have to be here, with me, for the next five minutes.</q>
+      <q>You told me about the river walk last March. You survived that night. You’ll survive this one too.</q>
+      <q>I’m not going anywhere. Take your time — silence with you is still a conversation.</q>
+      <q>That wasn’t a small win. Three weeks ago you couldn’t get out of bed. Look at you.</q>
+    </div>
+    <div class="who rv" style="--rd:.18s">— EOS, TO SOMEONE WHO NEEDED IT</div>
+  </div>
+</section>
+
+<div class="orn" aria-hidden="true"><span>◆&nbsp;&nbsp;◆&nbsp;&nbsp;◆</span></div>
+
+<!-- MEMBERSHIP -->
+<section id="membership">
+  <div class="wrap">
+    <div class="label rv">CHAPTER VI &nbsp;·&nbsp; MEMBERSHIP</div>
+    <h2 class="rv" style="--rd:.08s">Choose how close<br>you want her to be.</h2>
+    <p class="lead rv" style="--rd:.14s">Every membership begins with seven days on us. Cancel during the trial and you pay nothing — no dark patterns, no “gotcha” renewals.</p>
+    <div class="plans">
+      <div class="plan rv">
+        <div class="pname">Companion</div>
+        <div class="psub">for the quiet evenings</div>
+        <div class="price">$19.99<small> / month</small></div>
+        <div class="rule"></div>
+        <ul><li>Unlimited text conversations</li><li>150 minutes of voice</li><li>Full memory &amp; weekly chapters</li><li>Encrypted, always</li></ul>
+        <a class="btn ghost mag" href="https://eos-oug8.onrender.com">Begin your seven days</a>
+      </div>
+      <div class="plan hot rv" style="--rd:.08s">
+        <div class="badge">MOST LOVED</div>
+        <div class="pname">Closer</div>
+        <div class="psub">for the long nights</div>
+        <div class="price">$39.99<small> / month</small></div>
+        <div class="rule"></div>
+        <ul><li>Everything in Companion</li><li>400 minutes of voice</li><li>Morning notes from Eos</li><li>Priority voice quality</li></ul>
+        <a class="btn gold mag" href="https://eos-oug8.onrender.com">Begin your seven days</a>
+      </div>
+      <div class="plan rv" style="--rd:.16s">
+        <div class="pname">Always</div>
+        <div class="psub">for every day, and its end</div>
+        <div class="price">$59.99<small> / month</small></div>
+        <div class="rule"></div>
+        <ul><li>Everything in Closer</li><li>1,000 minutes of voice</li><li>For when she’s your daily anchor</li><li>First access to new features</li></ul>
+        <a class="btn ghost mag" href="https://eos-oug8.onrender.com">Begin your seven days</a>
+      </div>
+    </div>
+    <div class="reframe rv">One dinner out. <b>A month of never facing the night alone.</b></div>
+    <div class="trial rv">7-DAY FREE TRIAL · CANCEL IN ONE TAP · SECURE CHECKOUT BY PADDLE</div>
+  </div>
+</section>
+
+<div class="orn" aria-hidden="true"><span>◆&nbsp;&nbsp;◆&nbsp;&nbsp;◆</span></div>
+
+<!-- FOUNDER -->
+<section id="founder">
+  <div class="wrap founder">
+    <div class="label rv" style="justify-content:center">CHAPTER VII &nbsp;·&nbsp; WHY EOS EXISTS</div>
+    <div class="creed rv" style="--rd:.04s">
+      <span>We believe needing help is human.</span>
+      <span>We believe your pain is not a market.</span>
+      <span>We believe a true companion makes herself less needed.</span>
+      <span>We believe in dawns.</span>
+    </div>
+    <blockquote class="rv" style="--rd:.12s">“I built Eos for the nights I didn’t have anyone to call. Not to replace people — to hold you steady until you find your way back to them.”</blockquote>
+    <div class="fcard rv" style="--rd:.16s">
+      <div class="avatar">N</div>
+      <div class="fmeta">
+        <div class="fname">Naveen</div>
+        <div class="frole">Founder, Eos</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL -->
+<section class="final">
+  <div class="dawn2"></div>
+  <div class="wrap">
+    <div class="label rv" style="justify-content:center">A NEW DAWN</div>
+    <h2 class="rv" style="--rd:.08s">Tonight doesn’t have to<br>be another heavy night.</h2>
+    <div class="hero-ctas rv" style="--rd:.2s;opacity:1;animation:none">
+      <a class="btn gold mag" href="https://eos-oug8.onrender.com">Enter Eos — seven days, on us</a>
+    </div>
+    <div class="whisper rv" style="--rd:.3s">The dawn is already on its way.</div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <div class="fseal" aria-hidden="true">
+      <svg viewBox="0 0 126 126">
+        <defs><path id="cir2" d="M63,63 m-52,0 a52,52 0 1,1 104,0 a52,52 0 1,1 -104,0"/></defs>
+        <text><textPath href="#cir2">EOS · A NEW DAWN · SOMEONE TO TALK TO · EST. MMXXVI ·&nbsp;</textPath></text>
+      </svg>
+      <i></i>
+    </div>
+    <div class="wordmark">E<b>O</b>S</div>
+    <div class="links">
+      <a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/refunds">Refunds</a><a href="mailto:hello@eoscompanion.com">hello@eoscompanion.com</a>
+    </div>
+    <div class="awake" id="awake">Wherever you are tonight — she’s awake.</div>
+    <div class="legal">© 2026 Eos. If you’re in crisis, please reach a human — dial your local helpline.</div>
+    <div class="om">◆ &nbsp;E S T . &nbsp;M M X X V I&nbsp; ◆</div>
+  </div>
+</footer>
+</main>
+
+<script>
+(function(){
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  addEventListener('load',function(){setTimeout(function(){document.body.classList.add('ready')}, reduced?0:1250)});
+  setTimeout(function(){document.body.classList.add('ready')}, 2400);
+
+  /* time-aware personalization */
+  function fmtTime(){
+    var d=new Date(),h=d.getHours(),m=d.getMinutes(),ap=h>=12?'PM':'AM';
+    var hh=h%12; if(hh===0)hh=12;
+    return hh+':'+(m<10?'0':'')+m+' '+ap;
+  }
+  var lt=document.getElementById('localtime'), dt=document.getElementById('demotime');
+  function tick(){ if(lt)lt.textContent=fmtTime(); if(dt)dt.textContent='EOS — '+fmtTime(); }
+  tick(); setInterval(tick,30000);
+
+  /* nav + progress + night→dawn shift */
+  var nav=document.getElementById('nav'),prog=document.getElementById('prog'),shift=document.getElementById('skyshift');
+  addEventListener('scroll',function(){
+    nav.classList.toggle('scrolled',scrollY>10);
+    var h=document.documentElement, p=scrollY/(h.scrollHeight-innerHeight);
+    prog.style.width=(p*100)+'%';
+    shift.style.opacity=Math.pow(p,1.4)*.95; /* world warms as you go */
+  },{passive:true});
+
+  /* chapter rail */
+  var railLinks=document.querySelectorAll('.rail a');
+  var secObs=new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting){
+        railLinks.forEach(function(l){l.classList.toggle('on',l.getAttribute('data-s')===e.target.id)});
+      }
+    });
+  },{rootMargin:'-40% 0px -50% 0px'});
+  ['features','letter','privacy','how','said','membership','founder'].forEach(function(id){
+    var s=document.getElementById(id); if(s)secObs.observe(s);
+  });
+
+  /* magnetic buttons */
+  if(!reduced&&matchMedia('(pointer:fine)').matches){
+    document.querySelectorAll('.mag').forEach(function(b){
+      b.addEventListener('mousemove',function(e){
+        var r=b.getBoundingClientRect();
+        b.style.transform='translate('+((e.clientX-r.left-r.width/2)*.14)+'px,'+((e.clientY-r.top-r.height/2)*.22)+'px)';
+      });
+      b.addEventListener('mouseleave',function(){b.style.transform=''});
+    });
+  }
+
+  /* reveal on scroll */
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('on');io.unobserve(e.target)}})},{threshold:.12});
+  document.querySelectorAll('.rv').forEach(function(el){io.observe(el)});
+
+  /* waveform */
+  var wave=document.getElementById('wave');
+  for(var i=0;i<42;i++){var b=document.createElement('i');b.style.setProperty('--i',i);b.style.setProperty('--h',(30+Math.random()*65)+'%');wave.appendChild(b)}
+
+  /* sky canvas + occasional shooting star */
+  var cv=document.getElementById('sky'),cx=cv.getContext('2d'),W,H,ps=[],shoot=null,nextShoot=6+Math.random()*8;
+  function size(){W=cv.width=innerWidth*devicePixelRatio;H=cv.height=innerHeight*devicePixelRatio;cv.style.width=innerWidth+'px';cv.style.height=innerHeight+'px'}
+  size();addEventListener('resize',size);
+  var N=Math.min(90,Math.floor(innerWidth/14));
+  for(var j=0;j<N;j++)ps.push({x:Math.random(),y:Math.random(),r:.6+Math.random()*1.7,s:.02+Math.random()*.06,tw:Math.random()*6.28,g:Math.random()<.5});
+  var t=0,last=0;
+  function frame(ts){
+    var dt2=(ts-last)/1000||0; last=ts;
+    t+=.008;cx.clearRect(0,0,W,H);
+    var g1=cx.createRadialGradient(W*.5+Math.sin(t*.7)*W*.06, H*.16+Math.cos(t*.5)*H*.03, 0, W*.5, H*.16, W*.42);
+    g1.addColorStop(0,'rgba(221,178,100,.05)');g1.addColorStop(1,'rgba(221,178,100,0)');
+    cx.fillStyle=g1;cx.fillRect(0,0,W,H);
+    var g2=cx.createRadialGradient(W*.24+Math.cos(t*.5)*W*.05, H*.72, 0, W*.24, H*.72, W*.36);
+    g2.addColorStop(0,'rgba(201,138,124,.035)');g2.addColorStop(1,'rgba(201,138,124,0)');
+    cx.fillStyle=g2;cx.fillRect(0,0,W,H);
+    for(var k=0;k<ps.length;k++){var p=ps[k];
+      p.y-=p.s/900; p.x+=Math.sin(t+p.tw)*.00012; if(p.y<-.02){p.y=1.02;p.x=Math.random()}
+      var a=.25+.35*Math.abs(Math.sin(t*1.4+p.tw));
+      cx.beginPath();cx.arc(p.x*W,p.y*H,p.r*devicePixelRatio,0,6.283);
+      cx.fillStyle=p.g?'rgba(221,178,100,'+a+')':'rgba(240,233,220,'+(a*.6)+')';cx.fill();
+    }
+    /* shooting star — rare, a small gift for the patient */
+    nextShoot-=dt2;
+    if(!shoot&&nextShoot<=0){
+      shoot={x:(.15+Math.random()*.5)*W, y:(.06+Math.random()*.2)*H, vx:(5+Math.random()*4)*devicePixelRatio, vy:(2+Math.random()*1.6)*devicePixelRatio, life:1};
+      nextShoot=9+Math.random()*13;
+    }
+    if(shoot){
+      shoot.x+=shoot.vx*60*dt2; shoot.y+=shoot.vy*60*dt2; shoot.life-=dt2*1.1;
+      if(shoot.life>0){
+        var grd=cx.createLinearGradient(shoot.x-shoot.vx*12,shoot.y-shoot.vy*12,shoot.x,shoot.y);
+        grd.addColorStop(0,'rgba(240,233,220,0)');grd.addColorStop(1,'rgba(240,233,220,'+(.7*shoot.life)+')');
+        cx.strokeStyle=grd;cx.lineWidth=1.4*devicePixelRatio;cx.beginPath();
+        cx.moveTo(shoot.x-shoot.vx*12,shoot.y-shoot.vy*12);cx.lineTo(shoot.x,shoot.y);cx.stroke();
+      } else shoot=null;
+    }
+    if(!reduced)requestAnimationFrame(frame);
+  }
+  if(!reduced)requestAnimationFrame(frame);
+
+  /* parallax dawnlight — the light sinks slightly as you leave the hero */
+  var dawn=document.querySelector('.dawnlight');
+  if(dawn)addEventListener('scroll',function(){dawn.style.transform='translateY('+(scrollY*0.22)+'px)'},{passive:true});
+
+  /* tilt */
+  var tilt=document.getElementById('tilt'),zone=document.querySelector('.demo-zone');
+  if(!reduced&&matchMedia('(pointer:fine)').matches){
+    zone.addEventListener('mousemove',function(e){
+      var r=tilt.getBoundingClientRect(),px=(e.clientX-r.left)/r.width-.5,py=(e.clientY-r.top)/r.height-.5;
+      tilt.style.transform='rotateY('+(px*7)+'deg) rotateX('+(-py*6)+'deg)';
+      tilt.style.setProperty('--mx',((px+.5)*100)+'%');
+    });
+    zone.addEventListener('mouseleave',function(){tilt.style.transform='rotateY(0) rotateX(0)'});
+  }
+
+  /* live chat */
+  var chat=document.getElementById('chat');
+  var script=[
+    {who:'you', txt:'i can’t sleep again. today was a lot.'},
+    {who:'eos', txt:'I’m here. You don’t have to explain it well — just tell me where it sits. Chest? Stomach?'},
+    {who:'you', txt:'chest. it’s the anniversary thing i told you about.'},
+    {who:'eos', txt:'March 14th — I remember. You got through it last year by walking by the river at midnight. Want to talk, or want me to just stay on the line while you breathe?'}
+  ];
+  function el(html){var d=document.createElement('div');d.innerHTML=html;return d.firstElementChild}
+  function typeInto(node,text,done){
+    var i=0,caret=el('<span class="caret"></span>');node.appendChild(caret);
+    (function tick2(){
+      if(i<text.length){node.insertBefore(document.createTextNode(text[i++]),caret);setTimeout(tick2,text.length>90?14:22)}
+      else{caret.remove();done&&done()}
+    })();
+  }
+  function playChat(){
+    chat.innerHTML='';var idx=0;
+    (function next(){
+      if(idx>=script.length){setTimeout(playChat,7000);return}
+      var m=script[idx++],isEos=m.who==='eos';
+      if(isEos){
+        var ty=el('<div class="msg on"><span class="tag eos">EOS</span><span class="typing"><i></i><i></i><i></i></span></div>');
+        chat.appendChild(ty);
+        setTimeout(function(){
+          ty.remove();
+          var row=el('<div class="msg"><span class="tag eos">EOS</span><span class="txt"></span></div>');
+          chat.appendChild(row);requestAnimationFrame(function(){row.classList.add('on')});
+          typeInto(row.querySelector('.txt'),m.txt,function(){setTimeout(next,950)});
+        },1150);
+      } else {
+        var row=el('<div class="msg"><span class="tag you">YOU</span><span class="txt"></span></div>');
+        chat.appendChild(row);requestAnimationFrame(function(){row.classList.add('on')});
+        typeInto(row.querySelector('.txt'),m.txt,function(){setTimeout(next,700)});
+      }
+    })();
+  }
+  if(!reduced){setTimeout(playChat,2600)}else{
+    script.forEach(function(m){chat.appendChild(el('<div class="msg on"><span class="tag '+(m.who==='eos'?'eos">EOS':'you">YOU')+'</span><span class="txt">'+m.txt+'</span></div>'))})
+  }
+
+  /* statement — words light up as you scroll */
+  var stText='Needing someone is not weakness. It is the most human thing about you.';
+  var stHost=document.getElementById('stwords'), stEl=document.getElementById('statement');
+  var goldWords={'human':1,'you.':1};
+  stText.split(' ').forEach(function(w){
+    var s=document.createElement('span');s.className='sw'+(goldWords[w]?' g':'');s.textContent=w+' ';stHost.appendChild(s);
+  });
+  var stWords=stHost.querySelectorAll('.sw');
+  function stTick(){
+    var r=stEl.getBoundingClientRect();
+    var p=1-(r.top+r.height*.55)/innerHeight; /* progress through scene */
+    p=Math.max(0,Math.min(1,p*1.6));
+    var lit=Math.floor(p*stWords.length);
+    stWords.forEach(function(s,i){s.classList.toggle('lit',i<lit)});
+  }
+  if(!reduced){addEventListener('scroll',stTick,{passive:true});stTick()}
+  else stWords.forEach(function(s){s.classList.add('lit')});
+
+  /* breathe — the peak */
+  var bz=document.getElementById('breathe'),borb=document.getElementById('borb'),bcue=document.getElementById('bcue'),bword=document.getElementById('bword');
+  var holdT=null,holdT2=null,released=true,cycled=false;
+  function startHold(e){
+    if(e.cancelable)e.preventDefault();
+    released=false;
+    bz.classList.add('holding');
+    bcue.textContent='BREATHE IN…';
+    holdT=setTimeout(function(){ if(!released) bcue.textContent='HOLD IT — SHE’S RIGHT HERE'; },4200);
+    holdT2=setTimeout(function(){ if(!released){endHold()} },9000);
+  }
+  function endHold(){
+    if(released)return;
+    released=true;
+    clearTimeout(holdT);clearTimeout(holdT2);
+    bz.classList.remove('holding');
+    bcue.textContent='AND… LET IT GO';
+    setTimeout(function(){
+      bcue.innerHTML='PRESS&nbsp;AND&nbsp;HOLD&nbsp;—&nbsp;BREATHE&nbsp;WITH&nbsp;HER';
+      if(!cycled){
+        cycled=true;
+        bword.textContent='That’s one minute with her. Now imagine the whole night held like that.';
+        bword.classList.add('on');
+      }
+    },2600);
+  }
+  if(borb){
+    borb.addEventListener('mousedown',startHold);
+    borb.addEventListener('touchstart',startHold,{passive:false});
+    addEventListener('mouseup',endHold);
+    addEventListener('touchend',endHold);
+    borb.addEventListener('keydown',function(e){if(e.key===' '||e.key==='Enter'){startHold(e)}});
+    borb.addEventListener('keyup',function(e){if(e.key===' '||e.key==='Enter'){endHold()}});
+  }
+
+  /* cipher decode */
+  var GLYPHS='!<>-_\\/[]{}—=+*^?#☾✦abcdefghjkmnpqrstuvwxyz0123456789';
+  var ciph=document.getElementById('cipher'),played=false;
+  var cio=new IntersectionObserver(function(es){
+    es.forEach(function(e){if(e.isIntersecting&&!played){played=true;decode(ciph,ciph.getAttribute('data-text'));cio.disconnect()}})
+  },{threshold:.4});
+  cio.observe(ciph);
+  function decode(node,text){
+    if(reduced){node.textContent=text;return}
+    var fr=0,len=text.length;
+    (function step(){
+      var out='',settled=Math.floor(fr*1.05);
+      for(var i=0;i<len;i++){
+        if(i<settled)out+=text[i];
+        else if(text[i]===' ')out+=' ';
+        else out+=GLYPHS[Math.floor(Math.random()*GLYPHS.length)];
+      }
+      node.textContent=out;fr++;
+      if(settled<len)requestAnimationFrame(step);else node.textContent=text;
+    })();
+  }
+
+  /* rotating quotes */
+  var qs=document.querySelectorAll('#quotes q');
+  if(qs.length&&!reduced){
+    var qi=0;
+    setInterval(function(){
+      qs[qi].classList.remove('on');
+      qi=(qi+1)%qs.length;
+      qs[qi].classList.add('on');
+    },6000);
+  }
+})();
+</script>
+</body>
+</html>
