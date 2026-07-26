@@ -636,7 +636,7 @@
     nav.classList.toggle('scrolled',scrollY>10);
     var h=document.documentElement, p=scrollY/(h.scrollHeight-innerHeight);
     prog.style.width=(p*100)+'%';
-    shift.style.opacity=Math.pow(p,1.4)*.95; /* world warms as you go */
+    shift.style.opacity=Math.pow(p,1.6)*.55; /* world warms as you go — quietly */
   },{passive:true});
 
   /* chapter rail */
@@ -675,23 +675,18 @@
   var cv=document.getElementById('sky'),cx=cv.getContext('2d'),W,H,ps=[],shoot=null,nextShoot=6+Math.random()*8;
   function size(){W=cv.width=innerWidth*devicePixelRatio;H=cv.height=innerHeight*devicePixelRatio;cv.style.width=innerWidth+'px';cv.style.height=innerHeight+'px'}
   size();addEventListener('resize',size);
-  var N=Math.min(90,Math.floor(innerWidth/14));
-  for(var j=0;j<N;j++)ps.push({x:Math.random(),y:Math.random(),r:.6+Math.random()*1.7,s:.02+Math.random()*.06,tw:Math.random()*6.28,g:Math.random()<.5});
+  var N=Math.min(64,Math.floor(innerWidth/22));
+  for(var j=0;j<N;j++)ps.push({x:Math.random(),y:Math.random(),r:.5+Math.random()*1.1,s:.02+Math.random()*.05,tw:Math.random()*6.28});
   var t=0,last=0;
   function frame(ts){
     var dt2=(ts-last)/1000||0; last=ts;
     t+=.008;cx.clearRect(0,0,W,H);
-    var g1=cx.createRadialGradient(W*.5+Math.sin(t*.7)*W*.06, H*.16+Math.cos(t*.5)*H*.03, 0, W*.5, H*.16, W*.42);
-    g1.addColorStop(0,'rgba(221,178,100,.05)');g1.addColorStop(1,'rgba(221,178,100,0)');
-    cx.fillStyle=g1;cx.fillRect(0,0,W,H);
-    var g2=cx.createRadialGradient(W*.24+Math.cos(t*.5)*W*.05, H*.72, 0, W*.24, H*.72, W*.36);
-    g2.addColorStop(0,'rgba(201,138,124,.035)');g2.addColorStop(1,'rgba(201,138,124,0)');
-    cx.fillStyle=g2;cx.fillRect(0,0,W,H);
+    /* only star-dust: sparse, dim, uniform — the background stays silent */
     for(var k=0;k<ps.length;k++){var p=ps[k];
-      p.y-=p.s/900; p.x+=Math.sin(t+p.tw)*.00012; if(p.y<-.02){p.y=1.02;p.x=Math.random()}
-      var a=.25+.35*Math.abs(Math.sin(t*1.4+p.tw));
+      p.y-=p.s/900; p.x+=Math.sin(t+p.tw)*.0001; if(p.y<-.02){p.y=1.02;p.x=Math.random()}
+      var a=.14+.2*Math.abs(Math.sin(t*1.2+p.tw));
       cx.beginPath();cx.arc(p.x*W,p.y*H,p.r*devicePixelRatio,0,6.283);
-      cx.fillStyle=p.g?'rgba(221,178,100,'+a+')':'rgba(240,233,220,'+(a*.6)+')';cx.fill();
+      cx.fillStyle='rgba(240,233,220,'+a+')';cx.fill();
     }
     /* shooting star — rare, a small gift for the patient */
     nextShoot-=dt2;
