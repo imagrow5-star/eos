@@ -107,7 +107,15 @@ export async function reconcileAgentConfig(): Promise<
 > {
   // The agent is shared with the workspace — only the production deployment
   // may rewrite it, otherwise a dev boot would fight the published build.
-  if (!process.env.REPLIT_DEPLOYMENT) {
+  // Production is either a Replit deployment (REPLIT_DEPLOYMENT) or the Render
+  // service (RENDER is set automatically by Render; NODE_ENV=production as a
+  // fallback). Without this, the guard silently never ran on Render and agent
+  // drift (speculative turn / soft-timeout filler) caused overlapping speech.
+  const isProduction =
+    Boolean(process.env.REPLIT_DEPLOYMENT) ||
+    Boolean(process.env.RENDER) ||
+    process.env.NODE_ENV === "production";
+  if (!isProduction) {
     logger.info("Agent config guard: skipped (not a production deployment)");
     return "skipped";
   }
