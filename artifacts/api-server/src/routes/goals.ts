@@ -106,10 +106,13 @@ router.put("/goals/:id/tasks/:taskId", async (req, res): Promise<void> => {
     return;
   }
 
+  // Ownership: the task must belong to the goal we just verified the caller
+  // owns. Updating by task id alone would let any signed-in user flip another
+  // user's task by guessing sequential ids (review finding).
   const [task] = await db
     .update(goalTasksTable)
     .set({ isComplete })
-    .where(eq(goalTasksTable.id, taskId))
+    .where(and(eq(goalTasksTable.id, taskId), eq(goalTasksTable.goalId, goalId)))
     .returning();
 
   if (!task) {
