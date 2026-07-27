@@ -28,6 +28,20 @@ const router: IRouter = Router();
 
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
+// ─── Voice model (latency-tuned) ─────────────────────────────────────────────
+// Realtime voice defaults to Claude Haiku 4.5: 4-5x faster than Sonnet 4.5 at
+// ~90% of its capability — spoken replies are short (max_tokens 600) and the
+// personality lives entirely in the system prompt, which is identical either
+// way. ROLLBACK SWITCH: set VOICE_LLM_MODEL=claude-sonnet-4-5-20250929 on the
+// service (restarts apply it) — no code change needed. Text chat, morning
+// notes, chapters, and extraction are untouched; they never pass a model
+// override. Resolved per request purely for testability; the env is constant
+// within a process, so a call's prompt-cache prefix never switches models
+// mid-call. Exported for tests.
+export function resolveVoiceLlmModel(): string {
+  return process.env.VOICE_LLM_MODEL?.trim() || "claude-haiku-4-5";
+}
+
 // Only known ElevenLabs SYSTEM tools may reach Claude. The endpoint is
 // internet-facing (HMAC-gated), so request-body tool definitions are otherwise
 // caller-controllable prompt surface, and an allowlist keeps the per-call tool
@@ -386,6 +400,7 @@ router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> =>
         systemExtra: buildVoiceCallAddendum(tools.length > 0) + toneExtra,
         callType: "voice",
         cacheConversation: true,
+        model: resolveVoiceLlmModel(),
         ...(tools.length
           ? {
               tools,
