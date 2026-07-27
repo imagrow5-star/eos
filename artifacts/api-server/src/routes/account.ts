@@ -380,7 +380,7 @@ function buildHtmlReport(data: {
 <div class="page">
 
   <div class="cover">
-    <div class="wordmark">A S H <span>A</span></div>
+    <div class="wordmark">E O <span>S</span></div>
     <h1>Your personal report — with ${companionName}</h1>
     <p class="meta">Journey: ${esc(userPath)} &nbsp;·&nbsp; Exported ${fmtDate(exportedAt)}</p>
     ${rangeLabel ? `<p class="meta">${esc(rangeLabel)}</p>` : ""}

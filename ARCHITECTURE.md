@@ -119,7 +119,7 @@ What is *not* encrypted (worth knowing): emails and password hashes (hashes are 
 | `lib/api-spec` | Tooling | The OpenAPI contract + Orval codegen config that generates the two libraries above. |
 | `scripts` | Tooling | Workspace scratch scripts (currently just a hello-world). |
 | `attached_assets` | Assets dump | Uploaded images/files from development sessions. |
-| `replit.md` | Docs | Old dev notes — **significantly out of date** (still says "no auth, single user"). |
+| `replit.md` | Docs | Removed — its dev notes described an old version of the product ("no auth, single user") and were misleading. |
 
 ---
 

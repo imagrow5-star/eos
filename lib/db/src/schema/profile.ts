@@ -8,7 +8,10 @@ export const profileTable = pgTable("profile", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => usersTable.id),
   userName: encryptedText("user_name", "profile.user_name").notNull().default(""), // encrypted at rest
-  companionName: text("companion_name").notNull().default("Asha"),
+  // "Eos" is also set explicitly on every insert (getOrCreateProfileForUser);
+  // this default only guards rows created outside the app. The DB column keeps
+  // its old default until the next `drizzle-kit push`.
+  companionName: text("companion_name").notNull().default("Eos"),
   relationshipType: text("relationship_type").notNull().default("friend"), // friend | romantic
   energy: text("energy").notNull().default("calm"), // playful | calm | deep
   userPath: text("user_path").notNull().default("breakup"), // lonely | support | breakup | bereavement
