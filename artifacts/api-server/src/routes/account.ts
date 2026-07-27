@@ -663,11 +663,26 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
     })),
     memoryFacts: memoryResult.rows.map((r) => ({ ...r, fact: dText(r.fact, "memory_facts.fact") })),
     wins: winsResult.rows.map((r) => ({ ...r, content: dText(r.content, "wins.content") })),
-    habits: habitsResult.rows,
-    habitCompletions: habitCompletionsResult.rows,
-    goals: goalsResult.rows,
+    habits: habitsResult.rows.map((r) => ({
+      ...r,
+      name: dText(r.name, "habits.name"),
+      when_then: dText(r.when_then, "habits.when_then"),
+    })),
+    habitCompletions: habitCompletionsResult.rows.map((r) => ({
+      ...r,
+      habit_name: dText(r.habit_name, "habits.name"),
+    })),
+    goals: goalsResult.rows.map((r) => ({
+      ...r,
+      title: dText(r.title, "goals.title"),
+      description: dText(r.description, "goals.description"),
+    })),
     moodScores: moodResult.rows,
-    commitments: commitmentsResult.rows,
+    commitments: commitmentsResult.rows.map((r) => ({
+      ...r,
+      content: dText(r.content, "commitments.content"),
+      cue: dText(r.cue, "commitments.cue"),
+    })),
     reminders: remindersResult.rows,
     personalitySignals: personalitySignalsResult.rows.map((r) => ({
       ...r,
@@ -692,6 +707,12 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
       ...r,
       prompt: dText(r.prompt, "sealed_notes.prompt"),
       text: dText(r.text, "sealed_notes.text"),
+      // Encrypted boolean flag → real boolean in the export. Legacy shapes
+      // pass through: a raw boolean (pre-conversion) or plaintext "true".
+      crisis_flagged:
+        typeof r.crisis_flagged === "boolean"
+          ? r.crisis_flagged
+          : dText(r.crisis_flagged, "sealed_notes.crisis_flagged") === "true",
     })),
     storyThreads: storyThreadsResult.rows.map((r) => ({
       ...r,

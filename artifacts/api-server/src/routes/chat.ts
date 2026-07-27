@@ -160,8 +160,7 @@ router.post("/chat/stream", ...chatUsageLimits, async (req, res): Promise<void> 
     const contextMessages = [...recentMessages].reverse().slice(0, -1);
 
     // ── Stream tokens to the client ─────────────────────────────────────────
-    let aiContent = "";
-    aiContent = await streamCompanionReply(
+    const reply = await streamCompanionReply(
       systemPrompt,
       contextMessages,
       content,
@@ -174,25 +173,36 @@ router.post("/chat/stream", ...chatUsageLimits, async (req, res): Promise<void> 
         callType: voiceMode ? "voice_fallback" : "chat",
       },
     );
+    const aiContent = reply.text;
 
-    // Persist assistant message
+    // Persist assistant message (the honest degraded line is persisted too —
+    // it IS what Eos said; the flag below is what tells the client apart).
     const [assistantMsg] = await db
       .insert(messagesTable)
       .values({ userId, role: "assistant", content: aiContent, isMorningNote: false })
       .returning();
 
-    sendEvent("done", { messageId: assistantMsg!.id, content: aiContent });
+    sendEvent("done", {
+      messageId: assistantMsg!.id,
+      content: aiContent,
+      ...(reply.degraded ? { degraded: true } : {}),
+    });
     res.end();
 
     // ── Background extractions — fire-and-forget after response is sent ─────
     // Shared pipeline (commitments, habits, periodic memory) — same one the
     // voice-call route uses, so text and voice feed the same systems.
-    (async () => {
-      appendRecentPhrase(userId, aiContent).catch((err) =>
-        logger.error({ err }, "Background phrase tracking failed"),
-      );
-      await runConversationExtractions(profile, content, aiContent);
-    })().catch((err) => logger.error({ err }, "Background extraction wrapper failed"));
+    // Skipped entirely on a degraded reply: the provider is down (they would
+    // only fail again, at cost) and the fallback line must never feed the
+    // anti-repetition phrase list or the extraction pipeline.
+    if (!reply.degraded) {
+      (async () => {
+        appendRecentPhrase(userId, aiContent).catch((err) =>
+          logger.error({ err }, "Background phrase tracking failed"),
+        );
+        await runConversationExtractions(profile, content, aiContent);
+      })().catch((err) => logger.error({ err }, "Background extraction wrapper failed"));
+    }
 
   } catch (err) {
     logger.error({ err }, "Chat stream error");
@@ -240,12 +250,16 @@ router.post("/chat/send", ...chatUsageLimits, async (req, res): Promise<void> =>
     .limit(21);
 
   const contextMessages = recentMessages.reverse().slice(0, -1);
-  const aiContent = await getCompanionReply(systemPrompt, contextMessages, content, stage);
+  const reply = await getCompanionReply(systemPrompt, contextMessages, content, stage);
+  const aiContent = reply.text;
 
-  // Fire-and-forget phrase tracking (anti-repetition — non-blocking)
-  appendRecentPhrase(userId, aiContent).catch((err) =>
-    logger.error({ err }, "Phrase tracking failed"),
-  );
+  // Anti-repetition + extraction only for REAL replies — a degraded fallback
+  // must never feed the phrase list or fire more (failing, billable) AI calls.
+  if (!reply.degraded) {
+    appendRecentPhrase(userId, aiContent).catch((err) =>
+      logger.error({ err }, "Phrase tracking failed"),
+    );
+  }
 
   const [assistantMsg] = await db
     .insert(messagesTable)
@@ -255,20 +269,23 @@ router.post("/chat/send", ...chatUsageLimits, async (req, res): Promise<void> =>
   // Shared background extraction dispatcher — the same path stream + voice
   // use, so commitments/habits/goals/memory behave identically on every chat
   // API (including goal dedup context, which this route used to skip).
-  runConversationExtractions(profile, content, aiContent).catch((err) =>
-    logger.error({ err }, "Background extractions failed"),
-  );
+  if (!reply.degraded) {
+    runConversationExtractions(profile, content, aiContent).catch((err) =>
+      logger.error({ err }, "Background extractions failed"),
+    );
+  }
 
   // Mirrors the dispatcher's own every-4th-user-message memory trigger.
-  const memoryExtracted = userMsgCount % 4 === 0 && userMsgCount > 0;
+  const memoryExtracted = !reply.degraded && userMsgCount % 4 === 0 && userMsgCount > 0;
 
-  req.log.info({ userMsgCount, memoryExtracted }, "Message sent");
+  req.log.info({ userMsgCount, memoryExtracted, degraded: reply.degraded }, "Message sent");
 
   res.json(
     SendMessageResponse.parse({
       userMessage: userMsg,
       assistantMessage: assistantMsg,
       memoryExtracted,
+      ...(reply.degraded ? { degraded: true } : {}),
     }),
   );
 });

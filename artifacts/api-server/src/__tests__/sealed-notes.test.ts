@@ -102,7 +102,7 @@ describe("POST /api/chapters/:id/note", () => {
     expect(res.body.care).toBeNull();
     expect(res.body.note.status).toBe("sealed");
 
-    const row = await pool.query<{ kind: string; prompt: string | null; crisis_flagged: boolean }>(
+    const row = await pool.query<{ kind: string; prompt: string | null; crisis_flagged: string }>(
       "SELECT kind, prompt, crisis_flagged FROM sealed_notes WHERE user_id = $1",
       [userId],
     );
@@ -111,7 +111,10 @@ describe("POST /api/chapters/:id/note", () => {
     // Stored encrypted; the readable prompt only exists after decryption.
     expect(row.rows[0]!.prompt).toMatch(/^enc:v1:/);
     expect(decryptText(row.rows[0]!.prompt!, "sealed_notes.prompt")).toContain("next Sunday");
-    expect(row.rows[0]!.crisis_flagged).toBe(false);
+    // The crisis flag is encrypted at rest too (review finding) — a DB dump
+    // must not be able to list flagged users.
+    expect(row.rows[0]!.crisis_flagged).toMatch(/^enc:v1:/);
+    expect(decryptText(row.rows[0]!.crisis_flagged, "sealed_notes.crisis_flagged")).toBe("false");
   });
 
   it("allows only one note per chapter (409 on the second)", async () => {
@@ -155,11 +158,13 @@ describe("POST /api/chapters/:id/note", () => {
     expect(typeof res.body.care.crisisLine).toBe("string");
     expect(res.body.care.crisisLine.length).toBeGreaterThan(0);
 
-    const row = await pool.query<{ crisis_flagged: boolean; status: string }>(
+    const row = await pool.query<{ crisis_flagged: string; status: string }>(
       "SELECT crisis_flagged, status FROM sealed_notes WHERE user_id = $1",
       [userId],
     );
-    expect(row.rows[0]!.crisis_flagged).toBe(true);
+    // Encrypted at rest; still true through the app (decrypt to check).
+    expect(row.rows[0]!.crisis_flagged).toMatch(/^enc:v1:/);
+    expect(decryptText(row.rows[0]!.crisis_flagged, "sealed_notes.crisis_flagged")).toBe("true");
     expect(row.rows[0]!.status).toBe("sealed");
   });
 

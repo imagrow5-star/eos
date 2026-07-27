@@ -119,6 +119,40 @@ function getMockResponse(stage: number): string {
   return responses[Math.floor(Math.random() * responses.length)]!;
 }
 
+// ─── Honest degraded mode (provider outage) ──────────────────────────────────
+// When a live Anthropic call FAILS, users used to silently receive a canned
+// mock line and every metric recorded success — an outage was invisible
+// (review finding, Top-5 #1/#5). Now the fallback is honest in Eos's voice,
+// the reply is FLAGGED degraded end-to-end (SSE done event / JSON response /
+// voice), and an `ai_degraded` log line records the failure so outages show
+// up in monitoring: grep "ai_degraded" (mirror of the "ai_usage" cost lines).
+//
+// Mock mode (no ANTHROPIC_API_KEY at all) is different and unchanged: that is
+// the documented dev setup, not an outage — it keeps the canned stage replies
+// and is NOT flagged degraded, so local dev and the test suite behave as
+// before.
+//
+// No retries are added here: the SDK's own default retry policy is the only
+// one (adding more would multiply API costs during exactly the wrong moment).
+
+/** Spoken and written honest fallback — warm, no technical jargon. */
+export const DEGRADED_REPLY =
+  "I'm having a little trouble gathering my thoughts right now — it's me, not you. " +
+  "Give me a few minutes and try again; I'm still right here.";
+
+export interface CompanionReplyResult {
+  text: string;
+  /** true = the provider call failed and `text` is the honest fallback. */
+  degraded: boolean;
+}
+
+function logAiDegraded(callType: string, err: unknown): void {
+  logger.error(
+    { err, aiDegraded: true, callType },
+    "ai_degraded: Anthropic call failed — honest fallback served instead of a real reply",
+  );
+}
+
 // ─── Voice-call brevity addendum ──────────────────────────────────────────────
 // Appended as a SECOND system block (uncached) when the reply will be spoken
 // aloud — keeps the big persona block's prompt cache intact across modes.
@@ -200,7 +234,7 @@ export async function streamCompanionReply(
   stage: number,
   onChunk: (text: string) => void,
   opts?: CompanionCallOptions,
-): Promise<string> {
+): Promise<CompanionReplyResult> {
   const anthropic = getAnthropic();
 
   if (!anthropic) {
@@ -211,7 +245,7 @@ export async function streamCompanionReply(
       await new Promise((r) => setTimeout(r, 55 + Math.random() * 65));
       onChunk((i === 0 ? "" : " ") + words[i]);
     }
-    return mock;
+    return { text: mock, degraded: false }; // dev mock mode — not an outage
   }
 
   try {
@@ -314,12 +348,12 @@ export async function streamCompanionReply(
 
     // A tool-only reply (e.g. skip_turn) is INTENTIONAL silence — never swap in
     // the fallback line, or the agent would speak while trying to stay quiet.
-    return fullText || (sawToolUse ? "" : "I'm here. Tell me more.");
+    return { text: fullText || (sawToolUse ? "" : "I'm here. Tell me more."), degraded: false };
   } catch (err) {
-    logger.error({ err }, "Anthropic streaming error, falling back to mock");
-    const mock = getMockResponse(stage);
-    onChunk(mock);
-    return mock;
+    // Provider outage: be HONEST — no fake "normal" reply, no silent success.
+    logAiDegraded(opts?.callType ?? "chat", err);
+    onChunk(DEGRADED_REPLY);
+    return { text: DEGRADED_REPLY, degraded: true };
   }
 }
 
@@ -330,12 +364,12 @@ export async function getCompanionReply(
   contextMessages: { role: string; content: string }[],
   userContent: string,
   stage: number,
-): Promise<string> {
+): Promise<CompanionReplyResult> {
   const anthropic = getAnthropic();
 
   if (!anthropic) {
     logger.warn("ANTHROPIC_API_KEY not set — using mock response");
-    return getMockResponse(stage);
+    return { text: getMockResponse(stage), degraded: false }; // dev mock mode
   }
 
   try {
@@ -364,10 +398,10 @@ export async function getCompanionReply(
     logAiUsage("chat_send", "claude-sonnet-4-5-20250929", response.usage);
 
     const textBlock = response.content.find((b) => b.type === "text");
-    return textBlock?.text ?? "I'm here. Tell me more.";
+    return { text: textBlock?.text ?? "I'm here. Tell me more.", degraded: false };
   } catch (err) {
-    logger.error({ err }, "Anthropic API error, falling back to mock");
-    return getMockResponse(stage);
+    logAiDegraded("chat_send", err);
+    return { text: DEGRADED_REPLY, degraded: true };
   }
 }
 
@@ -472,7 +506,10 @@ Write only the note text.`;
       textBlock?.text ??
       `${profile.userName ? profile.userName + " — " : ""}thinking of you today.`
     );
-  } catch {
+  } catch (err) {
+    // Degraded, not success — the generic line below is a fallback, and the
+    // marker makes the outage visible in metrics (grep "ai_degraded").
+    logAiDegraded("morning_note", err);
     return `${profile.userName ? profile.userName + " — " : ""}I'm here with you today.`;
   }
 }
@@ -1412,7 +1449,7 @@ Rules:
     const textBlock = response.content.find((b) => b.type === "text");
     return textBlock?.text?.trim() ?? `${name} — good to see you.`;
   } catch (err) {
-    logger.error({ err }, "Contextual greeting generation failed");
+    logAiDegraded("greeting", err);
     return `${name} — good to see you.`;
   }
 }

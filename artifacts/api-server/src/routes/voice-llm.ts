@@ -198,8 +198,16 @@ export async function persistVoiceTurn(args: {
   userContent: string;
   fullText: string;
   profile: Profile;
+  /**
+   * True when fullText is the honest provider-outage fallback (see
+   * DEGRADED_REPLY in services/ai.ts). The USER's words are still persisted —
+   * they said them and Eos must remember — but the fallback line is not
+   * stored as an Eos reply, never feeds the anti-repetition list, and no
+   * extraction runs (the provider is down; it would only fail again, at cost).
+   */
+  degraded?: boolean;
 }): Promise<{ savedUser: boolean; savedAssistant: boolean }> {
-  const { userId, issuedAt, synthetic, userContent, fullText, profile } = args;
+  const { userId, issuedAt, synthetic, userContent, fullText, profile, degraded } = args;
   const callStart = new Date(issuedAt);
 
   let savedUser = false;
@@ -229,8 +237,9 @@ export async function persistVoiceTurn(args: {
     }
 
     // A skip_turn reply is intentional silence — fullText is empty and there
-    // is nothing to store. Never insert empty assistant rows.
-    if (fullText.trim().length > 0) {
+    // is nothing to store. Never insert empty assistant rows. A degraded
+    // fallback is spoken but not stored (see the `degraded` arg doc above).
+    if (!degraded && fullText.trim().length > 0) {
       // Same as above: content equality must happen on decrypted rows.
       const recentAssistantRows = await db
         .select({ content: messagesTable.content })
@@ -255,8 +264,9 @@ export async function persistVoiceTurn(args: {
     }
 
     // Extraction (commitments, habits, goals, memory) only on genuinely new
-    // user turns — re-sent history must not extract twice.
-    if (savedUser) {
+    // user turns — re-sent history must not extract twice, and a degraded
+    // turn must not extract at all (provider is down).
+    if (savedUser && !degraded) {
       await runConversationExtractions(profile, userContent, fullText);
     }
   };
@@ -383,7 +393,14 @@ router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (re
       function: { name: string; arguments: string };
     }> = [];
 
-    const fullText = await streamCompanionReply(
+    // Provider outage on a LIVE CALL: streamCompanionReply returns the honest
+    // degraded line as a normal completion, so ElevenLabs speaks Eos's own
+    // words ("I'm having a little trouble gathering my thoughts…") and the
+    // call stays up. The alternative — answering 500 — makes ElevenLabs play
+    // its dashboard-configured generic error blurb or sit in dead air, which
+    // fails far less gracefully. The degraded line is spoken but never
+    // persisted or extracted (see persistVoiceTurn's `degraded` arg).
+    const reply = await streamCompanionReply(
       systemPrompt,
       contextMessages,
       userContent,
@@ -423,6 +440,7 @@ router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (re
           : {}),
       },
     );
+    const fullText = reply.text;
 
     const finishReason = toolCalls.length > 0 ? "tool_calls" : "stop";
     if (wantStream) {
@@ -460,6 +478,7 @@ router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (re
       userContent: freshUserContent,
       fullText,
       profile,
+      degraded: reply.degraded,
     }).catch((err) => logger.error({ err }, "voice-llm: persisting voice turn failed"));
   } catch (err) {
     logger.error({ err }, "voice-llm: completion failed");

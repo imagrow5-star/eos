@@ -240,6 +240,11 @@ export default function Chat() {
   const [streamingContent, setStreamingContent] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
+  // Message ids whose reply was the honest provider-outage fallback (the SSE
+  // done event carries degraded:true) — rendered with a subtle caption so a
+  // degraded reply never masquerades as a normal one. Session-local by design:
+  // the flag isn't stored server-side, so history reloads drop the caption.
+  const [degradedMessageIds, setDegradedMessageIds] = useState<Set<number>>(() => new Set());
   // Live-caption state: which message is currently being spoken, and how many words revealed
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [revealedWords, setRevealedWords] = useState(0);
@@ -666,6 +671,10 @@ export default function Chat() {
           } else if (eventName === "done") {
             finalMessageId = String(data.messageId);
             finalContent = data.content as string;
+            if (data.degraded === true) {
+              const degradedId = Number(data.messageId);
+              setDegradedMessageIds((prev) => new Set(prev).add(degradedId));
+            }
             // In voice call mode: expand the caption text to the full reply so
             // that when the remainder TTS fires, its word positions align with
             // the full text and the overlay reveals correctly word-by-word.
@@ -1925,6 +1934,13 @@ export default function Chat() {
                     </span>
                   )}
                 </div>
+
+                {/* ── Honest degraded-reply indicator (provider outage) ── */}
+                {isCompanion && degradedMessageIds.has(msg.id) && (
+                  <span className="text-[10.5px] text-muted-foreground/55 italic mt-1 ml-1.5">
+                    A connection hiccup on our side — Eos will be back to her full self shortly.
+                  </span>
+                )}
 
                 {/* ── Forget this (Phase A privacy) — tap bubble to arm ── */}
                 {forgetArmedId === msg.id && (
