@@ -21,9 +21,16 @@ import {
 } from "../services/ai.js";
 import { calculateStage, todayInTimezone, getTimeContext, describeCommitmentTiming } from "../services/stage.js";
 import { getOrCreateProfileForUser } from "./profile.js";
+import { chatUsageLimits } from "../middleware/usageLimits.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
+
+// zod's .message is a JSON dump of every issue — user-facing 400s should show
+// the first issue's human-written message (see SendMessageBody's min/max copy).
+function firstIssueMessage(error: { issues: Array<{ message: string }> }): string {
+  return error.issues[0]?.message ?? "That message couldn't be sent — please try again.";
+}
 
 router.get("/chat/messages", async (req, res): Promise<void> => {
   const userId = req.userId;
@@ -103,11 +110,11 @@ router.delete("/chat/messages/:id", async (req, res): Promise<void> => {
 // Uses SSE to push tokens as they arrive from Anthropic.
 // Events: delta { text }, done { messageId, content }, error { error }
 
-router.post("/chat/stream", async (req, res): Promise<void> => {
+router.post("/chat/stream", ...chatUsageLimits, async (req, res): Promise<void> => {
   const userId = req.userId;
   const parsed = SendMessageBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    res.status(400).json({ error: firstIssueMessage(parsed.error) });
     return;
   }
 
@@ -198,11 +205,11 @@ router.post("/chat/stream", async (req, res): Promise<void> => {
   }
 });
 
-router.post("/chat/send", async (req, res): Promise<void> => {
+router.post("/chat/send", ...chatUsageLimits, async (req, res): Promise<void> => {
   const userId = req.userId;
   const parsed = SendMessageBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
+    res.status(400).json({ error: firstIssueMessage(parsed.error) });
     return;
   }
 

@@ -12,6 +12,7 @@
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 import { isResolvedRomanticVoiceId } from "../services/voiceLibrary.js";
+import { ttsUsageLimits } from "../middleware/usageLimits.js";
 
 const router: IRouter = Router();
 
@@ -101,7 +102,7 @@ async function attemptTTS(
 
 // ─── Route ───────────────────────────────────────────────────────────────────
 
-router.post("/tts", async (req, res): Promise<void> => {
+router.post("/tts", ...ttsUsageLimits, async (req, res): Promise<void> => {
   const { text, voiceId: requestedVoiceId } = req.body as {
     text?: string;
     voiceId?: string;

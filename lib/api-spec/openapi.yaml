@@ -470,6 +470,11 @@ components:
         content:
           type: string
           minLength: 1
+          # Cost guard: one message becomes part of a paid Claude prompt, so
+          # its size must be bounded. 4000 chars ≈ a very long heartfelt
+          # message with lots of headroom; scripts padding megabyte bodies
+          # get a clear 400 instead of a giant API bill.
+          maxLength: 4000
       required:
         - content
 

@@ -134,7 +134,10 @@ export const GetMessagesResponse = zod.array(GetMessagesResponseItem)
 
 
 export const SendMessageBody = zod.object({
-  "content": zod.string().min(1)
+  // maxLength kept in sync by hand with MessageInput in lib/api-spec/openapi.yaml
+  // (cost guard — bounds the size of the paid Claude prompt). The message text
+  // is what chat routes surface to the user on a 400.
+  "content": zod.string().min(1, "Say something first — even a word is enough.").max(4000, "That message is a little too long — please keep it under 4,000 characters, or split it into a couple of messages.")
 })
 
 export const SendMessageResponse = zod.object({

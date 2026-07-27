@@ -12,6 +12,7 @@ import {
 import { calculateStage } from "../services/stage.js";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { verifyVoiceToken } from "../lib/voiceToken.js";
+import { voiceTurnUsageLimits } from "../middleware/usageLimits.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -272,7 +273,7 @@ export async function persistVoiceTurn(args: {
   return { savedUser, savedAssistant };
 }
 
-router.post("/voice-llm/v1/chat/completions", async (req, res): Promise<void> => {
+router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (req, res): Promise<void> => {
   const body = (req.body ?? {}) as Record<string, any>;
 
   // ── Identify which logged-in user this call belongs to ──

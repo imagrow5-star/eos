@@ -499,6 +499,11 @@ describe("GET /api/account/export?format=html", () => {
     expect(res.status).toBe(200);
     const html = res.text;
 
+    // Branding: the report cover carries the Eos wordmark — the old "A S H A"
+    // product name must never appear on a user-facing document again.
+    expect(html).toContain("E O <span>S</span>");
+    expect(html).not.toContain("A S H");
+
     // Every section heading is present
     expect(html).toContain("Conversation history");
     expect(html).toContain("Wins &amp; victories");

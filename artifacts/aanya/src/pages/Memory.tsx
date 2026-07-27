@@ -30,7 +30,7 @@ export default function Memory() {
     }
   };
 
-  const companionName = profile?.companionName || "Asha";
+  const companionName = profile?.companionName || "Eos";
 
   const categories = [
     { id: "preference", label: "Preferences" },
