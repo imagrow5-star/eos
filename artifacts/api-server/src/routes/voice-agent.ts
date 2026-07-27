@@ -3,6 +3,7 @@ import { mintVoiceToken } from "../lib/voiceToken.js";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { isVoiceCallEnabled } from "../lib/featureFlags.js";
 import { voiceSessionUsageLimits } from "../middleware/usageLimits.js";
+import { buildVoiceFirstMessage } from "../services/voiceGreeting.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -32,36 +33,63 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
   }
 
   const userToken = mintVoiceToken(req.userId);
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+
+  // Connect-latency: the profile lookup (tone + greeting inputs) and the
+  // ElevenLabs signed-URL fetch are independent round trips — run them
+  // CONCURRENTLY instead of profile-then-fetch. The fetch result is wrapped
+  // (never rejects) so awaiting the profile first can't leave an unhandled
+  // rejection behind.
+  const signedUrlPromise: Promise<{ r: Response } | { err: unknown }> | null = apiKey
+    ? fetch(
+        `https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(agentId)}`,
+        { headers: { "xi-api-key": apiKey }, signal: AbortSignal.timeout(8000) },
+      ).then(
+        (r) => ({ r }),
+        (err: unknown) => ({ err }),
+      )
+    : null;
 
   // "How Eos speaks" preference rides along so the client can set matching
-  // TTS delivery overrides (stability/speed) on the ElevenLabs session.
+  // TTS delivery overrides (stability/speed) on the ElevenLabs session, and
+  // the profile's name/timezone feed the instant opening line the client
+  // passes as the agent's firstMessage override (spoken with zero LLM/DB
+  // round trips — see services/voiceGreeting.ts).
   let tone = "auto";
+  let firstMessage: string;
   try {
     const profile = await getOrCreateProfileForUser(req.userId);
     tone = (profile as { voiceTone?: string }).voiceTone ?? "auto";
+    firstMessage = buildVoiceFirstMessage(profile);
   } catch (err) {
-    logger.warn({ err }, "voice-agent: couldn't load tone preference — using auto");
+    logger.warn({ err }, "voice-agent: couldn't load profile — using defaults");
+    firstMessage = buildVoiceFirstMessage(null);
   }
 
-  const apiKey = process.env.ELEVENLABS_API_KEY;
-  if (!apiKey) {
+  if (!signedUrlPromise) {
     // No API key to sign with — only a PUBLIC agent can possibly work. Let the
     // browser try; if the agent is private the client will surface the drop.
     logger.warn("ELEVENLABS_API_KEY not set — attempting public-agent voice call");
-    res.json({ available: true, mode: "public", agentId, userToken, tone });
+    res.json({ available: true, mode: "public", agentId, userToken, tone, firstMessage });
     return;
   }
 
   try {
-    const r = await fetch(
-      `https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(agentId)}`,
-      { headers: { "xi-api-key": apiKey }, signal: AbortSignal.timeout(8000) },
-    );
+    const settled = await signedUrlPromise;
+    if ("err" in settled) throw settled.err;
+    const r = settled.r;
 
     if (r.ok) {
       const data = (await r.json()) as { signed_url?: string };
       if (data?.signed_url) {
-        res.json({ available: true, mode: "signed", signedUrl: data.signed_url, userToken, tone });
+        res.json({
+          available: true,
+          mode: "signed",
+          signedUrl: data.signed_url,
+          userToken,
+          tone,
+          firstMessage,
+        });
         return;
       }
       logger.error({ data }, "ElevenLabs get-signed-url returned 200 without signed_url");
@@ -134,6 +162,59 @@ router.post("/voice-agent/client-error", (req, res): void => {
   const message = clip(b.message, 1000) ?? "";
   const detail = clip(b.detail, 2000);
   logger.error({ userId: req.userId, stage, message, detail }, "voice-call failed in browser");
+  res.status(204).end();
+});
+
+// ─── Browser-side connect-timing beacon ──────────────────────────────────────
+// One fire-and-forget POST per call attempt, recording how long the connect
+// path took and which override level finally connected. This makes the retry
+// cascade VISIBLE: every failed level is a full paid reconnection, so if
+// "full" keeps failing the fix is a dashboard toggle (enable the TTS +
+// first-message overrides in the agent's Security settings), not code — the
+// warn line below says exactly that. grep: "voice-connect timing".
+router.post("/voice-agent/client-timing", (req, res): void => {
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const num = (v: unknown): number | undefined =>
+    typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.round(v)) : undefined;
+  const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : undefined);
+
+  const timing = {
+    userId: req.userId,
+    /** "prefetched" | "fresh" — where the /session result came from. */
+    sessionSource: str(b.sessionSource, 20) ?? "unknown",
+    sessionFetchMs: num(b.sessionFetchMs),
+    /** Per-level attempt results from startRealtimeCall's cascade. */
+    attempts: Array.isArray(b.attempts)
+      ? b.attempts.slice(0, 5).map((a) => {
+          const at = (a ?? {}) as Record<string, unknown>;
+          return {
+            level: str(at.level, 10) ?? "unknown",
+            ok: at.ok === true,
+            ms: num(at.ms),
+            message: str(at.message, 300),
+          };
+        })
+      : [],
+    /** Level that finally connected ("full" | "voice" | "none"). */
+    connectedLevel: str(b.connectedLevel, 10),
+    /** Button press → connection established. */
+    connectMs: num(b.connectMs),
+    /** Button press → first agent audio actually accepted for playback. */
+    firstAudioMs: num(b.firstAudioMs),
+  };
+
+  const fullFailed = timing.attempts.some((a) => a.level === "full" && !a.ok);
+  if (fullFailed && timing.connectedLevel && timing.connectedLevel !== "full") {
+    logger.warn(
+      timing,
+      "voice-connect timing: 'full' override attempt failed and a lower level connected — " +
+        "the agent's override flags (TTS voice/stability/speed + first message) are likely " +
+        "DISABLED in the ElevenLabs dashboard Security settings. Enable them there; every " +
+        "call is currently paying a full reconnect retry (and losing the instant greeting).",
+    );
+  } else {
+    logger.info(timing, "voice-connect timing");
+  }
   res.status(204).end();
 });
 

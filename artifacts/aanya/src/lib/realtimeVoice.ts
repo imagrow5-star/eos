@@ -1,5 +1,12 @@
 import { Conversation, type DisconnectionDetails } from "@elevenlabs/client";
 import type { AlignmentChunk } from "./captionSync";
+import {
+  buildSessionOverrides,
+  type OverrideLevel,
+  type VoiceTone,
+} from "./voiceOverrides";
+
+export type { VoiceTone, OverrideLevel };
 
 // ─── Realtime voice via ElevenLabs Conversational AI ─────────────────────────
 // The agent natively handles mic streaming, live transcription, turn-taking,
@@ -12,8 +19,6 @@ import type { AlignmentChunk } from "./captionSync";
 // customLlmExtraBody, so the backend knows whose memory to load. This requires
 // "Custom LLM extra body" to be enabled on the agent (see setup notes).
 
-export type VoiceTone = "auto" | "gentle" | "calm" | "upbeat";
-
 export type RealtimeSessionInfo = {
   available: boolean;
   reason?: string;
@@ -23,19 +28,18 @@ export type RealtimeSessionInfo = {
   signedUrl?: string;
   agentId?: string;
   userToken?: string;
-  /** "How Eos speaks" preference — maps to TTS delivery overrides below. */
+  /** "How Eos speaks" preference — maps to TTS delivery overrides (voiceOverrides.ts). */
   tone?: VoiceTone;
-};
-
-// TTS delivery per tone preference. "auto" ships the gentle defaults with no
-// fixed prompt instruction — her situational adaptation leads. Requires the
-// stability/speed overrides to be enabled in the agent's security settings.
-// Delivery style only — the voiceId (which voice she IS) is never touched here.
-const TONE_TTS: Record<VoiceTone, { stability: number; speed: number }> = {
-  auto: { stability: 0.4, speed: 0.95 },
-  gentle: { stability: 0.4, speed: 0.95 },
-  calm: { stability: 0.75, speed: 0.9 },
-  upbeat: { stability: 0.45, speed: 1.05 },
+  /**
+   * Instant opening line, spoken by ElevenLabs the moment the call connects
+   * via the agent.firstMessage override — no LLM round trip. Built server-side
+   * (api-server services/voiceGreeting.ts). When the override levels fail
+   * (flags disabled on the agent), the "none" attempt carries no firstMessage
+   * and the agent's own config generates the greeting the slow way instead —
+   * the custom LLM's synthetic-greeting path only fires in THAT case, so the
+   * override greeting and the LLM greeting can never both play.
+   */
+  firstMessage?: string;
 };
 
 export type RealtimeHandlers = {
@@ -84,10 +88,23 @@ export function describeDisconnect(details: DisconnectionDetails): string | null
 
 export type RealtimeConversation = Awaited<ReturnType<typeof Conversation.startSession>>;
 
+/** One cascade attempt's outcome — fed to the connect-timing beacon. */
+export type AttemptResult = {
+  level: OverrideLevel;
+  ok: boolean;
+  ms: number;
+  message?: string;
+};
+
+const nowMs = (): number =>
+  typeof performance !== "undefined" ? performance.now() : Date.now();
+
 export async function startRealtimeCall(
   session: RealtimeSessionInfo,
   voiceId: string | undefined,
   handlers: RealtimeHandlers,
+  /** Called after every attempt (success or failure) with its timing. */
+  onAttempt?: (result: AttemptResult) => void,
 ): Promise<RealtimeConversation> {
   if (!session.signedUrl && !session.agentId) {
     throw new Error("Realtime session is missing both signedUrl and agentId");
@@ -126,38 +143,47 @@ export async function startRealtimeCall(
     onError: (message: string, context?: unknown) => handlers.onError(message, context),
   };
 
-  const attempt = (level: "full" | "voice" | "none") => {
-    const toneTts = TONE_TTS[session.tone ?? "auto"] ?? TONE_TTS.auto;
+  const attempt = (level: OverrideLevel) => {
     // The SDK's override typings lag the API — stability/speed are accepted
     // when enabled in the agent's Security settings.
-    const tts: Record<string, unknown> = {};
-    if (level === "full") {
-      tts.stability = toneTts.stability;
-      tts.speed = toneTts.speed;
-    }
-    if (level !== "none" && voiceId) tts.voiceId = voiceId;
-    const overrides = Object.keys(tts).length > 0 ? { overrides: { tts: tts as never } } : {};
+    const overrides = buildSessionOverrides(level, {
+      tone: session.tone,
+      voiceId,
+      firstMessage: session.firstMessage,
+    }) as Record<string, never>;
     return session.signedUrl
       ? Conversation.startSession({ signedUrl: session.signedUrl, ...shared, ...overrides })
       : Conversation.startSession({ agentId: session.agentId!, ...shared, ...overrides });
   };
 
-  try {
-    // Chosen voice + tone delivery — requires the TTS overrides (voice ID,
-    // stability, speed) to be enabled in the agent's Security settings.
-    return await attempt("full");
-  } catch (err) {
-    // Tone fields may be rejected (e.g. override flags disabled on the agent).
-    // NEVER give up the user's chosen voice because of tone — retry with the
-    // voice override alone before falling back to agent defaults.
-    console.warn("[realtime-voice] retrying with voice-only override:", err);
+  // Cascade: full → voice → none. Each failed level is a FULL paid
+  // reconnection, so two rules keep it cheap and visible:
+  //  - a level whose override payload is byte-identical to one that already
+  //    failed is skipped (no-op retries never dial);
+  //  - every attempt (ok or not, with its duration) is reported via onAttempt
+  //    so the timing beacon can tell the server which level connected — a
+  //    failing "full" means override flags are disabled on the agent
+  //    dashboard, and the server logs exactly that.
+  const seenPayloads = new Set<string>();
+  let lastErr: unknown = null;
+  for (const level of ["full", "voice", "none"] as const) {
+    const payloadKey = JSON.stringify(
+      buildSessionOverrides(level, { tone: session.tone, voiceId, firstMessage: session.firstMessage }),
+    );
+    if (seenPayloads.has(payloadKey)) continue;
+    seenPayloads.add(payloadKey);
+
+    const t0 = nowMs();
     try {
-      return await attempt("voice");
-    } catch (err2) {
-      // Without a voiceId, "voice" already meant no overrides — don't triple-dial.
-      if (!voiceId) throw err2;
-      console.warn("[realtime-voice] retrying without TTS overrides:", err2);
-      return await attempt("none");
+      const convo = await attempt(level);
+      onAttempt?.({ level, ok: true, ms: Math.round(nowMs() - t0) });
+      return convo;
+    } catch (err) {
+      lastErr = err;
+      const message = err instanceof Error ? err.message : String(err);
+      onAttempt?.({ level, ok: false, ms: Math.round(nowMs() - t0), message });
+      console.warn(`[realtime-voice] "${level}" override attempt failed:`, err);
     }
   }
+  throw lastErr ?? new Error("realtime connection failed");
 }
