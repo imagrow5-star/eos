@@ -7,3 +7,15 @@
  */
 process.env.AUTH_RATE_LIMIT_MAX ??= "100000";
 process.env.FORGOT_RATE_LIMIT_MAX ??= "100000";
+
+// Per-user usage ceilings on paid-API endpoints (middleware/usageLimits.ts).
+// Same pattern: high defaults here; usage-limits.test.ts sets small values
+// before dynamically importing the app to exercise the 429 path.
+process.env.CHAT_LIMIT_PER_HOUR ??= "100000";
+process.env.CHAT_LIMIT_PER_DAY ??= "100000";
+process.env.TTS_LIMIT_PER_HOUR ??= "100000";
+process.env.TTS_LIMIT_PER_DAY ??= "100000";
+process.env.VOICE_SESSION_LIMIT_PER_HOUR ??= "100000";
+process.env.VOICE_SESSION_LIMIT_PER_DAY ??= "100000";
+process.env.VOICE_TURN_LIMIT_PER_HOUR ??= "100000";
+process.env.VOICE_TURN_LIMIT_PER_DAY ??= "100000";

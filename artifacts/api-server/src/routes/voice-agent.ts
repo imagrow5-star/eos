@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { mintVoiceToken } from "../lib/voiceToken.js";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { isVoiceCallEnabled } from "../lib/featureFlags.js";
+import { voiceSessionUsageLimits } from "../middleware/usageLimits.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -18,7 +19,7 @@ const router: IRouter = Router();
 // agent rejects id-only connections by closing the socket immediately, which
 // looks like a silent instant drop in the UI — the exact bug this prevents.
 
-router.post("/voice-agent/session", async (req, res): Promise<void> => {
+router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res): Promise<void> => {
   if (!isVoiceCallEnabled()) {
     res.json({ available: false, reason: "disabled" });
     return;

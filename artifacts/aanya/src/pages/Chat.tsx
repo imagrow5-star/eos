@@ -576,6 +576,15 @@ export default function Chat() {
       });
 
       if (!response.ok || !response.body) {
+        // The server answers pre-stream rejections (rate limit 429, message
+        // too long 400) with a friendly { error } body — show those words
+        // instead of a generic failure line.
+        const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
+        if (typeof body?.error === "string" && body.error) {
+          const serverErr = new Error(body.error);
+          (serverErr as { serverMessage?: boolean }).serverMessage = true;
+          throw serverErr;
+        }
         throw new Error(`HTTP ${response.status}`);
       }
 
@@ -675,12 +684,16 @@ export default function Chat() {
         return;
       }
       console.error("[stream] Error:", err);
-      setStreamError("Something went wrong. Please try sending again.");
+      const serverMessage =
+        err instanceof Error && (err as { serverMessage?: boolean }).serverMessage
+          ? err.message
+          : null;
+      setStreamError(serverMessage ?? "Something went wrong. Please try sending again.");
       // In voice call mode: surface the error so the user can tap to retry
       if (continuousVoiceRef.current) {
         voiceCallPhaseRef.current = "error";
         setVoiceCallPhase("error");
-        setVoiceCallMessage("Something went wrong — tap to try again.");
+        setVoiceCallMessage(serverMessage ?? "Something went wrong — tap to try again.");
       }
     }
 
@@ -1202,6 +1215,26 @@ export default function Chat() {
           method: "POST",
           credentials: "include",
         });
+        if (res.status === 429) {
+          // Per-user voice-call ceiling (middleware/usageLimits.ts): show the
+          // server's friendly words and end the call cleanly — no classic
+          // fallback, since the point of the limit is to stop paid usage.
+          const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+          if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) return;
+          setContinuousVoice(false);
+          continuousVoiceRef.current = false;
+          voiceEngineRef.current = null;
+          setVoiceEngine(null);
+          voiceCallPhaseRef.current = "listening";
+          setVoiceCallPhase("listening");
+          setVoiceCallMessage(null);
+          setVoiceError(
+            typeof body?.error === "string" && body.error
+              ? body.error
+              : "Voice calls need a short break — please try again in a little while.",
+          );
+          return;
+        }
         const session: RealtimeSessionInfo | null = res.ok ? await res.json() : null;
         if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) return; // ended/superseded while connecting
 
@@ -1721,7 +1754,7 @@ export default function Chat() {
     });
   };
 
-  const companionName = profile?.companionName || "Asha";
+  const companionName = profile?.companionName || "Eos";
   const companionInitials = companionName.substring(0, 2).toUpperCase();
 
   // Which steps show choice buttons instead of text input
@@ -3172,6 +3205,7 @@ export default function Chat() {
                               className="border-0 bg-transparent shadow-none focus-visible:ring-0 px-0 placeholder:text-muted-foreground/40 text-[14.5px] h-auto py-1.5 text-foreground/85"
                               disabled={isTyping || isStreaming}
                               autoComplete="off"
+                              maxLength={4000}
                             />
                           </FormControl>
                         </FormItem>
@@ -3299,6 +3333,7 @@ export default function Chat() {
                             className="bg-card border-primary/20 text-sm text-foreground/80 placeholder:text-muted-foreground/40 h-9"
                             disabled={isTyping}
                             autoComplete="off"
+                            maxLength={4000}
                           />
                         </FormControl>
                       </FormItem>
