@@ -2,13 +2,13 @@ import {
   pgTable,
   serial,
   text,
-  boolean,
   timestamp,
   integer,
   unique,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { usersTable } from "./users";
-import { encryptedText } from "../encryptedColumns";
+import { encryptedBoolean, encryptedText } from "../encryptedColumns";
 
 // ─── Sealed notes — the chapter's closing ritual ─────────────────────────────
 // At the end of a chapter the user may (never must) leave one sentence for
@@ -35,7 +35,16 @@ export const sealedNotesTable = pgTable(
     kind: text("kind").notNull(), // free | prediction
     prompt: encryptedText("prompt", "sealed_notes.prompt"), // Eos's prediction question when kind = prediction — encrypted at rest
     text: encryptedText("text", "sealed_notes.text").notNull(), // the user's own sentence — quoted verbatim at resolution — encrypted at rest
-    crisisFlagged: boolean("crisis_flagged").notNull().default(false),
+    // Encrypted at rest (review finding): the note text beside it was
+    // encrypted while this flag sat queryable in plaintext — a DB dump could
+    // list crisis-flagged users with one WHERE clause. Tradeoff: the flag is
+    // no longer SQL-filterable; nothing filters on it today (all readers load
+    // rows via drizzle and branch in app code — keep it that way). Stored as
+    // encrypted text "true"/"false"; legacy boolean columns are converted by
+    // the boot migration (see dataEncryptionMigration.ts).
+    crisisFlagged: encryptedBoolean("crisis_flagged", "sealed_notes.crisis_flagged")
+      .notNull()
+      .default(sql`'false'`),
     status: text("status").notNull().default("sealed"), // sealed | resolved
     deferrals: integer("deferrals").notNull().default(0), // "keep it sealed another week" count
     resolvedChapterId: integer("resolved_chapter_id"),

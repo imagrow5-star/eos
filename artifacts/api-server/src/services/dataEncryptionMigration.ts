@@ -55,6 +55,42 @@ export const SPECS: TableSpec[] = [
     cols: [
       { name: "prompt", kind: "text", aad: "sealed_notes.prompt" },
       { name: "text", kind: "text", aad: "sealed_notes.text" },
+      // Encrypted boolean flag: the column is converted boolean→text by
+      // ensureCrisisFlagColumnType() below BEFORE this sweep runs, so the
+      // detector sees plaintext "true"/"false" strings and encrypts them
+      // like any other text value.
+      { name: "crisis_flagged", kind: "text", aad: "sealed_notes.crisis_flagged" },
+    ],
+  },
+  // ── Conversation-derived planning tables (review finding) ─────────────────
+  // Free text extracted verbatim from conversations. Enum/date/counter
+  // columns (state, scheduled_*, is_complete, streak, "order") stay plaintext
+  // on purpose — SQL filters and sorts on them.
+  {
+    table: "commitments",
+    idCol: "id",
+    cols: [
+      { name: "content", kind: "text", aad: "commitments.content" },
+      { name: "cue", kind: "text", aad: "commitments.cue" },
+      { name: "quality_note", kind: "text", aad: "commitments.quality_note" },
+    ],
+  },
+  {
+    table: "goals",
+    idCol: "id",
+    cols: [
+      { name: "title", kind: "text", aad: "goals.title" },
+      { name: "description", kind: "text", aad: "goals.description" },
+    ],
+  },
+  { table: "goal_tasks", idCol: "id", cols: [{ name: "content", kind: "text", aad: "goal_tasks.content" }] },
+  {
+    table: "habits",
+    idCol: "id",
+    cols: [
+      { name: "name", kind: "text", aad: "habits.name" },
+      { name: "when_then", kind: "text", aad: "habits.when_then" },
+      { name: "reason", kind: "text", aad: "habits.reason" },
     ],
   },
   {
@@ -120,6 +156,37 @@ function deepEqual(a: unknown, b: unknown): boolean {
 }
 
 export type MigrationCounts = Record<string, { migrated: number; skippedConcurrent: number }>;
+
+/**
+ * One-time column-type conversion for sealed_notes.crisis_flagged
+ * (boolean → text) so the flag can be encrypted like any other text value.
+ * Idempotent: the guard checks information_schema and does nothing once the
+ * column is already text. Values survive as plaintext "true"/"false" (the
+ * ::text cast), which the sweep right after encrypts and reads pass through
+ * until then — no row is ever nulled or dropped. Runs under the migration's
+ * advisory lock, so concurrent instances can't both rewrite the table.
+ * Fresh databases skip this entirely: drizzle-kit push creates the column as
+ * text from the schema definition.
+ */
+async function ensureCrisisFlagColumnType(client: {
+  query: (text: string) => Promise<unknown>;
+}): Promise<void> {
+  await client.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'sealed_notes'
+          AND column_name = 'crisis_flagged'
+          AND data_type = 'boolean'
+      ) THEN
+        ALTER TABLE sealed_notes ALTER COLUMN crisis_flagged DROP DEFAULT;
+        ALTER TABLE sealed_notes ALTER COLUMN crisis_flagged TYPE text USING crisis_flagged::text;
+        ALTER TABLE sealed_notes ALTER COLUMN crisis_flagged SET DEFAULT 'false';
+      END IF;
+    END $$;
+  `);
+}
 
 async function migrateTable(spec: TableSpec): Promise<{ migrated: number; skippedConcurrent: number }> {
   const colList = spec.cols.map((c) => `"${c.name}"`).join(", ");
@@ -253,6 +320,8 @@ export async function runDataEncryptionMigration(): Promise<MigrationCounts | nu
       return null;
     }
     try {
+      // Column-shape prerequisite first (idempotent, guarded, same lock).
+      await ensureCrisisFlagColumnType(lockClient);
       const counts: MigrationCounts = {};
       for (const spec of SPECS) {
         counts[spec.table] = await migrateTable(spec);

@@ -63,6 +63,37 @@ export function encryptedJsonb<T = unknown>(name: string, aad: string) {
   })(name);
 }
 
+/**
+ * Boolean flag, encrypted at rest (stored as an encrypted text column holding
+ * "true"/"false"). Built for sealed_notes.crisis_flagged: the note TEXT beside
+ * it was encrypted while the flag sat in plaintext, letting anyone with a DB
+ * dump run `WHERE crisis_flagged = true` and list users flagged for crisis
+ * language. Nothing filters on this flag in SQL (every reader loads the row
+ * through drizzle and checks it in app code), so the tradeoff of losing
+ * SQL-side queryability costs nothing today. If a future feature ever needs
+ * to FILTER on it server-side, that query must move to app code on decrypted
+ * rows — same rule as every other encrypted column (see header).
+ *
+ * Legacy plaintext passthrough covers both shapes: a raw boolean (column not
+ * yet converted to text) and the "true"/"false" strings produced by the
+ * boolean→text migration cast.
+ */
+export function encryptedBoolean(name: string, aad: string) {
+  return customType<{ data: boolean; driverData: string }>({
+    dataType() {
+      return "text";
+    },
+    toDriver(value: boolean): string {
+      return encryptText(value ? "true" : "false", aad);
+    },
+    fromDriver(value: unknown): boolean {
+      if (typeof value === "boolean") return value; // pre-conversion column
+      if (typeof value === "string") return decryptText(value, aad) === "true";
+      return false;
+    },
+  })(name);
+}
+
 /** text[] column, element-wise encrypted at rest. */
 export function encryptedTextArray(name: string, aad: string) {
   return customType<{ data: string[]; driverData: string[] }>({

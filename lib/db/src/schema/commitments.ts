@@ -1,5 +1,6 @@
 import { pgTable, serial, text, integer, timestamp } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
+import { encryptedText } from "../encryptedColumns";
 
 // ─── Tracked commitments (accountability loop) ────────────────────────────────
 //
@@ -12,11 +13,12 @@ export const commitmentsTable = pgTable("commitments", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => usersTable.id),
 
-  // The specific action: "text Sam tomorrow after your coffee"
-  content: text("content").notNull(),
+  // The specific action: "text Sam tomorrow after your coffee" — verbatim
+  // conversation-derived free text, encrypted at rest
+  content: encryptedText("content", "commitments.content").notNull(),
 
-  // When/where cue: "after morning coffee", "tomorrow evening", etc.
-  cue: text("cue").notNull().default(""),
+  // When/where cue: "after morning coffee", "tomorrow evening", etc. — encrypted at rest
+  cue: encryptedText("cue", "commitments.cue").notNull().default(""),
 
   // Lifecycle state
   state: text("state").notNull().default("open"), // open | done | partial | missed
@@ -24,8 +26,8 @@ export const commitmentsTable = pgTable("commitments", {
   // Counts how many times missed (after 2, companion shrinks or drops the task)
   missCount: integer("miss_count").notNull().default(0),
 
-  // What the user said about how it went (quality check, not just a tick)
-  qualityNote: text("quality_note"),
+  // What the user said about how it went (their own words) — encrypted at rest
+  qualityNote: encryptedText("quality_note", "commitments.quality_note"),
 
   // YYYY-MM-DD: when the companion should gently follow up
   scheduledFollowupDate: text("scheduled_followup_date"),

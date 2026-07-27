@@ -2,13 +2,17 @@ import { pgTable, serial, text, boolean, timestamp, integer } from "drizzle-orm/
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
+import { encryptedText } from "../encryptedColumns";
 
+// name/whenThen/reason come from conversation ("reason" is the user's own
+// "why this matters to me") — free text, encrypted at rest. isActive/streak/
+// dates stay plain: queries filter and sort on them in SQL.
 export const habitsTable = pgTable("habits", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => usersTable.id),
-  name: text("name").notNull(),
-  whenThen: text("when_then").notNull(),
-  reason: text("reason").notNull(),
+  name: encryptedText("name", "habits.name").notNull(),
+  whenThen: encryptedText("when_then", "habits.when_then").notNull(),
+  reason: encryptedText("reason", "habits.reason").notNull(),
   isActive: boolean("is_active").notNull().default(true),
   streak: integer("streak").notNull().default(0),
   lastCompleted: text("last_completed"), // YYYY-MM-DD
