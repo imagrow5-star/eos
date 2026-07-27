@@ -99,6 +99,12 @@ export interface ChatReply {
   assistantMessage: Message;
   /** Whether memory extraction ran this cycle */
   memoryExtracted: boolean;
+  /**
+   * Present and true when the AI provider was unreachable and the assistant
+   * message is the honest fallback line — show a subtle indicator instead of
+   * treating it as a normal reply. (Kept in sync by hand with openapi.yaml.)
+   */
+  degraded?: boolean;
 }
 
 export interface MemoryFact {

@@ -155,7 +155,9 @@ export const SendMessageResponse = zod.object({
   "createdAt": zod.coerce.date(),
   "isMorningNote": zod.boolean()
 }),
-  "memoryExtracted": zod.boolean().describe('Whether memory extraction ran this cycle')
+  "memoryExtracted": zod.boolean().describe('Whether memory extraction ran this cycle'),
+  // kept in sync by hand with ChatReply in lib/api-spec/openapi.yaml
+  "degraded": zod.boolean().optional().describe('True when the AI provider was unreachable and the assistant message is the honest fallback line')
 })
 
 

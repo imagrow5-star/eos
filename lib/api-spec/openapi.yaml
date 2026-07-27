@@ -488,6 +488,12 @@ components:
         memoryExtracted:
           type: boolean
           description: Whether memory extraction ran this cycle
+        degraded:
+          type: boolean
+          description: >-
+            Present and true when the AI provider was unreachable and the
+            assistant message is the honest fallback line — clients show a
+            subtle indicator instead of treating it as a normal reply.
       required:
         - userMessage
         - assistantMessage
