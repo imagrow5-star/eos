@@ -442,6 +442,26 @@ if (fs.existsSync(frontendIndex)) {
     }),
   );
 
+  // ─── Landing page at the root for new visitors ──────────────────────────────
+  // A brand-new visitor opening eoscompanion.com should meet the marketing
+  // landing page (public/welcome.html), not the sign-in screen. The app (SPA)
+  // still owns "/" whenever it matters:
+  //   - any query string (e.g. ?verifyToken=…, ?resetToken=…, ?cancelReset=…,
+  //     ?enter=1) → SPA, so emailed token links keep working, and the landing
+  //     page's own "Enter Eos" buttons link to /?enter=1 to reach sign-in;
+  //   - an existing session cookie ("sid") → SPA, so returning users land
+  //     straight in the app.
+  const landingPage = path.join(frontendDir, "welcome.html");
+  app.get("/", (req, res, next) => {
+    const hasQuery = req.originalUrl.includes("?");
+    const hasSession = (req.headers.cookie ?? "").includes("sid=");
+    if (!hasQuery && !hasSession && fs.existsSync(landingPage)) {
+      res.setHeader("Cache-Control", "no-cache");
+      return res.sendFile(landingPage);
+    }
+    next();
+  });
+
   // SPA fallback: any non-/api GET that didn't match a static file returns
   // index.html so client-side routing (wouter) can take over.
   app.use((req, res, next) => {
