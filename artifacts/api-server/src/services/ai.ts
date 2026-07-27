@@ -40,13 +40,20 @@ function getAnthropic(): import("@anthropic-ai/sdk").Anthropic | null {
 // and a small input from the 2nd message on; cacheRead bills at ~10% of input,
 // cacheWrite at 125%.
 
-const MODEL_PRICES_PER_MTOK: Record<
+export const MODEL_PRICES_PER_MTOK: Record<
   string,
   { input: number; output: number; cacheWrite: number; cacheRead: number }
 > = {
   "claude-sonnet-4-5-20250929": { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
   "claude-haiku-4-5": { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 },
 };
+
+/**
+ * Default model for companion replies. Text chat always uses this; the
+ * realtime voice path passes an override (see routes/voice-llm.ts) because
+ * spoken replies are latency-critical and short (max_tokens 600).
+ */
+export const DEFAULT_COMPANION_MODEL = "claude-sonnet-4-5-20250929";
 
 export function logAiUsage(callType: string, model: string, usage: unknown): void {
   try {
@@ -177,6 +184,13 @@ export interface CompanionCallOptions {
   tools?: Array<Record<string, unknown>>;
   /** Fires once per COMPLETED tool_use block with the raw JSON argument string. */
   onToolCall?: (id: string, name: string, argsJson: string) => void;
+  /**
+   * Model override (defaults to DEFAULT_COMPANION_MODEL). Used by the voice
+   * path to run on Haiku for latency. Prompt caches are per-model, so the
+   * override must stay constant for the duration of a call — it does, because
+   * it comes from an env var that only changes across restarts.
+   */
+  model?: string;
 }
 
 export async function streamCompanionReply(
@@ -243,8 +257,10 @@ export async function streamCompanionReply(
     let sawToolUse = false;
     let toolBlock: { id: string; name: string; args: string } | null = null;
 
+    const model = opts?.model ?? DEFAULT_COMPANION_MODEL;
+
     const stream = await (anthropic.messages.create as any)({
-      model: "claude-sonnet-4-5-20250929",
+      model,
       max_tokens: 600,
       temperature: 0.8,
       system: systemBlocks,
@@ -294,7 +310,7 @@ export async function streamCompanionReply(
       }
     }
 
-    logAiUsage(opts?.callType ?? "chat", "claude-sonnet-4-5-20250929", usage);
+    logAiUsage(opts?.callType ?? "chat", model, usage);
 
     // A tool-only reply (e.g. skip_turn) is INTENTIONAL silence — never swap in
     // the fallback line, or the agent would speak while trying to stay quiet.
