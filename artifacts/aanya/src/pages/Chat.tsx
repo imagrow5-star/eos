@@ -27,7 +27,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useSpeechRecognition, speakText, stopSpeaking, unlockAudioOnGesture } from "@/lib/voice";
 import { countryName, suggestCountry, searchCountries, type Country } from "@/lib/countries";
-import { startRealtimeCall, type RealtimeConversation, type RealtimeSessionInfo } from "@/lib/realtimeVoice";
+import { startRealtimeCall, type AttemptResult, type RealtimeConversation, type RealtimeSessionInfo } from "@/lib/realtimeVoice";
+import { VoiceSessionPrefetcher } from "@/lib/voiceSessionPrefetch";
 import { CaptionSyncEngine } from "@/lib/captionSync";
 import { cn } from "@/lib/utils";
 
@@ -1101,6 +1102,34 @@ export default function Chat() {
     }).catch(() => {});
   };
 
+  // Connect-timing beacon (non-blocking) — same pattern as client-error above,
+  // so slow connects and override-cascade retries are diagnosable server-side.
+  const reportVoiceCallTiming = (timing: Record<string, unknown>) => {
+    fetch(`${import.meta.env.BASE_URL}api/voice-agent/client-timing`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(timing),
+    }).catch(() => {});
+  };
+
+  // Session prefetcher: the /voice-agent/session bootstrap (voice token +
+  // ElevenLabs signed URL) is fetched quietly on call INTENT (hover/touch on
+  // the Voice button) and handed over instantly on press — see
+  // lib/voiceSessionPrefetch.ts for the freshness/consume rules.
+  const voiceSessionPrefetcher = useMemo(
+    () =>
+      new VoiceSessionPrefetcher(async () => {
+        const res = await fetch(`${import.meta.env.BASE_URL}api/voice-agent/session`, {
+          method: "POST",
+          credentials: "include",
+        });
+        const body = await res.json().catch(() => null);
+        return { status: res.status, body };
+      }),
+    [],
+  );
+
   const toggleContinuousVoice = async () => {
     if (continuousVoice) {
       // ── End the call ──
@@ -1171,11 +1200,33 @@ export default function Chat() {
         setVoiceError(VOICE_REST_MESSAGE);
       };
 
-      // ── 0) Microphone permission BEFORE any connection attempt ──────────
-      // Never open a session we can't feed audio into: ask for the mic first
-      // and only connect once it's granted. The probe tracks are stopped
-      // immediately — the SDK (or classic mode below) opens its own stream,
-      // and the browser keeps the permission grant cached.
+      // Connect-timing telemetry for this attempt (beaconed once, on first
+      // agent audio — see reportVoiceCallTiming).
+      const tPress = Date.now();
+      const timing = {
+        sessionSource: "fresh" as string,
+        sessionFetchMs: 0,
+        attempts: [] as AttemptResult[],
+        connectedLevel: undefined as string | undefined,
+        connectMs: 0,
+        firstAudioMs: 0,
+      };
+      let firstAudioReported = false;
+
+      // ── 0) Session bootstrap + microphone permission IN PARALLEL ────────
+      // The session fetch (voice token + signed URL) starts NOW — reusing a
+      // fresh prefetch from Voice-button hover/touch when one exists — and
+      // resolves while the user answers the mic prompt, instead of after it.
+      // The immediate .catch() only parks rejections so bailing out early
+      // (mic denied) can never surface an unhandled-rejection; the real
+      // rejection still reaches the await below.
+      const sessionPromise = voiceSessionPrefetcher.take();
+      sessionPromise.catch(() => {});
+
+      // Never open a session we can't feed audio into: connect only once the
+      // mic is granted. The probe tracks are stopped immediately — the SDK
+      // (or classic mode below) opens its own stream, and the browser keeps
+      // the permission grant cached.
       setVoiceCallMessage("Waiting for microphone…");
       try {
         const probe = await navigator.mediaDevices?.getUserMedia?.({ audio: true });
@@ -1211,15 +1262,15 @@ export default function Chat() {
       // on-screen error. connectStage tracks which kind a thrown error is.
       let connectStage: "bootstrap" | "handshake" = "bootstrap";
       try {
-        const res = await fetch(`${import.meta.env.BASE_URL}api/voice-agent/session`, {
-          method: "POST",
-          credentials: "include",
-        });
+        const taken = await sessionPromise;
+        timing.sessionSource = taken.source;
+        timing.sessionFetchMs = Math.round(taken.waitMs);
+        const res = taken.result;
         if (res.status === 429) {
           // Per-user voice-call ceiling (middleware/usageLimits.ts): show the
           // server's friendly words and end the call cleanly — no classic
           // fallback, since the point of the limit is to stop paid usage.
-          const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+          const body = res.body as { error?: unknown } | null;
           if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) return;
           setContinuousVoice(false);
           continuousVoiceRef.current = false;
@@ -1235,7 +1286,7 @@ export default function Chat() {
           );
           return;
         }
-        const session: RealtimeSessionInfo | null = res.ok ? await res.json() : null;
+        const session: RealtimeSessionInfo | null = res.status === 200 ? res.body : null;
         if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) return; // ended/superseded while connecting
 
         if (session?.available) {
@@ -1275,6 +1326,19 @@ export default function Chat() {
             },
             onAudioBytes: (bytes) => {
               if (realtimeGenRef.current !== rtGen) return;
+              // First accepted audio chunk = the user is hearing her voice —
+              // the moment the whole connect path is optimizing for. Beacon
+              // the full timing picture once per call.
+              if (!firstAudioReported) {
+                firstAudioReported = true;
+                timing.firstAudioMs = Date.now() - tPress;
+                console.log(
+                  `[voice-call] first audio in ${timing.firstAudioMs}ms ` +
+                    `(session ${timing.sessionSource} ${timing.sessionFetchMs}ms, ` +
+                    `connected at "${timing.connectedLevel}" after ${timing.connectMs}ms)`,
+                );
+                reportVoiceCallTiming(timing);
+              }
               captionEngine.addAudioChunk(bytes);
             },
             onInterruption: () => {
@@ -1325,6 +1389,15 @@ export default function Chat() {
               console.error("[voice-call] realtime error:", message, context);
               reportVoiceCallError("realtime-error", message);
             },
+          },
+          // Per-attempt cascade telemetry — which override level connected,
+          // and how much each failed level cost (each is a full reconnect).
+          (attempt) => {
+            timing.attempts.push(attempt);
+            if (attempt.ok) {
+              timing.connectedLevel = attempt.level;
+              timing.connectMs = Date.now() - tPress;
+            }
           });
           if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) {
             // Call ended — or a newer call started — while the WebSocket
@@ -3221,6 +3294,14 @@ export default function Chat() {
                         <button
                           type="button"
                           onClick={toggleContinuousVoice}
+                          // Call INTENT: quietly prefetch the session bootstrap
+                          // (voice token + signed URL) so pressing the button
+                          // skips that round trip. Deduped + 60s freshness in
+                          // lib/voiceSessionPrefetch.ts; touchstart covers
+                          // mobile, hover/focus cover desktop.
+                          onPointerEnter={() => voiceSessionPrefetcher.prefetch()}
+                          onFocus={() => voiceSessionPrefetcher.prefetch()}
+                          onTouchStart={() => voiceSessionPrefetcher.prefetch()}
                           title="Start voice call"
                           className="flex items-center gap-1.5 pl-3 pr-3.5 py-2 rounded-full bg-primary/12 text-primary/80 border border-primary/20 text-[11.5px] font-medium tracking-widest uppercase shrink-0 hover:bg-primary/18 hover:text-primary active:scale-95 transition-all"
                         >

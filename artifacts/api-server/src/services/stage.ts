@@ -60,9 +60,10 @@ export interface TimeContext {
  * Returns a rich TimeContext for a given IANA timezone.
  * Used to inject accurate, real-time temporal awareness into the companion's
  * system prompt so she can greet, reference moments, and timestamp correctly.
+ * `at` defaults to the current moment; tests pass a fixed date.
  */
-export function getTimeContext(tz: string): TimeContext {
-  const now = new Date();
+export function getTimeContext(tz: string, at: Date = new Date()): TimeContext {
+  const now = at;
 
   // Validate timezone — fall back to UTC on any error
   const safeZone = (() => {

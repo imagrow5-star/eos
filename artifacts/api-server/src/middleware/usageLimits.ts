@@ -16,7 +16,12 @@
  *   "Listen" TTS    (/tts)
  *     120/hour, 600/day        — listening to every reply plus voice previews.
  *   Voice call starts (/voice-agent/session)
- *     20/hour, 60/day          — each is an ElevenLabs conversation setup.
+ *     40/hour, 120/day         — each mints a voice token + signed URL (cheap;
+ *                                the paid minutes are the call itself). Sized
+ *                                2x the old 20/60 because the client now also
+ *                                PREFETCHES this endpoint on call intent
+ *                                (hovering the Voice button) — see
+ *                                aanya/src/lib/voiceSessionPrefetch.ts.
  *   Voice call turns (/voice-llm — ElevenLabs calls us per spoken exchange)
  *     600/hour, 2400/day       — a fast talker produces ~6 turns/min ≈ 360/h;
  *                                2400/day ≈ 4+ hours of continuous calling.
@@ -140,9 +145,9 @@ export const ttsUsageLimits: RequestHandler[] = limiterPair({
 
 export const voiceSessionUsageLimits: RequestHandler[] = limiterPair({
   hourEnv: "VOICE_SESSION_LIMIT_PER_HOUR",
-  hourDefault: 20,
+  hourDefault: 40,
   dayEnv: "VOICE_SESSION_LIMIT_PER_DAY",
-  dayDefault: 60,
+  dayDefault: 120,
   hourMessage:
     "Voice calls need a short break — please try again in a little while, or keep chatting by text.",
   dayMessage:
