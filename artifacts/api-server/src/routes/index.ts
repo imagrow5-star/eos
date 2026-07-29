@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { requireAuth, requireVerified } from "../middleware/auth.js";
 import healthRouter from "./health";
 import authRouter from "./auth";
+import googleAuthRouter from "./googleAuth";
 import emailRouter from "./email";
 import onboardingRouter from "./onboarding";
 import profileRouter from "./profile";
@@ -23,6 +24,7 @@ const router: IRouter = Router();
 // ─── Public routes — no authentication required ───────────────────────────────
 router.use(healthRouter);
 router.use(authRouter);
+router.use(googleAuthRouter); // "Continue with Google" (additional sign-in option)
 router.use(emailRouter);  // one-click unsubscribe — no auth
 // ElevenLabs Conversational AI custom-LLM callback — called by ElevenLabs
 // servers (no browser session); authenticated per-call via HMAC voice token.

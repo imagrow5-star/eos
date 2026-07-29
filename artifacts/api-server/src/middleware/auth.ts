@@ -6,6 +6,8 @@ import { db, usersTable } from "@workspace/db";
 declare module "express-session" {
   interface SessionData {
     userId?: number;
+    /** CSRF state for an in-flight Google OAuth flow (routes/googleAuth.ts). */
+    googleOauthState?: string;
   }
 }
 
