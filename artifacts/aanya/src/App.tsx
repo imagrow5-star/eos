@@ -71,7 +71,12 @@ function AuthGate() {
 
   // Landing page → auth screen navigation (no URL change needed; the
   // public landing page IS the root, so we just switch React state).
-  const [unauthView, setUnauthView] = useState<UnauthView>("landing");
+  // A ?googleError= redirect (failed/cancelled Google sign-in) must land on
+  // the AUTH screen where the friendly message renders — never the landing
+  // page, which would swallow it.
+  const [unauthView, setUnauthView] = useState<UnauthView>(() =>
+    new URLSearchParams(window.location.search).has("googleError") ? "login" : "landing",
+  );
 
   // Handle ?verifyToken= in the URL — consume it immediately on mount
   useEffect(() => {

@@ -331,8 +331,10 @@ async function replaceVerificationTokenAtomic(userId: number): Promise<string | 
  * Issues a fresh session ID before an identity is attached to the session.
  * Without this, the session ID from before authentication carries over into
  * the authenticated session (session fixation).
+ * Exported: the Google sign-in callback (routes/googleAuth.ts) must follow
+ * the exact same pattern.
  */
-function regenerateSession(req: Request): Promise<void> {
+export function regenerateSession(req: Request): Promise<void> {
   return new Promise((resolve, reject) =>
     req.session.regenerate((err) => (err ? reject(err) : resolve())),
   );
