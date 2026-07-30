@@ -32,6 +32,8 @@ export interface AccentWithVoices {
 export interface VoiceOptionsData {
   languages: LanguageOption[];
   currentLanguage: string;
+  /** True when the language is fully activated (voices + safety detection). */
+  currentLanguageActive: boolean;
   currentAccent: string;
   currentVoiceId: string;
   companionGender: string;
@@ -39,6 +41,7 @@ export interface VoiceOptionsData {
   currentVoiceGender: "female" | "male";
   /** False when the value above is only the display default (never saved). */
   voiceGenderExplicit: boolean;
+  /** English: the six accents. Active non-English: one "std" entry. */
   accents: AccentWithVoices[];
 }
 

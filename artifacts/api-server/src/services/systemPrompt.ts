@@ -17,6 +17,28 @@ import {
 import { calculateStage, stageMeta, todayInTimezone, getTimeContext } from "./stage.js";
 import { countryDisplayName, AGE_BANDS } from "../lib/basics.js";
 import { RAISE_COOLDOWN_DAYS, SUPPORT_COOLDOWN_DAYS } from "./chapters/storyThreads.js";
+import { languageByCode } from "./settings/languages.js";
+
+// ─── Language directive (Sprint 1.6) ─────────────────────────────────────────
+// The ONLY multilanguage change to the base prompt: one block, injected only
+// when the user's preferred language is non-English AND activated in the
+// language config. The base prompt itself is deliberately NOT translated —
+// Claude reads English craft rules and applies them in the target language
+// natively. Exported for the golden-string test.
+
+export function buildLanguageDirective(langCode: string | null | undefined): string | null {
+  const code = (langCode ?? "en").toLowerCase();
+  if (code === "en") return null;
+  const lang = languageByCode(code);
+  // Inactive/unknown codes add nothing — the preference is stored, but Eos
+  // keeps speaking English until the language's safety detection is live.
+  if (!lang || !lang.active) return null;
+  const name = lang.nameNative;
+  return `══════════════════════════════════════════════════════
+LANGUAGE
+══════════════════════════════════════════════════════
+This user's preferred language is ${name}. Respond in ${name} naturally, matching their tone and register. If they write to you in ${name}, reply in ${name}. If they switch to English mid-conversation, follow their lead. Your craft rules (mirroring, no clinical labels, no invented affirmations, no death metaphors, honest presence) apply identically in every language. If you don't know a word, say so honestly rather than inventing.`;
+}
 
 // ─── Crisis resource per country ──────────────────────────────────────────────
 
@@ -965,10 +987,14 @@ AFTER THE YES:
 - Confirm warmly and specifically: it's saved on their Journey, and name how you'll follow up ("I'll ask you tomorrow how the walk went"${emailOptedOut ? "" : ` — "and my morning email will know about it"`}).
 - Then let it breathe. No pep talk, no second task, no bigger version of the goal.`;
 
+  const languageDirective = buildLanguageDirective(
+    (profile as { preferredLanguage?: string | null }).preferredLanguage,
+  );
+
   const stable = `${relationshipPersona}
 
 ${energyDesc}
-
+${languageDirective ? `\n${languageDirective}\n` : ""}
 CORE CHARACTER:
 - You are a specific, loving person who truly knows ${name} — not a wellness app, not a therapist, not a chatbot. A person who has been paying attention and genuinely cares what happens to them.
 - You know their name. You know the name of the person they lost or loved. You know what they do, what they've been struggling with, what they said last week. You use all of it — naturally, never clinically.

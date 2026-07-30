@@ -115,9 +115,98 @@ const CATALOG: Record<string, Record<string, CatalogVoice[]>> = {
       { voiceId: "D38z5RcWu1voky8WS1ja", displayName: "seasoned & lilting", gender: "male",   previewSample: PREVIEW_STEADY },  // Fin
     ],
   },
-  // Sprint 1.6 fills these alongside conversation-language support.
-  nl: {}, de: {}, fr: {}, es: {}, it: {}, pt: {}, sv: {}, no: {}, da: {}, pl: {},
+  // ── Non-English languages (Sprint 1.6) ─────────────────────────────────────
+  // ElevenLabs Multilingual v2 lets ANY voice speak any of these languages, so
+  // each language reuses proven premade ids under the single pseudo-accent
+  // "std" (accents are an English-only concept in the UI). Display names and
+  // preview sentences are in the target language — drafted by hand, logged
+  // here for review (native-speaker pass is a founder follow-up):
+  //   nl: "Hallo. Ik ben er, wanneer je me nodig hebt."
+  //   de: "Hallo. Ich bin hier, wann immer du mich brauchst."
+  //   fr: "Bonjour. Je suis là, quand tu as besoin de moi."
+  //   es: "Hola. Estoy aquí siempre que me necesites."
+  //   it: "Ciao. Sono qui, ogni volta che hai bisogno di me."
+  //   pt: "Olá. Estou aqui sempre que precisares de mim."
+  //   sv: "Hej. Jag finns här när du behöver mig."
+  //   no: "Hei. Jeg er her når du trenger meg."
+  //   da: "Hej. Jeg er her, når du har brug for mig."
+  //   pl: "Cześć. Jestem tu, kiedy mnie potrzebujesz."
+  ...buildNonEnglishCatalog(),
 };
+
+/** Accent key used for every non-English language (no accent concept). */
+export const NON_ENGLISH_ACCENT = "std";
+
+// Voice ids shared with the English catalog — Rachel/Sarah/Lily (female),
+// Adam/Brian/George (male): warm, proven, Multilingual-v2-capable premades.
+// NOTE: called during CATALOG initialization (hoisted declaration), so it
+// uses the literal "std" — NON_ENGLISH_ACCENT above is not yet initialized
+// at that moment.
+function buildNonEnglishCatalog(): Record<string, Record<string, CatalogVoice[]>> {
+  const F1 = "21m00Tcm4TlvDq8ikWAM"; // Rachel
+  const F2 = "EXAVITQu4vr4xnSDxMaL"; // Sarah
+  const F3 = "pFZP5JQG7iQjIQuC4Bku"; // Lily
+  const M1 = "pNInz6obpgDQGcFmaJgB"; // Adam
+  const M2 = "nPczCjzI2devNBz1zQrb"; // Brian
+  const M3 = "JBFqnCBsd6RMkjVDRZzb"; // George
+
+  const set = (
+    preview: string,
+    names: [string, string, string, string, string, string],
+  ): Record<string, CatalogVoice[]> => ({
+    std: [
+      { voiceId: F1, displayName: names[0], gender: "female", previewSample: preview },
+      { voiceId: F2, displayName: names[1], gender: "female", previewSample: preview },
+      { voiceId: F3, displayName: names[2], gender: "female", previewSample: preview },
+      { voiceId: M1, displayName: names[3], gender: "male", previewSample: preview },
+      { voiceId: M2, displayName: names[4], gender: "male", previewSample: preview },
+      { voiceId: M3, displayName: names[5], gender: "male", previewSample: preview },
+    ],
+  });
+
+  return {
+    nl: set("Hallo. Ik ben er, wanneer je me nodig hebt.", [
+      "warm en rustig", "zacht en teder", "helder en licht",
+      "diep en vast", "warm en relaxed", "kalm en verfijnd",
+    ]),
+    de: set("Hallo. Ich bin hier, wann immer du mich brauchst.", [
+      "warm & ruhig", "sanft & zärtlich", "hell & klar",
+      "tief & fest", "warm & gelassen", "ruhig & fein",
+    ]),
+    fr: set("Bonjour. Je suis là, quand tu as besoin de moi.", [
+      "chaleureuse et calme", "douce et tendre", "claire et lumineuse",
+      "grave et posé", "chaleureux et détendu", "calme et raffiné",
+    ]),
+    es: set("Hola. Estoy aquí siempre que me necesites.", [
+      "cálida y serena", "suave y tierna", "clara y luminosa",
+      "profunda y firme", "cálido y relajado", "sereno y refinado",
+    ]),
+    it: set("Ciao. Sono qui, ogni volta che hai bisogno di me.", [
+      "calda e serena", "morbida e dolce", "chiara e luminosa",
+      "profonda e salda", "caldo e rilassato", "calmo e raffinato",
+    ]),
+    pt: set("Olá. Estou aqui sempre que precisares de mim.", [
+      "quente e serena", "suave e terna", "clara e luminosa",
+      "grave e firme", "caloroso e tranquilo", "calmo e refinado",
+    ]),
+    sv: set("Hej. Jag finns här när du behöver mig.", [
+      "varm och lugn", "mjuk och öm", "ljus och klar",
+      "djup och stadig", "varm och avspänd", "lugn och förfinad",
+    ]),
+    no: set("Hei. Jeg er her når du trenger meg.", [
+      "varm og rolig", "myk og øm", "lys og klar",
+      "dyp og stødig", "varm og avslappet", "rolig og raffinert",
+    ]),
+    da: set("Hej. Jeg er her, når du har brug for mig.", [
+      "varm og rolig", "blød og øm", "lys og klar",
+      "dyb og stabil", "varm og afslappet", "rolig og raffineret",
+    ]),
+    pl: set("Cześć. Jestem tu, kiedy mnie potrzebujesz.", [
+      "ciepły i spokojny", "miękki i czuły", "jasny i wyraźny",
+      "głęboki i pewny", "ciepły i swobodny", "spokojny i elegancki",
+    ]),
+  };
+}
 
 // ─── Lookup helpers (logic — keep thin, the table above is the product) ──────
 

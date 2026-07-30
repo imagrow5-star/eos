@@ -13,7 +13,7 @@ import { getOrCreateProfileForUser } from "./profile.js";
 import { sanitizeGenderWords } from "../services/systemPrompt.js";
 import { parseAgeText, ageToBand, resolveCountryAnswer, AGE_BANDS, isValidCountryCode } from "../lib/basics.js";
 import { isValidLanguage } from "../services/settings/languages.js";
-import { ENGLISH_ACCENT_CODES, isVoiceAllowed, resolveVoiceGender } from "../services/settings/voiceCatalog.js";
+import { ENGLISH_ACCENT_CODES, NON_ENGLISH_ACCENT, isVoiceAllowed, resolveVoiceGender } from "../services/settings/voiceCatalog.js";
 
 const router: IRouter = Router();
 
@@ -287,7 +287,10 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
           pickedGender ??
           resolveVoiceGender(profile as { voiceGender?: string | null; companionGender?: string | null })
             .gender;
-        if (isVoiceAllowed(choice.voiceId, "en", accent, effectiveGender)) {
+        // English voices validate against the chosen accent; active non-
+        // English languages validate against their "std" catalog set.
+        const effectiveAccent = language === "en" ? accent : NON_ENGLISH_ACCENT;
+        if (isVoiceAllowed(choice.voiceId, language, effectiveAccent, effectiveGender)) {
           updates.voiceId = choice.voiceId;
         }
       }

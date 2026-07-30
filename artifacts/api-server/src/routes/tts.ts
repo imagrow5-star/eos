@@ -13,7 +13,22 @@ import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 import { isResolvedRomanticVoiceId } from "../services/voiceLibrary.js";
 import { allCatalogVoiceIds } from "../services/settings/voiceCatalog.js";
+import { languageByCode } from "../services/settings/languages.js";
+import { getOrCreateProfileForUser } from "./profile.js";
 import { ttsUsageLimits } from "../middleware/usageLimits.js";
+
+// ─── TTS model per language (Sprint 1.6) ─────────────────────────────────────
+// English keeps the latency-tuned flash model — byte-identical behavior to
+// pre-1.6. ACTIVE non-English languages use eleven_multilingual_v2, which
+// speaks all ten target languages with any voice. Inactive/unknown codes stay
+// on the English model (their conversation is still English). Exported for
+// tests.
+export function ttsModelForLanguage(language: string | null | undefined): string {
+  const code = (language ?? "en").toLowerCase();
+  if (code === "en") return "eleven_flash_v2_5";
+  const lang = languageByCode(code);
+  return lang?.active ? "eleven_multilingual_v2" : "eleven_flash_v2_5";
+}
 
 const router: IRouter = Router();
 
@@ -72,6 +87,7 @@ async function attemptTTS(
   apiKey: string,
   voiceId: string,
   text: string,
+  modelId: string,
 ): Promise<
   | { ok: true; audioBase64: string; alignment: CharAlignment }
   | { ok: false; status: number; body: string }
@@ -87,7 +103,7 @@ async function attemptTTS(
       },
       body: JSON.stringify({
         text: text.slice(0, 5000),
-        model_id: "eleven_flash_v2_5",
+        model_id: modelId,
         voice_settings: VOICE_SETTINGS,
       }),
     },
@@ -154,7 +170,12 @@ router.post("/tts", ...ttsUsageLimits, async (req, res): Promise<void> => {
 
   // ── TTS call with graceful fallback ────────────────────────────────────────
   try {
-    let result = await attemptTTS(apiKey, voiceId, text);
+    // Active non-English language → multilingual model (English: unchanged).
+    const profile = await getOrCreateProfileForUser(req.userId);
+    const modelId = ttsModelForLanguage(
+      (profile as { preferredLanguage?: string }).preferredLanguage,
+    );
+    let result = await attemptTTS(apiKey, voiceId, text, modelId);
 
     // Retry with default if voice has expired or is invalid (422 / 404)
     if (!result.ok && (result.status === 422 || result.status === 404) && voiceId !== DEFAULT_VOICE_ID) {
@@ -162,7 +183,7 @@ router.post("/tts", ...ttsUsageLimits, async (req, res): Promise<void> => {
         { status: result.status, voiceId, fallback: DEFAULT_VOICE_ID },
         "Voice ID returned error — retrying with default voice",
       );
-      result = await attemptTTS(apiKey, DEFAULT_VOICE_ID, text);
+      result = await attemptTTS(apiKey, DEFAULT_VOICE_ID, text, modelId);
     }
 
     if (!result.ok) {
