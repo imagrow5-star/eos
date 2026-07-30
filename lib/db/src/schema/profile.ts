@@ -27,6 +27,16 @@ export const profileTable = pgTable("profile", {
   changeTalkDetected: boolean("change_talk_detected").notNull().default(false),
   voiceId: text("voice_id").notNull().default("EXAVITQu4vr4xnSDxMaL"), // ElevenLabs voice ID — default Sarah
   voiceTone: text("voice_tone").notNull().default("auto"), // Voice-call delivery: auto | gentle | calm | upbeat
+  // ── Language & voice picker (Sprint 1.5) ─────────────────────────────────
+  // preferredLanguage: what language Eos speaks — en | nl | de | fr | es | it
+  // | pt | sv | no | da | pl (services/settings/languages.ts is the source of
+  // truth). Only "en" is conversationally ACTIVE in 1.5; other values are
+  // stored so 1.6 can flip them on once safety detection covers the language.
+  preferredLanguage: text("preferred_language").notNull().default("en"),
+  // voiceAccent: English accent family for the voice picker — us | gb | au |
+  // in | ca | ie. The column default doubles as the backfill: ADD COLUMN with
+  // DEFAULT fills every existing row with 'us'.
+  voiceAccent: text("voice_accent").default("us"),
   companionGender: text("companion_gender").notNull().default("woman"), // woman | man | nonbinary
   userGender: text("user_gender"), // man | woman | custom (legacy: other) — nullable, optional
   userGenderCustom: encryptedText("user_gender_custom", "profile.user_gender_custom"), // their own words when userGender = "custom" (e.g. "non-binary") — encrypted at rest

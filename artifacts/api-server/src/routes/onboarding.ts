@@ -12,6 +12,8 @@ import type { Profile } from "@workspace/db";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { sanitizeGenderWords } from "../services/systemPrompt.js";
 import { parseAgeText, ageToBand, resolveCountryAnswer, AGE_BANDS, isValidCountryCode } from "../lib/basics.js";
+import { isValidLanguage } from "../services/settings/languages.js";
+import { ENGLISH_ACCENT_CODES, isVoiceAllowed } from "../services/settings/voiceCatalog.js";
 
 const router: IRouter = Router();
 
@@ -85,6 +87,11 @@ function getStepQuestion(step: string, profile: Profile): string {
       return `${userName}. What would you like to call me? You can keep Eos, or choose something that feels right — ${suggestions}. It's entirely yours.`;
     }
 
+    case "voice": {
+      const companionName = profile.companionName || "Eos";
+      return `Pick a voice for ${companionName}. Tap one to hear it — tap again to keep it. Or just continue, and you can change it any time in Settings.`;
+    }
+
     case "country":
       return "And which country do you call home? I ask only so I know who to point you to if you ever need support beyond what we share here — completely fine to skip.";
 
@@ -113,9 +120,11 @@ function getNextStep(currentStep: string, profile: Profile): string {
     case "path":            return "companionGender";
     case "companionGender": return "name";
     case "name":            return "companionName";
-    // Age comes before country so the 18+ gate runs before anything else
-    // about them is stored.
-    case "companionName":   return "ageBand";
+    // Voice picker sits right after the companion is named (Sprint 1.5);
+    // age still comes before country so the 18+ gate runs before anything
+    // else about them is stored.
+    case "companionName":   return "voice";
+    case "voice":           return "ageBand";
     // Legacy sessions (old step order) may already have a country — don't ask twice.
     case "ageBand":         return isValidCountryCode(profile.country ?? "") ? "userGender" : "country";
     case "country":         return "userGender";
@@ -240,6 +249,39 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
     case "companionName": {
       const cleaned = extractName(answer, 3);
       updates.companionName = cleaned.length > 0 && cleaned.length <= 30 ? cleaned : "Eos";
+      break;
+    }
+
+    case "voice": {
+      // Language + voice picker (Sprint 1.5). The card sends a compact JSON
+      // answer {language, accent, voiceId} — or "skip"/anything unparsable,
+      // which keeps the defaults (English, American, the gender default voice
+      // already set at the companionGender step). Every field is validated
+      // against the shared configs; invalid values are simply ignored — the
+      // step can never fail onboarding.
+      let choice: { language?: unknown; accent?: unknown; voiceId?: unknown } = {};
+      try {
+        const parsedAnswer = JSON.parse(answer) as Record<string, unknown>;
+        if (parsedAnswer && typeof parsedAnswer === "object") choice = parsedAnswer;
+      } catch {
+        // "skip" / free text → defaults
+      }
+      const language =
+        typeof choice.language === "string" && isValidLanguage(choice.language.toLowerCase())
+          ? choice.language.toLowerCase()
+          : "en";
+      updates.preferredLanguage = language;
+      const accent =
+        typeof choice.accent === "string" && ENGLISH_ACCENT_CODES.has(choice.accent.toLowerCase())
+          ? choice.accent.toLowerCase()
+          : "us";
+      updates.voiceAccent = accent;
+      if (typeof choice.voiceId === "string" && choice.voiceId) {
+        const companionGender = (profile as any).companionGender ?? "woman";
+        if (isVoiceAllowed(choice.voiceId, "en", accent, companionGender)) {
+          updates.voiceId = choice.voiceId;
+        }
+      }
       break;
     }
 
