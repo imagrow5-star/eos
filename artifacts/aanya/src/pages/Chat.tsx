@@ -32,6 +32,13 @@ import { VoiceSessionPrefetcher } from "@/lib/voiceSessionPrefetch";
 import { CaptionSyncEngine } from "@/lib/captionSync";
 import { splitCrisisBlock } from "@/lib/crisisBlock";
 import CrisisHelplineCard from "@/components/CrisisHelplineCard";
+import {
+  LanguageChips,
+  AccentVoicePicker,
+  comingSoonNote,
+  type VoiceOptionsData,
+  type LanguageOption,
+} from "@/components/VoiceLanguagePicker";
 import { cn } from "@/lib/utils";
 
 // ─── Voice catalogue ──────────────────────────────────────────────────────────
@@ -234,6 +241,18 @@ export default function Chat() {
     }
   };
   const [renameValue, setRenameValue] = useState("");
+  // ── Language & voice picker (Sprint 1.5) ─────────────────────────────────
+  // One fetch feeds the Settings sections AND the onboarding voice card.
+  // Non-English choices are stored (helper note explains English continues
+  // until 1.6 extends safety detection); voice taps are preview-then-keep.
+  const [languageNote, setLanguageNote] = useState<string | null>(null);
+  const [armedCatalogVoiceId, setArmedCatalogVoiceId] = useState<string | null>(null);
+  const [previewingCatalogVoiceId, setPreviewingCatalogVoiceId] = useState<string | null>(null);
+  const catalogPreviewAudioRef = useRef<HTMLAudioElement | null>(null);
+  // Onboarding voice-card local selections (submitted together on Continue).
+  const [obVoiceLanguage, setObVoiceLanguage] = useState("en");
+  const [obVoiceAccent, setObVoiceAccent] = useState("us");
+  const [obVoiceId, setObVoiceId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
@@ -273,6 +292,122 @@ export default function Chat() {
     } finally {
       setCrisisDismissBusyId(null);
     }
+  };
+
+  // ── Language & voice picker: data + handlers (Sprint 1.5) ─────────────────
+
+  const onboardingVoiceStep = !onboarding?.isComplete && onboarding?.currentStep === "voice";
+  const { data: voiceOptions } = useQuery<VoiceOptionsData>({
+    queryKey: ["settings-voice-options"],
+    queryFn: async () => {
+      const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/voice-options`);
+      if (!r.ok) throw new Error("voice options unavailable");
+      return (await r.json()) as VoiceOptionsData;
+    },
+    enabled: showSettings || onboardingVoiceStep,
+    staleTime: 60_000,
+  });
+
+  const stopCatalogPreview = () => {
+    catalogPreviewAudioRef.current?.pause();
+    catalogPreviewAudioRef.current = null;
+    setPreviewingCatalogVoiceId(null);
+  };
+
+  const playCatalogPreview = async (voiceId: string) => {
+    stopCatalogPreview();
+    setPreviewingCatalogVoiceId(voiceId);
+    try {
+      const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/voice/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voice_id: voiceId }),
+      });
+      if (!r.ok) throw new Error("preview failed");
+      const { audio, format } = (await r.json()) as { audio: string; format: string };
+      const el = new Audio(`data:audio/${format === "mp3" ? "mpeg" : format};base64,${audio}`);
+      catalogPreviewAudioRef.current = el;
+      el.onended = () => setPreviewingCatalogVoiceId((cur) => (cur === voiceId ? null : cur));
+      await el.play();
+    } catch {
+      setPreviewingCatalogVoiceId((cur) => (cur === voiceId ? null : cur));
+    }
+  };
+
+  const handleLanguageSelect = async (lang: LanguageOption) => {
+    setLanguageNote(lang.active ? null : comingSoonNote(lang));
+    const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/language`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ language: lang.code }),
+    });
+    if (r.ok) queryClient.invalidateQueries({ queryKey: ["settings-voice-options"] });
+  };
+
+  const handleAccentSelect = async (accent: string) => {
+    setArmedCatalogVoiceId(null);
+    const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/accent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accent }),
+    });
+    if (r.ok) queryClient.invalidateQueries({ queryKey: ["settings-voice-options"] });
+  };
+
+  // Settings voice tap: first tap previews + arms, second tap keeps.
+  const handleCatalogVoiceTap = async (voiceId: string) => {
+    if (armedCatalogVoiceId !== voiceId) {
+      setArmedCatalogVoiceId(voiceId);
+      void playCatalogPreview(voiceId);
+      return;
+    }
+    stopCatalogPreview();
+    const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/voice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ voice_id: voiceId }),
+    });
+    if (r.ok) {
+      setArmedCatalogVoiceId(null);
+      queryClient.invalidateQueries({ queryKey: ["settings-voice-options"] });
+      queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
+    }
+  };
+
+  // Onboarding voice card: same preview-then-keep feel, but selections stay
+  // local until Continue submits them as ONE onboarding answer.
+  const handleObVoiceTap = (voiceId: string) => {
+    if (armedCatalogVoiceId !== voiceId) {
+      setArmedCatalogVoiceId(voiceId);
+      void playCatalogPreview(voiceId);
+      return;
+    }
+    stopCatalogPreview();
+    setObVoiceId(voiceId);
+    setArmedCatalogVoiceId(null);
+  };
+
+  const handleVoiceStepContinue = () => {
+    if (isTyping || submitAnswer.isPending) return;
+    stopCatalogPreview();
+    setIsTyping(true);
+    const answer = JSON.stringify({
+      language: obVoiceLanguage,
+      accent: obVoiceAccent,
+      ...(obVoiceId ? { voiceId: obVoiceId } : {}),
+    });
+    submitAnswer.mutate(
+      { data: { step: "voice", answer } },
+      {
+        onSuccess: (status) => {
+          queryClient.setQueryData(getGetOnboardingStatusQueryKey(), status);
+          queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
+          setIsTyping(false);
+          if (status.companionFirstMessage) handleSpeak(status.companionFirstMessage);
+        },
+        onError: () => setIsTyping(false),
+      },
+    );
   };
 
   const handleDismissVoiceCrisisCard = async () => {
@@ -2019,7 +2154,10 @@ export default function Chat() {
   const showChoiceButtons = !onboarding?.isComplete && !!stepChoices;
   // Age + country share one composite card (rendered instead of chips/text input).
   const basicsStep = !onboarding?.isComplete && (currentStep === "ageBand" || currentStep === "country");
-  const showTextInput = onboarding?.isComplete || (!stepChoices && !basicsStep && !onboarding?.isComplete);
+  // Voice picker card (Sprint 1.5) — replaces the text input, like the basics card.
+  const voicePickStep = !onboarding?.isComplete && currentStep === "voice";
+  const showTextInput =
+    onboarding?.isComplete || (!stepChoices && !basicsStep && !voicePickStep && !onboarding?.isComplete);
 
   // ─── Chat content ─────────────────────────────────────────────────────────
 
@@ -2463,6 +2601,59 @@ export default function Chat() {
               <p className="text-[10.5px] text-muted-foreground/45 mt-2 leading-relaxed">
                 Optional — so {profile?.companionName || "she"} speaks to you the way you'd want. Tap the selected one again to clear it.
               </p>
+
+              {/* ── Language (Sprint 1.5) ─────────────────────────────────── */}
+              <div className="mt-5">
+                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                  Language
+                </p>
+                {voiceOptions ? (
+                  <>
+                    <LanguageChips
+                      languages={voiceOptions.languages}
+                      current={voiceOptions.currentLanguage}
+                      disabled={updateProfile.isPending}
+                      onSelect={handleLanguageSelect}
+                    />
+                    {languageNote && (
+                      <p className="text-[11px] text-primary/70 mt-2 leading-relaxed">{languageNote}</p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground/40">Loading…</p>
+                )}
+              </div>
+
+              {/* ── Voice (Sprint 1.5) — English only for now ─────────────── */}
+              <div className="mt-5">
+                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                  Voice
+                </p>
+                {voiceOptions ? (
+                  voiceOptions.currentLanguage === "en" ? (
+                    <>
+                      <AccentVoicePicker
+                        data={voiceOptions}
+                        selectedAccent={voiceOptions.currentAccent}
+                        selectedVoiceId={voiceOptions.currentVoiceId}
+                        previewingVoiceId={previewingCatalogVoiceId}
+                        armedVoiceId={armedCatalogVoiceId}
+                        onAccentSelect={handleAccentSelect}
+                        onVoiceTap={handleCatalogVoiceTap}
+                      />
+                      <p className="text-[10.5px] text-muted-foreground/45 mt-2 leading-relaxed">
+                        Tap a voice to hear it — tap again to keep it.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
+                      Voice options arrive with each language.
+                    </p>
+                  )
+                ) : (
+                  <p className="text-[11px] text-muted-foreground/40">Loading…</p>
+                )}
+              </div>
 
               {/* Age */}
               <div className="mt-5">
@@ -3308,6 +3499,80 @@ export default function Chat() {
                     leaving country blank is completely fine
                   </span>
                 )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Voice picker card (onboarding, Sprint 1.5) ─────────────────────── */}
+      <AnimatePresence>
+        {voicePickStep && !isTyping && (
+          <motion.div
+            key="voice-pick"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="px-4 sm:px-6 pb-4 shrink-0"
+          >
+            <div className="max-w-3xl mx-auto bg-card border border-primary/15 rounded-2xl px-5 py-5 space-y-5">
+              <div>
+                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                  Language
+                </p>
+                {voiceOptions ? (
+                  <>
+                    <LanguageChips
+                      languages={voiceOptions.languages}
+                      current={obVoiceLanguage}
+                      onSelect={(l) => {
+                        setObVoiceLanguage(l.code);
+                        setLanguageNote(l.active ? null : comingSoonNote(l));
+                      }}
+                    />
+                    {languageNote && obVoiceLanguage !== "en" && (
+                      <p className="text-[11px] text-primary/70 mt-2 leading-relaxed">{languageNote}</p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground/40">Loading…</p>
+                )}
+              </div>
+
+              {obVoiceLanguage === "en" && voiceOptions && (
+                <div>
+                  <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                    Her voice
+                  </p>
+                  <AccentVoicePicker
+                    data={voiceOptions}
+                    selectedAccent={obVoiceAccent}
+                    selectedVoiceId={obVoiceId ?? ""}
+                    previewingVoiceId={previewingCatalogVoiceId}
+                    armedVoiceId={armedCatalogVoiceId}
+                    onAccentSelect={(a) => {
+                      setObVoiceAccent(a);
+                      setArmedCatalogVoiceId(null);
+                    }}
+                    onVoiceTap={handleObVoiceTap}
+                  />
+                  <p className="text-[10.5px] text-muted-foreground/45 mt-2 leading-relaxed">
+                    Tap to hear a voice — tap again to keep it. Or just continue; you can change this any time.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 pt-1">
+                <Button
+                  onClick={handleVoiceStepContinue}
+                  disabled={isTyping || submitAnswer.isPending}
+                  className="h-10 px-6 bg-primary text-primary-foreground hover:bg-primary/85 rounded-full shadow-[0_2px_10px_hsl(35_49%_57%/0.30)]"
+                >
+                  Continue
+                </Button>
+                <span className="text-[11px] text-muted-foreground/45">
+                  skipping is completely fine
+                </span>
               </div>
             </div>
           </motion.div>

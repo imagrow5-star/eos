@@ -21,6 +21,7 @@ import chaptersRouter, { chaptersInternalRouter } from "./chapters";
 import pushRouter, { pushInternalRouter } from "./push";
 import billingRouter, { billingPublicRouter } from "./billing";
 import billingWebhookRouter from "./billingWebhook";
+import settingsRouter from "./settings";
 
 const router: IRouter = Router();
 
@@ -65,5 +66,6 @@ router.use(voiceAgentRouter);
 router.use(chaptersRouter);
 router.use(pushRouter);
 router.use(billingRouter); // /billing/me + /billing/cancel (own subscription only)
+router.use(settingsRouter); // language + voice picker preferences (Sprint 1.5)
 
 export default router;

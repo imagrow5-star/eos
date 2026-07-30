@@ -589,7 +589,7 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
       [userId, ...moodRange.params],
     ),
     pool.query(
-      `SELECT companion_name, user_path, companion_gender, user_gender, user_gender_custom, country, age_band, birth_year, timezone, created_at FROM profile WHERE user_id = $1`,
+      `SELECT companion_name, user_path, companion_gender, user_gender, user_gender_custom, country, age_band, birth_year, timezone, preferred_language, voice_accent, voice_id, created_at FROM profile WHERE user_id = $1`,
       [userId],
     ),
     pool.query(

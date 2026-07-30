@@ -12,6 +12,7 @@
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 import { isResolvedRomanticVoiceId } from "../services/voiceLibrary.js";
+import { allCatalogVoiceIds } from "../services/settings/voiceCatalog.js";
 import { ttsUsageLimits } from "../middleware/usageLimits.js";
 
 const router: IRouter = Router();
@@ -37,6 +38,9 @@ const PREMADE_VOICE_IDS = new Set([
   "TX3LPaxmHKxFdv7VOQHJ", // Liam   — natural (American)
   "JBFqnCBsd6RMkjVDRZzb", // George — warm & refined (British, mature)
   "IKne3meq5aSn9XLyUdCD", // Charlie — casual (Australian, younger)
+  // Curated language/accent catalog voices (Sprint 1.5) — additive: every
+  // catalog voice is also a premade id, so it belongs on this allowlist.
+  ...allCatalogVoiceIds(),
 ]);
 
 // ─── Warm voice settings ──────────────────────────────────────────────────────
