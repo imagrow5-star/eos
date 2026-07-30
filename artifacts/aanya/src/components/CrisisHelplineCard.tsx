@@ -23,9 +23,10 @@ export default function CrisisHelplineCard({
   className,
 }: CrisisHelplineCardProps) {
   const lines = blockText.split("\n");
-  // Shape: "—", title line, one or more "- …" resource lines, closing line.
+  // Shape (every language): "—", localized title line, one or more "- …"
+  // resource lines, localized closing line.
   const resourceLines = lines.filter((l) => l.startsWith("- "));
-  const titleLine = lines.find((l) => l.startsWith("Someone who")) ?? lines[1] ?? "";
+  const titleLine = lines[1] ?? "";
   const closingLine = lines[lines.length - 1] ?? "";
 
   return (

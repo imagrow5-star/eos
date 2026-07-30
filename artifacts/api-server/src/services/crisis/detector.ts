@@ -53,15 +53,61 @@ export interface CrisisDetection {
   pattern?: string;
 }
 
-export function detectCrisis(text: string): CrisisDetection {
+// ─── Non-English pattern sets (Sprint 1.6) ───────────────────────────────────
+// Sources + covered-phrase lists live with the data: ./i18nPatterns.ts.
+// JS \b is ASCII-only and misbehaves next to ä/ø/ż etc., so i18n sources are
+// compiled here with unicode-aware boundaries instead.
+
+import { I18N_CRISIS_PATTERNS } from "./i18nPatterns.js";
+
+function compileI18n(source: string): RegExp {
+  return new RegExp(`(?<![\\p{L}\\p{N}])(?:${source})(?![\\p{L}\\p{N}])`, "iu");
+}
+
+const COMPILED_I18N: ReadonlyMap<string, CrisisPattern[]> = (() => {
+  const map = new Map<string, CrisisPattern[]>();
+  for (const [lang, patterns] of Object.entries(I18N_CRISIS_PATTERNS)) {
+    map.set(lang, patterns.map((p) => ({ name: p.name, re: compileI18n(p.source) })));
+  }
+  return map;
+})();
+
+/**
+ * Detect crisis language in `text`. `language` selects the additional pattern
+ * set to run; the ENGLISH set ALWAYS runs too (union) — a user chatting in
+ * German can still type an English crisis phrase, and both must fire.
+ * Unknown/inactive language codes simply fall back to English-only, exactly
+ * the pre-1.6 behavior.
+ */
+export function detectCrisis(text: string, language = "en"): CrisisDetection {
   const t = text ?? "";
+  const i18n = language !== "en" ? COMPILED_I18N.get(language) : undefined;
+  if (i18n) {
+    for (const p of i18n) {
+      if (p.re.test(t)) return { matched: true, pattern: p.name };
+    }
+  }
   for (const p of CRISIS_PATTERNS) {
     if (p.re.test(t)) return { matched: true, pattern: p.name };
   }
   return { matched: false };
 }
 
-/** Boolean form used by the chapter engine's quote/thread filters. */
+/**
+ * Boolean form used by the chapter engine's quote/thread filters and sealed
+ * notes. Checks EVERY language's patterns (union across all sets): those
+ * surfaces protect stored text whose language is unknown at call time, and
+ * over-excluding a quote is always safe — replaying a crisis line never is.
+ */
 export function isCrisisText(text: string): boolean {
-  return detectCrisis(text).matched;
+  const t = text ?? "";
+  for (const p of CRISIS_PATTERNS) {
+    if (p.re.test(t)) return true;
+  }
+  for (const patterns of COMPILED_I18N.values()) {
+    for (const p of patterns) {
+      if (p.re.test(t)) return true;
+    }
+  }
+  return false;
 }

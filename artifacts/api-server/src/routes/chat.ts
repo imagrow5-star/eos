@@ -164,7 +164,9 @@ router.post("/chat/stream", ...chatUsageLimits, async (req, res): Promise<void> 
 
     // Crisis floor: detect BEFORE generation. The user's message is stored
     // normally (encrypted) either way — detection only shapes this reply.
-    const crisis = detectCrisis(content);
+    // Runs the user's language pattern set PLUS English (union).
+    const userLanguage = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
+    const crisis = detectCrisis(content, userLanguage);
 
     // Insert the user message and compute stage in parallel — system prompt
     // doesn't depend on the insert, so these two round-trips overlap.
@@ -210,7 +212,7 @@ router.post("/chat/stream", ...chatUsageLimits, async (req, res): Promise<void> 
     // the `done` event also carries it separately so the client renders it as
     // a distinct, dismissible card rather than Eos's own words.
     const resolved = crisis.matched ? resolveHelplines(profile.country) : null;
-    const helplineBlockText = resolved ? buildHelplineBlockText(resolved.lines) : null;
+    const helplineBlockText = resolved ? buildHelplineBlockText(resolved.lines, userLanguage) : null;
     const persistedContent = helplineBlockText
       ? `${aiContent}\n\n${helplineBlockText}`
       : aiContent;
@@ -277,7 +279,8 @@ router.post("/chat/send", ...chatUsageLimits, async (req, res): Promise<void> =>
   const profile = await getOrCreateProfileForUser(userId);
 
   // Crisis floor: detect BEFORE generation (same guarantee as /chat/stream).
-  const crisis = detectCrisis(content);
+  const userLanguage = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
+  const crisis = detectCrisis(content, userLanguage);
 
   const [userMsg] = await db
     .insert(messagesTable)
@@ -319,7 +322,7 @@ router.post("/chat/send", ...chatUsageLimits, async (req, res): Promise<void> =>
   // Crisis floor: deterministic helpline append after generation (works even
   // on a degraded reply — that is the point of a floor).
   const resolved = crisis.matched ? resolveHelplines(profile.country) : null;
-  const helplineBlockText = resolved ? buildHelplineBlockText(resolved.lines) : null;
+  const helplineBlockText = resolved ? buildHelplineBlockText(resolved.lines, userLanguage) : null;
   const persistedContent = helplineBlockText ? `${aiContent}\n\n${helplineBlockText}` : aiContent;
 
   const [assistantMsg] = await db

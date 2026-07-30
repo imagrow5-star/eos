@@ -30,12 +30,78 @@ export function resolveHelplines(country: string | null | undefined): ResolvedHe
   return { countryServed: entry.country, lines: entry.lines.slice(0, 3) };
 }
 
-// The first line of every helpline block. The frontend uses this exact marker
-// to split an assistant message into "Eos's words" + "helpline card", so the
-// card renders visually distinct and dismissible. Change it in BOTH places or
-// history rendering breaks (see aanya/src/lib/crisisBlock.ts).
-export const HELPLINE_BLOCK_MARKER =
-  "—\nSomeone who can be with you right now, if you want to reach:";
+// ─── Card copy per language (Sprint 1.6) ─────────────────────────────────────
+// Intro + outro of the helpline card, in the user's language. Helpline NAMES
+// and NUMBERS never translate — only the two warm lines around them. English
+// is the fallback for any unknown code. Drafted by hand (not machine
+// translation); native-speaker review is a founder follow-up.
+// KEPT IN SYNC BY HAND with the marker list in aanya/src/lib/crisisBlock.ts —
+// the frontend splits messages on "—\n" + intro to render the card.
+
+export interface HelplineBlockCopy {
+  intro: string;
+  outro: string;
+}
+
+export const HELPLINE_BLOCK_COPY: Record<string, HelplineBlockCopy> = {
+  en: {
+    intro: "Someone who can be with you right now, if you want to reach:",
+    outro: "I'm not going anywhere. Take your time.",
+  },
+  nl: {
+    intro: "Iemand die er nu voor je kan zijn, als je contact wilt:",
+    outro: "Ik ga nergens heen. Neem de tijd.",
+  },
+  de: {
+    intro: "Jemand, der jetzt für dich da sein kann, wenn du dich melden möchtest:",
+    outro: "Ich gehe nirgendwohin. Lass dir Zeit.",
+  },
+  fr: {
+    intro: "Quelqu'un qui peut être là pour toi maintenant, si tu veux appeler :",
+    outro: "Je ne vais nulle part. Prends ton temps.",
+  },
+  es: {
+    intro: "Alguien que puede estar contigo ahora mismo, si quieres llamar:",
+    outro: "No me voy a ninguna parte. Tómate tu tiempo.",
+  },
+  it: {
+    intro: "Qualcuno che può starti accanto adesso, se vuoi contattarlo:",
+    outro: "Io non vado da nessuna parte. Prenditi il tuo tempo.",
+  },
+  pt: {
+    intro: "Alguém que pode estar contigo agora mesmo, se quiseres ligar:",
+    outro: "Eu não vou a lado nenhum. Leva o tempo que precisares.",
+  },
+  sv: {
+    intro: "Någon som kan finnas där för dig just nu, om du vill höra av dig:",
+    outro: "Jag går ingenstans. Ta den tid du behöver.",
+  },
+  no: {
+    intro: "Noen som kan være der for deg akkurat nå, om du vil ta kontakt:",
+    outro: "Jeg går ingen steder. Ta den tiden du trenger.",
+  },
+  da: {
+    intro: "Nogen, der kan være der for dig lige nu, hvis du vil række ud:",
+    outro: "Jeg går ingen steder. Tag dig god tid.",
+  },
+  pl: {
+    intro: "Ktoś, kto może być z Tobą teraz — jeśli chcesz się skontaktować:",
+    outro: "Nigdzie się nie wybieram. Nie spiesz się.",
+  },
+};
+
+export function helplineBlockCopy(language: string | null | undefined): HelplineBlockCopy {
+  return HELPLINE_BLOCK_COPY[(language ?? "en").toLowerCase()] ?? HELPLINE_BLOCK_COPY.en!;
+}
+
+// The first line of every ENGLISH helpline block. The frontend splits an
+// assistant message into "Eos's words" + "helpline card" on "—\n" + intro —
+// for every language (see aanya/src/lib/crisisBlock.ts).
+export const HELPLINE_BLOCK_MARKER = `—\n${HELPLINE_BLOCK_COPY.en!.intro}`;
+
+export function markerForLanguage(language: string | null | undefined): string {
+  return `—\n${helplineBlockCopy(language).intro}`;
+}
 
 export function formatHelplineLine(l: HelplineEntry): string {
   const note = l.languageNote ? ` — ${l.languageNote}` : "";
@@ -44,12 +110,14 @@ export function formatHelplineLine(l: HelplineEntry): string {
 
 /**
  * The exact text appended to the assistant reply (and persisted with it, so
- * the card is part of chat history and exports).
+ * the card is part of chat history and exports). Intro/outro localized to the
+ * user's language; helpline lines unchanged.
  */
-export function buildHelplineBlockText(lines: HelplineEntry[]): string {
+export function buildHelplineBlockText(lines: HelplineEntry[], language = "en"): string {
+  const copy = helplineBlockCopy(language);
   return [
-    HELPLINE_BLOCK_MARKER,
+    `—\n${copy.intro}`,
     ...lines.map(formatHelplineLine),
-    "I'm not going anywhere. Take your time.",
+    copy.outro,
   ].join("\n");
 }

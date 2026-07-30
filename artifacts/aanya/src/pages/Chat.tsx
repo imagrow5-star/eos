@@ -77,7 +77,6 @@ interface RomanticVoiceStatus {
   accountVoiceId: string | null;
 }
 
-const PREVIEW_SAMPLE = "I'm right here with you. Take all the time you need.";
 const DEFAULT_FEMALE_VOICE = "21m00Tcm4TlvDq8ikWAM"; // Rachel
 const DEFAULT_MALE_VOICE   = "pNInz6obpgDQGcFmaJgB"; // Adam
 
@@ -260,7 +259,6 @@ export default function Chat() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
-  const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
   // Streaming state: text accumulates token-by-token while the model generates
   const [streamingContent, setStreamingContent] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -301,13 +299,23 @@ export default function Chat() {
   // ── Language & voice picker: data + handlers (Sprint 1.5) ─────────────────
 
   const onboardingVoiceStep = !onboarding?.isComplete && onboarding?.currentStep === "voice";
-  // Onboarding keeps its gender choice LOCAL until Continue — the ?gender=
-  // override refetches the matching voice list without saving anything.
+  // Onboarding keeps its gender + language choices LOCAL until Continue — the
+  // ?gender= / ?language= overrides refetch the matching voice list without
+  // saving anything.
   const voiceGenderOverride = onboardingVoiceStep && obGenderTouched ? obVoiceGender : null;
+  const voiceLanguageOverride =
+    onboardingVoiceStep && obVoiceLanguage !== "en" ? obVoiceLanguage : null;
   const { data: voiceOptions } = useQuery<VoiceOptionsData>({
-    queryKey: ["settings-voice-options", voiceGenderOverride ?? "profile"],
+    queryKey: [
+      "settings-voice-options",
+      voiceGenderOverride ?? "profile",
+      voiceLanguageOverride ?? "profile-lang",
+    ],
     queryFn: async () => {
-      const qs = voiceGenderOverride ? `?gender=${voiceGenderOverride}` : "";
+      const params = new URLSearchParams();
+      if (voiceGenderOverride) params.set("gender", voiceGenderOverride);
+      if (voiceLanguageOverride) params.set("language", voiceLanguageOverride);
+      const qs = params.size > 0 ? `?${params.toString()}` : "";
       const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/voice-options${qs}`);
       if (!r.ok) throw new Error("voice options unavailable");
       return (await r.json()) as VoiceOptionsData;
@@ -468,10 +476,6 @@ export default function Chat() {
   const [voiceCallPhase, setVoiceCallPhase] = useState<"listening" | "thinking" | "speaking" | "error">("listening");
   const [voiceCallMessage, setVoiceCallMessage] = useState<string | null>(null); // sub-label / error text
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  // Voice picker filters
-  const [voiceGenderFilter, setVoiceGenderFilter] = useState<"all" | "female" | "male">("all");
-  const [voiceAccentFilter, setVoiceAccentFilter] = useState<"all" | "American" | "British" | "Australian">("all");
-  const [voiceAgeFilter, setVoiceAgeFilter] = useState<"all" | "younger" | "middle" | "mature">("all");
   const morningNoteTriggered = useRef(false);
   // Refs so async TTS / recognition callbacks always read the latest values
   const continuousVoiceRef = useRef(false);
@@ -590,7 +594,6 @@ export default function Chat() {
     staleTime: 60_000,
     retry: false,
   });
-  const romanticVoices = voicesStatus?.romantic ?? [];
   // Server-driven feature flag: the realtime Voice Call entry point stays hidden
   // until the ElevenLabs agent is fully configured (VOICE_CALL_ENABLED=true on
   // the api-server — no frontend rebuild needed). Defaults to hidden while the
@@ -611,21 +614,6 @@ export default function Chat() {
   });
   const accountEmail = authMe?.user.email ?? "";
   const [showChangeEmail, setShowChangeEmail] = useState(false);
-
-  // Build filtered voice list for picker
-  // Standard voices — companion's own gender shown first
-  const orderedStandard = companionGender === "man"
-    ? [...MALE_VOICES, ...FEMALE_VOICES]
-    : [...FEMALE_VOICES, ...MALE_VOICES];
-
-  const filteredStandardVoices = orderedStandard.filter((v) => {
-    const isFemale = FEMALE_VOICES.some((f) => f.id === v.id);
-    if (voiceGenderFilter === "female" && !isFemale) return false;
-    if (voiceGenderFilter === "male"   &&  isFemale) return false;
-    if (voiceAccentFilter !== "all" && v.accent !== voiceAccentFilter) return false;
-    if (voiceAgeFilter    !== "all" && v.age    !== voiceAgeFilter)    return false;
-    return true;
-  });
 
   // Sync rename input with loaded profile
   useEffect(() => {
@@ -2133,18 +2121,10 @@ export default function Chat() {
     }
   };
 
-  // ─── Settings: voice selection ────────────────────────────────────────────
-
-  const handleVoiceSelect = (voiceId: string) => {
-    updateProfile.mutate(
-      { data: { voiceId } as any },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
-        },
-      },
-    );
-  };
+  // ─── Settings: voice-call delivery tone ───────────────────────────────────
+  // (The legacy "Companion voice" picker was retired in Sprint 1.6 — voice
+  // selection now lives entirely in the LANGUAGE/ACCENT/VOICE GENDER/VOICE
+  // sections, saving through /api/settings/voice.)
 
   const handleToneSelect = (voiceTone: string) => {
     updateProfile.mutate(
@@ -2155,22 +2135,6 @@ export default function Chat() {
         },
       },
     );
-  };
-
-  const handleVoicePreview = (voiceId: string) => {
-    // Clicking the same voice again → stop it
-    if (previewingVoiceId === voiceId) {
-      stopSpeaking();
-      setPreviewingVoiceId(null);
-      return;
-    }
-    // Clicking a different voice → stop previous immediately, then start new
-    stopSpeaking();
-    setPreviewingVoiceId(voiceId);
-    speakText(PREVIEW_SAMPLE, {
-      voiceId, // exact ID for THIS card — never the active companion voice
-      onEnd: () => setPreviewingVoiceId(null),
-    });
   };
 
   const companionName = profile?.companionName || "Eos";
@@ -2652,27 +2616,32 @@ export default function Chat() {
                 )}
               </div>
 
-              {/* ── Accent ────────────────────────────────────────────────── */}
-              <div className="mt-5">
-                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
-                  Accent
-                </p>
-                {voiceOptions ? (
-                  voiceOptions.currentLanguage === "en" ? (
-                    <AccentChips
-                      accents={voiceOptions.accents}
-                      current={voiceOptions.currentAccent}
-                      onSelect={handleAccentSelect}
-                    />
+              {/* ── Accent — an English concept: hidden for other active
+                  languages, coming-soon helper for inactive ones ─────────── */}
+              {(!voiceOptions ||
+                voiceOptions.currentLanguage === "en" ||
+                !voiceOptions.currentLanguageActive) && (
+                <div className="mt-5">
+                  <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                    Accent
+                  </p>
+                  {voiceOptions ? (
+                    voiceOptions.currentLanguage === "en" ? (
+                      <AccentChips
+                        accents={voiceOptions.accents}
+                        current={voiceOptions.currentAccent}
+                        onSelect={handleAccentSelect}
+                      />
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
+                        Accent options arrive with each language.
+                      </p>
+                    )
                   ) : (
-                    <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
-                      Accent options arrive with each language.
-                    </p>
-                  )
-                ) : (
-                  <p className="text-[11px] text-muted-foreground/40">Loading…</p>
-                )}
-              </div>
+                    <p className="text-[11px] text-muted-foreground/40">Loading…</p>
+                  )}
+                </div>
+              )}
 
               {/* ── Voice gender ──────────────────────────────────────────── */}
               <div className="mt-5">
@@ -2680,7 +2649,7 @@ export default function Chat() {
                   Voice gender
                 </p>
                 {voiceOptions ? (
-                  voiceOptions.currentLanguage === "en" ? (
+                  voiceOptions.currentLanguage === "en" || voiceOptions.currentLanguageActive ? (
                     <VoiceGenderChips
                       current={voiceOptions.currentVoiceGender}
                       onSelect={handleVoiceGenderSelect}
@@ -2701,12 +2670,15 @@ export default function Chat() {
                   Voice
                 </p>
                 {voiceOptions ? (
-                  voiceOptions.currentLanguage === "en" ? (
+                  voiceOptions.currentLanguage === "en" || voiceOptions.currentLanguageActive ? (
                     <>
                       <VoiceChips
                         voices={
-                          voiceOptions.accents.find((a) => a.code === voiceOptions.currentAccent)
-                            ?.voices ?? []
+                          voiceOptions.currentLanguage === "en"
+                            ? (voiceOptions.accents.find(
+                                (a) => a.code === voiceOptions.currentAccent,
+                              )?.voices ?? [])
+                            : (voiceOptions.accents[0]?.voices ?? [])
                         }
                         selectedVoiceId={voiceOptions.currentVoiceId}
                         previewingVoiceId={previewingCatalogVoiceId}
@@ -2991,146 +2963,6 @@ export default function Chat() {
               >
                 Read the privacy page
               </a>
-            </div>
-
-            {/* ── Voice picker ────────────────────────────────────────────── */}
-            <div>
-              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
-                Companion voice
-              </p>
-
-              {/* ── Filter chips ── */}
-              <div className="space-y-2 mb-3">
-                {/* Gender */}
-                <div className="flex gap-1.5 flex-wrap">
-                  {(["all", "female", "male"] as const).map((g) => (
-                    <button
-                      key={g}
-                      onClick={() => setVoiceGenderFilter(g)}
-                      className={cn(
-                        "px-3 py-1 rounded-full text-[10.5px] font-medium tracking-wide transition-all border",
-                        voiceGenderFilter === g
-                          ? "bg-primary/20 border-primary/50 text-primary"
-                          : "border-primary/15 text-muted-foreground/55 hover:border-primary/30 hover:text-foreground/70",
-                      )}
-                    >
-                      {g === "all" ? "All genders" : g === "female" ? "Female" : "Male"}
-                    </button>
-                  ))}
-                </div>
-                {/* Accent */}
-                <div className="flex gap-1.5 flex-wrap">
-                  {(["all", "American", "British", "Australian"] as const).map((a) => (
-                    <button
-                      key={a}
-                      onClick={() => setVoiceAccentFilter(a)}
-                      className={cn(
-                        "px-3 py-1 rounded-full text-[10.5px] font-medium tracking-wide transition-all border",
-                        voiceAccentFilter === a
-                          ? "bg-primary/20 border-primary/50 text-primary"
-                          : "border-primary/15 text-muted-foreground/55 hover:border-primary/30 hover:text-foreground/70",
-                      )}
-                    >
-                      {a === "all" ? "Any accent" : a}
-                    </button>
-                  ))}
-                </div>
-                {/* Age / feel */}
-                <div className="flex gap-1.5 flex-wrap">
-                  {(["all", "younger", "middle", "mature"] as const).map((ag) => (
-                    <button
-                      key={ag}
-                      onClick={() => setVoiceAgeFilter(ag)}
-                      className={cn(
-                        "px-3 py-1 rounded-full text-[10.5px] font-medium tracking-wide transition-all border",
-                        voiceAgeFilter === ag
-                          ? "bg-primary/20 border-primary/50 text-primary"
-                          : "border-primary/15 text-muted-foreground/55 hover:border-primary/30 hover:text-foreground/70",
-                      )}
-                    >
-                      {ag === "all" ? "Any age" : ag === "younger" ? "Younger" : ag === "middle" ? "Mid-aged" : "Mature"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* ── Voice list ── */}
-              <div className="max-h-64 overflow-y-auto space-y-1.5 pr-0.5">
-                {filteredStandardVoices.length === 0 ? (
-                  <p className="text-[12px] text-muted-foreground/40 text-center py-4">
-                    No voices match — try adjusting the filters above
-                  </p>
-                ) : (
-                  filteredStandardVoices.map((v) => {
-                    const isSelected = activeVoiceId === v.id;
-                    const isPreviewing = previewingVoiceId === v.id;
-                    const isFemale = FEMALE_VOICES.some((f) => f.id === v.id);
-                    return (
-                      <div
-                        key={v.id}
-                        className={cn(
-                          "flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-pointer transition-all active:scale-[0.98]",
-                          isSelected
-                            ? "bg-primary/12 border-primary/45 shadow-[0_0_0_1px_hsl(40_56%_50%/0.15)]"
-                            : "bg-background/50 border-primary/12 hover:border-primary/30 hover:bg-primary/6",
-                        )}
-                        onClick={() => handleVoiceSelect(v.id)}
-                      >
-                        {/* Selection dot */}
-                        <div className={cn(
-                          "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
-                          isSelected ? "border-primary bg-primary/30" : "border-foreground/20",
-                        )}>
-                          {isSelected && <div className="w-2 h-2 rounded-full bg-primary" />}
-                        </div>
-
-                        {/* Labels */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className={cn(
-                              "text-[14px] font-medium",
-                              isSelected ? "text-foreground" : "text-foreground/70",
-                            )}>
-                              {v.label}
-                            </span>
-                            <span className={cn(
-                              "text-[10px] px-1.5 py-0.5 rounded-full border",
-                              isFemale
-                                ? "border-rose-400/20 text-rose-300/60"
-                                : "border-sky-400/20 text-sky-300/60",
-                            )}>
-                              {isFemale ? "F" : "M"}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-muted-foreground/50 mt-0.5">
-                            {v.accent} · {v.feel}
-                          </p>
-                        </div>
-
-                        {/* Preview button */}
-                        <button
-                          className={cn(
-                            "w-8 h-8 rounded-full border flex items-center justify-center shrink-0 transition-all",
-                            isPreviewing
-                              ? "border-primary/60 bg-primary/20 text-primary"
-                              : "border-foreground/15 text-muted-foreground/50 hover:border-primary/40 hover:text-primary hover:bg-primary/10",
-                          )}
-                          onClick={(e) => { e.stopPropagation(); handleVoicePreview(v.id); }}
-                          title={isPreviewing ? "Stop preview" : "Preview voice"}
-                        >
-                          {isPreviewing
-                            ? <Pause className="w-3 h-3" />
-                            : <Play className="w-3 h-3 ml-px" />
-                          }
-                        </button>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-              <p className="text-[10px] text-muted-foreground/35 mt-2 text-center">
-                Tap ▶ to hear a sample before choosing
-              </p>
             </div>
 
             {/* ── How Eos speaks — voice-call delivery preference ──────── */}
@@ -3599,6 +3431,8 @@ export default function Chat() {
                       current={obVoiceLanguage}
                       onSelect={(l) => {
                         setObVoiceLanguage(l.code);
+                        setObVoiceId(null); // voice lists differ per language
+                        setArmedCatalogVoiceId(null);
                         setLanguageNote(l.active ? null : comingSoonNote(l));
                       }}
                     />
@@ -3611,21 +3445,25 @@ export default function Chat() {
                 )}
               </div>
 
-              {obVoiceLanguage === "en" && voiceOptions && (
+              {voiceOptions &&
+                (obVoiceLanguage === "en" ||
+                  voiceOptions.languages.find((l) => l.code === obVoiceLanguage)?.active) && (
                 <>
-                  <div>
-                    <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
-                      Accent
-                    </p>
-                    <AccentChips
-                      accents={voiceOptions.accents}
-                      current={obVoiceAccent}
-                      onSelect={(a) => {
-                        setObVoiceAccent(a);
-                        setArmedCatalogVoiceId(null);
-                      }}
-                    />
-                  </div>
+                  {obVoiceLanguage === "en" && (
+                    <div>
+                      <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                        Accent
+                      </p>
+                      <AccentChips
+                        accents={voiceOptions.accents}
+                        current={obVoiceAccent}
+                        onSelect={(a) => {
+                          setObVoiceAccent(a);
+                          setArmedCatalogVoiceId(null);
+                        }}
+                      />
+                    </div>
+                  )}
 
                   <div>
                     <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
@@ -3648,7 +3486,9 @@ export default function Chat() {
                     </p>
                     <VoiceChips
                       voices={
-                        voiceOptions.accents.find((a) => a.code === obVoiceAccent)?.voices ?? []
+                        obVoiceLanguage === "en"
+                          ? (voiceOptions.accents.find((a) => a.code === obVoiceAccent)?.voices ?? [])
+                          : (voiceOptions.accents[0]?.voices ?? [])
                       }
                       selectedVoiceId={obVoiceId ?? ""}
                       previewingVoiceId={previewingCatalogVoiceId}

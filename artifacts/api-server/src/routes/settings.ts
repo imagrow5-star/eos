@@ -1,9 +1,10 @@
-// ─── Language & voice preference endpoints (Sprint 1.5) ──────────────────────
-// Storage + curated-catalog validation only. Choosing a non-English language
-// STORES the preference but does not change conversation behavior yet —
-// Sprint 1.6 activates each language once the crisis floor's detection covers
-// it. Voice ids are validated against the curated catalog so users can never
-// point their profile at an arbitrary ElevenLabs voice.
+// ─── Language & voice preference endpoints ───────────────────────────────────
+// Storage + curated-catalog validation. Choosing an ACTIVE language switches
+// Eos's conversation, crisis detection, helpline card copy, and TTS model to
+// that language (Sprint 1.6); choosing an inactive one stores the preference
+// while she keeps speaking English. Voice ids are validated against the
+// curated catalog so users can never point their profile at an arbitrary
+// ElevenLabs voice.
 
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
@@ -14,6 +15,7 @@ import { LANGUAGES, isValidLanguage, languageByCode } from "../services/settings
 import {
   ENGLISH_ACCENTS,
   ENGLISH_ACCENT_CODES,
+  NON_ENGLISH_ACCENT,
   voicesFor,
   findCatalogVoice,
   isVoiceAllowed,
@@ -33,7 +35,12 @@ const router: IRouter = Router();
 
 router.get("/settings/voice-options", async (req, res): Promise<void> => {
   const profile = await getOrCreateProfileForUser(req.userId);
-  const language = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
+  const profileLanguage = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
+  // ?language= override: the onboarding card picks a language locally before
+  // anything is saved and needs that language's voices. Valid codes only.
+  const langOverride = typeof req.query.language === "string" ? req.query.language.toLowerCase() : "";
+  const language = isValidLanguage(langOverride) ? langOverride : profileLanguage;
+  const languageActive = languageByCode(language)?.active ?? false;
   const accent = (profile as { voiceAccent?: string | null }).voiceAccent ?? "us";
   const companionGender = (profile as { companionGender?: string }).companionGender ?? "woman";
   const resolved = resolveVoiceGender(profile as { voiceGender?: string | null; companionGender?: string | null });
@@ -42,21 +49,37 @@ router.get("/settings/voice-options", async (req, res): Promise<void> => {
   const filterGender =
     override === "female" || override === "male" ? override : resolved.gender;
 
+  const toChip = (v: { voiceId: string; displayName: string; gender: "female" | "male" }) => ({
+    voiceId: v.voiceId,
+    displayName: v.displayName,
+    gender: v.gender,
+  });
+
+  // English → the six real accents. Active non-English → one pseudo-accent
+  // ("std") carrying that language's curated voices. Inactive → nothing (the
+  // UI shows the coming-soon helper instead).
   const accents =
     language === "en"
       ? ENGLISH_ACCENTS.map((a) => ({
           ...a,
-          voices: voicesFor("en", a.code, filterGender).map((v) => ({
-            voiceId: v.voiceId,
-            displayName: v.displayName,
-            gender: v.gender,
-          })),
+          voices: voicesFor("en", a.code, filterGender).map(toChip),
         }))
-      : [];
+      : languageActive
+        ? [
+            {
+              code: NON_ENGLISH_ACCENT,
+              label: "",
+              flag: "",
+              primary: true,
+              voices: voicesFor(language, NON_ENGLISH_ACCENT, filterGender).map(toChip),
+            },
+          ]
+        : [];
 
   res.json({
     languages: LANGUAGES,
     currentLanguage: language,
+    currentLanguageActive: languageActive,
     currentAccent: accent,
     currentVoiceId: profile.voiceId,
     companionGender,
@@ -141,7 +164,11 @@ router.post("/settings/voice", async (req, res): Promise<void> => {
   }
   const profile = await getOrCreateProfileForUser(req.userId);
   const language = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
-  const accent = (profile as { voiceAccent?: string | null }).voiceAccent ?? "us";
+  // Accents are an English concept — non-English catalogs live under "std".
+  const accent =
+    language === "en"
+      ? ((profile as { voiceAccent?: string | null }).voiceAccent ?? "us")
+      : NON_ENGLISH_ACCENT;
   const voiceGender = resolveVoiceGender(
     profile as { voiceGender?: string | null; companionGender?: string | null },
   ).gender;

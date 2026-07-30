@@ -341,7 +341,8 @@ router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (re
     // voice-call UI polls /voice-agent/crisis-status to overlay the helpline
     // card on-screen. The reinforcement block joins the prompt for THIS TURN
     // only (one uncached turn; the frozen call prefix resumes next turn).
-    const crisis = synthetic ? { matched: false as const } : detectCrisis(freshUserContent);
+    const voiceUserLanguage = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
+    const crisis = synthetic ? { matched: false as const } : detectCrisis(freshUserContent, voiceUserLanguage);
     if (crisis.matched) {
       void recordVoiceCrisisEvent({
         userId,

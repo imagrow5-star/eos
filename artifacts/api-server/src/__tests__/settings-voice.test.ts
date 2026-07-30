@@ -94,9 +94,14 @@ describe("voice catalog config", () => {
     }
   });
 
-  it("non-English languages exist in the catalog but are empty (Sprint 1.6 fills them)", () => {
+  it("active non-English languages carry a curated 'std' voice set; inactive ones stay empty", () => {
     for (const l of LANGUAGES.filter((x) => x.code !== "en")) {
-      expect(voicesFor(l.code, "us", "nonbinary")).toEqual([]);
+      const voices = voicesFor(l.code, "std", "nonbinary");
+      if (l.active) {
+        expect(voices.length, l.code).toBeGreaterThanOrEqual(6);
+      } else {
+        expect(voices, l.code).toEqual([]);
+      }
     }
   });
 });
@@ -125,10 +130,11 @@ describe("backfill defaults + voice options", () => {
 
     const res = await agent.get("/api/settings/voice-options");
     expect(res.status).toBe(200);
-    expect(res.body.languages).toHaveLength(11);
+    // 11 original languages + the Finnish inactive placeholder (Sprint 1.6).
+    expect(res.body.languages).toHaveLength(12);
     const active = res.body.languages.filter((l: { active: boolean }) => l.active);
-    expect(active).toHaveLength(1);
-    expect(active[0].code).toBe("en");
+    expect(active).toHaveLength(11); // en + the ten activated languages
+    expect(active.map((l: { code: string }) => l.code)).toContain("en");
     expect(res.body.currentLanguage).toBe("en");
     expect(res.body.currentAccent).toBe("us");
     // Default companion is a woman → only female voices offered.
@@ -141,12 +147,12 @@ describe("backfill defaults + voice options", () => {
 // ─── Language endpoint ───────────────────────────────────────────────────────
 
 describe("POST /settings/language", () => {
-  it("accepts all 11 codes and stores them; Eos's conversation stays English for inactive ones", async () => {
+  it("accepts every configured code and stores it, reporting the live active flag", async () => {
     const { agent, userId } = await makeUser("langs");
     for (const l of LANGUAGES) {
       const res = await agent.post("/api/settings/language").send({ language: l.code });
       expect(res.status, l.code).toBe(200);
-      expect(res.body.active).toBe(l.code === "en");
+      expect(res.body.active, l.code).toBe(l.active);
       expect((await profileRow(userId)).preferred_language).toBe(l.code);
     }
   });
@@ -295,7 +301,7 @@ describe("onboarding voice step", () => {
     });
     expect(res.status).toBe(200);
     const row = await profileRow(userId);
-    expect(row.preferred_language).toBe("de"); // stored for Sprint 1.6
+    expect(row.preferred_language).toBe("de"); // active since Sprint 1.6
     expect(row.voice_accent).toBe("us");
     expect(row.voice_id).toBe(before.voice_id); // bogus id ignored
   });
