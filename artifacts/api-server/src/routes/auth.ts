@@ -1077,6 +1077,31 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
     //      rows ON DELETE CASCADE when the parent `goals` row is deleted, so we
     //      do NOT delete it explicitly; deleting `goals` clears it. (Registered
     //      with strategy "cascade".)
+    // ── Paddle first (phase 2): a deleted account must never keep billing.
+    // Cancellation is scheduled via Paddle's API BEFORE the wipe; if Paddle
+    // is unreachable the deletion still proceeds (the user's right to erase
+    // beats our bookkeeping) — the error is logged loudly so the founder can
+    // cancel manually in the Paddle dashboard.
+    try {
+      const subRow = await client.query<{ paddle_subscription_id: string | null; status: string }>(
+        `SELECT paddle_subscription_id, status FROM subscriptions WHERE user_id = $1`,
+        [userId],
+      );
+      const paddleSubId = subRow.rows[0]?.paddle_subscription_id;
+      const subStatus = subRow.rows[0]?.status;
+      if (paddleSubId && subStatus !== "canceled") {
+        const { cancelPaddleSubscription } = await import("../services/paddle.js");
+        await cancelPaddleSubscription(paddleSubId);
+        logger.info({ userId }, "Account deletion: Paddle subscription cancellation scheduled");
+      }
+    } catch (err) {
+      logger.error(
+        { err, userId },
+        "Account deletion: PADDLE CANCEL FAILED — deletion proceeds; cancel this subscription " +
+          "manually in the Paddle dashboard to stop future charges.",
+      );
+    }
+
     await client.query("BEGIN");
     await client.query(`DELETE FROM user_sessions WHERE sess::jsonb->>'userId' = $1::text`, [String(userId)]);
     await client.query(`DELETE FROM password_reset_tokens WHERE user_id = $1`, [userId]);
@@ -1098,11 +1123,10 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
     await client.query(`DELETE FROM story_threads     WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM push_subscriptions WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM push_events       WHERE user_id = $1`, [userId]);
-    // TODO(phase 2 — Paddle): before deleting the subscriptions row, call
-    // Paddle's subscription-cancel API for paddle_subscription_id (when set)
-    // so a deleted account can never keep billing. billing_events is
-    // intentionally NOT deleted here: it holds provider event ids only (no
-    // personal data) and is the processed-webhook audit trail.
+    // billing_events is intentionally NOT deleted here: it holds provider
+    // event ids only (no personal data) and is the processed-webhook audit
+    // trail. The Paddle cancel call happened BEFORE this transaction (see
+    // above) so a deleted account can never keep billing.
     await client.query(`DELETE FROM voice_usage       WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM subscriptions     WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM personalization_state WHERE user_id = $1`, [userId]);

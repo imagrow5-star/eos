@@ -8,6 +8,7 @@ import Journey from "@/pages/Journey";
 import Chapters from "@/pages/Chapters";
 import Memory from "@/pages/Memory";
 import { AuthScreen } from "@/pages/AuthScreen";
+import { Pricing } from "@/pages/Pricing";
 import { EmailVerificationGate } from "@/pages/EmailVerificationGate";
 import { ConsentGate } from "@/pages/ConsentGate";
 import { Privacy } from "@/pages/Privacy";
@@ -44,6 +45,7 @@ function AppRouter() {
         <Route path="/journey" component={Journey} />
         <Route path="/chapters" component={Chapters} />
         <Route path="/memory" component={Memory} />
+        <Route path="/pricing">{() => <Pricing />}</Route>
         <Route>
           <div className="flex h-full items-center justify-center text-muted-foreground">
             Page not found
@@ -190,6 +192,24 @@ function AuthGate() {
 
   // Not authenticated — landing page for the root, auth screen for login/signup
   if (!data) {
+    // /pricing works signed-out too: same cards, but choosing a plan routes
+    // into account creation first (checkout requires a verified account).
+    if (window.location.pathname.endsWith("/pricing")) {
+      return (
+        <>
+          {verifyBanner}
+          <Pricing
+            signedOut
+            onCreateAccount={() => {
+              const url = new URL(window.location.href);
+              url.pathname = url.pathname.replace(/\/pricing$/, "/") || "/";
+              window.history.replaceState({}, "", url.toString());
+              setUnauthView("signup");
+            }}
+          />
+        </>
+      );
+    }
     if (unauthView === "landing") {
       return (
         <>
