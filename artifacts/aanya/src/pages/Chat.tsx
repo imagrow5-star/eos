@@ -34,7 +34,9 @@ import { splitCrisisBlock } from "@/lib/crisisBlock";
 import CrisisHelplineCard from "@/components/CrisisHelplineCard";
 import {
   LanguageChips,
-  AccentVoicePicker,
+  AccentChips,
+  VoiceGenderChips,
+  VoiceChips,
   comingSoonNote,
   type VoiceOptionsData,
   type LanguageOption,
@@ -252,6 +254,8 @@ export default function Chat() {
   // Onboarding voice-card local selections (submitted together on Continue).
   const [obVoiceLanguage, setObVoiceLanguage] = useState("en");
   const [obVoiceAccent, setObVoiceAccent] = useState("us");
+  const [obVoiceGender, setObVoiceGender] = useState<"female" | "male">("female");
+  const [obGenderTouched, setObGenderTouched] = useState(false);
   const [obVoiceId, setObVoiceId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
@@ -297,16 +301,37 @@ export default function Chat() {
   // ── Language & voice picker: data + handlers (Sprint 1.5) ─────────────────
 
   const onboardingVoiceStep = !onboarding?.isComplete && onboarding?.currentStep === "voice";
+  // Onboarding keeps its gender choice LOCAL until Continue — the ?gender=
+  // override refetches the matching voice list without saving anything.
+  const voiceGenderOverride = onboardingVoiceStep && obGenderTouched ? obVoiceGender : null;
   const { data: voiceOptions } = useQuery<VoiceOptionsData>({
-    queryKey: ["settings-voice-options"],
+    queryKey: ["settings-voice-options", voiceGenderOverride ?? "profile"],
     queryFn: async () => {
-      const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/voice-options`);
+      const qs = voiceGenderOverride ? `?gender=${voiceGenderOverride}` : "";
+      const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/voice-options${qs}`);
       if (!r.ok) throw new Error("voice options unavailable");
       return (await r.json()) as VoiceOptionsData;
     },
     enabled: showSettings || onboardingVoiceStep,
     staleTime: 60_000,
   });
+  // Seed the onboarding card's gender chip from the profile-derived default
+  // (companion gender) once options load — until the user flips it themselves.
+  useEffect(() => {
+    if (onboardingVoiceStep && voiceOptions && !obGenderTouched) {
+      setObVoiceGender(voiceOptions.currentVoiceGender);
+    }
+  }, [onboardingVoiceStep, voiceOptions, obGenderTouched]);
+
+  const handleVoiceGenderSelect = async (gender: "female" | "male") => {
+    setArmedCatalogVoiceId(null);
+    const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/voice-gender`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gender }),
+    });
+    if (r.ok) queryClient.invalidateQueries({ queryKey: ["settings-voice-options"] });
+  };
 
   const stopCatalogPreview = () => {
     catalogPreviewAudioRef.current?.pause();
@@ -394,6 +419,9 @@ export default function Chat() {
     const answer = JSON.stringify({
       language: obVoiceLanguage,
       accent: obVoiceAccent,
+      // Only an actively chosen gender is saved — untouched keeps the default
+      // derived from companion gender.
+      ...(obGenderTouched ? { voiceGender: obVoiceGender } : {}),
       ...(obVoiceId ? { voiceId: obVoiceId } : {}),
     });
     submitAnswer.mutate(
@@ -2624,7 +2652,50 @@ export default function Chat() {
                 )}
               </div>
 
-              {/* ── Voice (Sprint 1.5) — English only for now ─────────────── */}
+              {/* ── Accent ────────────────────────────────────────────────── */}
+              <div className="mt-5">
+                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                  Accent
+                </p>
+                {voiceOptions ? (
+                  voiceOptions.currentLanguage === "en" ? (
+                    <AccentChips
+                      accents={voiceOptions.accents}
+                      current={voiceOptions.currentAccent}
+                      onSelect={handleAccentSelect}
+                    />
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
+                      Accent options arrive with each language.
+                    </p>
+                  )
+                ) : (
+                  <p className="text-[11px] text-muted-foreground/40">Loading…</p>
+                )}
+              </div>
+
+              {/* ── Voice gender ──────────────────────────────────────────── */}
+              <div className="mt-5">
+                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                  Voice gender
+                </p>
+                {voiceOptions ? (
+                  voiceOptions.currentLanguage === "en" ? (
+                    <VoiceGenderChips
+                      current={voiceOptions.currentVoiceGender}
+                      onSelect={handleVoiceGenderSelect}
+                    />
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
+                      Voice options arrive with each language.
+                    </p>
+                  )
+                ) : (
+                  <p className="text-[11px] text-muted-foreground/40">Loading…</p>
+                )}
+              </div>
+
+              {/* ── Voice ─────────────────────────────────────────────────── */}
               <div className="mt-5">
                 <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
                   Voice
@@ -2632,13 +2703,14 @@ export default function Chat() {
                 {voiceOptions ? (
                   voiceOptions.currentLanguage === "en" ? (
                     <>
-                      <AccentVoicePicker
-                        data={voiceOptions}
-                        selectedAccent={voiceOptions.currentAccent}
+                      <VoiceChips
+                        voices={
+                          voiceOptions.accents.find((a) => a.code === voiceOptions.currentAccent)
+                            ?.voices ?? []
+                        }
                         selectedVoiceId={voiceOptions.currentVoiceId}
                         previewingVoiceId={previewingCatalogVoiceId}
                         armedVoiceId={armedCatalogVoiceId}
-                        onAccentSelect={handleAccentSelect}
                         onVoiceTap={handleCatalogVoiceTap}
                       />
                       <p className="text-[10.5px] text-muted-foreground/45 mt-2 leading-relaxed">
@@ -3540,26 +3612,54 @@ export default function Chat() {
               </div>
 
               {obVoiceLanguage === "en" && voiceOptions && (
-                <div>
-                  <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
-                    Her voice
-                  </p>
-                  <AccentVoicePicker
-                    data={voiceOptions}
-                    selectedAccent={obVoiceAccent}
-                    selectedVoiceId={obVoiceId ?? ""}
-                    previewingVoiceId={previewingCatalogVoiceId}
-                    armedVoiceId={armedCatalogVoiceId}
-                    onAccentSelect={(a) => {
-                      setObVoiceAccent(a);
-                      setArmedCatalogVoiceId(null);
-                    }}
-                    onVoiceTap={handleObVoiceTap}
-                  />
-                  <p className="text-[10.5px] text-muted-foreground/45 mt-2 leading-relaxed">
-                    Tap to hear a voice — tap again to keep it. Or just continue; you can change this any time.
-                  </p>
-                </div>
+                <>
+                  <div>
+                    <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                      Accent
+                    </p>
+                    <AccentChips
+                      accents={voiceOptions.accents}
+                      current={obVoiceAccent}
+                      onSelect={(a) => {
+                        setObVoiceAccent(a);
+                        setArmedCatalogVoiceId(null);
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                      Voice gender
+                    </p>
+                    <VoiceGenderChips
+                      current={obVoiceGender}
+                      onSelect={(g) => {
+                        setObVoiceGender(g);
+                        setObGenderTouched(true);
+                        setObVoiceId(null);
+                        setArmedCatalogVoiceId(null);
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                      Her voice
+                    </p>
+                    <VoiceChips
+                      voices={
+                        voiceOptions.accents.find((a) => a.code === obVoiceAccent)?.voices ?? []
+                      }
+                      selectedVoiceId={obVoiceId ?? ""}
+                      previewingVoiceId={previewingCatalogVoiceId}
+                      armedVoiceId={armedCatalogVoiceId}
+                      onVoiceTap={handleObVoiceTap}
+                    />
+                    <p className="text-[10.5px] text-muted-foreground/45 mt-2 leading-relaxed">
+                      Tap to hear a voice — tap again to keep it. Or just continue; you can change this any time.
+                    </p>
+                  </div>
+                </>
               )}
 
               <div className="flex items-center gap-3 pt-1">

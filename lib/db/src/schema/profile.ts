@@ -37,6 +37,12 @@ export const profileTable = pgTable("profile", {
   // in | ca | ie. The column default doubles as the backfill: ADD COLUMN with
   // DEFAULT fills every existing row with 'us'.
   voiceAccent: text("voice_accent").default("us"),
+  // voiceGender: the VOICE's gender — female | male — a separate concept from
+  // companionGender (who she IS) that merely DEFAULTS from it. Null = never
+  // explicitly chosen: reads derive female/male from companionGender (a boot
+  // backfill in api-server stamps man→male / woman→female; nonbinary stays
+  // null and displays as female until the user picks).
+  voiceGender: text("voice_gender"),
   companionGender: text("companion_gender").notNull().default("woman"), // woman | man | nonbinary
   userGender: text("user_gender"), // man | woman | custom (legacy: other) — nullable, optional
   userGenderCustom: encryptedText("user_gender_custom", "profile.user_gender_custom"), // their own words when userGender = "custom" (e.g. "non-binary") — encrypted at rest

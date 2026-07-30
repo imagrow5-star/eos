@@ -4,6 +4,7 @@ import { logger } from "./lib/logger";
 import { initVoiceLibrary } from "./services/voiceLibrary";
 import { reconcileAgentConfig } from "./services/agentConfigGuard";
 import { runDataEncryptionMigration } from "./services/dataEncryptionMigration";
+import { backfillVoiceGender } from "./services/settings/voiceGenderBackfill";
 
 // User content is encrypted at rest — without the master key the app can
 // neither read nor write it. Refuse to boot rather than serve a broken app.
@@ -46,6 +47,13 @@ app.listen(port, (err) => {
   // plaintext through until each row is migrated.
   runDataEncryptionMigration().catch((e) =>
     logger.error({ err: e }, "Data-encryption migration failed — plaintext rows remain readable; investigate before next deploy"),
+  );
+
+  // Stamp voice_gender from companion gender for rows that predate the column
+  // (idempotent single UPDATE; reads also derive a fallback, so a failed run
+  // never changes what anyone hears).
+  backfillVoiceGender().catch((e) =>
+    logger.error({ err: e }, "voice_gender backfill failed — reads fall back to companion gender"),
   );
 
   // Initialise romantic community voices (non-blocking — failures logged and skipped)
