@@ -5,6 +5,7 @@ import { initVoiceLibrary } from "./services/voiceLibrary";
 import { reconcileAgentConfig } from "./services/agentConfigGuard";
 import { runDataEncryptionMigration } from "./services/dataEncryptionMigration";
 import { backfillVoiceGender } from "./services/settings/voiceGenderBackfill";
+import { warnIfAgentEnvIncomplete } from "./services/voiceAgentRouting";
 
 // User content is encrypted at rest — without the master key the app can
 // neither read nor write it. Refuse to boot rather than serve a broken app.
@@ -65,6 +66,10 @@ app.listen(port, (err) => {
   } else {
     logger.warn("ELEVENLABS_API_KEY not set — skipping voice library init");
   }
+
+  // Loud boot warning when only one of the two voice agents is configured —
+  // routing safe-degrades per call, but ops should know immediately.
+  warnIfAgentEnvIncomplete();
 
   // Enforce that the shared ElevenLabs agent config matches what THIS build
   // supports (July 2026 filler/skip_turn incident). No-ops outside production;
