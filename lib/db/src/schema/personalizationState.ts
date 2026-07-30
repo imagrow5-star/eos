@@ -18,6 +18,16 @@ export const personalizationStateTable = pgTable("personalization_state", {
     .notNull()
     .default(sql`'{}'::text[]`), // element-wise encrypted at rest
   goalOfferDeclinedAt: timestamp("goal_offer_declined_at"),
+  // ── Voice-minute warnings (phase 3 metering) ────────────────────────────
+  // Threshold crossings are recorded ONCE per billing month (the timestamps
+  // double as "already warned this window" markers) and the gentle note is
+  // delivered on the NEXT app open, never mid-conversation — a voice call
+  // just ended when thresholds are evaluated, so the moment is never calm.
+  voiceNotice75At: timestamp("voice_notice_75_at"),
+  voiceNotice90At: timestamp("voice_notice_90_at"),
+  // "75" | "90" — a queued note waiting for the next app open; cleared by an
+  // atomic claim when the messages list is next fetched.
+  voiceNoticePending: text("voice_notice_pending"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 

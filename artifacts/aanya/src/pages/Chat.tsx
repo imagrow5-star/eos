@@ -1122,6 +1122,43 @@ export default function Chat() {
     }).catch(() => {});
   };
 
+  // ── Voice-minute metering (phase 3) ────────────────────────────────────────
+  // The session response carries a usage-row id; the call-ended beacon posts
+  // it back on every teardown path (idempotent server-side), including page
+  // unload via navigator.sendBeacon so closed tabs still close the meter.
+  const voiceUsageIdRef = useRef<number | null>(null);
+
+  const sendCallEndedBeacon = () => {
+    const usageId = voiceUsageIdRef.current;
+    if (usageId == null) return;
+    voiceUsageIdRef.current = null;
+    const payload = JSON.stringify({ usageId });
+    try {
+      if (navigator.sendBeacon?.(
+        `${import.meta.env.BASE_URL}api/voice-agent/call-ended`,
+        new Blob([payload], { type: "application/json" }),
+      )) {
+        return;
+      }
+    } catch {
+      // fall through to fetch
+    }
+    fetch(`${import.meta.env.BASE_URL}api/voice-agent/call-ended`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      keepalive: true,
+    }).catch(() => {});
+  };
+
+  useEffect(() => {
+    const onPageHide = () => sendCallEndedBeacon();
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Session prefetcher: the /voice-agent/session bootstrap (voice token +
   // ElevenLabs signed URL) is fetched quietly on call INTENT (hover/touch on
   // the Voice button) and handed over instantly on press — see
@@ -1155,6 +1192,7 @@ export default function Chat() {
         convo.endSession().catch((err) => console.warn("[voice-call] endSession failed:", err));
         queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
       }
+      sendCallEndedBeacon(); // metering: close this call's usage row
       voiceEngineRef.current = null;
       setVoiceEngine(null);
       setRealtimeNote(null);
@@ -1196,6 +1234,7 @@ export default function Chat() {
       // draws on the same ElevenLabs quota). Roll the call UI back and leave
       // a warm in-character note in the chat instead.
       const restVoiceAndReturnToText = () => {
+        sendCallEndedBeacon(); // metering: the call attempt is over
         setContinuousVoice(false);
         continuousVoiceRef.current = false;
         realtimeGenRef.current++;
@@ -1296,6 +1335,7 @@ export default function Chat() {
           return;
         }
         const session: RealtimeSessionInfo | null = res.status === 200 ? res.body : null;
+        voiceUsageIdRef.current = typeof session?.usageId === "number" ? session.usageId : null;
         if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) return; // ended/superseded while connecting
 
         if (session?.available) {
@@ -1369,6 +1409,7 @@ export default function Chat() {
                 voiceEngineRef.current !== "realtime"
               ) return;
               realtimeGenRef.current++; // this session is over — mute any stragglers
+              sendCallEndedBeacon(); // metering: the call just ended
               realtimeConvoRef.current = null;
               captionEngineRef.current = null;
               voiceEngineRef.current = null;
@@ -1435,6 +1476,24 @@ export default function Chat() {
           return;
         }
 
+        if (session && !session.available && session.reason === "minutes_exhausted") {
+          // Phase 3 voice cap (only when VOICE_CAPS_ENFORCED is on): show the
+          // server's warm words and return to text — never a classic fallback,
+          // which would burn the same voice budget through TTS.
+          setContinuousVoice(false);
+          continuousVoiceRef.current = false;
+          voiceEngineRef.current = null;
+          setVoiceEngine(null);
+          voiceCallPhaseRef.current = "listening";
+          setVoiceCallPhase("listening");
+          setVoiceCallMessage(null);
+          setVoiceError(
+            session.message ??
+              "Her voice is resting until your minutes refresh — text never stops.",
+          );
+          return;
+        }
+
         if (
           session &&
           !session.available &&
@@ -1495,6 +1554,7 @@ export default function Chat() {
       if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) return; // ended/superseded during connect
 
       // ── 2) Classic fallback: browser SpeechRecognition + sentence TTS ───
+      sendCallEndedBeacon(); // metering: the realtime session was never used
       voiceEngineRef.current = "classic";
       setVoiceEngine("classic");
       setVoiceCallMessage(null);
@@ -1721,12 +1781,28 @@ export default function Chat() {
   const [cancelBusy, setCancelBusy] = useState(false);
   const [cancelNotice, setCancelNotice] = useState<string | null>(null);
 
+  // Voice minutes this billing month (phase 3 — always measured, even while
+  // enforcement is off). Legacy users see their real usage with "unlimited".
+  type BillingUsage = {
+    usedMinutes: number;
+    capMinutes: number | null;
+    unlimited: boolean;
+    resetAt: string | null;
+  };
+  const [billingUsage, setBillingUsage] = useState<BillingUsage | null>(null);
+
   const refreshBillingMe = async () => {
     try {
       const res = await apiFetch(`${import.meta.env.BASE_URL}api/billing/me`);
       if (res.ok) setBillingMe((await res.json()) as BillingMe);
     } catch {
       // leave as-is — the section renders nothing without data
+    }
+    try {
+      const res = await apiFetch(`${import.meta.env.BASE_URL}api/billing/usage`);
+      if (res.ok) setBillingUsage((await res.json()) as BillingUsage);
+    } catch {
+      // non-fatal — the minutes line simply doesn't render
     }
   };
 
@@ -1738,6 +1814,16 @@ export default function Chat() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showSettings]);
+
+  const voiceMinutesLine = billingUsage
+    ? `${billingUsage.usedMinutes.toLocaleString()} of ${
+        billingUsage.unlimited ? "unlimited" : billingUsage.capMinutes?.toLocaleString()
+      } voice minutes used this month${
+        !billingUsage.unlimited && billingUsage.resetAt
+          ? ` · resets ${new Date(billingUsage.resetAt).toLocaleDateString()}`
+          : ""
+      }.`
+    : null;
 
   const handleCancelSubscription = async () => {
     setCancelBusy(true);
@@ -2455,9 +2541,16 @@ export default function Chat() {
                 </p>
                 {billingMe.kind === "legacy_full_access" ? (
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-[13px] text-foreground/75">
-                      Full access — you were here before memberships.
-                    </p>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] text-foreground/75">
+                        Full access — you were here before memberships.
+                      </p>
+                      {voiceMinutesLine && (
+                        <p className="text-[10.5px] text-muted-foreground/45 mt-1 leading-relaxed">
+                          {voiceMinutesLine}
+                        </p>
+                      )}
+                    </div>
                     <a
                       href={`${import.meta.env.BASE_URL}pricing`}
                       className="shrink-0 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors"
@@ -2483,6 +2576,11 @@ export default function Chat() {
                                 : ""}{" "}
                           {billingMe.voiceMinutesPerMonth.toLocaleString()} voice minutes / month.
                         </p>
+                        {voiceMinutesLine && (
+                          <p className="text-[10.5px] text-muted-foreground/45 mt-0.5 leading-relaxed">
+                            {voiceMinutesLine}
+                          </p>
+                        )}
                       </div>
                       <a
                         href={`${import.meta.env.BASE_URL}pricing`}

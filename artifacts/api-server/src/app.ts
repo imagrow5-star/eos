@@ -136,6 +136,9 @@ pool
       recent_phrases text[] NOT NULL DEFAULT '{}',
       updated_at timestamp NOT NULL DEFAULT now()
     );
+    ALTER TABLE personalization_state ADD COLUMN IF NOT EXISTS voice_notice_75_at timestamp;
+    ALTER TABLE personalization_state ADD COLUMN IF NOT EXISTS voice_notice_90_at timestamp;
+    ALTER TABLE personalization_state ADD COLUMN IF NOT EXISTS voice_notice_pending text;
   `)
   .catch((err) => logger.error({ err }, "Failed to ensure personalization_state table"));
 
@@ -248,6 +251,21 @@ async function runTokenCleanup() {
 // Run once at startup, then every 24 hours
 runTokenCleanup();
 setInterval(runTokenCleanup, 24 * 60 * 60 * 1000);
+
+// ─── Abandoned voice-call sweeper (phase 3 metering) ─────────────────────────
+// Closes voice_usage rows still open past the per-call maximum (abandoned
+// tabs, lost beacons) so no call can meter forever. Duration comes from the
+// last recorded activity, never the sweep age. Never touches a live call.
+import("./services/voiceMetering.js")
+  .then(({ sweepAbandonedVoiceCalls }) => {
+    const run = () =>
+      sweepAbandonedVoiceCalls().catch((err) =>
+        logger.error({ err }, "voice-metering: sweeper run failed"),
+      );
+    run();
+    setInterval(run, 10 * 60 * 1000);
+  })
+  .catch((err) => logger.error({ err }, "voice-metering: sweeper failed to start"));
 
 const app: Express = express();
 

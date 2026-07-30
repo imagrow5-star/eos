@@ -70,6 +70,28 @@ router.get("/billing/me", async (req, res): Promise<void> => {
   });
 });
 
+// ── GET /billing/usage — voice minutes this billing month (always on) ────────
+// Settings shows used/total + reset date. Legacy users see their real usage
+// with an unlimited total. `enforced` tells the UI whether caps are live.
+router.get("/billing/usage", async (req, res): Promise<void> => {
+  const { getMonthlyVoiceUsage, capMinutesFor, isVoiceCapsEnforced } = await import(
+    "../services/voiceMetering.js"
+  );
+  const [tier, usage] = await Promise.all([
+    getUserTier(req.userId),
+    getMonthlyVoiceUsage(req.userId),
+  ]);
+  const capMinutes = capMinutesFor(tier);
+  res.json({
+    usedSeconds: usage.usedSeconds,
+    usedMinutes: Math.floor(usage.usedSeconds / 60),
+    capMinutes, // null = unlimited (legacy full access)
+    unlimited: capMinutes === null,
+    resetAt: usage.windowEnd,
+    enforced: isVoiceCapsEnforced(),
+  });
+});
+
 router.post("/billing/cancel", async (req, res): Promise<void> => {
   const userId = req.userId; // own subscription only — no ids accepted from the body
   const [sub] = await db

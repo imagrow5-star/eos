@@ -30,6 +30,10 @@ export type RealtimeSessionInfo = {
   userToken?: string;
   /** "How Eos speaks" preference — maps to TTS delivery overrides (voiceOverrides.ts). */
   tone?: VoiceTone;
+  /** Metering row id (phase 3) — the call-ended beacon posts this back. */
+  usageId?: number;
+  /** Warm server-written copy for reasons like minutes_exhausted. */
+  message?: string;
   /**
    * Instant opening line, spoken by ElevenLabs the moment the call connects
    * via the agent.firstMessage override — no LLM round trip. Built server-side

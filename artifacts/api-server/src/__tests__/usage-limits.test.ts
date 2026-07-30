@@ -66,6 +66,7 @@ async function cleanupUser(email: string): Promise<void> {
     DELETE FROM user_sessions WHERE sess::jsonb->>'userId' = '${uid}';
     DELETE FROM email_verification_tokens WHERE user_id = ${uid};
     DELETE FROM messages WHERE user_id = ${uid};
+    DELETE FROM voice_usage WHERE user_id = ${uid};
     DELETE FROM profile  WHERE user_id = ${uid};
     DELETE FROM users    WHERE id      = ${uid};
     COMMIT;

@@ -4,6 +4,12 @@ import { getOrCreateProfileForUser } from "./profile.js";
 import { isVoiceCallEnabled } from "../lib/featureFlags.js";
 import { voiceSessionUsageLimits } from "../middleware/usageLimits.js";
 import { buildVoiceFirstMessage } from "../services/voiceGreeting.js";
+import {
+  startVoiceUsage,
+  closeVoiceUsage,
+  evaluateVoiceGate,
+} from "../services/voiceMetering.js";
+import { getUserTier } from "../services/tiers.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -31,6 +37,31 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
     res.json({ available: false, reason: "not_configured" });
     return;
   }
+
+  // ── Voice-minute gate (phase 3 — DORMANT until VOICE_CAPS_ENFORCED=true) ──
+  // Checked ONLY at call start: an in-progress call is never ended by the
+  // meter. Crisis contexts bypass the gate entirely (never paywall a crisis).
+  const entitlements = req.entitlements ?? (await getUserTier(req.userId));
+  const gate = await evaluateVoiceGate(req.userId, entitlements);
+  if (gate.blocked) {
+    logger.info(
+      { userId: req.userId, usedMinutes: gate.usedMinutes, capMinutes: gate.capMinutes },
+      "voice-metering: call start blocked at cap",
+    );
+    res.json({
+      available: false,
+      reason: "minutes_exhausted",
+      message: gate.message,
+      resetAt: gate.resetAt,
+      usedMinutes: gate.usedMinutes,
+      capMinutes: gate.capMinutes,
+    });
+    return;
+  }
+
+  // Metering row (ALWAYS on, flag or not): opened now, closed by the client's
+  // call-ended beacon or the abandoned-call sweeper.
+  const usageId = await startVoiceUsage(req.userId);
 
   const userToken = mintVoiceToken(req.userId);
   const apiKey = process.env.ELEVENLABS_API_KEY;
@@ -70,7 +101,7 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
     // No API key to sign with — only a PUBLIC agent can possibly work. Let the
     // browser try; if the agent is private the client will surface the drop.
     logger.warn("ELEVENLABS_API_KEY not set — attempting public-agent voice call");
-    res.json({ available: true, mode: "public", agentId, userToken, tone, firstMessage });
+    res.json({ available: true, mode: "public", agentId, userToken, tone, firstMessage, usageId });
     return;
   }
 
@@ -89,6 +120,7 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
           userToken,
           tone,
           firstMessage,
+          usageId,
         });
         return;
       }
@@ -148,6 +180,21 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
       detail: err instanceof Error ? err.message : String(err),
     });
   }
+});
+
+// ─── Call-ended beacon (phase 3 metering) ────────────────────────────────────
+// The call UI teardown (and page unload, via navigator.sendBeacon) posts the
+// usageId it got from /voice-agent/session. Closing is idempotent — a repeat
+// beacon, or a beacon racing the abandoned-call sweeper, changes nothing —
+// and scoped to the caller's own rows.
+router.post("/voice-agent/call-ended", async (req, res): Promise<void> => {
+  const usageId = Number((req.body ?? {}).usageId);
+  if (!Number.isInteger(usageId) || usageId <= 0) {
+    res.status(400).json({ error: "usageId required" });
+    return;
+  }
+  const result = await closeVoiceUsage(usageId, req.userId, "client_report");
+  res.json({ ok: true, durationSeconds: result.durationSeconds });
 });
 
 // ─── Browser-side failure reporting ──────────────────────────────────────────

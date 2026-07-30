@@ -13,6 +13,7 @@ import { calculateStage } from "../services/stage.js";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { verifyVoiceToken } from "../lib/voiceToken.js";
 import { voiceTurnUsageLimits } from "../middleware/usageLimits.js";
+import { noteVoiceActivity } from "../services/voiceMetering.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -297,6 +298,11 @@ router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (re
     return;
   }
   const { userId, issuedAt } = auth;
+
+  // Metering (phase 3): every spoken turn advances the open usage row's
+  // provisional end, so a lost call-ended beacon costs the user nothing
+  // beyond their last turn. Fire-and-forget — never delays the reply.
+  noteVoiceActivity(userId).catch(() => {});
 
   const model = typeof body.model === "string" && body.model ? body.model : "eos-claude";
   const wantStream = body.stream !== false;

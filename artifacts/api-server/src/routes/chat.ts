@@ -34,6 +34,17 @@ function firstIssueMessage(error: { issues: Array<{ message: string }> }): strin
 
 router.get("/chat/messages", async (req, res): Promise<void> => {
   const userId = req.userId;
+
+  // Queued voice-minutes note (phase 3): delivered here — i.e. on app open,
+  // when the message list loads fresh — never injected mid-conversation.
+  // Atomic claim inside makes it exactly-once; failures never block chat.
+  try {
+    const { deliverPendingVoiceNotice } = await import("../services/voiceMetering.js");
+    await deliverPendingVoiceNotice(userId);
+  } catch (err) {
+    logger.warn({ err, userId }, "voice-metering: pending notice delivery failed (non-fatal)");
+  }
+
   const messages = await db
     .select()
     .from(messagesTable)
