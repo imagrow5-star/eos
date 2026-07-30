@@ -87,6 +87,11 @@ export interface Message {
   content: string;
   createdAt: string;
   isMorningNote: boolean;
+  /**
+   * Crisis floor: true when the user dismissed the helpline card appended to
+   * this assistant message. (Kept in sync by hand with openapi.yaml.)
+   */
+  crisisBlockDismissed?: boolean;
 }
 
 export interface MessageInput {
@@ -105,6 +110,13 @@ export interface ChatReply {
    * treating it as a normal reply. (Kept in sync by hand with openapi.yaml.)
    */
   degraded?: boolean;
+  /**
+   * Crisis floor: present when the user's message matched the crisis detector —
+   * the localized helpline block appended to the assistant message, returned
+   * separately so clients render a distinct, dismissible card. (Kept in sync
+   * by hand with openapi.yaml.)
+   */
+  crisisHelplineBlock?: string;
 }
 
 export interface MemoryFact {

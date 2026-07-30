@@ -67,8 +67,9 @@ function buildHtmlReport(data: {
   personalizationState: ExportRow | null;
   weeklyChapters: ExportRow[];
   sealedNotes: ExportRow[];
+  crisisEvents: ExportRow[];
 }): string {
-  const { exportedAt, range, profile, messages, memoryFacts, wins, habits, habitCompletions, goals, moodScores, commitments, reminders, personalitySignals, personalizationState, weeklyChapters, sealedNotes } = data;
+  const { exportedAt, range, profile, messages, memoryFacts, wins, habits, habitCompletions, goals, moodScores, commitments, reminders, personalitySignals, personalizationState, weeklyChapters, sealedNotes, crisisEvents } = data;
   const companionName = esc(profile?.companion_name ?? "Eos");
   const userPath = pathLabel(profile?.user_path as string);
 
@@ -191,6 +192,12 @@ function buildHtmlReport(data: {
           <span class="ts">written ${fmtDate(n.created_at as string)}</span>
         </div>`)
         .join("\n");
+
+  // ── Crisis support moments ────────────────────────────────────────────────────
+  // Timestamps + which helplines were shown — never message content.
+  const crisisEventsHtml = crisisEvents.length === 0
+    ? `<p class="empty">None.</p>`
+    : `<ul>${crisisEvents.map((e) => `<li><span class="win-title">Support resources shown</span> <span class="ts">${fmtDateTime(e.detected_at as string)} · ${esc(String(e.country_served ?? ""))}</span></li>`).join("")}</ul>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -442,6 +449,11 @@ function buildHtmlReport(data: {
   </div>
 
   <div class="section">
+    <div class="section-title">Moments support resources were shown (${crisisEvents.length})</div>
+    ${crisisEventsHtml}
+  </div>
+
+  <div class="section">
     <div class="section-title">Personalization state</div>
     ${personalizationState
       ? `<p>${esc(JSON.stringify(personalizationState))}</p>`
@@ -520,6 +532,7 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
   const pushSubsRange = buildRangeClause("created_at", false, range, 2);
   const pushEventsRange = buildRangeClause("sent_at", false, range, 2);
   const voiceUsageRange = buildRangeClause("call_started_at", false, range, 2);
+  const crisisEventsRange = buildRangeClause("detected_at", false, range, 2);
 
   const [
     messagesResult,
@@ -543,6 +556,7 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
     pushEventsResult,
     subscriptionsResult,
     voiceUsageResult,
+    crisisEventsResult,
   ] = await Promise.all([
     pool.query(
       `SELECT role, content, is_morning_note, created_at FROM messages WHERE user_id = $1${messagesRange.clause} ORDER BY created_at ASC`,
@@ -642,6 +656,14 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
        FROM voice_usage WHERE user_id = $1${voiceUsageRange.clause} ORDER BY call_started_at ASC`,
       [userId, ...voiceUsageRange.params],
     ),
+    // Crisis floor event log — timestamps, pattern names, and which country's
+    // helplines were served. Deliberately NO message content (the message
+    // itself lives, encrypted, in the messages export above).
+    pool.query(
+      `SELECT detected_at, pattern_matched, country_served, source, block_dismissed, dismissed_at
+       FROM crisis_events WHERE user_id = $1${crisisEventsRange.clause} ORDER BY detected_at ASC`,
+      [userId, ...crisisEventsRange.params],
+    ),
   ]);
 
   // ── Decrypt for export ─────────────────────────────────────────────────────
@@ -739,6 +761,7 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
     pushEvents: pushEventsResult.rows,
     subscriptions: subscriptionsResult.rows,
     voiceUsage: voiceUsageResult.rows,
+    crisisEvents: crisisEventsResult.rows,
   };
 }
 
@@ -862,6 +885,7 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
       pushEventResult,
       subscriptionResult,
       voiceUsageCountResult,
+      crisisEventCountResult,
     ] = await Promise.all([
       pool.query(
         `SELECT COUNT(*) AS count,
@@ -944,6 +968,10 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
         `SELECT COUNT(*) AS count FROM voice_usage WHERE user_id = $1`,
         [userId],
       ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM crisis_events WHERE user_id = $1`,
+        [userId],
+      ),
     ]);
 
     res.json({
@@ -966,6 +994,7 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
       pushEventCount: parseInt(pushEventResult.rows[0].count, 10),
       subscriptionCount: parseInt(subscriptionResult.rows[0].count, 10),
       voiceUsageCount: parseInt(voiceUsageCountResult.rows[0].count, 10),
+      crisisEventCount: parseInt(crisisEventCountResult.rows[0].count, 10),
       firstMessageAt: msgResult.rows[0].first_at ?? null,
       lastMessageAt:  msgResult.rows[0].last_at  ?? null,
     });

@@ -46,6 +46,7 @@ async function cleanupUser(email: string): Promise<void> {
     DELETE FROM user_sessions WHERE sess::jsonb->>'userId' = '${uid}';
     DELETE FROM password_reset_tokens WHERE user_id = ${uid};
     DELETE FROM email_verification_tokens WHERE user_id = ${uid};
+    DELETE FROM crisis_events     WHERE user_id = ${uid};
     DELETE FROM messages          WHERE user_id = ${uid};
     DELETE FROM memory_facts      WHERE user_id = ${uid};
     DELETE FROM personality_signals WHERE user_id = ${uid};
@@ -106,9 +107,16 @@ describe("DELETE /api/auth/account", () => {
     }
 
     // messages
-    await pool.query(
-      `INSERT INTO messages (user_id, role, content) VALUES ($1, 'user', 'hello')`,
+    const msgRes = await pool.query<{ id: number }>(
+      `INSERT INTO messages (user_id, role, content) VALUES ($1, 'user', 'hello') RETURNING id`,
       [userId],
+    );
+
+    // crisis_events (crisis floor log — FK to users and messages)
+    await pool.query(
+      `INSERT INTO crisis_events (user_id, message_id, pattern_matched, country_served)
+       VALUES ($1, $2, 'explicit_suicidal_ideation', 'US')`,
+      [userId, msgRes.rows[0]!.id],
     );
 
     // memory_facts
@@ -212,6 +220,9 @@ describe("DELETE /api/auth/account", () => {
 
     // messages
     expect(await rowCount("messages", "user_id = $1", [userId])).toBe(0);
+
+    // crisis_events
+    expect(await rowCount("crisis_events", "user_id = $1", [userId])).toBe(0);
 
     // memory_facts
     expect(await rowCount("memory_facts", "user_id = $1", [userId])).toBe(0);
@@ -317,9 +328,15 @@ describe("DELETE /api/auth/account", () => {
         );
       }
 
-      await pool.query(
-        `INSERT INTO messages (user_id, role, content) VALUES ($1, 'user', $2)`,
+      const msgRow = await pool.query<{ id: number }>(
+        `INSERT INTO messages (user_id, role, content) VALUES ($1, 'user', $2) RETURNING id`,
         [uid, `hello from ${tag}`],
+      );
+
+      await pool.query(
+        `INSERT INTO crisis_events (user_id, message_id, pattern_matched, country_served)
+         VALUES ($1, $2, 'explicit_suicidal_ideation', 'US')`,
+        [uid, msgRow.rows[0]!.id],
       );
 
       await pool.query(
@@ -482,6 +499,7 @@ describe("DELETE /api/auth/account", () => {
       "push_events",
       "subscriptions", // billing foundation (phase 1) — Paddle cancel API call TODO lives in the handler
       "voice_usage",   // billing foundation (phase 1) — per-call voice metering records
+      "crisis_events", // crisis floor — detection log (pattern names + country, never content)
     ]);
 
     // ── INDIRECT tables: store the user's id WITHOUT a `user_id` column, so the

@@ -1106,6 +1106,7 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
     await client.query(`DELETE FROM user_sessions WHERE sess::jsonb->>'userId' = $1::text`, [String(userId)]);
     await client.query(`DELETE FROM password_reset_tokens WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM email_verification_tokens WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM crisis_events     WHERE user_id = $1`, [userId]); // before messages (message_id FK)
     await client.query(`DELETE FROM messages          WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM memory_facts      WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM personality_signals WHERE user_id = $1`, [userId]);

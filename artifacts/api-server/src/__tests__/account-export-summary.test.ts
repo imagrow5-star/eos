@@ -71,6 +71,7 @@ interface SummaryBody {
   pushEventCount: number;
   subscriptionCount: number;
   voiceUsageCount: number;
+  crisisEventCount: number;
   firstMessageAt: string | null;
   lastMessageAt: string | null;
 }
@@ -373,6 +374,8 @@ describe("GET /api/account/export/summary", () => {
       // Billing foundation (phase 1) — empty until billing launches.
       ["subscriptionCount", "subscriptions"],
       ["voiceUsageCount", "voiceUsage"],
+      // Crisis floor — detection log (pattern names + country, never content).
+      ["crisisEventCount", "crisisEvents"],
     ];
 
     for (const [countKey, arrayKey] of pairs) {

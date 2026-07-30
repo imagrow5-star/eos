@@ -12,4 +12,6 @@ export interface ChatReply {
   assistantMessage: Message;
   /** Whether memory extraction ran this cycle */
   memoryExtracted: boolean;
+  /** Crisis floor: localized helpline block appended to the assistant message */
+  crisisHelplineBlock?: string;
 }

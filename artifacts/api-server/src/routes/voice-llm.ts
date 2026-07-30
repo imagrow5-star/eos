@@ -14,6 +14,10 @@ import { getOrCreateProfileForUser } from "./profile.js";
 import { verifyVoiceToken } from "../lib/voiceToken.js";
 import { voiceTurnUsageLimits } from "../middleware/usageLimits.js";
 import { logger } from "../lib/logger.js";
+import { detectCrisis } from "../services/crisis/detector.js";
+import { CRISIS_REINFORCEMENT_BLOCK_VOICE } from "../services/crisis/reinforcement.js";
+import { resolveHelplines } from "../services/crisis/helplines.js";
+import { recordVoiceCrisisEvent } from "../services/crisis/events.js";
 
 const router: IRouter = Router();
 
@@ -329,6 +333,22 @@ router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (re
 
     // ── Same brain as text chat: persona + this user's real memory ──
     const profile = await getOrCreateProfileForUser(userId);
+
+    // ── Crisis floor (voice) ──
+    // Deterministic detection on the freshly spoken turn. The spoken reply
+    // deliberately carries NO helpline text (numbers read aloud interrupt the
+    // moment and sound clinical) — instead an event row is written and the
+    // voice-call UI polls /voice-agent/crisis-status to overlay the helpline
+    // card on-screen. The reinforcement block joins the prompt for THIS TURN
+    // only (one uncached turn; the frozen call prefix resumes next turn).
+    const crisis = synthetic ? { matched: false as const } : detectCrisis(freshUserContent);
+    if (crisis.matched) {
+      void recordVoiceCrisisEvent({
+        userId,
+        patternMatched: crisis.pattern!,
+        countryServed: resolveHelplines(profile.country).countryServed,
+      }).catch((err) => logger.error({ err, userId }, "crisis floor: recording voice event failed"));
+    }
     const [stage, preCallRows] = await Promise.all([
       calculateStage(profile),
       db
@@ -415,7 +435,12 @@ router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (re
         // Listening rules only when skip_turn actually arrived with the
         // request (allowlist admits nothing else, so length>0 ⇔ skip_turn).
         // Constant within a call → cached prompt prefix stays byte-identical.
-        systemExtra: buildVoiceCallAddendum(tools.length > 0) + toneExtra,
+        // Crisis reinforcement is the one deliberate exception: a crisis turn
+        // pays one uncached prompt; the cached prefix resumes next turn.
+        systemExtra:
+          buildVoiceCallAddendum(tools.length > 0) +
+          toneExtra +
+          (crisis.matched ? `\n${CRISIS_REINFORCEMENT_BLOCK_VOICE}` : ""),
         callType: "voice",
         cacheConversation: true,
         model: resolveVoiceLlmModel(),

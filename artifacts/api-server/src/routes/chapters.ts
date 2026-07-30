@@ -12,7 +12,7 @@ import {
   profileTable,
 } from "@workspace/db";
 import { createGoalWithTasks } from "../services/ai.js";
-import { isCrisisText } from "../services/chapters/crisis.js";
+import { isCrisisText } from "../services/crisis/detector.js";
 import { crisisCareMessage, NOTE_MAX_LENGTH } from "../services/chapters/sealedNotes.js";
 import { getCrisisLine } from "../services/systemPrompt.js";
 import {

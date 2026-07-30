@@ -23,6 +23,31 @@ import { calculateStage, todayInTimezone, getTimeContext, describeCommitmentTimi
 import { getOrCreateProfileForUser } from "./profile.js";
 import { chatUsageLimits } from "../middleware/usageLimits.js";
 import { logger } from "../lib/logger.js";
+import { detectCrisis } from "../services/crisis/detector.js";
+import { CRISIS_REINFORCEMENT_BLOCK } from "../services/crisis/reinforcement.js";
+import { resolveHelplines, buildHelplineBlockText } from "../services/crisis/helplines.js";
+import { recordChatCrisisEvent, dismissChatCrisisBlock } from "../services/crisis/events.js";
+
+// ─── Crisis floor (chat path) ────────────────────────────────────────────────
+// Deterministic, code-level guarantee that a crisis message gets helpline
+// resources with the reply — independent of the LLM honoring the prompt-level
+// safety instruction. Runs on the user's text BEFORE the reply is generated;
+// on a match the reinforcement block joins the system prompt for THIS TURN
+// ONLY and the localized helpline block is appended AFTER generation, so it
+// arrives even if the model ignores every instruction (or is down entirely).
+
+/** systemExtra for a chat turn: voice-fallback brevity + per-turn crisis
+ *  reinforcement. Exported for tests (prompt presence/absence). */
+export function composeChatSystemExtra(opts: {
+  voiceMode: boolean;
+  crisisDetected: boolean;
+}): string | undefined {
+  const parts = [
+    opts.voiceMode ? buildVoiceCallAddendum(false) : "",
+    opts.crisisDetected ? CRISIS_REINFORCEMENT_BLOCK : "",
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join("\n") : undefined;
+}
 
 const router: IRouter = Router();
 
@@ -137,6 +162,10 @@ router.post("/chat/stream", ...chatUsageLimits, async (req, res): Promise<void> 
   try {
     const profile = await getOrCreateProfileForUser(userId);
 
+    // Crisis floor: detect BEFORE generation. The user's message is stored
+    // normally (encrypted) either way — detection only shapes this reply.
+    const crisis = detectCrisis(content);
+
     // Insert the user message and compute stage in parallel — system prompt
     // doesn't depend on the insert, so these two round-trips overlap.
     const [stage] = await Promise.all([
@@ -169,22 +198,43 @@ router.post("/chat/stream", ...chatUsageLimits, async (req, res): Promise<void> 
       {
         // Classic voice engine has no ElevenLabs system tools — never include
         // the listening/skip_turn rules here.
-        systemExtra: voiceMode ? buildVoiceCallAddendum(false) : undefined,
+        systemExtra: composeChatSystemExtra({ voiceMode, crisisDetected: crisis.matched }),
         callType: voiceMode ? "voice_fallback" : "chat",
       },
     );
     const aiContent = reply.text;
 
+    // Crisis floor: append the localized helpline block AFTER generation —
+    // deterministic, so it lands even on a degraded (provider-down) reply.
+    // The block is part of the persisted message (history + exports show it);
+    // the `done` event also carries it separately so the client renders it as
+    // a distinct, dismissible card rather than Eos's own words.
+    const resolved = crisis.matched ? resolveHelplines(profile.country) : null;
+    const helplineBlockText = resolved ? buildHelplineBlockText(resolved.lines) : null;
+    const persistedContent = helplineBlockText
+      ? `${aiContent}\n\n${helplineBlockText}`
+      : aiContent;
+
     // Persist assistant message (the honest degraded line is persisted too —
     // it IS what Eos said; the flag below is what tells the client apart).
     const [assistantMsg] = await db
       .insert(messagesTable)
-      .values({ userId, role: "assistant", content: aiContent, isMorningNote: false })
+      .values({ userId, role: "assistant", content: persistedContent, isMorningNote: false })
       .returning();
+
+    if (crisis.matched && resolved && assistantMsg) {
+      await recordChatCrisisEvent({
+        userId,
+        messageId: assistantMsg.id,
+        patternMatched: crisis.pattern!,
+        countryServed: resolved.countryServed,
+      }).catch((err) => logger.error({ err, userId }, "crisis floor: recording chat event failed"));
+    }
 
     sendEvent("done", {
       messageId: assistantMsg!.id,
-      content: aiContent,
+      content: persistedContent,
+      ...(helplineBlockText ? { crisisHelplineBlock: helplineBlockText } : {}),
       ...(reply.degraded ? { degraded: true } : {}),
     });
     res.end();
@@ -226,6 +276,9 @@ router.post("/chat/send", ...chatUsageLimits, async (req, res): Promise<void> =>
   const { content } = parsed.data;
   const profile = await getOrCreateProfileForUser(userId);
 
+  // Crisis floor: detect BEFORE generation (same guarantee as /chat/stream).
+  const crisis = detectCrisis(content);
+
   const [userMsg] = await db
     .insert(messagesTable)
     .values({ userId, role: "user", content, isMorningNote: false })
@@ -250,7 +303,9 @@ router.post("/chat/send", ...chatUsageLimits, async (req, res): Promise<void> =>
     .limit(21);
 
   const contextMessages = recentMessages.reverse().slice(0, -1);
-  const reply = await getCompanionReply(systemPrompt, contextMessages, content, stage);
+  const reply = await getCompanionReply(systemPrompt, contextMessages, content, stage, {
+    systemExtra: composeChatSystemExtra({ voiceMode: false, crisisDetected: crisis.matched }),
+  });
   const aiContent = reply.text;
 
   // Anti-repetition + extraction only for REAL replies — a degraded fallback
@@ -261,10 +316,25 @@ router.post("/chat/send", ...chatUsageLimits, async (req, res): Promise<void> =>
     );
   }
 
+  // Crisis floor: deterministic helpline append after generation (works even
+  // on a degraded reply — that is the point of a floor).
+  const resolved = crisis.matched ? resolveHelplines(profile.country) : null;
+  const helplineBlockText = resolved ? buildHelplineBlockText(resolved.lines) : null;
+  const persistedContent = helplineBlockText ? `${aiContent}\n\n${helplineBlockText}` : aiContent;
+
   const [assistantMsg] = await db
     .insert(messagesTable)
-    .values({ userId, role: "assistant", content: aiContent, isMorningNote: false })
+    .values({ userId, role: "assistant", content: persistedContent, isMorningNote: false })
     .returning();
+
+  if (crisis.matched && resolved && assistantMsg) {
+    await recordChatCrisisEvent({
+      userId,
+      messageId: assistantMsg.id,
+      patternMatched: crisis.pattern!,
+      countryServed: resolved.countryServed,
+    }).catch((err) => logger.error({ err, userId }, "crisis floor: recording chat event failed"));
+  }
 
   // Shared background extraction dispatcher — the same path stream + voice
   // use, so commitments/habits/goals/memory behave identically on every chat
@@ -285,9 +355,31 @@ router.post("/chat/send", ...chatUsageLimits, async (req, res): Promise<void> =>
       userMessage: userMsg,
       assistantMessage: assistantMsg,
       memoryExtracted,
+      ...(helplineBlockText ? { crisisHelplineBlock: helplineBlockText } : {}),
       ...(reply.degraded ? { degraded: true } : {}),
     }),
   );
+});
+
+// ─── Crisis helpline card dismissal ──────────────────────────────────────────
+// Dismisses the helpline card on ONE assistant message (the card stays part of
+// the stored message text; only its rendering is hushed). Per-message: the
+// card reappears on every future crisis turn. Repeated dismissals inside the
+// rolling review window log a supportive review flag server-side.
+
+router.post("/chat/messages/:id/crisis-dismiss", async (req, res): Promise<void> => {
+  const userId = req.userId;
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "invalid id" });
+    return;
+  }
+  const result = await dismissChatCrisisBlock(userId, id);
+  if (!result) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  res.json({ ok: true, reviewFlagged: result.reviewFlagged });
 });
 
 // ─── Contextual greeting (time-aware, slot-based proactive care) ─────────────

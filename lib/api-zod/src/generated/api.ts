@@ -122,7 +122,9 @@ export const GetMessagesResponseItem = zod.object({
   "role": zod.string().describe('user | assistant'),
   "content": zod.string(),
   "createdAt": zod.coerce.date(),
-  "isMorningNote": zod.boolean()
+  "isMorningNote": zod.boolean(),
+  // kept in sync by hand with Message in lib/api-spec/openapi.yaml
+  "crisisBlockDismissed": zod.boolean().optional().describe('Crisis floor: user dismissed the helpline card on this assistant message')
 })
 export const GetMessagesResponse = zod.array(GetMessagesResponseItem)
 
@@ -146,18 +148,21 @@ export const SendMessageResponse = zod.object({
   "role": zod.string().describe('user | assistant'),
   "content": zod.string(),
   "createdAt": zod.coerce.date(),
-  "isMorningNote": zod.boolean()
+  "isMorningNote": zod.boolean(),
+  "crisisBlockDismissed": zod.boolean().optional()
 }),
   "assistantMessage": zod.object({
   "id": zod.number(),
   "role": zod.string().describe('user | assistant'),
   "content": zod.string(),
   "createdAt": zod.coerce.date(),
-  "isMorningNote": zod.boolean()
+  "isMorningNote": zod.boolean(),
+  "crisisBlockDismissed": zod.boolean().optional()
 }),
   "memoryExtracted": zod.boolean().describe('Whether memory extraction ran this cycle'),
   // kept in sync by hand with ChatReply in lib/api-spec/openapi.yaml
-  "degraded": zod.boolean().optional().describe('True when the AI provider was unreachable and the assistant message is the honest fallback line')
+  "degraded": zod.boolean().optional().describe('True when the AI provider was unreachable and the assistant message is the honest fallback line'),
+  "crisisHelplineBlock": zod.string().optional().describe('Crisis floor: localized helpline block appended to the assistant message — returned separately so clients render a distinct, dismissible card')
 })
 
 

@@ -19,7 +19,7 @@
 import { eq } from "drizzle-orm";
 import { db, storyThreadsTable, type StoryRetelling, type StoryThread } from "@workspace/db";
 import { logger } from "../../lib/logger.js";
-import { isCrisisText } from "./crisis.js";
+import { isCrisisText } from "../crisis/detector.js";
 import { validateExcerpt, type QuoteSource } from "./quotes.js";
 
 export const SAME_CONFIDENCE_MIN = 0.7; // per-week confidence floor for "same framing"

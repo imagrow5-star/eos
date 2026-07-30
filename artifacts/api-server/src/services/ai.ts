@@ -364,6 +364,7 @@ export async function getCompanionReply(
   contextMessages: { role: string; content: string }[],
   userContent: string,
   stage: number,
+  opts?: Pick<CompanionCallOptions, "systemExtra">,
 ): Promise<CompanionReplyResult> {
   const anthropic = getAnthropic();
 
@@ -388,7 +389,7 @@ export async function getCompanionReply(
       system: [
         {
           type: "text",
-          text: system.stable,
+          text: opts?.systemExtra ? `${system.stable}\n\n${opts.systemExtra}` : system.stable,
           cache_control: { type: "ephemeral" },
         },
         ...(system.context ? [{ type: "text", text: system.context }] : []),
