@@ -17,27 +17,36 @@ import {
   voicesFor,
   findCatalogVoice,
   isVoiceAllowed,
+  resolveVoiceGender,
 } from "../services/settings/voiceCatalog.js";
 import { ttsUsageLimits } from "../middleware/usageLimits.js";
 
 const router: IRouter = Router();
 
 // ─── GET /settings/voice-options ─────────────────────────────────────────────
-// Everything the language + voice pickers need in one fetch, already filtered
-// to the user's companion gender. Non-English languages return no accents or
-// voices yet (Sprint 1.6).
+// Everything the four pickers need in one fetch, with the voice lists
+// filtered by the user's voice gender (explicit voice_gender when set; legacy
+// fallback derives it from companion gender). `?gender=female|male` overrides
+// the filter for flows where the selection is still local — the onboarding
+// card flips the gender chip before anything is saved. Non-English languages
+// return no accents or voices yet (Sprint 1.6).
 
 router.get("/settings/voice-options", async (req, res): Promise<void> => {
   const profile = await getOrCreateProfileForUser(req.userId);
   const language = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
   const accent = (profile as { voiceAccent?: string | null }).voiceAccent ?? "us";
   const companionGender = (profile as { companionGender?: string }).companionGender ?? "woman";
+  const resolved = resolveVoiceGender(profile as { voiceGender?: string | null; companionGender?: string | null });
+
+  const override = typeof req.query.gender === "string" ? req.query.gender : "";
+  const filterGender =
+    override === "female" || override === "male" ? override : resolved.gender;
 
   const accents =
     language === "en"
       ? ENGLISH_ACCENTS.map((a) => ({
           ...a,
-          voices: voicesFor("en", a.code, companionGender).map((v) => ({
+          voices: voicesFor("en", a.code, filterGender).map((v) => ({
             voiceId: v.voiceId,
             displayName: v.displayName,
             gender: v.gender,
@@ -51,8 +60,31 @@ router.get("/settings/voice-options", async (req, res): Promise<void> => {
     currentAccent: accent,
     currentVoiceId: profile.voiceId,
     companionGender,
+    currentVoiceGender: resolved.gender,
+    voiceGenderExplicit: resolved.explicit,
     accents,
   });
+});
+
+// ─── POST /settings/voice-gender ─────────────────────────────────────────────
+// The voice's gender — a separate preference from companion gender (who she
+// IS), defaulting from it but free to diverge. The current voice keeps
+// playing until the user actually picks a new voice.
+
+router.post("/settings/voice-gender", async (req, res): Promise<void> => {
+  const raw = (req.body as { gender?: unknown } | undefined)?.gender;
+  const gender = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (gender !== "female" && gender !== "male") {
+    res.status(400).json({ error: `Unknown voice gender "${String(raw)}"` });
+    return;
+  }
+  const profile = await getOrCreateProfileForUser(req.userId);
+  await db
+    .update(profileTable)
+    .set({ voiceGender: gender })
+    .where(and(eq(profileTable.id, profile.id), eq(profileTable.userId, req.userId)));
+  logger.info({ userId: req.userId, gender }, "settings: voice gender saved");
+  res.json({ ok: true, gender });
 });
 
 // ─── POST /settings/language ─────────────────────────────────────────────────
@@ -110,11 +142,13 @@ router.post("/settings/voice", async (req, res): Promise<void> => {
   const profile = await getOrCreateProfileForUser(req.userId);
   const language = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
   const accent = (profile as { voiceAccent?: string | null }).voiceAccent ?? "us";
-  const companionGender = (profile as { companionGender?: string }).companionGender ?? "woman";
+  const voiceGender = resolveVoiceGender(
+    profile as { voiceGender?: string | null; companionGender?: string | null },
+  ).gender;
 
-  if (!isVoiceAllowed(voiceId, language, accent, companionGender)) {
+  if (!isVoiceAllowed(voiceId, language, accent, voiceGender)) {
     res.status(400).json({
-      error: "That voice isn't available for your current language, accent, and companion.",
+      error: "That voice isn't available for your current language, accent, and voice gender.",
     });
     return;
   }

@@ -121,20 +121,46 @@ const CATALOG: Record<string, Record<string, CatalogVoice[]>> = {
 
 // ─── Lookup helpers (logic — keep thin, the table above is the product) ──────
 
-/** Voice genders a companion gender may choose from. */
-function allowedVoiceGenders(companionGender: string): Set<"female" | "male"> {
-  if (companionGender === "man") return new Set(["male"]);
-  if (companionGender === "woman") return new Set(["female"]);
-  return new Set(["female", "male"]); // nonbinary / unknown → full list
+/**
+ * Which voice genders a subject may see. Accepts BOTH vocabularies so old
+ * callers (companion gender: man/woman/nonbinary) and new callers (explicit
+ * voice gender: male/female) share one filter:
+ *   man | male     → male voices
+ *   woman | female → female voices
+ *   anything else  → both lists
+ */
+function allowedVoiceGenders(subject: string): Set<"female" | "male"> {
+  if (subject === "man" || subject === "male") return new Set(["male"]);
+  if (subject === "woman" || subject === "female") return new Set(["female"]);
+  return new Set(["female", "male"]);
 }
 
 export function voicesFor(
   language: string,
   accent: string,
-  companionGender: string,
+  genderSubject: string,
 ): CatalogVoice[] {
-  const genders = allowedVoiceGenders(companionGender);
+  const genders = allowedVoiceGenders(genderSubject);
   return (CATALOG[language]?.[accent] ?? []).filter((v) => genders.has(v.gender));
+}
+
+/**
+ * The voice gender to DISPLAY and FILTER by for a profile: the explicit
+ * voice_gender when set, else derived from companion gender (man→male,
+ * woman→female), else "female" as the picker default. `explicit` tells the
+ * UI whether this was actually chosen/backfilled or is just the display
+ * default (which is never silently saved).
+ */
+export function resolveVoiceGender(profile: {
+  voiceGender?: string | null;
+  companionGender?: string | null;
+}): { gender: "female" | "male"; explicit: boolean } {
+  const vg = profile.voiceGender;
+  if (vg === "female" || vg === "male") return { gender: vg, explicit: true };
+  const cg = profile.companionGender;
+  if (cg === "man") return { gender: "male", explicit: false };
+  if (cg === "woman") return { gender: "female", explicit: false };
+  return { gender: "female", explicit: false };
 }
 
 /** Find a voice anywhere in the catalog (any language/accent) by id. */

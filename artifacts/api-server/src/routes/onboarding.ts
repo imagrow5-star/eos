@@ -13,7 +13,7 @@ import { getOrCreateProfileForUser } from "./profile.js";
 import { sanitizeGenderWords } from "../services/systemPrompt.js";
 import { parseAgeText, ageToBand, resolveCountryAnswer, AGE_BANDS, isValidCountryCode } from "../lib/basics.js";
 import { isValidLanguage } from "../services/settings/languages.js";
-import { ENGLISH_ACCENT_CODES, isVoiceAllowed } from "../services/settings/voiceCatalog.js";
+import { ENGLISH_ACCENT_CODES, isVoiceAllowed, resolveVoiceGender } from "../services/settings/voiceCatalog.js";
 
 const router: IRouter = Router();
 
@@ -253,13 +253,14 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
     }
 
     case "voice": {
-      // Language + voice picker (Sprint 1.5). The card sends a compact JSON
-      // answer {language, accent, voiceId} — or "skip"/anything unparsable,
-      // which keeps the defaults (English, American, the gender default voice
-      // already set at the companionGender step). Every field is validated
-      // against the shared configs; invalid values are simply ignored — the
-      // step can never fail onboarding.
-      let choice: { language?: unknown; accent?: unknown; voiceId?: unknown } = {};
+      // Language + voice picker card (Sprint 1.5, extended with an explicit
+      // voice gender). The card sends one compact JSON answer {language,
+      // accent, voiceGender, voiceId} — or "skip"/anything unparsable, which
+      // keeps the defaults (English, American, the voice gender derived from
+      // companion gender, and the default voice already set earlier). Every
+      // field is validated against the shared configs; invalid values are
+      // simply ignored — the step can never fail onboarding.
+      let choice: { language?: unknown; accent?: unknown; voiceGender?: unknown; voiceId?: unknown } = {};
       try {
         const parsedAnswer = JSON.parse(answer) as Record<string, unknown>;
         if (parsedAnswer && typeof parsedAnswer === "object") choice = parsedAnswer;
@@ -276,9 +277,17 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
           ? choice.accent.toLowerCase()
           : "us";
       updates.voiceAccent = accent;
+      const pickedGender =
+        choice.voiceGender === "female" || choice.voiceGender === "male"
+          ? choice.voiceGender
+          : null;
+      if (pickedGender) updates.voiceGender = pickedGender;
       if (typeof choice.voiceId === "string" && choice.voiceId) {
-        const companionGender = (profile as any).companionGender ?? "woman";
-        if (isVoiceAllowed(choice.voiceId, "en", accent, companionGender)) {
+        const effectiveGender =
+          pickedGender ??
+          resolveVoiceGender(profile as { voiceGender?: string | null; companionGender?: string | null })
+            .gender;
+        if (isVoiceAllowed(choice.voiceId, "en", accent, effectiveGender)) {
           updates.voiceId = choice.voiceId;
         }
       }
