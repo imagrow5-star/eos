@@ -519,6 +519,7 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
   const storyThreadsRange = buildRangeClause("created_at", false, range, 2);
   const pushSubsRange = buildRangeClause("created_at", false, range, 2);
   const pushEventsRange = buildRangeClause("sent_at", false, range, 2);
+  const voiceUsageRange = buildRangeClause("call_started_at", false, range, 2);
 
   const [
     messagesResult,
@@ -540,6 +541,8 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
     storyThreadsResult,
     pushSubscriptionsResult,
     pushEventsResult,
+    subscriptionsResult,
+    voiceUsageResult,
   ] = await Promise.all([
     pool.query(
       `SELECT role, content, is_morning_note, created_at FROM messages WHERE user_id = $1${messagesRange.clause} ORDER BY created_at ASC`,
@@ -624,6 +627,20 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
     pool.query(
       `SELECT kind, sent_at FROM push_events WHERE user_id = $1${pushEventsRange.clause} ORDER BY sent_at ASC`,
       [userId, ...pushEventsRange.params],
+    ),
+    // Billing foundation (phase 1): the user's subscription record (their
+    // single membership-status row — always included regardless of range,
+    // like the profile) and their voice-usage log. Empty until billing goes
+    // live; included now so the export is complete from day one.
+    pool.query(
+      `SELECT tier, status, trial_ends_at, current_period_ends_at, created_at, updated_at
+       FROM subscriptions WHERE user_id = $1`,
+      [userId],
+    ),
+    pool.query(
+      `SELECT call_started_at, call_ended_at, duration_seconds, source, created_at
+       FROM voice_usage WHERE user_id = $1${voiceUsageRange.clause} ORDER BY call_started_at ASC`,
+      [userId, ...voiceUsageRange.params],
     ),
   ]);
 
@@ -720,6 +737,8 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
     })),
     pushSubscriptions: pushSubscriptionsResult.rows,
     pushEvents: pushEventsResult.rows,
+    subscriptions: subscriptionsResult.rows,
+    voiceUsage: voiceUsageResult.rows,
   };
 }
 
@@ -841,6 +860,8 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
       storyThreadResult,
       pushSubscriptionResult,
       pushEventResult,
+      subscriptionResult,
+      voiceUsageCountResult,
     ] = await Promise.all([
       pool.query(
         `SELECT COUNT(*) AS count,
@@ -915,6 +936,14 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
         `SELECT COUNT(*) AS count FROM push_events WHERE user_id = $1`,
         [userId],
       ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM subscriptions WHERE user_id = $1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM voice_usage WHERE user_id = $1`,
+        [userId],
+      ),
     ]);
 
     res.json({
@@ -935,6 +964,8 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
       storyThreadCount: parseInt(storyThreadResult.rows[0].count, 10),
       pushSubscriptionCount: parseInt(pushSubscriptionResult.rows[0].count, 10),
       pushEventCount: parseInt(pushEventResult.rows[0].count, 10),
+      subscriptionCount: parseInt(subscriptionResult.rows[0].count, 10),
+      voiceUsageCount: parseInt(voiceUsageCountResult.rows[0].count, 10),
       firstMessageAt: msgResult.rows[0].first_at ?? null,
       lastMessageAt:  msgResult.rows[0].last_at  ?? null,
     });

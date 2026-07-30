@@ -139,6 +139,46 @@ pool
   `)
   .catch((err) => logger.error({ err }, "Failed to ensure personalization_state table"));
 
+// Safety-net: billing foundation tables (phase 1 — Paddle integration comes
+// in phase 2; nothing writes these in normal operation yet). Idempotent by
+// construction, same pattern as every safety-net above; the authoritative
+// definitions live in lib/db/src/schema/billing.ts for drizzle-kit push.
+pool
+  .query(`
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES users(id),
+      paddle_customer_id text,
+      paddle_subscription_id text,
+      tier text NOT NULL,
+      status text NOT NULL,
+      trial_ends_at timestamp,
+      current_period_ends_at timestamp,
+      created_at timestamp NOT NULL DEFAULT now(),
+      updated_at timestamp NOT NULL DEFAULT now()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_user_idx ON subscriptions (user_id);
+    CREATE TABLE IF NOT EXISTS billing_events (
+      id serial PRIMARY KEY,
+      event_id text NOT NULL,
+      event_type text NOT NULL,
+      processed_at timestamp NOT NULL DEFAULT now(),
+      payload_summary text
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS billing_events_event_idx ON billing_events (event_id);
+    CREATE TABLE IF NOT EXISTS voice_usage (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES users(id),
+      call_started_at timestamp NOT NULL,
+      call_ended_at timestamp,
+      duration_seconds integer,
+      source text NOT NULL DEFAULT 'client_report',
+      created_at timestamp NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS voice_usage_user_started_idx ON voice_usage (user_id, call_started_at);
+  `)
+  .catch((err) => logger.error({ err }, "Failed to ensure billing foundation tables"));
+
 // ─── Cleanup job health tracking ─────────────────────────────────────────────
 // Exported so the health route can expose it without a database query.
 export const cleanupJobState = {
@@ -451,6 +491,20 @@ if (fs.existsSync(frontendIndex)) {
   //     page's own "Enter Eos" buttons link to /?enter=1 to reach sign-in;
   //   - an existing session cookie ("sid") → SPA, so returning users land
   //     straight in the app.
+  // ─── Standalone legal pages (/terms, /refunds) ─────────────────────────────
+  // Static files beside welcome.html in the same bundle — the marketing
+  // page's footer already links here. Served at the clean path (no .html);
+  // if a file is missing the request falls through to the SPA, whose router
+  // shows its not-found state instead of a raw 404 page.
+  for (const legal of ["terms", "refunds"] as const) {
+    const legalFile = path.join(frontendDir, `${legal}.html`);
+    app.get(`/${legal}`, (_req, res, next) => {
+      if (!fs.existsSync(legalFile)) return next();
+      res.setHeader("Cache-Control", "no-cache");
+      res.sendFile(legalFile);
+    });
+  }
+
   const landingPage = path.join(frontendDir, "welcome.html");
   app.get("/", (req, res, next) => {
     const hasQuery = req.originalUrl.includes("?");

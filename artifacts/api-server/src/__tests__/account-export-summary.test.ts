@@ -69,6 +69,8 @@ interface SummaryBody {
   storyThreadCount: number;
   pushSubscriptionCount: number;
   pushEventCount: number;
+  subscriptionCount: number;
+  voiceUsageCount: number;
   firstMessageAt: string | null;
   lastMessageAt: string | null;
 }
@@ -368,6 +370,9 @@ describe("GET /api/account/export/summary", () => {
       ["storyThreadCount", "storyThreads"],
       ["pushSubscriptionCount", "pushSubscriptions"],
       ["pushEventCount", "pushEvents"],
+      // Billing foundation (phase 1) — empty until billing launches.
+      ["subscriptionCount", "subscriptions"],
+      ["voiceUsageCount", "voiceUsage"],
     ];
 
     for (const [countKey, arrayKey] of pairs) {

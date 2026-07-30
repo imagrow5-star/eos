@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { requireAuth, requireVerified } from "../middleware/auth.js";
+import { attachEntitlements } from "../middleware/entitlements.js";
 import healthRouter from "./health";
 import authRouter from "./auth";
 import googleAuthRouter from "./googleAuth";
@@ -37,8 +38,11 @@ router.use(pushInternalRouter);
 
 // ─── Protected routes — valid session + verified email required ───────────────
 // requireAuth sets req.userId; requireVerified checks emailVerifiedAt in the DB.
+// attachEntitlements tags the request with the user's tier (phase 1: attach
+// only — it NEVER blocks; users without a subscription get legacy full access).
 router.use(requireAuth as any);
 router.use(requireVerified as any);
+router.use(attachEntitlements as any);
 router.use(onboardingRouter);
 router.use(profileRouter);
 router.use(chatRouter);
