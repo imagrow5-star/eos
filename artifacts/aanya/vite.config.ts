@@ -38,14 +38,18 @@ const cspMetaPlugin = {
   transformIndexHtml(html: string) {
     const csp = [
       "default-src 'self'",
-      "script-src 'self'",
+      // cdn.paddle.com: Paddle.js v2 overlay checkout (loaded only on /pricing)
+      "script-src 'self' https://cdn.paddle.com",
       // Tailwind/Framer set inline style attributes; Google Fonts serves the CSS
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com data:",
-      "img-src 'self' data: blob:",
+      "img-src 'self' data: blob: https://*.paddle.com",
       "media-src 'self' blob: data:",
-      // ElevenLabs realtime voice (websocket + REST, incl. regional/WebRTC hosts)
-      "connect-src 'self' https://api.elevenlabs.io wss://api.elevenlabs.io https://*.elevenlabs.io wss://*.elevenlabs.io https://*.livekit.cloud wss://*.livekit.cloud",
+      // ElevenLabs realtime voice (websocket + REST, incl. regional/WebRTC
+      // hosts) + Paddle checkout telemetry/API calls from Paddle.js
+      "connect-src 'self' https://api.elevenlabs.io wss://api.elevenlabs.io https://*.elevenlabs.io wss://*.elevenlabs.io https://*.livekit.cloud wss://*.livekit.cloud https://*.paddle.com",
+      // Paddle's overlay checkout renders inside an iframe from buy.paddle.com
+      "frame-src https://buy.paddle.com https://*.paddle.com",
       // ElevenLabs Conversational AI SDK inlines the rawAudioProcessor and
       // audioConcatProcessor worklet source into the JS bundle, then loads it
       // via URL.createObjectURL (blob:) with a data: base64 fallback for
@@ -53,7 +57,7 @@ const cspMetaPlugin = {
       // AudioWorklet module scripts; without an explicit script-src-elem it
       // falls back to script-src 'self', blocking the blob: worklet. Setting
       // script-src-elem explicitly keeps script-src tight.
-      "script-src-elem 'self' blob: data:",
+      "script-src-elem 'self' blob: data: https://cdn.paddle.com",
       "worker-src 'self' blob: data:",
       "manifest-src 'self'",
       "object-src 'none'",

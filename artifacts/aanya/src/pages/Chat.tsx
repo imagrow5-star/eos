@@ -1705,6 +1705,71 @@ export default function Chat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showSettings]);
 
+  // ── Membership (phase 2 — Paddle billing) ─────────────────────────────────
+  type BillingMe =
+    | { kind: "legacy_full_access" }
+    | {
+        kind: "subscribed";
+        displayName: string;
+        status: string;
+        trialEndsAt: string | null;
+        currentPeriodEndsAt: string | null;
+        voiceMinutesPerMonth: number;
+      };
+  const [billingMe, setBillingMe] = useState<BillingMe | null>(null);
+  const [cancelArmed, setCancelArmed] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelNotice, setCancelNotice] = useState<string | null>(null);
+
+  const refreshBillingMe = async () => {
+    try {
+      const res = await apiFetch(`${import.meta.env.BASE_URL}api/billing/me`);
+      if (res.ok) setBillingMe((await res.json()) as BillingMe);
+    } catch {
+      // leave as-is — the section renders nothing without data
+    }
+  };
+
+  useEffect(() => {
+    if (showSettings) {
+      setCancelArmed(false);
+      setCancelNotice(null);
+      refreshBillingMe();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showSettings]);
+
+  const handleCancelSubscription = async () => {
+    setCancelBusy(true);
+    setCancelNotice(null);
+    try {
+      const res = await apiFetch(`${import.meta.env.BASE_URL}api/billing/cancel`, {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        accessUntil?: string | null;
+        error?: string;
+      };
+      if (res.ok) {
+        // No-guilt confirmation — canceling should feel as safe as staying.
+        setCancelNotice(
+          body.accessUntil
+            ? `Done — no further charges. Everything stays yours until ${new Date(body.accessUntil).toLocaleDateString()}.`
+            : "Done — no further charges. Your membership ends at the close of this billing period.",
+        );
+        setCancelArmed(false);
+        refreshBillingMe();
+      } else {
+        setCancelNotice(body.error ?? "That didn't go through — please try again in a moment.");
+      }
+    } catch {
+      setCancelNotice("That didn't go through — please try again in a moment.");
+    } finally {
+      setCancelBusy(false);
+    }
+  };
+
   const [isExportingHtml, setIsExportingHtml] = useState(false);
 
   // In-app report viewer — reads the same HTML report inside a full-screen
@@ -2381,6 +2446,87 @@ export default function Chat() {
                 </div>
               )}
             </div>
+
+            {/* ── Membership (phase 2 — Paddle billing) ──────────────────── */}
+            {billingMe && (
+              <div>
+                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
+                  Membership
+                </p>
+                {billingMe.kind === "legacy_full_access" ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[13px] text-foreground/75">
+                      Full access — you were here before memberships.
+                    </p>
+                    <a
+                      href={`${import.meta.env.BASE_URL}pricing`}
+                      className="shrink-0 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors"
+                    >
+                      See plans
+                    </a>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] text-foreground/75">
+                          {billingMe.displayName}
+                          <span className="text-muted-foreground/60"> · {billingMe.status === "trialing" ? "free trial" : billingMe.status.replace("_", " ")}</span>
+                        </p>
+                        <p className="text-[10.5px] text-muted-foreground/45 mt-1 leading-relaxed">
+                          {billingMe.status === "trialing" && billingMe.trialEndsAt
+                            ? `Trial ends ${new Date(billingMe.trialEndsAt).toLocaleDateString()}.`
+                            : billingMe.status === "canceled" && billingMe.currentPeriodEndsAt
+                              ? `Ends ${new Date(billingMe.currentPeriodEndsAt).toLocaleDateString()} — everything stays yours until then.`
+                              : billingMe.currentPeriodEndsAt
+                                ? `Renews ${new Date(billingMe.currentPeriodEndsAt).toLocaleDateString()}.`
+                                : ""}{" "}
+                          {billingMe.voiceMinutesPerMonth.toLocaleString()} voice minutes / month.
+                        </p>
+                      </div>
+                      <a
+                        href={`${import.meta.env.BASE_URL}pricing`}
+                        className="shrink-0 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors"
+                      >
+                        Change plan
+                      </a>
+                    </div>
+                    {billingMe.status !== "canceled" && (
+                      !cancelArmed ? (
+                        <button
+                          onClick={() => setCancelArmed(true)}
+                          className="text-[11px] text-muted-foreground/50 hover:text-muted-foreground/80 tracking-wider uppercase transition-colors"
+                        >
+                          Cancel membership
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <span className="text-[11px] text-muted-foreground/60">
+                            Cancel at the end of this period? No guilt — you can come back anytime.
+                          </span>
+                          <button
+                            onClick={handleCancelSubscription}
+                            disabled={cancelBusy}
+                            className="text-[10px] uppercase tracking-wider text-amber-400/90 hover:text-amber-300 transition-colors disabled:opacity-50"
+                          >
+                            {cancelBusy ? "Cancelling…" : "Yes, cancel"}
+                          </button>
+                          <button
+                            onClick={() => setCancelArmed(false)}
+                            className="text-[10px] uppercase tracking-wider text-muted-foreground/50 hover:text-muted-foreground/80 transition-colors"
+                          >
+                            Keep it
+                          </button>
+                        </div>
+                      )
+                    )}
+                    {cancelNotice && (
+                      <p className="text-[11.5px] text-foreground/60 leading-relaxed">{cancelNotice}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ── Notifications ───────────────────────────────────────────── */}
             <div>

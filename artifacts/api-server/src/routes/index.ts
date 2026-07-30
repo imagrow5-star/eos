@@ -19,6 +19,8 @@ import voiceLlmRouter from "./voice-llm";
 import voiceAgentRouter from "./voice-agent";
 import chaptersRouter, { chaptersInternalRouter } from "./chapters";
 import pushRouter, { pushInternalRouter } from "./push";
+import billingRouter, { billingPublicRouter } from "./billing";
+import billingWebhookRouter from "./billingWebhook";
 
 const router: IRouter = Router();
 
@@ -35,6 +37,12 @@ router.use(voiceLlmRouter);
 router.use(chaptersInternalRouter);
 // Morning push-nudge sweep — same caller, same HMAC scheme.
 router.use(pushInternalRouter);
+// Paddle webhook — called by Paddle's servers; authenticated per-delivery by
+// the Paddle-Signature HMAC over the raw body (raw-body mount in app.ts).
+router.use(billingWebhookRouter);
+// Checkout configuration (tier metadata + public price ids) — the /pricing
+// page renders from this for signed-out visitors too.
+router.use(billingPublicRouter);
 
 // ─── Protected routes — valid session + verified email required ───────────────
 // requireAuth sets req.userId; requireVerified checks emailVerifiedAt in the DB.
@@ -56,5 +64,6 @@ router.use(accountRouter);
 router.use(voiceAgentRouter);
 router.use(chaptersRouter);
 router.use(pushRouter);
+router.use(billingRouter); // /billing/me + /billing/cancel (own subscription only)
 
 export default router;

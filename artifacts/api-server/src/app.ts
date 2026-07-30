@@ -439,6 +439,16 @@ app.use(
   }),
 );
 
+// ─── Paddle webhook — RAW body, ahead of the global JSON parser ──────────────
+// Paddle signs the exact body bytes (HMAC over `${ts}:${rawBody}`); once
+// express.json() has parsed the body the original bytes are gone and the
+// signature can never verify. This was flagged as the classic integration
+// trap in the payment-readiness review. The raw reader is scoped to exactly
+// this one path: it stores the untouched Buffer on req.body and marks the
+// body as consumed, so the global express.json() below skips it — every
+// other route parses JSON exactly as before.
+app.use("/api/billing/webhook", express.raw({ type: "*/*", limit: "1mb" }));
+
 // 1mb: ElevenLabs custom-LLM requests carry the full call transcript, which can
 // exceed the 100kb default on long voice calls.
 app.use(express.json({ limit: "1mb" }));
