@@ -53,10 +53,14 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
     : null;
 
   // "How Eos speaks" preference rides along so the client can set matching
-  // TTS delivery overrides (stability/speed) on the ElevenLabs session, and
-  // the profile's name/timezone feed the instant opening line the client
-  // passes as the agent's firstMessage override (spoken with zero LLM/DB
-  // round trips — see services/voiceGreeting.ts).
+  // TTS delivery overrides (stability/speed) on the ElevenLabs session.
+  // firstMessage is still computed and returned, but the client NO LONGER
+  // forwards it to ElevenLabs: the first_message override is rejected with a
+  // 1008 disconnect since ~July 29 (permission tightened on their side; no
+  // dashboard toggle on our tier). Greetings come from the custom LLM's
+  // synthetic-greeting path instead (routes/voice-llm.ts).
+  // TODO(cleanup): drop firstMessage from this response + voiceGreeting.ts
+  // once the LLM greeting is confirmed as the permanent path.
   let tone = "auto";
   let firstMessage: string;
   try {
