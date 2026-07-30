@@ -632,6 +632,10 @@ describe("GET /api/account/export?format=html", () => {
         "Browser push endpoint records (device tokens) — technical delivery plumbing with no readable content; present in the JSON export.",
       pushEvents:
         "Notification delivery log (kind + timestamp) — administrative cap-enforcement records; present in the JSON export.",
+      subscriptions:
+        "Billing foundation (phase 1): membership status metadata (tier/status/dates) — empty until billing launches; present in the JSON export. A rendered Membership section arrives with phase 2.",
+      voiceUsage:
+        "Billing foundation (phase 1): per-call voice usage log for future minute allowances — empty until metering launches; present in the JSON export.",
     };
 
     const agentA = request.agent(app);

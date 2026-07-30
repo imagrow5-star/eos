@@ -1098,6 +1098,13 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
     await client.query(`DELETE FROM story_threads     WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM push_subscriptions WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM push_events       WHERE user_id = $1`, [userId]);
+    // TODO(phase 2 — Paddle): before deleting the subscriptions row, call
+    // Paddle's subscription-cancel API for paddle_subscription_id (when set)
+    // so a deleted account can never keep billing. billing_events is
+    // intentionally NOT deleted here: it holds provider event ids only (no
+    // personal data) and is the processed-webhook audit trail.
+    await client.query(`DELETE FROM voice_usage       WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM subscriptions     WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM personalization_state WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM profile           WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM users             WHERE id = $1`, [userId]);

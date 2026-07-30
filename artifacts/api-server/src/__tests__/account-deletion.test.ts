@@ -56,6 +56,8 @@ async function cleanupUser(email: string): Promise<void> {
     DELETE FROM habits            WHERE user_id = ${uid};
     DELETE FROM goals             WHERE user_id = ${uid};
     DELETE FROM commitments       WHERE user_id = ${uid};
+    DELETE FROM voice_usage       WHERE user_id = ${uid};
+    DELETE FROM subscriptions     WHERE user_id = ${uid};
     DELETE FROM profile           WHERE user_id = ${uid};
     DELETE FROM users             WHERE id = ${uid};
     COMMIT;
@@ -176,6 +178,17 @@ describe("DELETE /api/auth/account", () => {
       [userId],
     );
 
+    // billing foundation: subscriptions + voice_usage (phase 1 tables)
+    await pool.query(
+      `INSERT INTO subscriptions (user_id, tier, status) VALUES ($1, 'companion', 'active')`,
+      [userId],
+    );
+    await pool.query(
+      `INSERT INTO voice_usage (user_id, call_started_at, call_ended_at, duration_seconds)
+       VALUES ($1, NOW() - INTERVAL '10 minutes', NOW(), 600)`,
+      [userId],
+    );
+
     // ── 3. Sanity-check: rows exist before deletion ───────────────────────
     expect(await rowCount("messages", "user_id = $1", [userId])).toBeGreaterThan(0);
     expect(await rowCount("habits", "user_id = $1", [userId])).toBeGreaterThan(0);
@@ -189,6 +202,10 @@ describe("DELETE /api/auth/account", () => {
 
     // users row
     expect(await rowCount("users", "id = $1", [userId])).toBe(0);
+
+    // billing foundation tables
+    expect(await rowCount("subscriptions", "user_id = $1", [userId])).toBe(0);
+    expect(await rowCount("voice_usage", "user_id = $1", [userId])).toBe(0);
 
     // profile
     expect(await rowCount("profile", "user_id = $1", [userId])).toBe(0);
@@ -463,6 +480,8 @@ describe("DELETE /api/auth/account", () => {
       "story_threads",
       "push_subscriptions",
       "push_events",
+      "subscriptions", // billing foundation (phase 1) — Paddle cancel API call TODO lives in the handler
+      "voice_usage",   // billing foundation (phase 1) — per-call voice metering records
     ]);
 
     // ── INDIRECT tables: store the user's id WITHOUT a `user_id` column, so the
