@@ -7,6 +7,7 @@ import { buildVoiceFirstMessage } from "../services/voiceGreeting.js";
 import { logger } from "../lib/logger.js";
 import { resolveHelplines, buildHelplineBlockText } from "../services/crisis/helplines.js";
 import { pendingVoiceCrisisEvent, dismissVoiceCrisisEvent } from "../services/crisis/events.js";
+import { resolveAgentRouting } from "../services/voiceAgentRouting.js";
 
 const router: IRouter = Router();
 
@@ -28,8 +29,8 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
     return;
   }
 
-  const agentId = process.env.ELEVENLABS_AGENT_ID?.trim();
-  if (!agentId) {
+  const baseAgentId = process.env.ELEVENLABS_AGENT_ID?.trim();
+  if (!baseAgentId) {
     res.json({ available: false, reason: "not_configured" });
     return;
   }
@@ -37,11 +38,32 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
   const userToken = mintVoiceToken(req.userId);
   const apiKey = process.env.ELEVENLABS_API_KEY;
 
-  // Connect-latency: the profile lookup (tone + greeting inputs) and the
-  // ElevenLabs signed-URL fetch are independent round trips — run them
-  // CONCURRENTLY instead of profile-then-fetch. The fetch result is wrapped
-  // (never rejects) so awaiting the profile first can't leave an unhandled
-  // rejection behind.
+  // The profile now loads BEFORE the signed-URL fetch: agent routing needs the
+  // user's language (English → Flash agent; active non-English → Multilingual
+  // agent). This trades the old profile/fetch concurrency for one local DB
+  // read (~ms) ahead of the ElevenLabs round trip (~hundreds of ms) — cheap,
+  // and the tone/greeting inputs come from the same read.
+  let tone = "auto";
+  let firstMessage: string;
+  let preferredLanguage = "en";
+  try {
+    const profile = await getOrCreateProfileForUser(req.userId);
+    tone = (profile as { voiceTone?: string }).voiceTone ?? "auto";
+    preferredLanguage = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
+    firstMessage = buildVoiceFirstMessage(profile);
+  } catch (err) {
+    logger.warn({ err }, "voice-agent: couldn't load profile — using defaults");
+    firstMessage = buildVoiceFirstMessage(null);
+  }
+
+  // Route the call to the language-appropriate agent (safe-degrades inside).
+  const routing = resolveAgentRouting({ preferredLanguage });
+  const agentId = routing.agentId ?? baseAgentId;
+  logger.info(
+    { userId: req.userId, preferredLanguage, agentUsed: routing.agentUsed },
+    "voice-agent: call routed",
+  );
+
   const signedUrlPromise: Promise<{ r: Response } | { err: unknown }> | null = apiKey
     ? fetch(
         `https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(agentId)}`,
@@ -61,16 +83,6 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
   // synthetic-greeting path instead (routes/voice-llm.ts).
   // TODO(cleanup): drop firstMessage from this response + voiceGreeting.ts
   // once the LLM greeting is confirmed as the permanent path.
-  let tone = "auto";
-  let firstMessage: string;
-  try {
-    const profile = await getOrCreateProfileForUser(req.userId);
-    tone = (profile as { voiceTone?: string }).voiceTone ?? "auto";
-    firstMessage = buildVoiceFirstMessage(profile);
-  } catch (err) {
-    logger.warn({ err }, "voice-agent: couldn't load profile — using defaults");
-    firstMessage = buildVoiceFirstMessage(null);
-  }
 
   if (!signedUrlPromise) {
     // No API key to sign with — only a PUBLIC agent can possibly work. Let the
