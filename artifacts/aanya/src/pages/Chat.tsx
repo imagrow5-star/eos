@@ -30,6 +30,8 @@ import { countryName, suggestCountry, searchCountries, type Country } from "@/li
 import { startRealtimeCall, type AttemptResult, type RealtimeConversation, type RealtimeSessionInfo } from "@/lib/realtimeVoice";
 import { VoiceSessionPrefetcher } from "@/lib/voiceSessionPrefetch";
 import { CaptionSyncEngine } from "@/lib/captionSync";
+import { splitCrisisBlock } from "@/lib/crisisBlock";
+import CrisisHelplineCard from "@/components/CrisisHelplineCard";
 import { cn } from "@/lib/utils";
 
 // ─── Voice catalogue ──────────────────────────────────────────────────────────
@@ -245,6 +247,57 @@ export default function Chat() {
   // degraded reply never masquerades as a normal one. Session-local by design:
   // the flag isn't stored server-side, so history reloads drop the caption.
   const [degradedMessageIds, setDegradedMessageIds] = useState<Set<number>>(() => new Set());
+  // ── Crisis floor UI state ─────────────────────────────────────────────────
+  // Optimistic per-message dismissals of the helpline card (server state is
+  // messages.crisisBlockDismissed; this covers the gap until refetch).
+  const [dismissedCrisisIds, setDismissedCrisisIds] = useState<Set<number>>(() => new Set());
+  const [crisisDismissBusyId, setCrisisDismissBusyId] = useState<number | null>(null);
+  // On-call helpline overlay: fed by the stream `done` event (classic voice)
+  // or the /voice-agent/crisis-status poll (realtime voice).
+  const [voiceCrisisCard, setVoiceCrisisCard] = useState<
+    { kind: "message" | "event"; id: number; blockText: string } | null
+  >(null);
+  const voiceCrisisDismissedEventIds = useRef<Set<number>>(new Set());
+
+  const handleDismissCrisisBlock = async (messageId: number) => {
+    setCrisisDismissBusyId(messageId);
+    try {
+      const r = await apiFetch(
+        `${import.meta.env.BASE_URL}api/chat/messages/${messageId}/crisis-dismiss`,
+        { method: "POST" },
+      );
+      if (r.ok) {
+        setDismissedCrisisIds((prev) => new Set(prev).add(messageId));
+        queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
+      }
+    } finally {
+      setCrisisDismissBusyId(null);
+    }
+  };
+
+  const handleDismissVoiceCrisisCard = async () => {
+    const card = voiceCrisisCard;
+    if (!card) return;
+    setVoiceCrisisCard(null); // optimistic — the card never blocks the call UI
+    try {
+      if (card.kind === "event") {
+        voiceCrisisDismissedEventIds.current.add(card.id);
+        await apiFetch(
+          `${import.meta.env.BASE_URL}api/voice-agent/crisis-events/${card.id}/dismiss`,
+          { method: "POST" },
+        );
+      } else {
+        setDismissedCrisisIds((prev) => new Set(prev).add(card.id));
+        await apiFetch(
+          `${import.meta.env.BASE_URL}api/chat/messages/${card.id}/crisis-dismiss`,
+          { method: "POST" },
+        );
+        queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
+      }
+    } catch {
+      // Dismissal is best-effort UI state — never surface an error mid-call.
+    }
+  };
   // Live-caption state: which message is currently being spoken, and how many words revealed
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [revealedWords, setRevealedWords] = useState(0);
@@ -307,6 +360,42 @@ export default function Chat() {
   // What the user said — shown under "You said:" while the AI is thinking/speaking
   const [voiceCallRecognizedText, setVoiceCallRecognizedText] = useState("");
   useEffect(() => { continuousVoiceRef.current = continuousVoice; }, [continuousVoice]);
+  // ── Crisis floor: realtime-call helpline polling ──────────────────────────
+  // The realtime reply is spoken by ElevenLabs, so nothing rides back to the
+  // browser with it. During a realtime call, poll the session-authed status
+  // endpoint; an undismissed voice crisis event → overlay the helpline card.
+  // Classic voice mode needs no polling (the stream `done` event carries the
+  // block directly). Ends with the call; dismissed events never reappear.
+  useEffect(() => {
+    if (!continuousVoice) {
+      setVoiceCrisisCard(null);
+      return;
+    }
+    if (voiceEngine !== "realtime") return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const r = await apiFetch(`${import.meta.env.BASE_URL}api/voice-agent/crisis-status`);
+        if (!r.ok || cancelled) return;
+        const data = (await r.json()) as {
+          active: boolean;
+          event?: { id: number; blockText: string };
+        };
+        if (cancelled) return;
+        if (data.active && data.event && !voiceCrisisDismissedEventIds.current.has(data.event.id)) {
+          setVoiceCrisisCard({ kind: "event", id: data.event.id, blockText: data.event.blockText });
+        }
+      } catch {
+        // Polling is best-effort — never disturb the call.
+      }
+    };
+    void poll();
+    const timer = setInterval(poll, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [continuousVoice, voiceEngine]);
   // Reveal loop for realtime captions — polls the engine and mirrors its
   // snapshot into the caption states. ~12fps is plenty for word granularity;
   // identical values bail out of re-rendering.
@@ -569,6 +658,9 @@ export default function Chat() {
 
     let finalContent = "";
     let finalMessageId: string | null = null;
+    // Crisis floor: helpline block from the `done` event. Kept OUT of every
+    // TTS path — resources are read, not spoken.
+    let finalCrisisBlock: string | null = null;
 
     try {
       const response = await fetch(`${import.meta.env.BASE_URL}api/chat/stream`, {
@@ -671,15 +763,27 @@ export default function Chat() {
           } else if (eventName === "done") {
             finalMessageId = String(data.messageId);
             finalContent = data.content as string;
+            finalCrisisBlock =
+              typeof data.crisisHelplineBlock === "string" ? data.crisisHelplineBlock : null;
             if (data.degraded === true) {
               const degradedId = Number(data.messageId);
               setDegradedMessageIds((prev) => new Set(prev).add(degradedId));
             }
+            // Crisis floor (classic voice mode): the helpline card overlays the
+            // call UI — the block itself is never spoken.
+            if (continuousVoiceRef.current && finalCrisisBlock) {
+              setVoiceCrisisCard({
+                kind: "message",
+                id: Number(data.messageId),
+                blockText: finalCrisisBlock,
+              });
+            }
             // In voice call mode: expand the caption text to the full reply so
             // that when the remainder TTS fires, its word positions align with
             // the full text and the overlay reveals correctly word-by-word.
+            // (Speakable body only — the helpline block stays on-screen.)
             if (continuousVoiceRef.current) {
-              setVoiceCallCaptionText(finalContent);
+              setVoiceCallCaptionText(splitCrisisBlock(finalContent).body);
             }
           } else if (eventName === "error") {
             throw new Error(data.error as string);
@@ -713,13 +817,18 @@ export default function Chat() {
     if (finalMessageId && finalContent) {
       queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
 
+      // Crisis floor: TTS speaks Eos's words only — never the helpline block.
+      const speakableContent = finalCrisisBlock
+        ? splitCrisisBlock(finalContent).body
+        : finalContent;
+
       if (continuousVoiceRef.current) {
         if (voiceTtsGenRef.current !== ttsGen) {
           // The user interrupted while this reply was in flight — don't speak
           // it over them. The reply still lands in the chat history above.
         } else if (voiceEarlyFired) {
           // Early TTS already started on sentence 1.  Compute the remainder.
-          const remainder = finalContent.slice(voiceEarlyText.length).trim();
+          const remainder = speakableContent.slice(voiceEarlyText.length).trim();
 
           if (voiceEarlyTTSEndedRef.current) {
             // Sentence 1 TTS already finished while the stream was still running —
@@ -733,9 +842,9 @@ export default function Chat() {
         } else {
           // No early TTS fired (very short reply or no sentence-terminal punctuation).
           // Speak the whole reply with word-synced caption, offset from word 0.
-          setVoiceCallCaptionText(finalContent);
+          setVoiceCallCaptionText(speakableContent);
           setVoiceCallCaptionRevealed(0);
-          speakVoiceRemainder(finalContent, 0);
+          speakVoiceRemainder(speakableContent, 0);
         }
       } else {
         // Normal text mode: drive bubble caption via speakingMessageId + revealedWords.
@@ -743,7 +852,7 @@ export default function Chat() {
         // enters LiveCaption mode immediately (no flash of full text).
         setSpeakingMessageId(finalMessageId);
         setRevealedWords(0);
-        handleSpeak(finalContent, finalMessageId);
+        handleSpeak(speakableContent, finalMessageId);
       }
     } else {
       queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
@@ -1945,6 +2054,16 @@ export default function Chat() {
             const isCompanion = msg.role === "assistant";
             const showLabel =
               isCompanion && (idx === 0 || messages[idx - 1]?.role !== "assistant");
+            // Crisis floor: split the appended helpline block out of the
+            // content so it renders as a distinct, dismissible card and never
+            // enters TTS. Non-crisis messages pass through untouched.
+            const { body: msgBody, block: crisisBlock } = isCompanion
+              ? splitCrisisBlock(msg.content)
+              : { body: msg.content, block: null };
+            const crisisBlockVisible =
+              crisisBlock !== null &&
+              !msg.crisisBlockDismissed &&
+              !dismissedCrisisIds.has(msg.id);
 
             return (
               <motion.div
@@ -1980,7 +2099,7 @@ export default function Chat() {
                       isBereavement ? "text-[17px]" : "text-[16px]",
                     )}>
                       <LiveCaption
-                        text={msg.content}
+                        text={msgBody}
                         revealedWords={revealedWords}
                       />
                     </p>
@@ -1990,7 +2109,7 @@ export default function Chat() {
                         ? cn("companion-message text-foreground/90", isBereavement ? "text-[17px]" : "text-[16px]")
                         : "font-sans text-[14.5px] text-secondary/85",
                     )}>
-                      {msg.content}
+                      {msgBody}
                     </p>
                   )}
                   {msg.isMorningNote && (
@@ -1999,6 +2118,15 @@ export default function Chat() {
                     </span>
                   )}
                 </div>
+
+                {/* ── Crisis helpline card (crisis floor) — distinct + dismissible ── */}
+                {crisisBlockVisible && crisisBlock && (
+                  <CrisisHelplineCard
+                    blockText={crisisBlock}
+                    onDismiss={() => handleDismissCrisisBlock(msg.id)}
+                    dismissing={crisisDismissBusyId === msg.id}
+                  />
+                )}
 
                 {/* ── Honest degraded-reply indicator (provider outage) ── */}
                 {isCompanion && degradedMessageIds.has(msg.id) && (
@@ -2039,7 +2167,7 @@ export default function Chat() {
                 {/* ── Per-message speaker button ── */}
                 {isCompanion && (
                   <button
-                    onClick={() => handleSpeak(msg.content, String(msg.id))}
+                    onClick={() => handleSpeak(msgBody, String(msg.id))}
                     title={speakingMessageId === String(msg.id) ? "Playing…" : "Hear this message"}
                     className={cn(
                       "mt-1 ml-1 flex items-center gap-1 px-2.5 py-1 rounded-full text-[10.5px] font-medium transition-all",
@@ -3293,6 +3421,20 @@ export default function Chat() {
                   )}
                 </AnimatePresence>
               </div>
+
+              {/* ── Crisis helpline card (crisis floor) — shown on-screen during
+                  the call; the spoken reply deliberately never reads numbers
+                  aloud. Dismissible; reappears on any future crisis turn. ── */}
+              <AnimatePresence>
+                {voiceCrisisCard && (
+                  <CrisisHelplineCard
+                    key={`${voiceCrisisCard.kind}-${voiceCrisisCard.id}`}
+                    blockText={voiceCrisisCard.blockText}
+                    onDismiss={handleDismissVoiceCrisisCard}
+                    className="w-full"
+                  />
+                )}
+              </AnimatePresence>
 
               {/* ── "You said:" transcript — confirms your words were heard ────
                   Visible while the companion is thinking or speaking so you know

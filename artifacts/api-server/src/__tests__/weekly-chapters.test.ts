@@ -34,7 +34,7 @@ import {
 } from "@workspace/db";
 import app from "../app.js";
 import { validateExcerpt, nearIdentical, type QuoteSource } from "../services/chapters/quotes.js";
-import { isCrisisText } from "../services/chapters/crisis.js";
+import { isCrisisText } from "../services/crisis/detector.js";
 import { deterministicViolations } from "../services/chapters/kindTruth.js";
 import { computeSignals, describeSignalShift } from "../services/chapters/signals.js";
 import {

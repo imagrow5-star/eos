@@ -5,6 +5,8 @@ import { isVoiceCallEnabled } from "../lib/featureFlags.js";
 import { voiceSessionUsageLimits } from "../middleware/usageLimits.js";
 import { buildVoiceFirstMessage } from "../services/voiceGreeting.js";
 import { logger } from "../lib/logger.js";
+import { resolveHelplines, buildHelplineBlockText } from "../services/crisis/helplines.js";
+import { pendingVoiceCrisisEvent, dismissVoiceCrisisEvent } from "../services/crisis/events.js";
 
 const router: IRouter = Router();
 
@@ -154,6 +156,50 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
 // WebSocket close reasons and SDK errors happen browser↔ElevenLabs and never
 // transit our server, so the client posts them here. This is what makes a
 // remote tester's "it just dropped" diagnosable from the server logs.
+// ─── Crisis floor (voice) — on-call helpline overlay ─────────────────────────
+// The realtime voice reply is spoken by ElevenLabs, so no field can ride along
+// with it to the browser. Instead the voice-llm callback writes a crisis_events
+// row and the call UI polls THIS endpoint (session-authed) every few seconds
+// during an active call. An undismissed voice event in the recent window means
+// "show the helpline card on-screen now".
+
+router.get("/voice-agent/crisis-status", async (req, res): Promise<void> => {
+  const userId = req.userId;
+  const event = await pendingVoiceCrisisEvent(userId);
+  if (!event) {
+    res.json({ active: false });
+    return;
+  }
+  const profile = await getOrCreateProfileForUser(userId);
+  const resolved = resolveHelplines(profile.country);
+  res.json({
+    active: true,
+    event: {
+      id: event.id,
+      countryServed: resolved.countryServed,
+      lines: resolved.lines,
+      blockText: buildHelplineBlockText(resolved.lines),
+    },
+  });
+});
+
+// Dismiss one on-call helpline overlay (per-event — a later crisis turn shows
+// a fresh card). Same review-flag rules as the chat card.
+router.post("/voice-agent/crisis-events/:id/dismiss", async (req, res): Promise<void> => {
+  const userId = req.userId;
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "invalid id" });
+    return;
+  }
+  const result = await dismissVoiceCrisisEvent(userId, id);
+  if (!result) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  res.json({ ok: true, reviewFlagged: result.reviewFlagged });
+});
+
 router.post("/voice-agent/client-error", (req, res): void => {
   const b = (req.body ?? {}) as Record<string, unknown>;
   const clip = (v: unknown, max: number) =>

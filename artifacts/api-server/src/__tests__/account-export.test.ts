@@ -612,6 +612,7 @@ describe("GET /api/account/export?format=html", () => {
       personalizationState: "Personalization state",
       weeklyChapters: "Weekly chapters",
       sealedNotes: "Sealed notes",
+      crisisEvents: "support resources were shown",
     };
 
     // Payload keys that are intentionally NOT their own report section, with the

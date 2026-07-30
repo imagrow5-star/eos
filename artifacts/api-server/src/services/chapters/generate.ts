@@ -31,7 +31,7 @@ import {
 import { isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/logger.js";
 import { logAiUsage } from "../ai.js";
-import { isCrisisText } from "./crisis.js";
+import { isCrisisText } from "../crisis/detector.js";
 import { computeSignals, describeSignalShift } from "./signals.js";
 import {
   validateExcerpt,

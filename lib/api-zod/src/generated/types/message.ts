@@ -13,4 +13,6 @@ export interface Message {
   content: string;
   createdAt: Date;
   isMorningNote: boolean;
+  /** Crisis floor: user dismissed the helpline card on this assistant message */
+  crisisBlockDismissed?: boolean;
 }

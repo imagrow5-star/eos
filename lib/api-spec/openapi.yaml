@@ -457,6 +457,11 @@ components:
           format: date-time
         isMorningNote:
           type: boolean
+        crisisBlockDismissed:
+          type: boolean
+          description: >-
+            Crisis floor: true when the user dismissed the helpline card
+            appended to this assistant message. Absent/false everywhere else.
       required:
         - id
         - role
@@ -494,6 +499,13 @@ components:
             Present and true when the AI provider was unreachable and the
             assistant message is the honest fallback line — clients show a
             subtle indicator instead of treating it as a normal reply.
+        crisisHelplineBlock:
+          type: string
+          description: >-
+            Crisis floor: present when the user's message matched the crisis
+            detector. The localized helpline block appended to the assistant
+            message — returned separately so clients render it as a distinct,
+            dismissible card rather than Eos's own words.
       required:
         - userMessage
         - assistantMessage
