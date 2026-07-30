@@ -5,16 +5,17 @@
  *
  * Levels — each failed level costs a full paid reconnection, so lower levels
  * drop only what could have caused the rejection:
- *   full  — tone TTS (stability/speed) + chosen voiceId + instant firstMessage
- *   voice — chosen voiceId + firstMessage (tone fields dropped)
- *   none  — no overrides at all: agent-default voice, and the greeting comes
- *           from the agent's own config (the slow LLM path — the pre-override
- *           behavior), so the call still works when every override flag is
- *           disabled in the dashboard.
+ *   full  — tone TTS (stability/speed) + chosen voiceId
+ *   voice — chosen voiceId only (tone fields dropped)
+ *   none  — no overrides at all: agent-default voice.
  *
- * firstMessage rides at "full" AND "voice": it's the instant-greeting fix
- * (spoken on connect with no LLM round trip), so it must survive the common
- * failure mode where only the TONE fields are disabled on the agent.
+ * first_message is DELIBERATELY never sent. ElevenLabs tightened runtime
+ * override permissions (~July 29) and rejects the field with a hard 1008
+ * disconnect ("Override for field 'first_message' is not allowed by config"),
+ * and the current subscription tier exposes no dashboard toggle to re-allow
+ * it. The greeting now always comes the LLM way: the agent asks our
+ * custom-LLM endpoint, whose synthetic-greeting path speaks a personalized
+ * opening from the same system prompt (routes/voice-llm.ts).
  */
 
 export type VoiceTone = "auto" | "gentle" | "calm" | "upbeat";
@@ -34,20 +35,19 @@ export const TONE_TTS: Record<VoiceTone, { stability: number; speed: number }> =
 export interface OverrideInputs {
   tone?: VoiceTone;
   voiceId?: string;
-  firstMessage?: string;
 }
 
 /**
  * Returns the `{ overrides: ... }` fragment to spread into
  * Conversation.startSession's config — or {} when the level sends nothing.
- * The SDK maps agent.firstMessage → conversation_config_override.agent
- * .first_message in the initiation message (verified against
- * @elevenlabs/client's constructOverrides).
+ * Never emits an `agent` block: agent.firstMessage → conversation_config_
+ * override.agent.first_message, which ElevenLabs now rejects with a 1008
+ * disconnect (see the module comment).
  */
 export function buildSessionOverrides(
   level: OverrideLevel,
   inputs: OverrideInputs,
-): { overrides?: { tts?: Record<string, unknown>; agent?: { firstMessage: string } } } {
+): { overrides?: { tts?: Record<string, unknown> } } {
   if (level === "none") return {};
 
   const tts: Record<string, unknown> = {};
@@ -58,9 +58,5 @@ export function buildSessionOverrides(
   }
   if (inputs.voiceId) tts.voiceId = inputs.voiceId;
 
-  const overrides: { tts?: Record<string, unknown>; agent?: { firstMessage: string } } = {};
-  if (Object.keys(tts).length > 0) overrides.tts = tts;
-  if (inputs.firstMessage) overrides.agent = { firstMessage: inputs.firstMessage };
-
-  return Object.keys(overrides).length > 0 ? { overrides } : {};
+  return Object.keys(tts).length > 0 ? { overrides: { tts } } : {};
 }

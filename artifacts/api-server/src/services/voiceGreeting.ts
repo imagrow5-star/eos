@@ -1,11 +1,16 @@
 /**
  * Instant voice-call opening lines.
  *
- * Spoken by ElevenLabs the moment the call connects, via the client-side
- * `overrides.agent.firstMessage` conversation override — NO LLM round trip,
- * no DB reads, no TTS-warmup wait. That turns the 5-8s "silent connect" into
- * first words in ~1-2s. Everything Eos says AFTER this line still comes from
- * the full custom-LLM brain (routes/voice-llm.ts) — this is only the hello.
+ * CURRENTLY UNUSED ON CALLS — kept, not deleted. These lines were spoken via
+ * the client-side `overrides.agent.firstMessage` conversation override, but
+ * ElevenLabs rejects that override with a 1008 disconnect since ~July 29
+ * (runtime override permission tightened on their side; our subscription
+ * tier has no dashboard toggle to re-allow it). The session route still
+ * returns the line; the client no longer forwards it to ElevenLabs, and the
+ * greeting comes from the custom LLM's synthetic-greeting path instead
+ * (routes/voice-llm.ts).
+ * TODO(cleanup): remove this module + the session-response plumbing if the
+ * LLM greeting becomes the permanent path (or rewire these lines into it).
  *
  * Hard rules for every line:
  *  - warm, brief, under 12 words;

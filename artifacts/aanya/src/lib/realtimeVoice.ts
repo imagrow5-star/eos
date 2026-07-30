@@ -31,13 +31,13 @@ export type RealtimeSessionInfo = {
   /** "How Eos speaks" preference — maps to TTS delivery overrides (voiceOverrides.ts). */
   tone?: VoiceTone;
   /**
-   * Instant opening line, spoken by ElevenLabs the moment the call connects
-   * via the agent.firstMessage override — no LLM round trip. Built server-side
-   * (api-server services/voiceGreeting.ts). When the override levels fail
-   * (flags disabled on the agent), the "none" attempt carries no firstMessage
-   * and the agent's own config generates the greeting the slow way instead —
-   * the custom LLM's synthetic-greeting path only fires in THAT case, so the
-   * override greeting and the LLM greeting can never both play.
+   * Server-built opening line (api-server services/voiceGreeting.ts).
+   * NO LONGER SENT to ElevenLabs: the first_message override is rejected with
+   * a 1008 disconnect since ~July 29 (permission tightened on their side, no
+   * dashboard toggle on our tier). The greeting now always comes from the
+   * custom LLM's synthetic-greeting path (routes/voice-llm.ts).
+   * TODO(cleanup): drop this field + the server's firstMessage plumbing once
+   * we decide the LLM greeting is the permanent path.
    */
   firstMessage?: string;
 };
@@ -145,11 +145,12 @@ export async function startRealtimeCall(
 
   const attempt = (level: OverrideLevel) => {
     // The SDK's override typings lag the API — stability/speed are accepted
-    // when enabled in the agent's Security settings.
+    // when enabled in the agent's Security settings. session.firstMessage is
+    // deliberately NOT passed: the first_message override is rejected by
+    // ElevenLabs with a 1008 disconnect (see voiceOverrides.ts).
     const overrides = buildSessionOverrides(level, {
       tone: session.tone,
       voiceId,
-      firstMessage: session.firstMessage,
     }) as Record<string, never>;
     return session.signedUrl
       ? Conversation.startSession({ signedUrl: session.signedUrl, ...shared, ...overrides })
@@ -168,7 +169,7 @@ export async function startRealtimeCall(
   let lastErr: unknown = null;
   for (const level of ["full", "voice", "none"] as const) {
     const payloadKey = JSON.stringify(
-      buildSessionOverrides(level, { tone: session.tone, voiceId, firstMessage: session.firstMessage }),
+      buildSessionOverrides(level, { tone: session.tone, voiceId }),
     );
     if (seenPayloads.has(payloadKey)) continue;
     seenPayloads.add(payloadKey);
