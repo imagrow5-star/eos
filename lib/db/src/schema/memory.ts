@@ -1,4 +1,4 @@
-import { pgTable, serial, text, boolean, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, timestamp, integer, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
@@ -10,6 +10,22 @@ export const memoryFactsTable = pgTable("memory_facts", {
   fact: encryptedText("fact", "memory_facts.fact").notNull(), // encrypted at rest
   category: text("category").notNull().default("life"), // life | preference | event | person | goal
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // ── Importance ranking (Sprint 2A) ─────────────────────────────────────────
+  // Retrieval scores facts on recency + how often/recently they're referenced +
+  // emotional weight, so an old-but-important fact (grief mentioned 8× over
+  // months) stops losing to a new trivial one. All nullable/defaulted and
+  // backfilled at first boot — extraction (Sprint 1) is untouched.
+  // timesReferenced: how many times the fact has resurfaced in conversation.
+  // Seeded from history at backfill (cap 20), then +1 per matching message.
+  timesReferenced: integer("times_referenced").notNull().default(1),
+  // Most recent message that referenced this fact (backfill: newest match, else
+  // createdAt). Drives the recent-reference boost.
+  lastReferencedAt: timestamp("last_referenced_at"),
+  // 0–1 emotional charge (category + surrounding low-mood heuristic at backfill).
+  emotionalWeight: real("emotional_weight").notNull().default(0.0),
+  // Sprint 2B "remember this" command sets this; declared now so the score
+  // formula can already honour it. Trumps every other factor when true.
+  userMarkedImportant: boolean("user_marked_important").notNull().default(false),
 });
 
 export const personalitySignalsTable = pgTable("personality_signals", {

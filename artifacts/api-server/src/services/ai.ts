@@ -16,6 +16,7 @@ import {
   type Profile,
 } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { recordMemoryReferences } from "./memory/references.js";
 import { todayInTimezone, describeCommitmentTiming } from "./stage.js";
 import type { SystemPromptParts } from "./systemPrompt.js";
 import { describeUserGender, describeUserBasics } from "./systemPrompt.js";
@@ -1139,6 +1140,14 @@ export async function runConversationExtractions(
       .limit(10),
   ]);
   const userMsgCount = Number(countRow[0]?.count ?? "0");
+
+  // Importance ranking (Sprint 2A): bump reference counts for any stored fact
+  // this exchange mentioned. Fire-and-forget — never blocks the reply, never
+  // touches extraction. Covers both surfaces (chat + voice) since they all
+  // route through this dispatcher.
+  recordMemoryReferences(userId, [userContent, aiContent]).catch((err) =>
+    logger.warn({ err }, "Background memory-reference update failed"),
+  );
 
   extractCommitments(profile, userContent, aiContent, openCommitments).catch((err) =>
     logger.error({ err }, "Background commitment extraction failed"),
