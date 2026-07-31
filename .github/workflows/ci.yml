@@ -28,9 +28,9 @@ env:
   DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres_test
   # Fixed salt so the Tier 2/3 hash + hash-parity tests are deterministic.
   LOG_HASH_SALT: ci-test-log-hash-salt-fixed-value-0123456789
-  # Valid 32-byte key, base64 (NOT hex) — matches lib/db's encryptedColumns.
-  # This is base64("ci-test-encryption-key-32bytes!!"), a throwaway CI value.
-  DATA_ENCRYPTION_KEY: Y2ktdGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGVzISE=
+  # NOTE: DATA_ENCRYPTION_KEY is NOT hard-coded here — a committed base64
+  # 32-byte value is key-shaped and trips secret-scan.test.ts. It is generated
+  # per-run in the "Generate throwaway DATA_ENCRYPTION_KEY" step below.
   SESSION_SECRET: ci-test-session-secret-not-a-real-secret
   # Fake key: the vitest suppress-resend setup intercepts all Resend fetches, so
   # no email is ever sent. Present so the send path (not the dev-fallback) runs.
@@ -81,6 +81,15 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Generate throwaway DATA_ENCRYPTION_KEY
+        # Generated at runtime (never committed) so no key-shaped literal lives
+        # in a tracked file — secret-scan.test.ts flags any committed base64
+        # 32-byte value. Written to $GITHUB_ENV once, so it's the SAME value for
+        # every later step in this job (deterministic within the run). It only
+        # needs valid format (32 bytes, base64) — the data it "protects" is this
+        # run's throwaway test DB.
+        run: echo "DATA_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
 
       - name: Push database schema
         # Fresh empty DB → drizzle-kit push applies all CREATEs non-interactively.

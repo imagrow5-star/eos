@@ -44,7 +44,9 @@ docker run -d --name eos-pg -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postg
 # 2. The same env the CI uses (all dummy values):
 export DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres_test
 export LOG_HASH_SALT=ci-test-log-hash-salt-fixed-value-0123456789
-export DATA_ENCRYPTION_KEY=Y2ktdGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGVzISE=
+# Generated, not hard-coded — a committed base64 32-byte value is key-shaped
+# and trips secret-scan.test.ts. Any valid 32-byte base64 works for tests.
+export DATA_ENCRYPTION_KEY=$(openssl rand -base64 32)
 export SESSION_SECRET=ci-test-session-secret-not-a-real-secret
 export RESEND_API_KEY=re_ci_fake_key_intercepted_by_test_setup
 export APP_URL=http://localhost:3000
