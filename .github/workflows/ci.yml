@@ -66,7 +66,11 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          # Pinned to the repo's dev toolchain. This is a pnpm-10 workspace:
+          # overrides / catalog / minimumReleaseAge live in pnpm-workspace.yaml
+          # (the pnpm-10 location), which pnpm 9 can't read — under pnpm 9,
+          # `install --frozen-lockfile` fails with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH.
+          version: 10.33.0
 
       - name: Setup Node
         uses: actions/setup-node@v4
