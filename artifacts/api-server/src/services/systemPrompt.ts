@@ -20,6 +20,7 @@ import { RAISE_COOLDOWN_DAYS, SUPPORT_COOLDOWN_DAYS } from "./chapters/storyThre
 import { languageByCode } from "./settings/languages.js";
 import { rankFactsByImportance, scoreFactImportance } from "./memory/importance.js";
 import { logger } from "../lib/logger.js";
+import crypto from "node:crypto";
 
 // ─── Language directive (Sprint 1.6) ─────────────────────────────────────────
 // The ONLY multilanguage change to the base prompt: one block, injected only
@@ -223,25 +224,41 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
   // boundaryFactAgeDays = age of the lowest-ranked fact that still made the cut
   // — if this stays high, old-but-important facts are surviving (the goal).
   if (allFacts.length > 0) {
-    const scores = facts.map((f) => scoreFactImportance(f, factNowMs)).sort((a, b) => b - a);
-    const top = scores.slice(0, 10);
-    const median = top.length ? top[Math.floor(top.length / 2)]! : 0;
-    const boundaryFact = facts[facts.length - 1];
-    const boundaryAgeDays = boundaryFact
-      ? Math.round((factNowMs - new Date(boundaryFact.createdAt).getTime()) / 86_400_000)
-      : 0;
-    logger.info(
-      {
-        userId,
-        totalFacts: allFacts.length,
-        returnedFacts: facts.length,
-        top10ScoreMax: Number((top[0] ?? 0).toFixed(3)),
-        top10ScoreMin: Number((top[top.length - 1] ?? 0).toFixed(3)),
-        top10ScoreMedian: Number(median.toFixed(3)),
-        boundaryFactAgeDays: boundaryAgeDays,
-      },
-      "memory ranking",
-    );
+    // Salted user-id hash for the log line ONLY — never store the raw id in
+    // observability. Computed inside try/catch: if LOG_HASH_SALT is unset (or
+    // hashing throws for any reason) we SKIP the whole log line rather than
+    // crash. Retrieval above (`facts`) is already done and never depends on
+    // this succeeding. No default/fallback salt is committed by design.
+    try {
+      const salt = process.env.LOG_HASH_SALT;
+      if (!salt) throw new Error("LOG_HASH_SALT not set");
+      const uh = crypto
+        .createHash("sha256")
+        .update(salt + ":" + userId)
+        .digest("hex")
+        .slice(0, 8);
+      const scores = facts.map((f) => scoreFactImportance(f, factNowMs)).sort((a, b) => b - a);
+      const top = scores.slice(0, 10);
+      const median = top.length ? top[Math.floor(top.length / 2)]! : 0;
+      const boundaryFact = facts[facts.length - 1];
+      const boundaryAgeDays = boundaryFact
+        ? Math.round((factNowMs - new Date(boundaryFact.createdAt).getTime()) / 86_400_000)
+        : 0;
+      logger.info(
+        {
+          uh,
+          totalFacts: allFacts.length,
+          returnedFacts: facts.length,
+          top10ScoreMax: Number((top[0] ?? 0).toFixed(3)),
+          top10ScoreMin: Number((top[top.length - 1] ?? 0).toFixed(3)),
+          top10ScoreMedian: Number(median.toFixed(3)),
+          boundaryFactAgeDays: boundaryAgeDays,
+        },
+        "memory ranking",
+      );
+    } catch {
+      /* logging is best-effort — never let it break retrieval */
+    }
   }
 
   const name = profile.userName || "you";
