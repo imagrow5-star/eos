@@ -47,6 +47,19 @@ The only exceptions: (1) the user explicitly writes "please switch to English" o
 Your craft rules (mirroring tone, no clinical labels, no invented affirmations, no death metaphors, honest presence) apply identically in ${name}. If you don't know a word in ${name}, say so honestly rather than switching to English.`;
 }
 
+/**
+ * Native name of an ACTIVE non-English preferred language, else null. Same
+ * activation gate as buildLanguageDirective — used by the RULE 5 anti-switch
+ * clause and the terminal reply-language reinforcement so all three agree on
+ * exactly which languages are "on".
+ */
+export function activeLanguageName(langCode: string | null | undefined): string | null {
+  const code = (langCode ?? "en").toLowerCase();
+  if (code === "en") return null;
+  const lang = languageByCode(code);
+  return lang && lang.active ? lang.nameNative : null;
+}
+
 // ─── Crisis resource per country ──────────────────────────────────────────────
 
 export function getCrisisLine(country: string): string {
@@ -196,6 +209,13 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
   const name = profile.userName || "you";
   const companionName = profile.companionName;
   const crisisLine = getCrisisLine(profile.country);
+
+  // Preferred-language name (active non-English only) — drives RULE 5's
+  // anti-switch clause and the terminal reply-language reinforcement. null for
+  // English / inactive: `mirrorLangName` falls back to "English" so RULE 5's
+  // clause reads as a harmless no-op for English users.
+  const langName = activeLanguageName((profile as { preferredLanguage?: string | null }).preferredLanguage);
+  const mirrorLangName = langName ?? "English";
 
   const pronounLine = (profile as any).companionGender === "man" ? "he/him"
     : (profile as any).companionGender === "nonbinary" ? "they/them"
@@ -485,6 +505,7 @@ You speak ${name}'s own words back to them. You do not have a default vocabulary
 - If they write in short lowercase texts — your reply is short, lowercase in register, natural. Never lecture in response to a three-word message.
 - Match their length. Their length IS the ceiling for yours. If they write two sentences, you write two sentences.
 - Match their energy. If they're dark and dry, you can meet that. If they're raw and open, be fully present.
+- Mirror their vocabulary and register, but always in ${mirrorLangName} — mirroring never means switching languages. If they type in English while your reply-language is ${mirrorLangName}, still reply in ${mirrorLangName}; do not echo English back.
 
 This is the single most visible rule. Breaking it makes every reply sound like a bot.`;
 
@@ -1110,6 +1131,18 @@ ${rules}`;
 - If ${name} mentions self-harm, suicide, or harming anyone: stay warm, stay present, don't turn clinical. "I'm really glad you told me. Please reach out to someone who can really be there right now — ${crisisLine} I'm here too."
 - Never pretend to have a physical presence.
 - Honest about being an AI if sincerely asked.`);
+
+  // Reply-language reinforcement — the LAST thing the model reads before the
+  // user's message (recency-strongest position). The directive at the top of
+  // the stable prompt is otherwise followed by ~500 lines of English craft
+  // rules and examples; repeating it here, and naming that the examples are
+  // English-for-reference only, is what makes a non-English reply stick.
+  // Empty for English users (langName is null) — their prompt is unchanged.
+  if (langName) {
+    contextParts.push(
+      `REPLY LANGUAGE (overrides every English example above): Respond ONLY in ${langName}. Every example in this prompt is written in English for your reference — they are NOT a signal to reply in English. The user chose ${langName}; write your entire reply in ${langName}.`,
+    );
+  }
 
   return { stable, context: contextParts.join("\n\n") };
 }
