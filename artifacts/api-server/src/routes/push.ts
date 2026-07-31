@@ -14,6 +14,7 @@ import { and, eq } from "drizzle-orm";
 import { db, profileTable, pushSubscriptionsTable } from "@workspace/db";
 import { getVapidPublicKey, sendPushToUser, runMorningPushSweep } from "../services/push.js";
 import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
 const router: IRouter = Router();
 
@@ -58,7 +59,10 @@ router.post("/push/subscribe", async (req, res): Promise<void> => {
       set: { userId, p256dh, auth, userAgent, failureCount: 0 },
     });
   await db.update(profileTable).set({ pushOptIn: true }).where(eq(profileTable.userId, userId));
-  logger.info({ userId }, "push: subscribed");
+  try {
+    const uh = hashUserIdForLog(userId);
+    if (uh) logger.info({ uh }, "push: subscribed");
+  } catch { /* logging must never crash the caller */ }
   res.json({ ok: true });
 });
 
@@ -87,7 +91,10 @@ router.post("/push/unsubscribe", async (req, res): Promise<void> => {
   if (remaining.length === 0) {
     await db.update(profileTable).set({ pushOptIn: false }).where(eq(profileTable.userId, userId));
   }
-  logger.info({ userId, remaining: remaining.length }, "push: unsubscribed");
+  try {
+    const uh = hashUserIdForLog(userId);
+    if (uh) logger.info({ uh, remaining: remaining.length }, "push: unsubscribed");
+  } catch { /* logging must never crash the caller */ }
   res.json({ ok: true, remaining: remaining.length });
 });
 
@@ -142,7 +149,17 @@ internalRouter.post("/internal/push/morning-run", async (req, res): Promise<void
   // writes nothing, never touches the push transport. Safe anywhere.
   const dryRun = ((req.body ?? {}) as Record<string, unknown>).dryRun === true;
   const result = await runMorningPushSweep(new Date(), { dryRun });
-  logger.info(result, "push: morning sweep complete");
+  // Privacy (Tier 3): the dry-run `decisions[]` carries raw userIds — hash them
+  // for the log only; the returned `result` object is left untouched.
+  try {
+    logger.info(
+      {
+        ...result,
+        decisions: result.decisions?.map((d) => ({ uh: hashUserIdForLog(d.userId), decision: d.decision })),
+      },
+      "push: morning sweep complete",
+    );
+  } catch { /* logging must never crash the caller */ }
   res.json(result);
 });
 

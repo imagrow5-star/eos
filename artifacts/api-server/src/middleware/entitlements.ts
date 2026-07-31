@@ -17,6 +17,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { getUserTier, LEGACY_FULL_ACCESS, type UserTierResult } from "../services/tiers.js";
 import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
 declare global {
   namespace Express {
@@ -35,7 +36,10 @@ export async function attachEntitlements(
   try {
     req.entitlements = await getUserTier(req.userId);
   } catch (err) {
-    logger.error({ err, userId: req.userId }, "entitlements: tier lookup failed — granting full access");
+    try {
+      const uh = hashUserIdForLog(req.userId);
+      if (uh) logger.error({ err, uh }, "entitlements: tier lookup failed — granting full access");
+    } catch { /* logging must never crash the caller */ }
     req.entitlements = LEGACY_FULL_ACCESS;
   }
   next();

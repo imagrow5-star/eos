@@ -17,6 +17,7 @@
 import { eq } from "drizzle-orm";
 import { db, subscriptionsTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
 export type TierId = "companion" | "closer" | "always";
 
@@ -124,10 +125,14 @@ export async function getUserTier(userId: number): Promise<UserTierResult> {
   if (!row) return LEGACY_FULL_ACCESS;
 
   if (!isTierId(row.tier) || !isSubscriptionStatus(row.status)) {
-    logger.error(
-      { userId, tier: row.tier, status: row.status },
-      "tiers: subscription row has unknown tier/status — granting full access, investigate",
-    );
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh)
+        logger.error(
+          { uh, tier: row.tier, status: row.status },
+          "tiers: subscription row has unknown tier/status — granting full access, investigate",
+        );
+    } catch { /* logging must never crash the caller */ }
     return LEGACY_FULL_ACCESS;
   }
 

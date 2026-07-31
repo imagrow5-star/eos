@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { profileTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
 const router: IRouter = Router();
 
@@ -44,10 +45,16 @@ router.get("/email/unsubscribe", async (req, res): Promise<void> => {
       .set({ dailyEmailOptOut: true })
       .where(eq(profileTable.userId, uid));
 
-    logger.info({ userId: uid }, "User unsubscribed from daily emails");
+    try {
+      const uh = hashUserIdForLog(uid);
+      if (uh) logger.info({ uh }, "User unsubscribed from daily emails");
+    } catch { /* logging must never crash the caller */ }
     res.status(200).send(unsubPage("Done", "You've been unsubscribed from Eos daily notes. You won't receive them again."));
   } catch (err) {
-    logger.error({ err, userId: uid }, "Unsubscribe update failed");
+    try {
+      const uh = hashUserIdForLog(uid);
+      if (uh) logger.error({ err, uh }, "Unsubscribe update failed");
+    } catch { /* logging must never crash the caller */ }
     res.status(500).send(unsubPage("Error", "Something went wrong. Please try again or contact support."));
   }
 });

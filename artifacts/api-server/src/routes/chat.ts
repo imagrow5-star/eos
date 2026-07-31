@@ -23,6 +23,7 @@ import { calculateStage, todayInTimezone, getTimeContext, describeCommitmentTimi
 import { getOrCreateProfileForUser } from "./profile.js";
 import { chatUsageLimits } from "../middleware/usageLimits.js";
 import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { detectCrisis } from "../services/crisis/detector.js";
 import { CRISIS_REINFORCEMENT_BLOCK } from "../services/crisis/reinforcement.js";
 import { resolveHelplines, buildHelplineBlockText } from "../services/crisis/helplines.js";
@@ -127,7 +128,10 @@ router.delete("/chat/messages/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "not found" });
     return;
   }
-  logger.info({ userId, messageId: id }, "Message forgotten on request");
+  try {
+    const uh = hashUserIdForLog(userId);
+    if (uh) logger.info({ uh, messageId: id }, "Message forgotten on request");
+  } catch { /* logging must never crash the caller */ }
   res.json({ ok: true });
 });
 
@@ -230,7 +234,12 @@ router.post("/chat/stream", ...chatUsageLimits, async (req, res): Promise<void> 
         messageId: assistantMsg.id,
         patternMatched: crisis.pattern!,
         countryServed: resolved.countryServed,
-      }).catch((err) => logger.error({ err, userId }, "crisis floor: recording chat event failed"));
+      }).catch((err) => {
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) logger.error({ err, uh }, "crisis floor: recording chat event failed");
+      } catch { /* logging must never crash the caller */ }
+    });
     }
 
     sendEvent("done", {
@@ -336,7 +345,12 @@ router.post("/chat/send", ...chatUsageLimits, async (req, res): Promise<void> =>
       messageId: assistantMsg.id,
       patternMatched: crisis.pattern!,
       countryServed: resolved.countryServed,
-    }).catch((err) => logger.error({ err, userId }, "crisis floor: recording chat event failed"));
+    }).catch((err) => {
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) logger.error({ err, uh }, "crisis floor: recording chat event failed");
+      } catch { /* logging must never crash the caller */ }
+    });
   }
 
   // Shared background extraction dispatcher — the same path stream + voice

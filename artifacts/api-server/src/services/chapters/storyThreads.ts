@@ -19,6 +19,7 @@
 import { eq } from "drizzle-orm";
 import { db, storyThreadsTable, type StoryRetelling, type StoryThread } from "@workspace/db";
 import { logger } from "../../lib/logger.js";
+import { hashUserIdForLog } from "../../lib/logging/hashUserIdForLog.js";
 import { isCrisisText } from "../crisis/detector.js";
 import { validateExcerpt, type QuoteSource } from "./quotes.js";
 
@@ -201,7 +202,10 @@ export async function updateStoryThreads(opts: {
   try {
     raw = await opts.llm(threadUpdatePrompt(existing, weekMessages), 1200, 0.2);
   } catch (err) {
-    logger.warn({ err, userId }, "story-threads: model call failed — skipping week");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.warn({ err, uh }, "story-threads: model call failed — skipping week");
+    } catch { /* logging must never crash the caller */ }
     return { threads: existing, updatedSlugs: [] };
   }
   const parsed = opts.parseJson<{ updates?: RawThreadUpdate[] }>(raw);

@@ -43,6 +43,7 @@ import {
   type TierId,
 } from "../services/tiers.js";
 import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
 const router: IRouter = Router();
 
@@ -145,11 +146,15 @@ async function applySubscriptionEvent(
     if (!tier || !status) {
       // A brand-new subscription we can't classify must not guess — log SO
       // loudly it gets noticed, and let a later (corrected) event create it.
-      logger.error(
-        { eventType, userId, priceIds, status: data.status },
-        "billing-webhook: cannot create subscription row — unknown price id or status. " +
-          "Check PADDLE_PRICE_* env vars match the live Paddle prices.",
-      );
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh)
+          logger.error(
+            { eventType, uh, priceIds, status: data.status },
+            "billing-webhook: cannot create subscription row — unknown price id or status. " +
+              "Check PADDLE_PRICE_* env vars match the live Paddle prices.",
+          );
+      } catch { /* logging must never crash the caller */ }
       return;
     }
     await tx.insert(subscriptionsTable).values({
@@ -161,7 +166,10 @@ async function applySubscriptionEvent(
       trialEndsAt,
       currentPeriodEndsAt,
     });
-    logger.info({ userId, tier, status, eventType }, "billing-webhook: subscription row created");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.info({ uh, tier, status, eventType }, "billing-webhook: subscription row created");
+    } catch { /* logging must never crash the caller */ }
     return;
   }
 
@@ -180,10 +188,14 @@ async function applySubscriptionEvent(
       updatedAt: new Date(),
     })
     .where(eq(subscriptionsTable.userId, userId));
-  logger.info(
-    { userId, tier: nextTier ?? existing.tier, status: status ?? existing.status, eventType },
-    "billing-webhook: subscription row updated",
-  );
+  try {
+    const uh = hashUserIdForLog(userId);
+    if (uh)
+      logger.info(
+        { uh, tier: nextTier ?? existing.tier, status: status ?? existing.status, eventType },
+        "billing-webhook: subscription row updated",
+      );
+  } catch { /* logging must never crash the caller */ }
 }
 
 router.post("/billing/webhook", async (req, res): Promise<void> => {

@@ -16,6 +16,7 @@
  */
 
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
+import { hashUserIdForLog } from "../logHash";
 
 // ─── Shared recorder state (hoisted so the vi.mock factory can see it) ───────
 
@@ -154,6 +155,9 @@ beforeAll(() => {
   process.env.RESEND_API_KEY = "test-key-never-used";
   process.env.ANTHROPIC_API_KEY = "test-key-never-used";
   process.env.SESSION_SECRET = "test-secret";
+  // Tier 3: per-user decision logs now emit a salted `uh` and are dropped
+  // without a salt — set one so the decisions are observable to this test.
+  process.env.LOG_HASH_SALT = "dry-run-test-salt-0123456789abcd";
   delete process.env.DAILY_EMAIL_ONLY_USER;
 
   globalThis.fetch = ((input: any, ..._rest: any[]) => {
@@ -187,6 +191,7 @@ beforeAll(() => {
 afterAll(() => {
   globalThis.fetch = realFetch;
   delete process.env.DAILY_EMAIL_DRY_RUN;
+  delete process.env.LOG_HASH_SALT;
 });
 
 // ─── The test ────────────────────────────────────────────────────────────────
@@ -236,12 +241,13 @@ describe("DAILY_EMAIL_DRY_RUN run-level guarantee", () => {
     // Exactly one dry-run decision per eligible user, with the right verdicts.
     const decisions = logs.filter((l) => l.msg === "dry-run decision");
     expect(decisions).toHaveLength(4);
-    const byUser = Object.fromEntries(decisions.map((d) => [d.userId, d.decision]));
-    expect(byUser).toEqual({
-      1: "would-send-daily-note",
-      2: "opted-out",
-      3: "held",
-      4: "outside-window",
+    // Tier 3: decisions are keyed by the salted `uh`, not a raw userId.
+    const byUh = Object.fromEntries(decisions.map((d) => [d.uh, d.decision]));
+    expect(byUh).toEqual({
+      [hashUserIdForLog(1)!]: "would-send-daily-note",
+      [hashUserIdForLog(2)!]: "opted-out",
+      [hashUserIdForLog(3)!]: "held",
+      [hashUserIdForLog(4)!]: "outside-window",
     });
 
     logSpy.mockRestore();

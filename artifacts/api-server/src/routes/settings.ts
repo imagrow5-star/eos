@@ -205,7 +205,10 @@ router.post("/settings/voice", async (req, res): Promise<void> => {
     .update(profileTable)
     .set({ voiceId })
     .where(and(eq(profileTable.id, profile.id), eq(profileTable.userId, req.userId)));
-  logger.info({ userId: req.userId }, "settings: voice saved from curated catalog");
+  try {
+    const uh = hashUserIdForLog(req.userId);
+    if (uh) logger.info({ uh }, "settings: voice saved from curated catalog");
+  } catch { /* logging must never crash the caller */ }
   res.json({ ok: true, voiceId });
 });
 

@@ -30,6 +30,7 @@ import {
 } from "@workspace/db";
 import { isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/logger.js";
+import { hashUserIdForLog } from "../../lib/logging/hashUserIdForLog.js";
 import { logAiUsage } from "../ai.js";
 import { isCrisisText } from "../crisis/detector.js";
 import { computeSignals, describeSignalShift } from "./signals.js";
@@ -649,7 +650,10 @@ export async function generateChapterForUser(
     retryFeedback = failures.length ? failures.join("\n") : "Fewer than 2 themes survived validation — copy excerpts verbatim from the listed text.";
   }
   if (themes.length === 0) {
-    logger.warn({ userId, weekStart }, "chapter: no themes survived verbatim validation — skipping week");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.warn({ uh, weekStart }, "chapter: no themes survived verbatim validation — skipping week");
+    } catch { /* logging must never crash the caller */ }
     return { userId, weekStart, skipped: "no_valid_themes" };
   }
 
@@ -807,13 +811,19 @@ export async function generateChapterForUser(
           );
           if (raw.trim().length >= 30) reflection = raw.trim();
         } catch (err) {
-          logger.warn({ err, userId }, "chapter: working-through reflection failed — using fallback");
+          try {
+            const uh = hashUserIdForLog(userId);
+            if (uh) logger.warn({ err, uh }, "chapter: working-through reflection failed — using fallback");
+          } catch { /* logging must never crash the caller */ }
         }
         workingThrough = { label: chosen.label, entries, reflection };
       }
     }
   } catch (err) {
-    logger.warn({ err, userId }, "chapter: story-thread pass failed — continuing without");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.warn({ err, uh }, "chapter: story-thread pass failed — continuing without");
+    } catch { /* logging must never crash the caller */ }
   }
 
   // ── Sealed note from the last chapter → resolution in this one ──
@@ -850,7 +860,10 @@ export async function generateChapterForUser(
           );
           if (raw.trim().length >= 30) text = raw.trim();
         } catch (err) {
-          logger.warn({ err, userId }, "chapter: seal-resolution call failed — using fallback");
+          try {
+            const uh = hashUserIdForLog(userId);
+            if (uh) logger.warn({ err, uh }, "chapter: seal-resolution call failed — using fallback");
+          } catch { /* logging must never crash the caller */ }
         }
         sealResolution = {
           noteId: pendingNote.id,
@@ -863,7 +876,10 @@ export async function generateChapterForUser(
       }
     }
   } catch (err) {
-    logger.warn({ err, userId }, "chapter: sealed-note lookup failed — continuing without");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.warn({ err, uh }, "chapter: sealed-note lookup failed — continuing without");
+    } catch { /* logging must never crash the caller */ }
   }
 
   // ── Kind-truth check with one repair round, then fallbacks ──
@@ -988,7 +1004,10 @@ export async function generateChapterForUser(
   notePromptText = sectionText("noteInvite") ?? notePromptText;
 
   if (finalThemes.length === 0) {
-    logger.warn({ userId, weekStart }, "chapter: all themes failed kind-truth — skipping week");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.warn({ uh, weekStart }, "chapter: all themes failed kind-truth — skipping week");
+    } catch { /* logging must never crash the caller */ }
     return { userId, weekStart, skipped: "no_valid_themes" };
   }
 
@@ -1054,10 +1073,14 @@ export async function generateChapterForUser(
     return row;
   });
 
-  logger.info(
-    { userId, weekStart, chapterId: inserted?.id, themes: persistThemes.length, hasOffer: !!microOffer, reviewItems: reviewItems.length },
-    "chapter: generated",
-  );
+  try {
+    const uh = hashUserIdForLog(userId);
+    if (uh)
+      logger.info(
+        { uh, weekStart, chapterId: inserted?.id, themes: persistThemes.length, hasOffer: !!microOffer, reviewItems: reviewItems.length },
+        "chapter: generated",
+      );
+  } catch { /* logging must never crash the caller */ }
   return { userId, weekStart, chapterId: inserted?.id };
 }
 
@@ -1144,7 +1167,10 @@ export async function runWeeklySweep(
   }
   const recordDecision = (userId: number, decision: string) => {
     result.decisions!.push({ userId, decision });
-    logger.info({ dryRun: true, sweep: "chapters", userId, decision }, "dry-run decision");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.info({ dryRun: true, sweep: "chapters", uh, decision }, "dry-run decision");
+    } catch { /* logging must never crash the caller */ }
   };
 
   for (const u of users) {
@@ -1168,7 +1194,10 @@ export async function runWeeklySweep(
         recordDecision(u.userId, await previewChapterDecision(u.userId, tz, now, opts.force === true));
       } catch (err) {
         result.failed++;
-        logger.error({ err, userId: u.userId }, "chapter dry run: preview failed");
+        try {
+          const uh = hashUserIdForLog(u.userId);
+          if (uh) logger.error({ err, uh }, "chapter dry run: preview failed");
+        } catch { /* logging must never crash the caller */ }
       }
       continue;
     }
@@ -1187,12 +1216,18 @@ export async function runWeeklySweep(
             url: "/chapters",
           });
         } catch (err) {
-          logger.warn({ err, userId: u.userId }, "chapter: ready-push failed");
+          try {
+            const uh = hashUserIdForLog(u.userId);
+            if (uh) logger.warn({ err, uh }, "chapter: ready-push failed");
+          } catch { /* logging must never crash the caller */ }
         }
       } else if (r.skipped) result.skipped[r.skipped] = (result.skipped[r.skipped] ?? 0) + 1;
     } catch (err) {
       result.failed++;
-      logger.error({ err, userId: u.userId }, "chapter: generation failed");
+      try {
+        const uh = hashUserIdForLog(u.userId);
+        if (uh) logger.error({ err, uh }, "chapter: generation failed");
+      } catch { /* logging must never crash the caller */ }
     }
   }
   return result;

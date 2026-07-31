@@ -9,6 +9,7 @@
 import { eq, sql } from "drizzle-orm";
 import { db, memoryFactsTable } from "@workspace/db";
 import { logger } from "../../lib/logger.js";
+import { hashUserIdForLog } from "../../lib/logging/hashUserIdForLog.js";
 import { contentTokens } from "./importance.js";
 
 const REFERENCE_CAP = 100;
@@ -60,7 +61,10 @@ export async function recordMemoryReferences(
 
     return matchedIds.length;
   } catch (err) {
-    logger.warn({ err, userId }, "recordMemoryReferences failed (non-fatal)");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.warn({ err, uh }, "recordMemoryReferences failed (non-fatal)");
+    } catch { /* logging must never crash the caller */ }
     return 0;
   }
 }

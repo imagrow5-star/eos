@@ -16,6 +16,7 @@ import {
   type Profile,
 } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { recordMemoryReferences } from "./memory/references.js";
 import { todayInTimezone, describeCommitmentTiming } from "./stage.js";
 import type { SystemPromptParts } from "./systemPrompt.js";
@@ -553,7 +554,10 @@ export async function appendRecentPhrase(userId: number, aiContent: string): Pro
         set: { recentPhrases: updated, updatedAt: new Date() },
       });
   } catch (err) {
-    logger.warn({ err, userId }, "appendRecentPhrase failed (non-fatal)");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.warn({ err, uh }, "appendRecentPhrase failed (non-fatal)");
+    } catch { /* logging must never crash the caller */ }
   }
 }
 
@@ -828,7 +832,10 @@ RULES — read carefully:
         scheduledTime: validTime(result.newCommitment.scheduledTime),
         state: "open",
       });
-      logger.info({ userId }, "New commitment saved");
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) logger.info({ uh }, "New commitment saved");
+      } catch { /* logging must never crash the caller */ }
     }
 
     // Apply state updates
@@ -1067,7 +1074,10 @@ RULES:
         isActive: true,
         streak: 0,
       });
-      logger.info({ userId }, "New habit created from conversation");
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) logger.info({ uh }, "New habit created from conversation");
+      } catch { /* logging must never crash the caller */ }
     }
 
     // Create new goal if agreed upon — identical to a Journey-form goal from
@@ -1077,7 +1087,10 @@ RULES:
       const description =
         typeof result.newGoal.description === "string" ? result.newGoal.description : "";
       await createGoalWithTasks(userId, title, description, { dedupeActive: true });
-      logger.info({ userId }, "New goal created from conversation");
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) logger.info({ uh }, "New goal created from conversation");
+      } catch { /* logging must never crash the caller */ }
     }
 
     // Offer declined → start the re-offer cooldown the system prompt reads.
@@ -1092,9 +1105,15 @@ RULES:
             target: personalizationStateTable.userId,
             set: { goalOfferDeclinedAt: new Date(), updatedAt: new Date() },
           });
-        logger.info({ userId }, "Goal offer declined — re-offer cooldown recorded");
+        try {
+          const uh = hashUserIdForLog(userId);
+          if (uh) logger.info({ uh }, "Goal offer declined — re-offer cooldown recorded");
+        } catch { /* logging must never crash the caller */ }
       } catch (err) {
-        logger.warn({ err, userId }, "Failed to record goal-offer decline (non-fatal)");
+        try {
+          const uh = hashUserIdForLog(userId);
+          if (uh) logger.warn({ err, uh }, "Failed to record goal-offer decline (non-fatal)");
+        } catch { /* logging must never crash the caller */ }
       }
     }
 
@@ -1293,7 +1312,10 @@ export async function createGoalWithTasks(
     ),
   );
 
-  logger.info({ goalId: goal.id, taskCount: tasks.length, userId }, "Goal created with AI sub-tasks");
+  try {
+    const uh = hashUserIdForLog(userId);
+    if (uh) logger.info({ goalId: goal.id, taskCount: tasks.length, uh }, "Goal created with AI sub-tasks");
+  } catch { /* logging must never crash the caller */ }
   return { goal, tasks };
 }
 

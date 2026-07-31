@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool, decryptText, decryptJson, decryptTextArray } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { EMBEDDED_FONTS_CSS } from "./report-fonts.js";
 
 const router = Router();
@@ -820,9 +821,15 @@ router.get("/account/export", async (req, res): Promise<void> => {
       res.json(exportPayload);
     }
 
-    logger.info({ userId, format: format ?? "json" }, "Account data exported");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.info({ uh, format: format ?? "json" }, "Account data exported");
+    } catch { /* logging must never crash the caller */ }
   } catch (err) {
-    logger.error({ err, userId }, "Failed to export account data");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.error({ err, uh }, "Failed to export account data");
+    } catch { /* logging must never crash the caller */ }
     res.status(500).json({ error: "Failed to export your data. Please try again." });
   }
 });
@@ -846,9 +853,15 @@ router.get("/account/report", async (req, res): Promise<void> => {
     const html = buildHtmlReport(exportPayload);
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(html);
-    logger.info({ userId }, "Account report viewed in-app");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.info({ uh }, "Account report viewed in-app");
+    } catch { /* logging must never crash the caller */ }
   } catch (err) {
-    logger.error({ err, userId }, "Failed to render account report");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.error({ err, uh }, "Failed to render account report");
+    } catch { /* logging must never crash the caller */ }
     res.status(500).json({ error: "Failed to load your report. Please try again." });
   }
 });
@@ -999,7 +1012,10 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
       lastMessageAt:  msgResult.rows[0].last_at  ?? null,
     });
   } catch (err) {
-    logger.error({ err, userId }, "Failed to fetch export summary");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.error({ err, uh }, "Failed to fetch export summary");
+    } catch { /* logging must never crash the caller */ }
     res.status(500).json({ error: "Could not load summary. Please try again." });
   }
 });

@@ -21,6 +21,7 @@ import {
 } from "@workspace/db";
 import { isNotNull } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
 export const PUSH_DAILY_CAP = 2; // per user, rolling 24h, ALL kinds combined
 
@@ -149,7 +150,10 @@ export async function sendPushToUser(userId: number, kind: PushKind, payload: Pu
   if (subs.length === 0) return "no_subscriptions";
 
   if (!(await claimSendSlot(userId, kind))) {
-    logger.info({ userId, kind }, "push: daily cap reached — skipped");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.info({ uh, kind }, "push: daily cap reached — skipped");
+    } catch { /* logging must never crash the caller */ }
     return "capped";
   }
 
@@ -178,7 +182,10 @@ export async function sendPushToUser(userId: number, kind: PushKind, payload: Pu
       if (statusCode === 404 || statusCode === 410) {
         // Subscription is gone (browser revoked / app uninstalled) — prune it.
         await db.delete(pushSubscriptionsTable).where(sameRowWeFailed);
-        logger.info({ userId, subId: sub.id, statusCode }, "push: pruned dead subscription");
+        try {
+          const uh = hashUserIdForLog(userId);
+          if (uh) logger.info({ uh, subId: sub.id, statusCode }, "push: pruned dead subscription");
+        } catch { /* logging must never crash the caller */ }
       } else if (statusCode === 403) {
         // Signature rejected — this subscription was created under a
         // DIFFERENT VAPID keypair (key rotation) and can never succeed under
@@ -187,7 +194,10 @@ export async function sendPushToUser(userId: number, kind: PushKind, payload: Pu
         // push services also return it for transient JWT problems like clock
         // skew — those fall through to the bounded-retry path below.)
         await db.delete(pushSubscriptionsTable).where(sameRowWeFailed);
-        logger.info({ userId, subId: sub.id, statusCode }, "push: pruned key-mismatch subscription");
+        try {
+          const uh = hashUserIdForLog(userId);
+          if (uh) logger.info({ uh, subId: sub.id, statusCode }, "push: pruned key-mismatch subscription");
+        } catch { /* logging must never crash the caller */ }
       } else {
         // Transient (5xx, network, 401 skew): bounded retry. SQL-side
         // increment so concurrent senders can't lose counts; prune once the
@@ -198,13 +208,20 @@ export async function sendPushToUser(userId: number, kind: PushKind, payload: Pu
           .set({ failureCount: sql`${pushSubscriptionsTable.failureCount} + 1` })
           .where(sameRowWeFailed)
           .returning({ failureCount: pushSubscriptionsTable.failureCount });
-        logger.warn({ err, userId, subId: sub.id, statusCode }, "push: delivery failed");
+        try {
+          const uh = hashUserIdForLog(userId);
+          if (uh) logger.warn({ err, uh, subId: sub.id, statusCode }, "push: delivery failed");
+        } catch { /* logging must never crash the caller */ }
         if (updated && updated.failureCount >= MAX_CONSECUTIVE_FAILURES) {
           await db.delete(pushSubscriptionsTable).where(sameRowWeFailed);
-          logger.info(
-            { userId, subId: sub.id, failures: updated.failureCount },
-            "push: pruned persistently-failing subscription",
-          );
+          try {
+            const uh = hashUserIdForLog(userId);
+            if (uh)
+              logger.info(
+                { uh, subId: sub.id, failures: updated.failureCount },
+                "push: pruned persistently-failing subscription",
+              );
+          } catch { /* logging must never crash the caller */ }
         }
       }
     }
@@ -225,7 +242,10 @@ export async function sendPushToUser(userId: number, kind: PushKind, payload: Pu
       RETURNING user_id
     `);
     if ((reset.rows?.length ?? 0) > 0) {
-      logger.info({ userId }, "push: no devices remain — opt-in reset");
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) logger.info({ uh }, "push: no devices remain — opt-in reset");
+      } catch { /* logging must never crash the caller */ }
     }
   }
   return delivered > 0 ? "sent" : "all_failed";
@@ -291,7 +311,10 @@ export async function runMorningPushSweep(
   }
   const recordDecision = (userId: number, decision: string) => {
     result.decisions!.push({ userId, decision });
-    logger.info({ dryRun: true, sweep: "push-morning", userId, decision }, "dry-run decision");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.info({ dryRun: true, sweep: "push-morning", uh, decision }, "dry-run decision");
+    } catch { /* logging must never crash the caller */ }
   };
 
   for (const u of users) {

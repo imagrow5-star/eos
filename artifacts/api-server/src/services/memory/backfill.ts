@@ -16,6 +16,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db, memoryFactsTable, messagesTable, moodScoresTable } from "@workspace/db";
 import { logger } from "../../lib/logger.js";
+import { hashUserIdForLog } from "../../lib/logging/hashUserIdForLog.js";
 import { contentTokens, categoryEmotionalWeight } from "./importance.js";
 
 const MS_PER_DAY = 86_400_000;
@@ -96,7 +97,10 @@ export async function backfillUserFactImportance(userId: number): Promise<number
       updated += 1;
     }
 
-    logger.info({ userId, facts: pending.length, updated }, "memory importance backfilled for user");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.info({ uh, facts: pending.length, updated }, "memory importance backfilled for user");
+    } catch { /* logging must never crash the caller */ }
     return updated;
   });
 }
@@ -121,7 +125,10 @@ export async function backfillMemoryImportance(): Promise<{ users: number; facts
   for (const { userId } of rows) {
     if (userId == null) continue;
     const n = await backfillUserFactImportance(userId).catch((err) => {
-      logger.error({ err, userId }, "memory importance backfill failed for user");
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) logger.error({ err, uh }, "memory importance backfill failed for user");
+      } catch { /* logging must never crash the caller */ }
       return 0;
     });
     if (n > 0) { users += 1; facts += n; }

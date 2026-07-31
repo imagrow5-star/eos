@@ -27,6 +27,7 @@ import { db, subscriptionsTable } from "@workspace/db";
 import { TIERS, getPaddlePriceId, getUserTier, type TierId } from "../services/tiers.js";
 import { cancelPaddleSubscription } from "../services/paddle.js";
 import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
 // ─── Public: checkout configuration ──────────────────────────────────────────
 
@@ -90,7 +91,10 @@ router.post("/billing/cancel", async (req, res): Promise<void> => {
   try {
     await cancelPaddleSubscription(sub.paddleSubscriptionId);
   } catch (err) {
-    logger.error({ err, userId }, "billing: Paddle cancel API call failed");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.error({ err, uh }, "billing: Paddle cancel API call failed");
+    } catch { /* logging must never crash the caller */ }
     res.status(502).json({
       error:
         "We couldn't reach our payment partner just now — nothing was changed. Please try again in a moment.",
@@ -100,7 +104,10 @@ router.post("/billing/cancel", async (req, res): Promise<void> => {
 
   // Paddle's subscription.updated/canceled webhooks are the source of truth
   // for the row; the response tells the user what to expect meanwhile.
-  logger.info({ userId }, "billing: user scheduled cancellation at period end");
+  try {
+    const uh = hashUserIdForLog(userId);
+    if (uh) logger.info({ uh }, "billing: user scheduled cancellation at period end");
+  } catch { /* logging must never crash the caller */ }
   res.json({ ok: true, accessUntil: sub.currentPeriodEndsAt });
 });
 

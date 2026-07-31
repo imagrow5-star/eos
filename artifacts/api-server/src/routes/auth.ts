@@ -5,6 +5,7 @@ import { randomBytes } from "crypto";
 import { db, pool } from "@workspace/db";
 import { usersTable, passwordResetTokensTable, emailVerificationTokensTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
 const router: IRouter = Router();
 
@@ -294,9 +295,15 @@ async function issueAndSendVerification(userId: number, email: string): Promise<
     const verifyUrl = `${getAppBaseUrl()}/?verifyToken=${token}`;
 
     await sendVerificationEmail(email, verifyUrl);
-    logger.info({ userId }, "Verification email sent");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.info({ uh }, "Verification email sent");
+    } catch { /* logging must never crash the caller */ }
   } catch (err) {
-    logger.error({ err, userId }, "Failed to send verification email");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.error({ err, uh }, "Failed to send verification email");
+    } catch { /* logging must never crash the caller */ }
   }
 }
 
@@ -398,7 +405,10 @@ router.post("/auth/signup", async (req, res): Promise<void> => {
 
     await regenerateSession(req);
     req.session.userId = user!.id;
-    logger.info({ userId: user!.id }, "New user signed up");
+    try {
+      const uh = hashUserIdForLog(user!.id);
+      if (uh) logger.info({ uh }, "New user signed up");
+    } catch { /* logging must never crash the caller */ }
 
     // Fire-and-forget: send verification email after responding
     res.status(201).json({ user: { id: user!.id, email: user!.email }, emailVerified: false });
@@ -449,7 +459,10 @@ router.post("/auth/login", async (req, res): Promise<void> => {
 
     await regenerateSession(req);
     req.session.userId = user.id;
-    logger.info({ userId: user.id }, "User logged in");
+    try {
+      const uh = hashUserIdForLog(user.id);
+      if (uh) logger.info({ uh }, "User logged in");
+    } catch { /* logging must never crash the caller */ }
     res.json({
       user: { id: user.id, email: user.email },
       emailVerified: user.emailVerifiedAt !== null,
@@ -553,7 +566,10 @@ router.get("/auth/verify-email", async (req, res): Promise<void> => {
         .delete(emailVerificationTokensTable)
         .where(eq(emailVerificationTokensTable.userId, row.userId));
 
-      logger.info({ userId: row.userId }, "Email address changed and verified");
+      try {
+        const uh = hashUserIdForLog(row.userId);
+        if (uh) logger.info({ uh }, "Email address changed and verified");
+      } catch { /* logging must never crash the caller */ }
       res.json({ ok: true, emailChanged: true });
       return;
     }
@@ -570,7 +586,10 @@ router.get("/auth/verify-email", async (req, res): Promise<void> => {
       .delete(emailVerificationTokensTable)
       .where(eq(emailVerificationTokensTable.userId, row.userId));
 
-    logger.info({ userId: row.userId }, "Email verified");
+    try {
+      const uh = hashUserIdForLog(row.userId);
+      if (uh) logger.info({ uh }, "Email verified");
+    } catch { /* logging must never crash the caller */ }
     res.json({ ok: true });
   } catch (err) {
     logger.error({ err }, "verify-email error");
@@ -661,9 +680,15 @@ router.post("/auth/resend-verification", async (req, res): Promise<void> => {
       try {
         const verifyUrl = `${getAppBaseUrl()}/?verifyToken=${token}`;
         await sendVerificationEmail(targetEmail, verifyUrl);
-        logger.info({ userId: targetUserId }, "Verification email sent");
+        try {
+          const uh = hashUserIdForLog(targetUserId);
+          if (uh) logger.info({ uh }, "Verification email sent");
+        } catch { /* logging must never crash the caller */ }
       } catch (err) {
-        logger.error({ err, userId: targetUserId }, "Failed to send verification email");
+        try {
+          const uh = hashUserIdForLog(targetUserId);
+          if (uh) logger.error({ err, uh }, "Failed to send verification email");
+        } catch { /* logging must never crash the caller */ }
       }
     })();
   } catch (err) {
@@ -761,9 +786,15 @@ router.post("/auth/change-email", async (req, res): Promise<void> => {
         sendChangeEmailVerification(cleanEmail, verifyUrl),
         sendEmailChangeSecurityAlert(user.email, maskEmail(cleanEmail), cancelUrl),
       ]);
-      logger.info({ userId }, "Change-email verification and security alert sent");
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) logger.info({ uh }, "Change-email verification and security alert sent");
+      } catch { /* logging must never crash the caller */ }
     } catch (err) {
-      logger.error({ err, userId }, "Failed to send change-email emails");
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) logger.error({ err, uh }, "Failed to send change-email emails");
+      } catch { /* logging must never crash the caller */ }
     }
   } catch (err) {
     logger.error({ err }, "change-email error");
@@ -860,7 +891,10 @@ router.post("/auth/cancel-reset", async (req, res): Promise<void> => {
         ),
       );
 
-    logger.info({ userId: row.userId }, "Password reset cancelled by user via security alert");
+    try {
+      const uh = hashUserIdForLog(row.userId);
+      if (uh) logger.info({ uh }, "Password reset cancelled by user via security alert");
+    } catch { /* logging must never crash the caller */ }
     res.json({ ok: true });
   } catch (err) {
     logger.error({ err }, "cancel-reset error");
@@ -902,7 +936,10 @@ router.post("/auth/cancel-email-change", async (req, res): Promise<void> => {
       .delete(emailVerificationTokensTable)
       .where(eq(emailVerificationTokensTable.userId, row.userId));
 
-    logger.info({ userId: row.userId }, "Email change cancelled by user via security alert");
+    try {
+      const uh = hashUserIdForLog(row.userId);
+      if (uh) logger.info({ uh }, "Email change cancelled by user via security alert");
+    } catch { /* logging must never crash the caller */ }
     res.json({ ok: true });
   } catch (err) {
     logger.error({ err }, "cancel-email-change error");
@@ -948,7 +985,10 @@ router.post("/auth/forgot-password", async (req, res): Promise<void> => {
       .limit(1);
 
     if (latestToken && Date.now() - latestToken.createdAt.getTime() < RESET_EMAIL_COOLDOWN_MS) {
-      logger.info({ userId: user.id }, "Password reset re-requested within cooldown — send skipped");
+      try {
+        const uh = hashUserIdForLog(user.id);
+        if (uh) logger.info({ uh }, "Password reset re-requested within cooldown — send skipped");
+      } catch { /* logging must never crash the caller */ }
       return;
     }
 
@@ -969,7 +1009,10 @@ router.post("/auth/forgot-password", async (req, res): Promise<void> => {
       sendPasswordResetEmail(user.email, resetUrl),
       sendSecurityAlertEmail(user.email, cancelUrl),
     ]);
-    logger.info({ userId: user.id }, "Password reset email sent");
+    try {
+      const uh = hashUserIdForLog(user.id);
+      if (uh) logger.info({ uh }, "Password reset email sent");
+    } catch { /* logging must never crash the caller */ }
   } catch (err) {
     logger.error({ err }, "forgot-password background error");
   }
@@ -1058,7 +1101,10 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
       [String(anyRow.userId)],
     );
 
-    logger.info({ userId: anyRow.userId }, "Password reset successfully");
+    try {
+      const uh = hashUserIdForLog(anyRow.userId);
+      if (uh) logger.info({ uh }, "Password reset successfully");
+    } catch { /* logging must never crash the caller */ }
     res.json({ ok: true });
   } catch (err) {
     logger.error({ err }, "reset-password error");
@@ -1116,14 +1162,21 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
       if (paddleSubId && subStatus !== "canceled") {
         const { cancelPaddleSubscription } = await import("../services/paddle.js");
         await cancelPaddleSubscription(paddleSubId);
-        logger.info({ userId }, "Account deletion: Paddle subscription cancellation scheduled");
+        try {
+          const uh = hashUserIdForLog(userId);
+          if (uh) logger.info({ uh }, "Account deletion: Paddle subscription cancellation scheduled");
+        } catch { /* logging must never crash the caller */ }
       }
     } catch (err) {
-      logger.error(
-        { err, userId },
-        "Account deletion: PADDLE CANCEL FAILED — deletion proceeds; cancel this subscription " +
-          "manually in the Paddle dashboard to stop future charges.",
-      );
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh)
+          logger.error(
+            { err, uh },
+            "Account deletion: PADDLE CANCEL FAILED — deletion proceeds; cancel this subscription " +
+              "manually in the Paddle dashboard to stop future charges.",
+          );
+      } catch { /* logging must never crash the caller */ }
     }
 
     await client.query("BEGIN");
@@ -1159,7 +1212,10 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
     await client.query(`DELETE FROM users             WHERE id = $1`, [userId]);
     await client.query("COMMIT");
 
-    logger.info({ userId }, "Account deleted — all data wiped");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.info({ uh }, "Account deleted — all data wiped");
+    } catch { /* logging must never crash the caller */ }
 
     // Destroy the session and clear the cookie before responding
     req.session.destroy((err) => {
