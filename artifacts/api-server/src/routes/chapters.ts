@@ -22,6 +22,7 @@ import {
   type GoalReviewItem,
 } from "../services/chapters/generate.js";
 import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
 const router: IRouter = Router();
 
@@ -293,7 +294,10 @@ router.post("/chapters/:id/seal/defer", async (req, res): Promise<void> => {
     return;
   }
 
-  logger.info({ userId, chapterId: id, noteId: seal.noteId }, "sealed-note: deferred another week");
+  try {
+    const uh = hashUserIdForLog(userId);
+    if (uh) logger.info({ uh, chapterId: id, noteId: seal.noteId }, "sealed-note: deferred another week");
+  } catch { /* logging must never crash the caller */ }
   res.json({ ok: true });
 });
 
@@ -434,7 +438,10 @@ router.post("/chapters/:id/offer", async (req, res): Promise<void> => {
       return;
     }
     await db.insert(chapterOfferEventsTable).values({ userId, chapterId: id, action: "accepted" });
-    logger.info({ userId, chapterId: id, goalId: created.goal.id }, "chapter offer accepted");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.info({ uh, chapterId: id, goalId: created.goal.id }, "chapter offer accepted");
+    } catch { /* logging must never crash the caller */ }
     res.json({ chapter: claimed, goal: { ...created.goal, tasks: created.tasks } });
     return;
   }
@@ -463,10 +470,16 @@ router.post("/chapters/:id/offer", async (req, res): Promise<void> => {
       await db.insert(personalizationStateTable).values({ userId, goalOfferDeclinedAt: new Date() });
     }
   } catch (err) {
-    logger.warn({ err, userId }, "chapter decline: could not sync goalOfferDeclinedAt");
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.warn({ err, uh }, "chapter decline: could not sync goalOfferDeclinedAt");
+    } catch { /* logging must never crash the caller */ }
   }
 
-  logger.info({ userId, chapterId: id }, "chapter offer declined");
+  try {
+    const uh = hashUserIdForLog(userId);
+    if (uh) logger.info({ uh, chapterId: id }, "chapter offer declined");
+  } catch { /* logging must never crash the caller */ }
   res.json({ chapter: updated });
 });
 
@@ -528,7 +541,17 @@ chaptersInternalRouter.post("/internal/chapters/run", async (req, res): Promise<
   const dryRun = body.dryRun === true;
 
   const result = await runWeeklySweep({ onlyUserId, force, ignoreWindow, dryRun });
-  logger.info(result, "chapter sweep finished");
+  // Privacy (Tier 3): the dry-run `decisions[]` carries raw userIds — hash them
+  // for the log only; the returned `result` object is left untouched.
+  try {
+    logger.info(
+      {
+        ...result,
+        decisions: result.decisions?.map((d) => ({ uh: hashUserIdForLog(d.userId), decision: d.decision })),
+      },
+      "chapter sweep finished",
+    );
+  } catch { /* logging must never crash the caller */ }
   res.json(result);
 });
 
