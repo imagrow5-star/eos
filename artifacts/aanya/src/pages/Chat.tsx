@@ -26,6 +26,7 @@ import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useSpeechRecognition, speakText, stopSpeaking, unlockAudioOnGesture } from "@/lib/voice";
+import { shouldAutoplayChatReply } from "@/lib/ttsAutoplay";
 import { countryName, suggestCountry, searchCountries, type Country } from "@/lib/countries";
 import { startRealtimeCall, type AttemptResult, type RealtimeConversation, type RealtimeSessionInfo } from "@/lib/realtimeVoice";
 import { VoiceSessionPrefetcher } from "@/lib/voiceSessionPrefetch";
@@ -998,12 +999,19 @@ export default function Chat() {
           speakVoiceRemainder(speakableContent, 0);
         }
       } else {
-        // Normal text mode: drive bubble caption via speakingMessageId + revealedWords.
-        // Prime the caption state before the query re-fetch lands so the bubble
-        // enters LiveCaption mode immediately (no flash of full text).
-        setSpeakingMessageId(finalMessageId);
-        setRevealedWords(0);
-        handleSpeak(speakableContent, finalMessageId);
+        // Main chat: NO TTS auto-play (cost guard — see lib/ttsAutoplay.ts).
+        // Every reply used to auto-fire an ElevenLabs generation here even when
+        // the user never asked to hear it. Now audio only plays when the user
+        // taps the per-message "Listen" button (handleSpeak on click). During
+        // ONBOARDING the warm auto-play is kept — but onboarding replies use the
+        // submitAnswer path, not this streaming path, so the guard below is
+        // belt-and-braces for any future refactor that routes an onboarding
+        // reply through streaming.
+        if (shouldAutoplayChatReply({ onboardingComplete: !!onboarding?.isComplete })) {
+          setSpeakingMessageId(finalMessageId);
+          setRevealedWords(0);
+          handleSpeak(speakableContent, finalMessageId);
+        }
       }
     } else {
       queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
