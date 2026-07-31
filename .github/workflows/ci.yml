@@ -1,0 +1,110 @@
+name: CI
+
+# Runs typecheck + the full test suite (with a real Postgres) on every PR to
+# main and on every push to main. This is the gate that stops a broken test
+# from reaching main unnoticed — the exact gap that let Tier 2's dry-run.test.ts
+# slip through. See .github/CI_SETUP.md for how to make it a required check.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel an in-progress run when a newer commit is pushed to the same PR/branch.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# ── CI env — ALL dummy, CI-safe values. No real secrets, no GitHub Secrets. ──
+# Required for the app/db to boot and for the hash-parity tests to be
+# deterministic. External-service keys (ANTHROPIC_API_KEY, ELEVENLABS_API_KEY,
+# GOOGLE_CLIENT_*, PADDLE_*, VAPID_*, rate-limit caps) are intentionally NOT set
+# here: tests that touch those either skip via `skipIf`, set their own fakes, or
+# have a vitest setup file that generates them. Setting a fake value for the
+# skip-gated ones (e.g. ANTHROPIC_API_KEY) would make those tests RUN and hit the
+# real API. See CI_SETUP.md → "Adding a new env var".
+env:
+  DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres_test
+  # Fixed salt so the Tier 2/3 hash + hash-parity tests are deterministic.
+  LOG_HASH_SALT: ci-test-log-hash-salt-fixed-value-0123456789
+  # NOTE: DATA_ENCRYPTION_KEY is NOT hard-coded here — a committed base64
+  # 32-byte value is key-shaped and trips secret-scan.test.ts. It is generated
+  # per-run in the "Generate throwaway DATA_ENCRYPTION_KEY" step below.
+  SESSION_SECRET: ci-test-session-secret-not-a-real-secret
+  # Fake key: the vitest suppress-resend setup intercepts all Resend fetches, so
+  # no email is ever sent. Present so the send path (not the dev-fallback) runs.
+  RESEND_API_KEY: re_ci_fake_key_intercepted_by_test_setup
+  APP_URL: http://localhost:3000
+  NODE_ENV: test
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres_test
+        ports:
+          - 5432:5432
+        # Don't start the job until Postgres is actually accepting connections.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          # Pinned to the repo's dev toolchain. This is a pnpm-10 workspace:
+          # overrides / catalog / minimumReleaseAge live in pnpm-workspace.yaml
+          # (the pnpm-10 location), which pnpm 9 can't read — under pnpm 9,
+          # `install --frozen-lockfile` fails with ERR_PNPM_LOCKFILE_CONFIG_MISMATCH.
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          # Caches the pnpm store, keyed on pnpm-lock.yaml — fast reinstalls.
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate throwaway DATA_ENCRYPTION_KEY
+        # Generated at runtime (never committed) so no key-shaped literal lives
+        # in a tracked file — secret-scan.test.ts flags any committed base64
+        # 32-byte value. Written to $GITHUB_ENV once, so it's the SAME value for
+        # every later step in this job (deterministic within the run). It only
+        # needs valid format (32 bytes, base64) — the data it "protects" is this
+        # run's throwaway test DB.
+        run: echo "DATA_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+
+      - name: Push database schema
+        # Fresh empty DB → drizzle-kit push applies all CREATEs non-interactively.
+        # If a future schema change makes push prompt, switch to `push-force`.
+        run: pnpm --filter @workspace/db push
+
+      - name: Typecheck
+        # Scoped to api-server (which also `tsc --build`s lib/db + lib/api-zod).
+        # The root `pnpm typecheck` is intentionally NOT used: it currently fails
+        # on artifacts/eos-video (a client app with pre-existing DOM-lib TS
+        # errors), which would make CI red for reasons unrelated to the server.
+        run: pnpm --filter @workspace/api-server run typecheck
+
+      - name: Test — api-server
+        run: pnpm --filter @workspace/api-server test
+
+      - name: Test — daily-email
+        run: pnpm --filter @workspace/daily-email test

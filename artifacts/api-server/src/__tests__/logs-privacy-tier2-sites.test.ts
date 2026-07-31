@@ -104,9 +104,9 @@ describe.skipIf(!HAS_DB)("privacy Tier 2 — fixed log payloads (integration)", 
     const { agent, userId } = await makeUser("gender");
     const info = vi.spyOn(logger, "info");
     try {
-      const res = await agent.post("/api/settings/voice-gender").send({ gender: "man" });
+      const res = await agent.post("/api/settings/voice-gender").send({ gender: "male" });
       expect([200, 204]).toContain(res.status);
-      assertSafe(findLog([info], "settings: voice gender saved"), userId, ["man"]);
+      assertSafe(findLog([info], "settings: voice gender saved"), userId, ["male"]);
     } finally {
       info.mockRestore();
     }
