@@ -6,7 +6,6 @@
 
 import { and, eq, gte, sql, desc } from "drizzle-orm";
 import { db, crisisEventsTable, messagesTable } from "@workspace/db";
-import { logger } from "../../lib/logger.js";
 
 /** Dismissals inside this rolling window count toward the review flag. */
 export const DISMISSAL_REVIEW_WINDOW_DAYS = 7;
@@ -99,10 +98,10 @@ export async function checkDismissalReviewFlag(userId: number): Promise<boolean>
   if (dismissals >= DISMISSAL_REVIEW_THRESHOLD) {
     // Review flag: repeated dismissal of crisis resources is a signal a human
     // should look at supportively — it is NEVER an enforcement action.
-    logger.warn(
-      { userId, dismissals, windowDays: DISMISSAL_REVIEW_WINDOW_DAYS },
-      "crisis_review_flag: user dismissed multiple crisis helpline cards in the review window",
-    );
+    // Crisis-context observability moved to metrics-only per privacy audit —
+    // see log-audit.md Tier 1. No per-user log line is emitted here (the mere
+    // existence of such a line reveals a user's crisis state). The flag is
+    // surfaced via this return value; per-user review is a targeted DB query.
     return true;
   }
   return false;

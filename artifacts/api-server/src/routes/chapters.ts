@@ -227,7 +227,9 @@ router.post("/chapters/:id/note", async (req, res): Promise<void> => {
       .where(eq(profileTable.userId, userId));
     const line = getCrisisLine(prof?.country ?? "");
     care = { message: crisisCareMessage(prof?.userName ?? "", line), crisisLine: line };
-    logger.warn({ userId, chapterId: id }, "sealed-note: crisis language at write time — caring response returned");
+    // Crisis-context observability moved to metrics-only per privacy audit —
+    // see log-audit.md Tier 1. No per-user log line is emitted on the crisis
+    // path (its mere presence would signal a user's mental-health state).
   }
 
   res.json({ note: { id: note!.id, kind: note!.kind, status: note!.status, createdAt: note!.createdAt }, care });

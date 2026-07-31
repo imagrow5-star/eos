@@ -59,8 +59,12 @@ async function sendPasswordResetEmail(
 ): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    // Log the link in dev so the feature is testable without an email provider
-    logger.warn({ resetUrl }, "RESEND_API_KEY not set — reset link logged for dev");
+    // Privacy audit Tier 1: never log the token or the reset URL (or userId).
+    // To retrieve a token in dev, add a `pnpm token:reveal` script that reads
+    // it from the DB (not built here).
+    logger.warn(
+      "Email delivery unavailable (RESEND_API_KEY not set). Password-reset token generated but not delivered. Retrieve via DB or set the env var.",
+    );
     return;
   }
 
@@ -102,7 +106,12 @@ async function sendVerificationEmail(
 ): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    logger.warn({ verifyUrl }, "RESEND_API_KEY not set — verification link logged for dev");
+    // Privacy audit Tier 1: never log the token or the verify URL (or userId).
+    // To retrieve a token in dev, add a `pnpm token:reveal` script that reads
+    // it from the DB (not built here).
+    logger.warn(
+      "Email delivery unavailable (RESEND_API_KEY not set). Email-verification token generated but not delivered. Retrieve via DB or set the env var.",
+    );
     return;
   }
 
@@ -160,7 +169,12 @@ async function sendChangeEmailVerification(
 ): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    logger.warn({ verifyUrl }, "RESEND_API_KEY not set — change-email link logged for dev");
+    // Privacy audit Tier 1: never log the token or the change-email URL (or userId).
+    // To retrieve a token in dev, add a `pnpm token:reveal` script that reads
+    // it from the DB (not built here).
+    logger.warn(
+      "Email delivery unavailable (RESEND_API_KEY not set). Change-email token generated but not delivered. Retrieve via DB or set the env var.",
+    );
     return;
   }
 
@@ -208,7 +222,12 @@ async function sendEmailChangeSecurityAlert(
 ): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    logger.warn({ cancelUrl }, "RESEND_API_KEY not set — email-change cancel link logged for dev");
+    // Privacy audit Tier 1: never log the token or the cancel URL (or userId).
+    // To retrieve a token in dev, add a `pnpm token:reveal` script that reads
+    // it from the DB (not built here).
+    logger.warn(
+      "Email delivery unavailable (RESEND_API_KEY not set). Email-change cancel token generated but not delivered. Retrieve via DB or set the env var.",
+    );
     return;
   }
 
@@ -760,7 +779,12 @@ async function sendSecurityAlertEmail(
 ): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    logger.warn({ cancelUrl }, "RESEND_API_KEY not set — cancel link logged for dev");
+    // Privacy audit Tier 1: never log the token or the cancel URL (or userId).
+    // To retrieve a token in dev, add a `pnpm token:reveal` script that reads
+    // it from the DB (not built here).
+    logger.warn(
+      "Email delivery unavailable (RESEND_API_KEY not set). Reset-cancel token generated but not delivered. Retrieve via DB or set the env var.",
+    );
     return;
   }
 
