@@ -1043,10 +1043,17 @@ RULES:
     // for the same exchange — if the model drifts and returns both, keep the
     // habit (the gentler, pre-existing behavior) and drop the goal.
     if (result.newHabit && result.newGoal) {
-      logger.warn(
-        { habit: result.newHabit.name, goal: result.newGoal.title },
-        "Extractor returned habit AND goal — keeping habit only",
-      );
+      // Privacy audit Tier 1: log that arbitration happened and how many items
+      // were involved — NEVER the habit name or goal title (user free-text).
+      // Wrapped so a logging failure can never break extraction.
+      try {
+        logger.warn(
+          { habitCount: 1, goalCount: 1, extractedAt: new Date().toISOString() },
+          "Extractor returned habit AND goal — keeping habit only",
+        );
+      } catch {
+        /* best-effort observability — must not affect extraction */
+      }
       result.newGoal = null;
     }
 
