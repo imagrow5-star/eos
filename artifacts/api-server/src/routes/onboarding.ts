@@ -8,6 +8,7 @@ import {
   SubmitOnboardingAnswerResponse,
 } from "@workspace/api-zod";
 import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import type { Profile } from "@workspace/db";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { sanitizeGenderWords } from "../services/systemPrompt.js";
@@ -422,8 +423,16 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
       isMorningNote: false,
     });
 
-    // Privacy: companionName/name are user-supplied — log ids and path only.
-    logger.info({ userId, userPath: updated.userPath }, "Onboarding complete — first greeting saved");
+    // Privacy (Tier 2): userPath (bereavement/breakup/lonely/support) is
+    // mental-health-adjacent — never emit it per-user. userId is hashed to `uh`.
+    // Aggregate counters for onboarding paths belong in a metrics pipeline —
+    // not in per-user logs. See log-audit.md Tier 2.
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh !== undefined) logger.info({ uh }, "Onboarding complete — first greeting saved");
+    } catch {
+      /* logging must never break onboarding */
+    }
   }
 
   const nextQuestion = updated ? getStepQuestion(updated.onboardingStep, updated as Profile) : null;

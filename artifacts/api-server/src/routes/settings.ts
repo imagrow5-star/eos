@@ -10,6 +10,7 @@ import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
 import { db, profileTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { LANGUAGES, isValidLanguage, languageByCode } from "../services/settings/languages.js";
 import {
@@ -106,7 +107,13 @@ router.post("/settings/voice-gender", async (req, res): Promise<void> => {
     .update(profileTable)
     .set({ voiceGender: gender })
     .where(and(eq(profileTable.id, profile.id), eq(profileTable.userId, req.userId)));
-  logger.info({ userId: req.userId, gender }, "settings: voice gender saved");
+  // Privacy (Tier 2): drop the gender trait; hash the userId to `uh`.
+  try {
+    const uh = hashUserIdForLog(req.userId);
+    if (uh !== undefined) logger.info({ uh }, "settings: voice gender saved");
+  } catch {
+    /* logging must never break the settings write */
+  }
   res.json({ ok: true, gender });
 });
 
@@ -126,7 +133,15 @@ router.post("/settings/language", async (req, res): Promise<void> => {
     .where(and(eq(profileTable.id, profile.id), eq(profileTable.userId, req.userId)));
 
   const info = languageByCode(language)!;
-  logger.info({ userId: req.userId, language }, "settings: language preference saved");
+  // Privacy (Tier 2): drop the language trait; hash the userId to `uh`. If
+  // per-language debugging is needed, log supported languages at boot — never
+  // per-user.
+  try {
+    const uh = hashUserIdForLog(req.userId);
+    if (uh !== undefined) logger.info({ uh }, "settings: language preference saved");
+  } catch {
+    /* logging must never break the settings write */
+  }
   res.json({ ok: true, language, active: info.active });
 });
 
@@ -144,7 +159,13 @@ router.post("/settings/accent", async (req, res): Promise<void> => {
     .update(profileTable)
     .set({ voiceAccent: accent })
     .where(and(eq(profileTable.id, profile.id), eq(profileTable.userId, req.userId)));
-  logger.info({ userId: req.userId, accent }, "settings: accent preference saved");
+  // Privacy (Tier 2): drop the accent trait; hash the userId to `uh`.
+  try {
+    const uh = hashUserIdForLog(req.userId);
+    if (uh !== undefined) logger.info({ uh }, "settings: accent preference saved");
+  } catch {
+    /* logging must never break the settings write */
+  }
   res.json({ ok: true, accent });
 });
 

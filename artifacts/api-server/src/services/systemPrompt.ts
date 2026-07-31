@@ -20,7 +20,7 @@ import { RAISE_COOLDOWN_DAYS, SUPPORT_COOLDOWN_DAYS } from "./chapters/storyThre
 import { languageByCode } from "./settings/languages.js";
 import { rankFactsByImportance, scoreFactImportance } from "./memory/importance.js";
 import { logger } from "../lib/logger.js";
-import crypto from "node:crypto";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
 // ─── Language directive (Sprint 1.6) ─────────────────────────────────────────
 // The ONLY multilanguage change to the base prompt: one block, injected only
@@ -230,13 +230,10 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
     // crash. Retrieval above (`facts`) is already done and never depends on
     // this succeeding. No default/fallback salt is committed by design.
     try {
-      const salt = process.env.LOG_HASH_SALT;
-      if (!salt) throw new Error("LOG_HASH_SALT not set");
-      const uh = crypto
-        .createHash("sha256")
-        .update(salt + ":" + userId)
-        .digest("hex")
-        .slice(0, 8);
+      // Single source of truth for the salted log hash (was inline here in
+      // Sprint 2A). undefined ⇒ no salt ⇒ skip the whole log line.
+      const uh = hashUserIdForLog(userId);
+      if (uh === undefined) throw new Error("no log hash (LOG_HASH_SALT unset)");
       const scores = facts.map((f) => scoreFactImportance(f, factNowMs)).sort((a, b) => b - a);
       const top = scores.slice(0, 10);
       const median = top.length ? top[Math.floor(top.length / 2)]! : 0;
