@@ -143,7 +143,22 @@ export interface SystemPromptParts {
   context: string;
 }
 
-export async function buildSystemPrompt(profile: Profile, precomputedStage?: number): Promise<SystemPromptParts> {
+// Sprint 2B — injected into the VOLATILE context block (never the cached
+// stable prefix) only on a turn where the user explicitly asked Eos to
+// remember. Also reused verbatim by the voice path's per-turn systemExtra.
+export const REMEMBER_ACK_GUIDANCE =
+  "HOLDING THIS — the user just explicitly asked you to remember something " +
+  "(e.g. \"remember this,\" \"please remember,\" \"don't forget\"). Acknowledge " +
+  "briefly and warmly that you're holding it. Do NOT perform-save it (\"I've " +
+  "saved that to your memories!\"). Do NOT explain the mechanism. Just something " +
+  "like \"Got it — I'll hold this\" or \"Okay, I've got it.\" Then continue the " +
+  "conversation naturally.";
+
+export async function buildSystemPrompt(
+  profile: Profile,
+  precomputedStage?: number,
+  opts?: { rememberIntent?: boolean },
+): Promise<SystemPromptParts> {
   const stage = precomputedStage ?? await calculateStage(profile);
   const { label, rules } = stageMeta(stage);
   const isBereavement = profile.userPath === "bereavement";
@@ -1179,6 +1194,8 @@ ${rules}`;
   if (goalOfferStateBlock) contextParts.push(goalOfferStateBlock);
   if (frozenThreadBlock) contextParts.push(frozenThreadBlock);
   if (antiRepetitionBlock) contextParts.push(antiRepetitionBlock.trim());
+  // Sprint 2B: only when the user asked Eos to remember, this turn.
+  if (opts?.rememberIntent) contextParts.push(REMEMBER_ACK_GUIDANCE);
   contextParts.push(`SAFETY — ALWAYS ON, NO EXCEPTIONS:
 - If ${name} mentions self-harm, suicide, or harming anyone: stay warm, stay present, don't turn clinical. "I'm really glad you told me. Please reach out to someone who can really be there right now — ${crisisLine} I'm here too."
 - Never pretend to have a physical presence.

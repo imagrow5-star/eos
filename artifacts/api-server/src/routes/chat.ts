@@ -10,6 +10,7 @@ import {
   GenerateMorningNoteResponse,
 } from "@workspace/api-zod";
 import { buildSystemPrompt } from "../services/systemPrompt.js";
+import { detectRememberIntent } from "../services/memory/rememberTriggers.js";
 import {
   streamCompanionReply,
   getCompanionReply,
@@ -171,6 +172,8 @@ router.post("/chat/stream", ...chatUsageLimits, async (req, res): Promise<void> 
     // Runs the user's language pattern set PLUS English (union).
     const userLanguage = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
     const crisis = detectCrisis(content, userLanguage);
+    // Sprint 2B: did the user explicitly ask Eos to remember this turn?
+    const rememberIntent = detectRememberIntent(content, userLanguage);
 
     // Insert the user message and compute stage in parallel — system prompt
     // doesn't depend on the insert, so these two round-trips overlap.
@@ -182,7 +185,7 @@ router.post("/chat/stream", ...chatUsageLimits, async (req, res): Promise<void> 
     // Build system prompt (stage already known — no redundant DB call inside)
     // and fetch the context window in parallel.
     const [systemPrompt, recentMessages] = await Promise.all([
-      buildSystemPrompt(profile, stage),
+      buildSystemPrompt(profile, stage, { rememberIntent }),
       db
         .select()
         .from(messagesTable)
@@ -290,6 +293,7 @@ router.post("/chat/send", ...chatUsageLimits, async (req, res): Promise<void> =>
   // Crisis floor: detect BEFORE generation (same guarantee as /chat/stream).
   const userLanguage = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
   const crisis = detectCrisis(content, userLanguage);
+  const rememberIntent = detectRememberIntent(content, userLanguage);
 
   const [userMsg] = await db
     .insert(messagesTable)
@@ -303,7 +307,7 @@ router.post("/chat/send", ...chatUsageLimits, async (req, res): Promise<void> =>
   const userMsgCount = Number(countRow?.count ?? "0");
 
   const [systemPrompt, stage] = await Promise.all([
-    buildSystemPrompt(profile),
+    buildSystemPrompt(profile, undefined, { rememberIntent }),
     calculateStage(profile),
   ]);
 

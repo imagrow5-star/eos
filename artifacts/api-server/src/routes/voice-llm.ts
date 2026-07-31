@@ -2,7 +2,8 @@ import { Router, type IRouter } from "express";
 import crypto from "node:crypto";
 import { eq, desc, and, lt, gte } from "drizzle-orm";
 import { db, messagesTable, type Profile } from "@workspace/db";
-import { buildSystemPrompt, type SystemPromptParts } from "../services/systemPrompt.js";
+import { buildSystemPrompt, REMEMBER_ACK_GUIDANCE, type SystemPromptParts } from "../services/systemPrompt.js";
+import { detectRememberIntent } from "../services/memory/rememberTriggers.js";
 import {
   streamCompanionReply,
   appendRecentPhrase,
@@ -383,6 +384,13 @@ router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (re
     const contextMessages = merged.context;
     userContent = merged.content;
 
+    // Sprint 2B: did the user ask Eos to remember, this turn? The voice system
+    // prompt is frozen for the whole call, so the acknowledgment can't ride the
+    // cached prefix — it goes into the per-turn systemExtra below (same pattern
+    // as crisis reinforcement). Marking of the fact happens in
+    // runConversationExtractions (persistVoiceTurn), which detects intent itself.
+    const rememberIntent = !synthetic && detectRememberIntent(userContent, voiceUserLanguage);
+
     // ── OpenAI-compatible response: streaming SSE or plain JSON ──
     const completionId = `chatcmpl-${crypto.randomUUID()}`;
     const created = Math.floor(Date.now() / 1000);
@@ -447,7 +455,8 @@ router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (re
         systemExtra:
           buildVoiceCallAddendum(tools.length > 0) +
           toneExtra +
-          (crisis.matched ? `\n${CRISIS_REINFORCEMENT_BLOCK_VOICE}` : ""),
+          (crisis.matched ? `\n${CRISIS_REINFORCEMENT_BLOCK_VOICE}` : "") +
+          (rememberIntent ? `\n${REMEMBER_ACK_GUIDANCE}` : ""),
         callType: "voice",
         cacheConversation: true,
         model: resolveVoiceLlmModel(),

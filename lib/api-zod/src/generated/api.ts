@@ -185,7 +185,8 @@ export const GetMemoryFactsResponseItem = zod.object({
   "id": zod.number(),
   "fact": zod.string(),
   "category": zod.string().describe('life | preference | event | person | goal'),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "userMarkedImportant": zod.boolean().describe('True when the user explicitly marked this fact important (remember this \/ star).')
 })
 export const GetMemoryFactsResponse = zod.array(GetMemoryFactsResponseItem)
 

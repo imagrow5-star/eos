@@ -524,11 +524,15 @@ components:
         createdAt:
           type: string
           format: date-time
+        userMarkedImportant:
+          type: boolean
+          description: "True when the user explicitly marked this fact important (remember this / star)."
       required:
         - id
         - fact
         - category
         - createdAt
+        - userMarkedImportant
 
     PersonalitySignal:
       type: object

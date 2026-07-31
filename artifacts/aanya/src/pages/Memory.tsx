@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useGetProfile, useGetMemoryFacts, useGetPersonalitySignals, getGetMemoryFactsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Sparkles, BookOpen, Check, Eye, X } from "lucide-react";
+import { Sparkles, BookOpen, Check, Eye, X, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
 
@@ -15,6 +15,32 @@ export default function Memory() {
   // "Forget this" (Phase A privacy) — first tap arms, second tap deletes.
   const [armedFactId, setArmedFactId] = useState<number | null>(null);
   const [busyFactId, setBusyFactId] = useState<number | null>(null);
+
+  // "Remember this" star (Sprint 2B) — optimistic toggle; the promise is she
+  // holds it, so there's no dialog and no "saved!" chirp. On failure we revert
+  // the star and surface one small, quiet line (the app's inline-notice pattern).
+  const [starError, setStarError] = useState<string | null>(null);
+  const toggleImportant = async (fact: (typeof facts)[number]) => {
+    const key = getGetMemoryFactsQueryKey();
+    const next = !fact.userMarkedImportant;
+    const prev = queryClient.getQueryData<typeof facts>(key);
+    // Optimistic: flip the star now.
+    queryClient.setQueryData<typeof facts>(key, (old) =>
+      (old ?? []).map((f) => (f.id === fact.id ? { ...f, userMarkedImportant: next } : f)),
+    );
+    try {
+      const r = await apiFetch(`${import.meta.env.BASE_URL}api/memory/facts/${fact.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userMarkedImportant: next }),
+      });
+      if (!r.ok) throw new Error("patch failed");
+    } catch {
+      queryClient.setQueryData(key, prev); // revert the star
+      setStarError("Couldn't save that, try again");
+      window.setTimeout(() => setStarError(null), 2500);
+    }
+  };
   const forgetFact = async (id: number) => {
     setBusyFactId(id);
     try {
@@ -44,6 +70,12 @@ export default function Memory() {
 
   return (
     <div className="h-full overflow-y-auto px-6 py-10 pb-20 space-y-12">
+      {/* Quiet inline notice — only when a star toggle failed to save. */}
+      {starError && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-card border border-primary/20 rounded-full px-4 py-2 text-xs text-foreground/80 shadow-lg">
+          {starError}
+        </div>
+      )}
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="space-y-3">
         <h1 className="font-serif text-[28px] text-foreground/90 tracking-wide">
@@ -160,6 +192,25 @@ export default function Memory() {
                             key={fact.id}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-card border border-primary/15 rounded-full text-[13px] text-foreground/75 font-serif"
                           >
+                            <button
+                              aria-label={
+                                fact.userMarkedImportant
+                                  ? `Unmark "${fact.fact}" as important`
+                                  : `Mark "${fact.fact}" as important`
+                              }
+                              aria-pressed={fact.userMarkedImportant}
+                              onClick={() => toggleImportant(fact)}
+                              className="shrink-0 transition-colors"
+                            >
+                              <Star
+                                className={cn(
+                                  "w-3.5 h-3.5 transition-colors",
+                                  fact.userMarkedImportant
+                                    ? "text-primary fill-primary"
+                                    : "text-foreground/25 hover:text-primary/60",
+                                )}
+                              />
+                            </button>
                             {fact.fact}
                             {armedFactId === fact.id ? (
                               <button
