@@ -5,9 +5,16 @@
  *
  * Levels — each failed level costs a full paid reconnection, so lower levels
  * drop only what could have caused the rejection:
- *   full  — tone TTS (stability/speed) + chosen voiceId
- *   voice — chosen voiceId only (tone fields dropped)
- *   none  — no overrides at all: agent-default voice.
+ *   full  — tone TTS (stability/speed) + chosen voiceId + agent.language
+ *   voice — chosen voiceId + agent.language (tone fields dropped)
+ *   none  — no overrides at all: agent defaults (graceful degrade — voice
+ *           still works, transcription is English-biased).
+ *
+ * agent.language (non-English calls only): tells the multilingual agent which
+ * language to target for speech-to-text, so e.g. German speech isn't garbled
+ * through an English transcriber. Requires the "language" override toggle on
+ * the agent's Security settings; if the config rejects it, the cascade's
+ * "none" attempt connects without it.
  *
  * first_message is DELIBERATELY never sent. ElevenLabs tightened runtime
  * override permissions (~July 29) and rejects the field with a hard 1008
@@ -35,19 +42,21 @@ export const TONE_TTS: Record<VoiceTone, { stability: number; speed: number }> =
 export interface OverrideInputs {
   tone?: VoiceTone;
   voiceId?: string;
+  /** ISO 639-1 transcription-language hint ("de", "fr", …) — only present on
+   *  multilingual-agent calls; never set for English. */
+  language?: string;
 }
 
 /**
  * Returns the `{ overrides: ... }` fragment to spread into
  * Conversation.startSession's config — or {} when the level sends nothing.
- * Never emits an `agent` block: agent.firstMessage → conversation_config_
- * override.agent.first_message, which ElevenLabs now rejects with a 1008
- * disconnect (see the module comment).
+ * The `agent` block may carry ONLY `language` — never firstMessage, which
+ * ElevenLabs rejects with a 1008 disconnect (see the module comment).
  */
 export function buildSessionOverrides(
   level: OverrideLevel,
   inputs: OverrideInputs,
-): { overrides?: { tts?: Record<string, unknown> } } {
+): { overrides?: { tts?: Record<string, unknown>; agent?: { language: string } } } {
   if (level === "none") return {};
 
   const tts: Record<string, unknown> = {};
@@ -58,5 +67,9 @@ export function buildSessionOverrides(
   }
   if (inputs.voiceId) tts.voiceId = inputs.voiceId;
 
-  return Object.keys(tts).length > 0 ? { overrides: { tts } } : {};
+  const overrides: { tts?: Record<string, unknown>; agent?: { language: string } } = {};
+  if (Object.keys(tts).length > 0) overrides.tts = tts;
+  if (inputs.language && inputs.language !== "en") overrides.agent = { language: inputs.language };
+
+  return Object.keys(overrides).length > 0 ? { overrides } : {};
 }
