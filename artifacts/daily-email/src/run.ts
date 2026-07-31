@@ -564,7 +564,10 @@ Write only the note text itself — nothing else.`;
     const textBlock = response.content.find((b) => b.type === "text");
     return textBlock?.text?.trim() ?? `${ctx.name} — thinking of you today.`;
   } catch (err) {
-    logErr("Claude generation failed", err, { userId: ctx.userId });
+    try {
+      const uh = hashUserIdForLog(ctx.userId);
+      if (uh) logErr("Claude generation failed", err, { uh });
+    } catch { /* logging must never crash the caller */ }
     return `${ctx.name} — day ${ctx.daysSinceStart}. You're still here. That's not nothing.`;
   }
 }
@@ -745,7 +748,10 @@ async function processTimedNudges(
     if (noteCoveredCommitmentId !== null && c.id === noteCoveredCommitmentId) {
       // The daily note that just went out mentions THIS commitment — keep the
       // claim but skip the extra email.
-      log("Nudge folded into daily note", { userId, commitmentId: c.id });
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) log("Nudge folded into daily note", { uh, commitmentId: c.id });
+      } catch { /* logging must never crash the caller */ }
       continue;
     }
 
@@ -754,11 +760,17 @@ async function processTimedNudges(
       const nudgeText = await generateNudgeText(companionName, name, c.content, timeDisplay, isLate, genderNote, basicsNote);
       const html = buildHtml(userId, nudgeText);
       await sendEmail(email, `${companionName} — you said ${timeDisplay}`, html);
-      log("Nudge sent", { userId, commitmentId: c.id, at: timeDisplay, late: isLate });
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) log("Nudge sent", { uh, commitmentId: c.id, at: timeDisplay, late: isLate });
+      } catch { /* logging must never crash the caller */ }
       sentCount++;
     } catch (err) {
       // Release the claim so the catch-up hour can retry the send.
-      logErr("Nudge send failed — releasing claim", err, { userId, commitmentId: c.id });
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) logErr("Nudge send failed — releasing claim", err, { uh, commitmentId: c.id });
+      } catch { /* logging must never crash the caller */ }
       try {
         await db.update(commitmentsTable)
           .set({ nudgeSentAt: null })
@@ -903,7 +915,12 @@ export async function run(): Promise<void> {
 
     // Respect opt-out
     if (user.dailyEmailOptOut) {
-      if (DRY_RUN) log("dry-run decision", { userId: user.userId, decision: "opted-out" });
+      if (DRY_RUN) {
+        try {
+          const uh = hashUserIdForLog(user.userId);
+          if (uh) log("dry-run decision", { uh, decision: "opted-out" });
+        } catch { /* logging must never crash the caller */ }
+      }
       skipped++;
       continue;
     }
@@ -917,9 +934,12 @@ export async function run(): Promise<void> {
     // to 6–9 AM UTC would be the wrong morning almost everywhere.
     const zone = resolveSendZone(user.timezone, user.country);
     if (!zone.zone) {
-      log(DRY_RUN ? "dry-run decision" : "Held — no usable timezone", {
-        userId: user.userId, decision: "held", reason: zone.holdReason,
-      });
+      try {
+        const uh = hashUserIdForLog(user.userId);
+        if (uh) log(DRY_RUN ? "dry-run decision" : "Held — no usable timezone", {
+          uh, decision: "held", reason: zone.holdReason,
+        });
+      } catch { /* logging must never crash the caller */ }
       held++;
       continue;
     }
@@ -962,7 +982,12 @@ export async function run(): Promise<void> {
         ageBand:          user.ageBand,
         createdAt:        user.createdAt,
       }).catch((err) => {
-        logErr("dry-run: context gather failed", err, { userId: user.userId });
+        try {
+          // user.userId is non-null here (guarded at loop top) but the narrowing
+          // is lost inside this deferred callback — re-narrow before hashing.
+          const uh = user.userId ? hashUserIdForLog(user.userId) : undefined;
+          if (uh) logErr("dry-run: context gather failed", err, { uh });
+        } catch { /* logging must never crash the caller */ }
         return null;
       });
       // Privacy (Tier 2): drop zone + localHour (timezone/location fingerprint).
@@ -991,7 +1016,10 @@ export async function run(): Promise<void> {
       if (!ctx) {
         // Not enough data yet — skip the note. IMPORTANT: no `continue` here,
         // the timed-nudge pass below must still run for this user.
-        log("Skipping user — not enough data yet", { userId: user.userId });
+        try {
+          const uh = hashUserIdForLog(user.userId);
+          if (uh) log("Skipping user — not enough data yet", { uh });
+        } catch { /* logging must never crash the caller */ }
         skipped++;
       } else {
         // Generate text + HTML
@@ -1013,7 +1041,10 @@ export async function run(): Promise<void> {
               .set({ emailMentionedAt: new Date() })
               .where(eq(weeklyChaptersTable.id, ctx.chapterWaitingId));
           } catch (err) {
-            logErr("Could not mark chapter as email-mentioned", err, { userId: user.userId });
+            try {
+              const uh = hashUserIdForLog(user.userId);
+              if (uh) logErr("Could not mark chapter as email-mentioned", err, { uh });
+            } catch { /* logging must never crash the caller */ }
           }
         }
 
@@ -1048,7 +1079,10 @@ export async function run(): Promise<void> {
       }
 
     } catch (err) {
-      logErr("Failed to send email to user", err, { userId: user.userId });
+      try {
+        const uh = hashUserIdForLog(user.userId);
+        if (uh) logErr("Failed to send email to user", err, { uh });
+      } catch { /* logging must never crash the caller */ }
       failed++;
     }
 
@@ -1067,7 +1101,10 @@ export async function run(): Promise<void> {
         noteCoveredCommitmentId,
       );
     } catch (err) {
-      logErr("Nudge pass failed", err, { userId: user.userId });
+      try {
+        const uh = hashUserIdForLog(user.userId);
+        if (uh) logErr("Nudge pass failed", err, { uh });
+      } catch { /* logging must never crash the caller */ }
     }
   }
 

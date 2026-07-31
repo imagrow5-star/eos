@@ -234,6 +234,8 @@ beforeAll(async () => {
   delete process.env.ANTHROPIC_API_KEY; // fallback nudge text, zero AI calls
   process.env.RESEND_API_KEY = "test-key-intercepted";
   process.env.SESSION_SECRET = "test-secret";
+  // Tier 3: per-user logs now emit a salted `uh` and are dropped without a salt.
+  process.env.LOG_HASH_SALT = "nudge-claim-test-salt-0123456789";
 
   globalThis.fetch = (async (input: any, init?: any) => {
     const url =
@@ -261,6 +263,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   globalThis.fetch = realFetch;
+  delete process.env.LOG_HASH_SALT;
 });
 
 beforeEach(() => {
