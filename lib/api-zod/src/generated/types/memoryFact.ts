@@ -12,4 +12,6 @@ export interface MemoryFact {
   /** life | preference | event | person | goal */
   category: string;
   createdAt: Date;
+  /** True when the user explicitly marked this fact important (remember this / star). */
+  userMarkedImportant: boolean;
 }

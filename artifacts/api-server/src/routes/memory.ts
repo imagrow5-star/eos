@@ -11,6 +11,7 @@ import {
 } from "@workspace/db";
 import {
   GetMemoryFactsResponse,
+  GetMemoryFactsResponseItem,
   GetPersonalitySignalsResponse,
   GetWinsResponse,
   CreateWinBody,
@@ -70,6 +71,34 @@ router.delete("/memory/facts/:id", async (req, res): Promise<void> => {
     return;
   }
   res.json({ ok: true });
+});
+
+// ─── Mark important (Sprint 2B "remember this") ──────────────────────────────
+// Star toggle from the Memory Manifest. Sets user_marked_important, which the
+// Sprint 2A ranker turns into a +10 boost so the fact holds near the top.
+// Ownership-checked; never touches any other field.
+router.patch("/memory/facts/:factId", async (req, res): Promise<void> => {
+  const userId = req.userId;
+  const id = Number(req.params.factId);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "invalid id" });
+    return;
+  }
+  const body = req.body as { userMarkedImportant?: unknown } | undefined;
+  if (typeof body?.userMarkedImportant !== "boolean") {
+    res.status(400).json({ error: "userMarkedImportant must be a boolean" });
+    return;
+  }
+  const [updated] = await db
+    .update(memoryFactsTable)
+    .set({ userMarkedImportant: body.userMarkedImportant })
+    .where(and(eq(memoryFactsTable.id, id), eq(memoryFactsTable.userId, userId)))
+    .returning();
+  if (!updated) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  res.json(GetMemoryFactsResponseItem.parse(updated));
 });
 
 // ─── Personality signals ─────────────────────────────────────────────────────

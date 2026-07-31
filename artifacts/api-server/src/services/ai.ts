@@ -18,6 +18,7 @@ import {
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { recordMemoryReferences } from "./memory/references.js";
+import { detectRememberIntent } from "./memory/rememberTriggers.js";
 import { todayInTimezone, describeCommitmentTiming } from "./stage.js";
 import type { SystemPromptParts } from "./systemPrompt.js";
 import { describeUserGender, describeUserBasics } from "./systemPrompt.js";
@@ -574,7 +575,12 @@ interface ExtractedMemory {
 export async function extractMemory(
   profile: Profile,
   recentMessages: { role: string; content: string }[],
+  opts?: { userMarkedImportant?: boolean },
 ): Promise<void> {
+  // Sprint 2B: when the user explicitly asked Eos to remember, every fact we
+  // pull from that message is flagged important (the +10 boost). Default false
+  // — ordinary extraction never marks anything.
+  const markImportant = opts?.userMarkedImportant === true;
   const anthropic = getAnthropic();
   if (!anthropic) return;
 
@@ -647,7 +653,9 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
             f.fact.toLowerCase().includes(e.fact.toLowerCase().slice(0, 20)),
         );
         if (!isDuplicate) {
-          await db.insert(memoryFactsTable).values({ fact: f.fact, category: f.category || "life", userId });
+          await db
+            .insert(memoryFactsTable)
+            .values({ fact: f.fact, category: f.category || "life", userId, userMarkedImportant: markImportant });
         }
       }
     }
@@ -1191,6 +1199,19 @@ export async function runConversationExtractions(
       .limit(8);
     extractMemory(profile, last8.reverse()).catch((err) =>
       logger.error({ err }, "Background memory extraction failed"),
+    );
+  }
+
+  // Sprint 2B — explicit "remember this": extract THIS message right away and
+  // mark its facts important (the +10 boost), independent of the every-4th
+  // batch above (which might not fire on this turn, and would mark nothing).
+  // extractMemory's substring dedup stops the later batch from double-inserting,
+  // so the marked row survives. Bare "remember this" with no fact extracts
+  // nothing — the acknowledgment (system prompt) still fires so the user is heard.
+  const language = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
+  if (detectRememberIntent(userContent, language)) {
+    extractMemory(profile, [{ role: "user", content: userContent }], { userMarkedImportant: true }).catch((err) =>
+      logger.error({ err }, "Remember-this extraction failed"),
     );
   }
 
