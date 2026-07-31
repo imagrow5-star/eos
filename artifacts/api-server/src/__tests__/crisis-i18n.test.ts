@@ -306,11 +306,27 @@ describe("helpline block localization", () => {
 const GOLDEN_DE_DIRECTIVE = `══════════════════════════════════════════════════════
 LANGUAGE
 ══════════════════════════════════════════════════════
-This user's preferred language is Deutsch. Respond in Deutsch naturally, matching their tone and register. If they write to you in Deutsch, reply in Deutsch. If they switch to English mid-conversation, follow their lead. Your craft rules (mirroring, no clinical labels, no invented affirmations, no death metaphors, honest presence) apply identically in every language. If you don't know a word, say so honestly rather than inventing.`;
+The user's preferred language is Deutsch.
+You MUST respond in Deutsch. Every reply. Every time. Without exception.
+
+If the user writes in a different language (including English) — still reply in Deutsch. Assume they can read Deutsch because they explicitly chose it in Settings. If their message is unclear (voice transcription garbled, typos, mixed words) — ask for clarification IN Deutsch. Never fall back to English on your own.
+
+The only exceptions: (1) the user explicitly writes "please switch to English" or "réponds-moi en anglais" or similar, OR (2) the user changes their language preference in Settings. Both are signalled by the system, not inferred by you.
+
+Your craft rules (mirroring tone, no clinical labels, no invented affirmations, no death metaphors, honest presence) apply identically in Deutsch. If you don't know a word in Deutsch, say so honestly rather than switching to English.`;
 
 describe("system prompt language directive", () => {
   it("is byte-identical to the golden string for German", () => {
     expect(buildLanguageDirective("de")).toBe(GOLDEN_DE_DIRECTIVE);
+  });
+
+  it("carries the strict wording for a French user (MUST + example phrases)", () => {
+    const fr = buildLanguageDirective("fr")!;
+    expect(fr).toContain("The user's preferred language is Français.");
+    expect(fr).toContain("You MUST respond in Français. Every reply. Every time. Without exception.");
+    expect(fr).toContain('"please switch to English" or "réponds-moi en anglais"');
+    expect(fr).toContain("Never fall back to English on your own.");
+    expect(fr).toContain("ask for clarification IN Français");
   });
 
   it("is absent for English, inactive, and unknown languages", () => {
@@ -399,7 +415,8 @@ describe("end-to-end — German user", () => {
     // directive is what makes the live model answer in German).
     const [profile] = await db.select().from(profileTable).where(eq(profileTable.userId, userId));
     const prompt = await buildSystemPrompt(profile!);
-    expect(prompt.stable).toContain("This user's preferred language is Deutsch.");
+    expect(prompt.stable).toContain("The user's preferred language is Deutsch.");
+    expect(prompt.stable).toContain("You MUST respond in Deutsch.");
   });
 
   it("German crisis message: detector fires, German helpline card with German lines", async () => {

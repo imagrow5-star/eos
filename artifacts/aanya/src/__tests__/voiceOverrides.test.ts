@@ -14,6 +14,7 @@ import { describe, it, expect } from "vitest";
 import { buildSessionOverrides, TONE_TTS } from "../lib/voiceOverrides";
 
 const INPUTS = { tone: "calm" as const, voiceId: "voice123" };
+const INPUTS_DE = { ...INPUTS, language: "de" };
 
 describe("buildSessionOverrides", () => {
   it("full: tone TTS + voiceId — nothing else", () => {
@@ -40,14 +41,30 @@ describe("buildSessionOverrides", () => {
     expect(buildSessionOverrides("none", INPUTS)).toEqual({});
   });
 
-  it("NEVER emits a first_message / agent override at any level (1008 regression)", () => {
+  it("NEVER emits a first_message override at any level (1008 regression)", () => {
     for (const level of ["full", "voice", "none"] as const) {
+      for (const inputs of [INPUTS, INPUTS_DE]) {
+        const json = JSON.stringify(buildSessionOverrides(level, inputs)).toLowerCase();
+        expect(json).not.toContain("first_message");
+        expect(json).not.toContain("firstmessage");
+      }
+      // English calls never get an agent block at all.
       const payload = buildSessionOverrides(level, INPUTS);
       expect(payload.overrides && "agent" in payload.overrides).toBeFalsy();
-      const json = JSON.stringify(payload).toLowerCase();
-      expect(json).not.toContain("first_message");
-      expect(json).not.toContain("firstmessage");
     }
+  });
+
+  it("non-English calls carry agent.language at full AND voice; none drops it (graceful degrade)", () => {
+    expect(buildSessionOverrides("full", INPUTS_DE).overrides?.agent).toEqual({ language: "de" });
+    expect(buildSessionOverrides("voice", INPUTS_DE).overrides?.agent).toEqual({ language: "de" });
+    // The cascade's last attempt has NO overrides — a config that rejects the
+    // language override still gets a working (English-biased) call.
+    expect(buildSessionOverrides("none", INPUTS_DE)).toEqual({});
+  });
+
+  it("explicit language 'en' or absent language emits no agent block", () => {
+    expect(buildSessionOverrides("full", { ...INPUTS, language: "en" }).overrides?.agent).toBeUndefined();
+    expect(buildSessionOverrides("full", INPUTS).overrides?.agent).toBeUndefined();
   });
 
   it("defaults unknown/missing tone to the auto delivery", () => {

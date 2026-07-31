@@ -63,6 +63,13 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
     { userId: req.userId, preferredLanguage, agentUsed: routing.agentUsed },
     "voice-agent: call routed",
   );
+  // Transcription language hint: rides to the client, which sends it to
+  // ElevenLabs as the conversation override agent.language so speech-to-text
+  // targets the user's language instead of guessing English. Only sent on
+  // multilingual-agent calls — the English agent never sees an override, so
+  // English calls stay byte-identical. The client's override cascade degrades
+  // gracefully if the agent's config rejects it.
+  const language = routing.agentUsed === "multilingual" ? preferredLanguage : undefined;
 
   const signedUrlPromise: Promise<{ r: Response } | { err: unknown }> | null = apiKey
     ? fetch(
@@ -88,7 +95,15 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
     // No API key to sign with — only a PUBLIC agent can possibly work. Let the
     // browser try; if the agent is private the client will surface the drop.
     logger.warn("ELEVENLABS_API_KEY not set — attempting public-agent voice call");
-    res.json({ available: true, mode: "public", agentId, userToken, tone, firstMessage });
+    res.json({
+      available: true,
+      mode: "public",
+      agentId,
+      userToken,
+      tone,
+      firstMessage,
+      ...(language ? { language } : {}),
+    });
     return;
   }
 
@@ -107,6 +122,7 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
           userToken,
           tone,
           firstMessage,
+          ...(language ? { language } : {}),
         });
         return;
       }

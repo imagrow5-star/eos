@@ -40,6 +40,12 @@ export type RealtimeSessionInfo = {
    * we decide the LLM greeting is the permanent path.
    */
   firstMessage?: string;
+  /**
+   * ISO transcription-language hint (multilingual-agent calls only) — sent to
+   * ElevenLabs as the agent.language conversation override so speech-to-text
+   * targets the user's language. Absent on English calls.
+   */
+  language?: string;
 };
 
 export type RealtimeHandlers = {
@@ -151,6 +157,7 @@ export async function startRealtimeCall(
     const overrides = buildSessionOverrides(level, {
       tone: session.tone,
       voiceId,
+      language: session.language,
     }) as Record<string, never>;
     return session.signedUrl
       ? Conversation.startSession({ signedUrl: session.signedUrl, ...shared, ...overrides })
@@ -169,7 +176,7 @@ export async function startRealtimeCall(
   let lastErr: unknown = null;
   for (const level of ["full", "voice", "none"] as const) {
     const payloadKey = JSON.stringify(
-      buildSessionOverrides(level, { tone: session.tone, voiceId }),
+      buildSessionOverrides(level, { tone: session.tone, voiceId, language: session.language }),
     );
     if (seenPayloads.has(payloadKey)) continue;
     seenPayloads.add(payloadKey);
