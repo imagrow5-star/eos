@@ -266,7 +266,8 @@ router.post("/voice-agent/client-timing", (req, res): void => {
   const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : undefined);
 
   const timing = {
-    userId: req.userId,
+    // Privacy (Tier 3): hashed id only — this object is logged wholesale below.
+    uh: hashUserIdForLog(req.userId),
     /** "prefetched" | "fresh" — where the /session result came from. */
     sessionSource: str(b.sessionSource, 20) ?? "unknown",
     sessionFetchMs: num(b.sessionFetchMs),

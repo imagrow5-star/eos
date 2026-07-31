@@ -14,6 +14,7 @@ import { getOrCreateProfileForUser } from "./profile.js";
 import { verifyVoiceToken } from "../lib/voiceToken.js";
 import { voiceTurnUsageLimits } from "../middleware/usageLimits.js";
 import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { detectCrisis } from "../services/crisis/detector.js";
 import { CRISIS_REINFORCEMENT_BLOCK_VOICE } from "../services/crisis/reinforcement.js";
 import { resolveHelplines } from "../services/crisis/helplines.js";
@@ -348,7 +349,12 @@ router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (re
         userId,
         patternMatched: crisis.pattern!,
         countryServed: resolveHelplines(profile.country).countryServed,
-      }).catch((err) => logger.error({ err, userId }, "crisis floor: recording voice event failed"));
+      }).catch((err) => {
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) logger.error({ err, uh }, "crisis floor: recording voice event failed");
+      } catch { /* logging must never crash the caller */ }
+    });
     }
     const [stage, preCallRows] = await Promise.all([
       calculateStage(profile),
