@@ -63,12 +63,12 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
     { userId: req.userId, preferredLanguage, agentUsed: routing.agentUsed },
     "voice-agent: call routed",
   );
-  // Transcription language hint: rides to the client, which sends it to
-  // ElevenLabs as the conversation override agent.language so speech-to-text
-  // targets the user's language instead of guessing English. Only sent on
-  // multilingual-agent calls — the English agent never sees an override, so
-  // English calls stay byte-identical. The client's override cascade degrades
-  // gracefully if the agent's config rejects it.
+  // Language code (multilingual-agent calls only) — INFORMATIONAL for the
+  // client. It is deliberately NOT forwarded to ElevenLabs anymore: the
+  // agent.language override is rejected by config with a post-connect 1008
+  // that kills the call (July 31 — same pattern as first_message).
+  // Transcription language comes from the multilingual agent's own dashboard
+  // config; Multilingual v2 TTS speaks whatever language the reply text is in.
   const language = routing.agentUsed === "multilingual" ? preferredLanguage : undefined;
 
   const signedUrlPromise: Promise<{ r: Response } | { err: unknown }> | null = apiKey

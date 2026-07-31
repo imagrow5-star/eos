@@ -14,7 +14,6 @@ import { describe, it, expect } from "vitest";
 import { buildSessionOverrides, TONE_TTS } from "../lib/voiceOverrides";
 
 const INPUTS = { tone: "calm" as const, voiceId: "voice123" };
-const INPUTS_DE = { ...INPUTS, language: "de" };
 
 describe("buildSessionOverrides", () => {
   it("full: tone TTS + voiceId — nothing else", () => {
@@ -41,30 +40,25 @@ describe("buildSessionOverrides", () => {
     expect(buildSessionOverrides("none", INPUTS)).toEqual({});
   });
 
-  it("NEVER emits a first_message override at any level (1008 regression)", () => {
+  it("NEVER emits an agent block — no first_message, no language (1008 regressions)", () => {
+    // ElevenLabs rejects agent-field overrides with post-connect 1008
+    // disconnects that the retry cascade cannot catch: first_message
+    // (~July 29) and agent.language (July 31). Neither may EVER be sent —
+    // even when the session carries a language (multilingual-agent calls).
     for (const level of ["full", "voice", "none"] as const) {
-      for (const inputs of [INPUTS, INPUTS_DE]) {
-        const json = JSON.stringify(buildSessionOverrides(level, inputs)).toLowerCase();
+      // language is not even an accepted input anymore; passing it through a
+      // widened object must still produce no agent block.
+      const withLanguage = { ...INPUTS, language: "de" } as typeof INPUTS;
+      for (const inputs of [INPUTS, withLanguage]) {
+        const payload = buildSessionOverrides(level, inputs);
+        expect(payload.overrides && "agent" in payload.overrides).toBeFalsy();
+        const json = JSON.stringify(payload).toLowerCase();
         expect(json).not.toContain("first_message");
         expect(json).not.toContain("firstmessage");
+        expect(json).not.toContain("language");
+        expect(json).not.toContain('"agent"');
       }
-      // English calls never get an agent block at all.
-      const payload = buildSessionOverrides(level, INPUTS);
-      expect(payload.overrides && "agent" in payload.overrides).toBeFalsy();
     }
-  });
-
-  it("non-English calls carry agent.language at full AND voice; none drops it (graceful degrade)", () => {
-    expect(buildSessionOverrides("full", INPUTS_DE).overrides?.agent).toEqual({ language: "de" });
-    expect(buildSessionOverrides("voice", INPUTS_DE).overrides?.agent).toEqual({ language: "de" });
-    // The cascade's last attempt has NO overrides — a config that rejects the
-    // language override still gets a working (English-biased) call.
-    expect(buildSessionOverrides("none", INPUTS_DE)).toEqual({});
-  });
-
-  it("explicit language 'en' or absent language emits no agent block", () => {
-    expect(buildSessionOverrides("full", { ...INPUTS, language: "en" }).overrides?.agent).toBeUndefined();
-    expect(buildSessionOverrides("full", INPUTS).overrides?.agent).toBeUndefined();
   });
 
   it("defaults unknown/missing tone to the auto delivery", () => {

@@ -5,16 +5,20 @@
  *
  * Levels — each failed level costs a full paid reconnection, so lower levels
  * drop only what could have caused the rejection:
- *   full  — tone TTS (stability/speed) + chosen voiceId + agent.language
- *   voice — chosen voiceId + agent.language (tone fields dropped)
- *   none  — no overrides at all: agent defaults (graceful degrade — voice
- *           still works, transcription is English-biased).
+ *   full  — tone TTS (stability/speed) + chosen voiceId
+ *   voice — chosen voiceId only (tone fields dropped)
+ *   none  — no overrides at all: agent defaults.
  *
- * agent.language (non-English calls only): tells the multilingual agent which
- * language to target for speech-to-text, so e.g. German speech isn't garbled
- * through an English transcriber. Requires the "language" override toggle on
- * the agent's Security settings; if the config rejects it, the cascade's
- * "none" attempt connects without it.
+ * NO `agent` block is EVER sent. Two runtime agent overrides have now been
+ * rejected by ElevenLabs config with hard post-connect 1008 disconnects:
+ * first_message (~July 29) and agent.language (July 31 — "Override for field
+ * 'language' is not allowed by config", and the rejection lands AFTER the
+ * socket opens, so the retry cascade cannot catch it and calls simply die).
+ * The multilingual agent transcribes with its dashboard-configured language
+ * settings; Multilingual v2 TTS speaks whatever language the reply text is
+ * in, and the brain-side language directive keeps replies in the user's
+ * language — so dropping the hint costs transcription bias only, never the
+ * spoken language.
  *
  * first_message is DELIBERATELY never sent. ElevenLabs tightened runtime
  * override permissions (~July 29) and rejects the field with a hard 1008
@@ -42,21 +46,19 @@ export const TONE_TTS: Record<VoiceTone, { stability: number; speed: number }> =
 export interface OverrideInputs {
   tone?: VoiceTone;
   voiceId?: string;
-  /** ISO 639-1 transcription-language hint ("de", "fr", …) — only present on
-   *  multilingual-agent calls; never set for English. */
-  language?: string;
 }
 
 /**
  * Returns the `{ overrides: ... }` fragment to spread into
  * Conversation.startSession's config — or {} when the level sends nothing.
- * The `agent` block may carry ONLY `language` — never firstMessage, which
- * ElevenLabs rejects with a 1008 disconnect (see the module comment).
+ * Never emits an `agent` block of any kind — ElevenLabs rejects agent-field
+ * overrides (first_message, language) with post-connect 1008 disconnects
+ * that kill the call (see the module comment).
  */
 export function buildSessionOverrides(
   level: OverrideLevel,
   inputs: OverrideInputs,
-): { overrides?: { tts?: Record<string, unknown>; agent?: { language: string } } } {
+): { overrides?: { tts?: Record<string, unknown> } } {
   if (level === "none") return {};
 
   const tts: Record<string, unknown> = {};
@@ -67,9 +69,5 @@ export function buildSessionOverrides(
   }
   if (inputs.voiceId) tts.voiceId = inputs.voiceId;
 
-  const overrides: { tts?: Record<string, unknown>; agent?: { language: string } } = {};
-  if (Object.keys(tts).length > 0) overrides.tts = tts;
-  if (inputs.language && inputs.language !== "en") overrides.agent = { language: inputs.language };
-
-  return Object.keys(overrides).length > 0 ? { overrides } : {};
+  return Object.keys(tts).length > 0 ? { overrides: { tts } } : {};
 }
