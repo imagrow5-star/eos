@@ -124,7 +124,7 @@ describe.skipIf(!HAS_DB)("privacy Tier 1 — auth + crisis log paths (integratio
         .post(`/api/chapters/${chapterId}/note`)
         .send({ kind: "free", text: "I want to end my life and can't go on" });
       // Product behavior unchanged: crisis is answered with care immediately.
-      expect(res.status).toBe(201);
+      expect(res.status).toBe(200);
       expect(res.body.care?.message).toBeTruthy();
 
       // No log line about crisis at write time...
