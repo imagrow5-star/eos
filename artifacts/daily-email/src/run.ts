@@ -37,6 +37,7 @@ import {
 import { eq, and, desc, sql, isNotNull, isNull, gte } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import { resolveSendZone } from "./timezone";
+import { hashUserIdForLog } from "./logHash";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -936,10 +937,13 @@ export async function run(): Promise<void> {
 
     if (!shouldSendDailyNote) {
       if (DRY_RUN) {
-        log("dry-run decision", {
-          userId: user.userId,
+        // Privacy (Tier 2): drop zone + localHour — both reveal the user's
+        // timezone/location when combined with the log timestamp and hash.
+        const uh = hashUserIdForLog(user.userId);
+        if (uh) log("dry-run decision", {
+          uh,
           decision: user.lastEmailDate === today ? "already-sent-today" : "outside-window",
-          zoneSource: zone.source, zone: tz, localHour: hour,
+          zoneSource: zone.source,
         });
       }
       skipped++;
@@ -961,10 +965,12 @@ export async function run(): Promise<void> {
         logErr("dry-run: context gather failed", err, { userId: user.userId });
         return null;
       });
-      log("dry-run decision", {
-        userId: user.userId,
+      // Privacy (Tier 2): drop zone + localHour (timezone/location fingerprint).
+      const uh = hashUserIdForLog(user.userId);
+      if (uh) log("dry-run decision", {
+        uh,
         decision: ctx ? "would-send-daily-note" : "would-skip-not-enough-data",
-        zoneSource: zone.source, zone: tz, localHour: hour,
+        zoneSource: zone.source,
       });
       skipped++;
     } else try {
@@ -1035,7 +1041,9 @@ export async function run(): Promise<void> {
           }
         }
 
-        log("Email sent", { userId: user.userId, day: today, zoneSource: zone.source, zone: tz });
+        // Privacy (Tier 2): drop zone (timezone/location); hash userId to `uh`.
+        const uhSent = hashUserIdForLog(user.userId);
+        if (uhSent) log("Email sent", { uh: uhSent, day: today, zoneSource: zone.source });
         sent++;
       }
 

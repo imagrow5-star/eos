@@ -5,6 +5,7 @@ import { isVoiceCallEnabled } from "../lib/featureFlags.js";
 import { voiceSessionUsageLimits } from "../middleware/usageLimits.js";
 import { buildVoiceFirstMessage } from "../services/voiceGreeting.js";
 import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { resolveHelplines, buildHelplineBlockText } from "../services/crisis/helplines.js";
 import { pendingVoiceCrisisEvent, dismissVoiceCrisisEvent } from "../services/crisis/events.js";
 import { resolveAgentRouting } from "../services/voiceAgentRouting.js";
@@ -59,10 +60,17 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
   // Route the call to the language-appropriate agent (safe-degrades inside).
   const routing = resolveAgentRouting({ preferredLanguage });
   const agentId = routing.agentId ?? baseAgentId;
-  logger.info(
-    { userId: req.userId, preferredLanguage, agentUsed: routing.agentUsed },
-    "voice-agent: call routed",
-  );
+  // Privacy (Tier 2): drop preferredLanguage (a language trait); hash userId to
+  // `uh`. agentUsed is kept — it is the coarse routing OUTCOME (english-flash vs
+  // multilingual), which is the whole point of this observability line.
+  try {
+    const uh = hashUserIdForLog(req.userId);
+    if (uh !== undefined) {
+      logger.info({ uh, agentUsed: routing.agentUsed }, "voice-agent: call routed");
+    }
+  } catch {
+    /* logging must never break call routing */
+  }
   // Language code (multilingual-agent calls only) — INFORMATIONAL for the
   // client. It is deliberately NOT forwarded to ElevenLabs anymore: the
   // agent.language override is rejected by config with a post-connect 1008
