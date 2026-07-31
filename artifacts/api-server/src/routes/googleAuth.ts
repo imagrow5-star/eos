@@ -41,6 +41,7 @@ import {
   isGoogleAuthConfigured,
 } from "../services/googleAuth.js";
 import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
 const router: IRouter = Router();
 
@@ -200,7 +201,10 @@ router.get("/auth/google/callback", googleAuthLimiter, async (req, res): Promise
     // then attach the identity.
     await regenerateSession(req);
     req.session.userId = user.id;
-    logger.info({ userId: user.id, created }, "User logged in via Google");
+    try {
+      const uh = hashUserIdForLog(user.id);
+      if (uh) logger.info({ uh, created }, "User logged in via Google");
+    } catch { /* logging must never crash the caller */ }
 
     // Land exactly where a normal email login lands: the SPA root (the
     // session cookie routes past the marketing page server-side).
