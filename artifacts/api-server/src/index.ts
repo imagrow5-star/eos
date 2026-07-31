@@ -5,6 +5,7 @@ import { initVoiceLibrary } from "./services/voiceLibrary";
 import { reconcileAgentConfig } from "./services/agentConfigGuard";
 import { runDataEncryptionMigration } from "./services/dataEncryptionMigration";
 import { backfillVoiceGender } from "./services/settings/voiceGenderBackfill";
+import { backfillMemoryImportance } from "./services/memory/backfill";
 import { warnIfAgentEnvIncomplete } from "./services/voiceAgentRouting";
 
 // User content is encrypted at rest — without the master key the app can
@@ -55,6 +56,14 @@ app.listen(port, (err) => {
   // never changes what anyone hears).
   backfillVoiceGender().catch((e) =>
     logger.error({ err: e }, "voice_gender backfill failed — reads fall back to companion gender"),
+  );
+
+  // Seed memory-fact importance columns (times_referenced, last_referenced_at,
+  // emotional_weight) for facts that predate ranking. Idempotent — only touches
+  // unseeded rows, so it's a no-op after the first successful pass. Runs while
+  // serving; until it completes, unseeded facts just score on their defaults.
+  backfillMemoryImportance().catch((e) =>
+    logger.error({ err: e }, "memory importance backfill failed — unseeded facts score on defaults"),
   );
 
   // Initialise romantic community voices (non-blocking — failures logged and skipped)

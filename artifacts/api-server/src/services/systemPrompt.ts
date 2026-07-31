@@ -18,6 +18,8 @@ import { calculateStage, stageMeta, todayInTimezone, getTimeContext } from "./st
 import { countryDisplayName, AGE_BANDS } from "../lib/basics.js";
 import { RAISE_COOLDOWN_DAYS, SUPPORT_COOLDOWN_DAYS } from "./chapters/storyThreads.js";
 import { languageByCode } from "./settings/languages.js";
+import { rankFactsByImportance, scoreFactImportance } from "./memory/importance.js";
+import { logger } from "../lib/logger.js";
 
 // ─── Language directive (Sprint 1.6) ─────────────────────────────────────────
 // The ONLY multilanguage change to the base prompt: one block, injected only
@@ -151,9 +153,12 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
 
   const userId = (profile as any).userId as number;
 
-  const [facts, activeSignals, activeHabits, openCommitments, recentMoods, habitCompletionsLast7, personalizationRows, activeGoals, frozenThreadRows] =
+  const [allFacts, activeSignals, activeHabits, openCommitments, recentMoods, habitCompletionsLast7, personalizationRows, activeGoals, frozenThreadRows] =
     await Promise.all([
-      db.select().from(memoryFactsTable).where(eq(memoryFactsTable.userId, userId)).orderBy(desc(memoryFactsTable.createdAt)).limit(30),
+      // Importance ranking (Sprint 2A): fetch ALL facts (typical user <200) and
+      // rank in app code below — an old-but-important fact must be able to beat
+      // a newer trivial one, which "ORDER BY created_at LIMIT 30" could not.
+      db.select().from(memoryFactsTable).where(eq(memoryFactsTable.userId, userId)),
       db.select().from(personalitySignalsTable).where(and(eq(personalitySignalsTable.userId, userId), eq(personalitySignalsTable.isActive, true))).orderBy(desc(personalitySignalsTable.observedCount)).limit(12),
       db.select().from(habitsTable).where(and(eq(habitsTable.userId, userId), eq(habitsTable.isActive, true))),
       // Always fetched (not stage-gated): the companion must be able to answer
@@ -205,6 +210,39 @@ export async function buildSystemPrompt(profile: Profile, precomputedStage?: num
         .from(goalTasksTable)
         .where(inArray(goalTasksTable.goalId, activeGoals.map((g) => g.id)))
     : [];
+
+  // ── Importance-ranked memory (Sprint 2A) ───────────────────────────────────
+  // Rank all facts by importance (recency + reference frequency/recency +
+  // emotional weight + user-marked) and keep the top 40. Formatting downstream
+  // is unchanged — `facts` is still an array of fact rows.
+  const factNowMs = Date.now();
+  const FACT_LIMIT = 40;
+  const facts = rankFactsByImportance(allFacts, factNowMs, FACT_LIMIT);
+
+  // Observability: how ranking is behaving, WITHOUT logging any fact content.
+  // boundaryFactAgeDays = age of the lowest-ranked fact that still made the cut
+  // — if this stays high, old-but-important facts are surviving (the goal).
+  if (allFacts.length > 0) {
+    const scores = facts.map((f) => scoreFactImportance(f, factNowMs)).sort((a, b) => b - a);
+    const top = scores.slice(0, 10);
+    const median = top.length ? top[Math.floor(top.length / 2)]! : 0;
+    const boundaryFact = facts[facts.length - 1];
+    const boundaryAgeDays = boundaryFact
+      ? Math.round((factNowMs - new Date(boundaryFact.createdAt).getTime()) / 86_400_000)
+      : 0;
+    logger.info(
+      {
+        userId,
+        totalFacts: allFacts.length,
+        returnedFacts: facts.length,
+        top10ScoreMax: Number((top[0] ?? 0).toFixed(3)),
+        top10ScoreMin: Number((top[top.length - 1] ?? 0).toFixed(3)),
+        top10ScoreMedian: Number(median.toFixed(3)),
+        boundaryFactAgeDays: boundaryAgeDays,
+      },
+      "memory ranking",
+    );
+  }
 
   const name = profile.userName || "you";
   const companionName = profile.companionName;

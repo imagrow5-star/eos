@@ -563,7 +563,7 @@ async function fetchExportPayload(userId: number, range: DateRange = {}) {
       [userId, ...messagesRange.params],
     ),
     pool.query(
-      `SELECT fact, created_at FROM memory_facts WHERE user_id = $1${memoryRange.clause} ORDER BY created_at ASC`,
+      `SELECT fact, category, created_at, times_referenced, last_referenced_at, emotional_weight, user_marked_important FROM memory_facts WHERE user_id = $1${memoryRange.clause} ORDER BY created_at ASC`,
       [userId, ...memoryRange.params],
     ),
     pool.query(
