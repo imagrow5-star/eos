@@ -63,7 +63,7 @@ function voiceTokenKey(req: Request): string {
   return auth ? `u:${auth.userId}` : ipKeyGenerator(req.ip ?? "");
 }
 
-function makeLimiter(opts: {
+export function makeLimiter(opts: {
   windowMs: number;
   limit: number;
   message: string;
@@ -153,6 +153,24 @@ export const voiceSessionUsageLimits: RequestHandler[] = limiterPair({
   dayMessage:
     "Voice calls have reached today's limit — they'll be back tomorrow. Text chat is always open.",
 });
+
+// Memory export ("download your journal", Sprint E). Unlike the paid-API
+// limiters above, this guards a pure DB read — the ceiling exists to stop
+// accidental double-clicks and unreasonable hammering of a heavy full-account
+// query, not to control an external bill. One per hour per user is plenty: an
+// export is a "grab a copy" action, not something a real person repeats. The
+// single hourly window (no daily pair) is env-overridable so the test suite can
+// drive the 429 path deterministically (setup/rate-limit-env.ts keeps the
+// default high everywhere else).
+export const memoryExportUsageLimits: RequestHandler[] = [
+  makeLimiter({
+    windowMs: HOUR_MS,
+    limit: envLimit("MEMORY_EXPORT_LIMIT_PER_HOUR", 1),
+    message:
+      "You just downloaded your data — you can grab a fresh copy again in a little while. Everything's safe in the meantime.",
+    keyGenerator: sessionUserKey,
+  }),
+];
 
 export const voiceTurnUsageLimits: RequestHandler[] = limiterPair({
   hourEnv: "VOICE_TURN_LIMIT_PER_HOUR",
