@@ -46,6 +46,13 @@ export const commitmentsTable = pgTable("commitments", {
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+
+  // ── Dedup reference tracking (Sprint: dedup) ────────────────────────────────
+  // Bumped when extraction detects the user re-stating an existing commitment
+  // (semantically equivalent) instead of inserting a duplicate row. Additive +
+  // defaulted so legacy rows stay valid without a backfill.
+  timesReferenced: integer("times_referenced").notNull().default(1),
+  lastReferencedAt: timestamp("last_referenced_at"),
 });
 
 export type Commitment = typeof commitmentsTable.$inferSelect;

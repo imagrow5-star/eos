@@ -19,6 +19,11 @@ import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { recordMemoryReferences } from "./memory/references.js";
 import { detectRememberIntent } from "./memory/rememberTriggers.js";
+import {
+  defaultDedupFinder,
+  type DedupEntry,
+  type DedupFinder,
+} from "./memory/dedup.js";
 import { todayInTimezone, describeCommitmentTiming } from "./stage.js";
 import type { SystemPromptParts } from "./systemPrompt.js";
 import { describeUserGender, describeUserBasics } from "./systemPrompt.js";
@@ -572,10 +577,17 @@ interface ExtractedMemory {
   changeTalk?: boolean;
 }
 
+// ─── Extraction-time semantic dedup ───────────────────────────────────────────
+// A new extraction is compared against the last N rows of the same type. 50 is
+// cheap to load and covers a user's active memory without a large Haiku context.
+// On a semantic hit we bump the matched row's reference counters instead of
+// inserting a near-duplicate (the pollution the Memory Manifest was showing).
+const DEDUP_CANDIDATE_WINDOW = 50;
+
 export async function extractMemory(
   profile: Profile,
   recentMessages: { role: string; content: string }[],
-  opts?: { userMarkedImportant?: boolean },
+  opts?: { userMarkedImportant?: boolean; dedupFinder?: DedupFinder },
 ): Promise<void> {
   // Sprint 2B: when the user explicitly asked Eos to remember, every fact we
   // pull from that message is flagged important (the +10 boost). Default false
@@ -643,20 +655,43 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
     }
 
     const userId = (profile as any).userId as number;
+    const dedupFinder = opts?.dedupFinder ?? defaultDedupFinder;
     if (extracted.facts && extracted.facts.length > 0) {
-      const existingFacts = await db.select().from(memoryFactsTable).where(eq(memoryFactsTable.userId, userId));
+      // Semantic dedup: compare each candidate against the user's recent facts
+      // and, on a hit, bump the matched row's reference counters instead of
+      // inserting a near-duplicate. The local `existing` array mirrors inserts
+      // so repeats WITHIN one batch also collapse. Fail-open (findSemanticDuplicate
+      // never throws) — a flaky check inserts as normal rather than losing data.
+      const recentFacts = await db
+        .select({ id: memoryFactsTable.id, fact: memoryFactsTable.fact })
+        .from(memoryFactsTable)
+        .where(eq(memoryFactsTable.userId, userId))
+        .orderBy(desc(memoryFactsTable.createdAt))
+        .limit(DEDUP_CANDIDATE_WINDOW);
+      const existing: DedupEntry[] = recentFacts.map((r) => ({ id: r.id, content: r.fact }));
+
       for (const f of extracted.facts) {
         if (!f.fact || f.fact.length < 5) continue;
-        const isDuplicate = existingFacts.some(
-          (e) =>
-            e.fact.toLowerCase().includes(f.fact.toLowerCase().slice(0, 20)) ||
-            f.fact.toLowerCase().includes(e.fact.toLowerCase().slice(0, 20)),
-        );
-        if (!isDuplicate) {
+        const decision = await dedupFinder(f.fact, existing);
+        if (decision.isDuplicate && decision.matchingId != null) {
           await db
-            .insert(memoryFactsTable)
-            .values({ fact: f.fact, category: f.category || "life", userId, userMarkedImportant: markImportant });
+            .update(memoryFactsTable)
+            .set({
+              timesReferenced: sql`${memoryFactsTable.timesReferenced} + 1`,
+              lastReferencedAt: new Date(),
+            })
+            .where(and(eq(memoryFactsTable.id, decision.matchingId), eq(memoryFactsTable.userId, userId)));
+          try {
+            const uh = hashUserIdForLog(userId);
+            if (uh) logger.debug({ uh, table: "memory_facts", matchingId: decision.matchingId }, "Extraction dedup — candidate merged into existing row");
+          } catch { /* logging must never crash the caller */ }
+          continue;
         }
+        const [inserted] = await db
+          .insert(memoryFactsTable)
+          .values({ fact: f.fact, category: f.category || "life", userId, userMarkedImportant: markImportant })
+          .returning({ id: memoryFactsTable.id });
+        if (inserted) existing.unshift({ id: inserted.id, content: f.fact });
       }
     }
 
@@ -746,6 +781,7 @@ export async function extractCommitments(
   userMessage: string,
   assistantReply: string,
   openCommitments: Array<{ id: number; content: string; cue: string }>,
+  opts?: { dedupFinder?: DedupFinder },
 ): Promise<CommitmentExtractionResult> {
   const anthropic = getAnthropic();
   const today = todayInTimezone((profile as any).timezone ?? "UTC");
@@ -824,26 +860,53 @@ RULES — read carefully:
 
     // Persist new commitment
     const userId = (profile as any).userId as number;
+    const dedupFinder = opts?.dedupFinder ?? defaultDedupFinder;
     if (result.newCommitment && result.newCommitment.content?.length > 3) {
-      // Model output is untrusted — persist only well-formed dates/times so
-      // downstream string comparisons and nudge hour-matching stay sound.
-      const validDate = (s: string | null | undefined): string | null =>
-        s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
-      const validTime = (s: string | null | undefined): string | null =>
-        s && /^([01]\d|2[0-3]):[0-5]\d$/.test(s) ? s : null;
-      await db.insert(commitmentsTable).values({
-        userId,
-        content: result.newCommitment.content,
-        cue: result.newCommitment.cue ?? "",
-        scheduledFollowupDate: validDate(result.newCommitment.scheduledFollowupDate),
-        scheduledDate: validDate(result.newCommitment.scheduledDate),
-        scheduledTime: validTime(result.newCommitment.scheduledTime),
-        state: "open",
-      });
-      try {
-        const uh = hashUserIdForLog(userId);
-        if (uh) logger.info({ uh }, "New commitment saved");
-      } catch { /* logging must never crash the caller */ }
+      // Semantic dedup vs the user's recent commitments before inserting. On a
+      // hit, bump the matched row's reference counters instead of adding a
+      // near-duplicate step. Fail-open.
+      const recentCommitments = await db
+        .select({ id: commitmentsTable.id, content: commitmentsTable.content })
+        .from(commitmentsTable)
+        .where(eq(commitmentsTable.userId, userId))
+        .orderBy(desc(commitmentsTable.createdAt))
+        .limit(DEDUP_CANDIDATE_WINDOW);
+      const existing: DedupEntry[] = recentCommitments.map((r) => ({ id: r.id, content: r.content }));
+      const decision = await dedupFinder(result.newCommitment.content, existing);
+
+      if (decision.isDuplicate && decision.matchingId != null) {
+        await db
+          .update(commitmentsTable)
+          .set({
+            timesReferenced: sql`${commitmentsTable.timesReferenced} + 1`,
+            lastReferencedAt: new Date(),
+          })
+          .where(and(eq(commitmentsTable.id, decision.matchingId), eq(commitmentsTable.userId, userId)));
+        try {
+          const uh = hashUserIdForLog(userId);
+          if (uh) logger.debug({ uh, table: "commitments", matchingId: decision.matchingId }, "Extraction dedup — candidate merged into existing row");
+        } catch { /* logging must never crash the caller */ }
+      } else {
+        // Model output is untrusted — persist only well-formed dates/times so
+        // downstream string comparisons and nudge hour-matching stay sound.
+        const validDate = (s: string | null | undefined): string | null =>
+          s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+        const validTime = (s: string | null | undefined): string | null =>
+          s && /^([01]\d|2[0-3]):[0-5]\d$/.test(s) ? s : null;
+        await db.insert(commitmentsTable).values({
+          userId,
+          content: result.newCommitment.content,
+          cue: result.newCommitment.cue ?? "",
+          scheduledFollowupDate: validDate(result.newCommitment.scheduledFollowupDate),
+          scheduledDate: validDate(result.newCommitment.scheduledDate),
+          scheduledTime: validTime(result.newCommitment.scheduledTime),
+          state: "open",
+        });
+        try {
+          const uh = hashUserIdForLog(userId);
+          if (uh) logger.info({ uh }, "New commitment saved");
+        } catch { /* logging must never crash the caller */ }
+      }
     }
 
     // Apply state updates
@@ -944,6 +1007,7 @@ export async function detectHabitMentions(
   assistantReply: string,
   activeHabits: Array<{ id: number; name: string; whenThen: string }>,
   activeGoals: Array<{ id: number; title: string }> = [],
+  opts?: { dedupFinder?: DedupFinder },
 ): Promise<HabitDetectionResult> {
   const empty: HabitDetectionResult = {
     completedHabitIds: [],
@@ -1072,20 +1136,46 @@ RULES:
       result.newGoal = null;
     }
 
-    // Create new habit if agreed upon
+    // Create new habit if agreed upon — semantic dedup first, so "walk every
+    // morning" said three ways doesn't become three habits. Match on the habit's
+    // NAME (its identity); bump the existing row's counters on a hit. Fail-open.
     if (result.newHabit && result.newHabit.name?.length > 2 && result.newHabit.whenThen?.length > 5) {
-      await db.insert(habitsTable).values({
-        userId,
-        name: result.newHabit.name,
-        whenThen: result.newHabit.whenThen,
-        reason: result.newHabit.reason || "agreed in conversation",
-        isActive: true,
-        streak: 0,
-      });
-      try {
-        const uh = hashUserIdForLog(userId);
-        if (uh) logger.info({ uh }, "New habit created from conversation");
-      } catch { /* logging must never crash the caller */ }
+      const dedupFinder = opts?.dedupFinder ?? defaultDedupFinder;
+      const recentHabits = await db
+        .select({ id: habitsTable.id, name: habitsTable.name })
+        .from(habitsTable)
+        .where(eq(habitsTable.userId, userId))
+        .orderBy(desc(habitsTable.createdAt))
+        .limit(DEDUP_CANDIDATE_WINDOW);
+      const existing: DedupEntry[] = recentHabits.map((r) => ({ id: r.id, content: r.name }));
+      const decision = await dedupFinder(result.newHabit.name, existing);
+
+      if (decision.isDuplicate && decision.matchingId != null) {
+        await db
+          .update(habitsTable)
+          .set({
+            timesReferenced: sql`${habitsTable.timesReferenced} + 1`,
+            lastReferencedAt: new Date(),
+          })
+          .where(and(eq(habitsTable.id, decision.matchingId), eq(habitsTable.userId, userId)));
+        try {
+          const uh = hashUserIdForLog(userId);
+          if (uh) logger.debug({ uh, table: "habits", matchingId: decision.matchingId }, "Extraction dedup — candidate merged into existing row");
+        } catch { /* logging must never crash the caller */ }
+      } else {
+        await db.insert(habitsTable).values({
+          userId,
+          name: result.newHabit.name,
+          whenThen: result.newHabit.whenThen,
+          reason: result.newHabit.reason || "agreed in conversation",
+          isActive: true,
+          streak: 0,
+        });
+        try {
+          const uh = hashUserIdForLog(userId);
+          if (uh) logger.info({ uh }, "New habit created from conversation");
+        } catch { /* logging must never crash the caller */ }
+      }
     }
 
     // Create new goal if agreed upon — identical to a Journey-form goal from
@@ -1289,7 +1379,7 @@ export async function createGoalWithTasks(
   userId: number,
   title: string,
   description: string,
-  opts: { dedupeActive?: boolean } = {},
+  opts: { dedupeActive?: boolean; dedupFinder?: DedupFinder } = {},
 ): Promise<CreatedGoal | null> {
   const cleanTitle = title.trim().slice(0, 200);
   const cleanDesc = (description ?? "").trim().slice(0, 500);
@@ -1304,10 +1394,36 @@ export async function createGoalWithTasks(
       .select()
       .from(goalsTable)
       .where(and(eq(goalsTable.userId, userId), eq(goalsTable.isComplete, false)));
+
+    // Cheap exact-normalized match first (free), then a semantic check that
+    // catches re-phrasings ("get to 100 crores" vs "hit my 100 cr target").
     const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
-    const dup = existing.find((g) => norm(g.title) === norm(cleanTitle));
+    let dup = existing.find((g) => norm(g.title) === norm(cleanTitle));
+
+    if (!dup) {
+      const finder = opts.dedupFinder ?? defaultDedupFinder;
+      const decision = await finder(
+        cleanTitle,
+        existing.map((g) => ({ id: g.id, content: g.title })),
+      );
+      if (decision.isDuplicate && decision.matchingId != null) {
+        dup = existing.find((g) => g.id === decision.matchingId);
+      }
+    }
+
     if (dup) {
-      logger.info({ goalId: dup.id }, "Goal creation skipped — active duplicate");
+      // Bump the matched goal's reference counters instead of inserting.
+      await db
+        .update(goalsTable)
+        .set({
+          timesReferenced: sql`${goalsTable.timesReferenced} + 1`,
+          lastReferencedAt: new Date(),
+        })
+        .where(and(eq(goalsTable.id, dup.id), eq(goalsTable.userId, userId)));
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) logger.debug({ uh, table: "goals", matchingId: dup.id }, "Extraction dedup — candidate merged into existing goal");
+      } catch { /* logging must never crash the caller */ }
       const tasks = await db
         .select()
         .from(goalTasksTable)

@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useGetProfile, useGetMemoryFacts, useGetPersonalitySignals, getGetMemoryFactsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Sparkles, BookOpen, Check, Eye, X, Star } from "lucide-react";
+import { Sparkles, BookOpen, Check, Eye, X, Star, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
 
@@ -53,6 +53,53 @@ export default function Memory() {
     } finally {
       setBusyFactId(null);
       setArmedFactId(null);
+    }
+  };
+
+  // ── "Reset my memory (dev)" — founder-gated (Sprint: dedup & reset) ─────────
+  // The button only renders for allowlisted accounts; eligibility is decided
+  // server-side (MEMORY_RESET_ALLOWLIST) and fetched once on load.
+  const [resetEligible, setResetEligible] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await apiFetch(`${import.meta.env.BASE_URL}api/memory/reset-eligible`);
+        if (!r.ok) return;
+        const data = (await r.json()) as { eligible?: boolean };
+        if (!cancelled) setResetEligible(data.eligible === true);
+      } catch {
+        /* not eligible / offline — leave the button hidden */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleResetMemory = async () => {
+    setResetBusy(true);
+    setResetError(null);
+    try {
+      const r = await apiFetch(`${import.meta.env.BASE_URL}api/memory/reset`, { method: "POST" });
+      if (!r.ok) {
+        setResetError(
+          r.status === 429
+            ? "You just reset — give it a moment before trying again."
+            : "Couldn't reset your memory — please try again.",
+        );
+        setResetBusy(false);
+        return;
+      }
+      // Wiped — reload so every memory view reflects the empty state.
+      window.location.reload();
+    } catch {
+      setResetError("Couldn't reset your memory — please try again.");
+      setResetBusy(false);
     }
   };
 
@@ -239,6 +286,57 @@ export default function Memory() {
             </section>
           )}
         </>
+      )}
+
+      {/* ── Reset my memory (dev, founder-gated) ───────────────────────────── */}
+      {resetEligible && (
+        <div className="pt-6 border-t border-destructive/10">
+          <button
+            onClick={() => { setResetError(null); setResetConfirmOpen(true); }}
+            className="flex items-center gap-2 text-[11px] text-muted-foreground/50 hover:text-destructive/80 tracking-wider uppercase transition-colors"
+          >
+            <RotateCcw className="w-3 h-3" />
+            Reset my memory (dev)
+          </button>
+        </div>
+      )}
+
+      {resetConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-6">
+          <div className="bg-card border border-primary/20 rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-xl">
+            <h2 className="font-serif text-[19px] text-foreground/90">Reset your memory?</h2>
+            <p className="text-[13px] text-muted-foreground/85 leading-relaxed">
+              This will delete all your memory facts, habits, goals, commitments, and
+              mood scores. Your conversations and chapters are kept. Are you sure?
+            </p>
+            {resetError && <p className="text-[12px] text-destructive/80">{resetError}</p>}
+            <div className="flex gap-2 justify-end pt-1">
+              <button
+                onClick={() => setResetConfirmOpen(false)}
+                disabled={resetBusy}
+                className="text-[12px] text-muted-foreground/60 hover:text-foreground/80 px-3 py-2 tracking-wider uppercase transition-colors disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetMemory}
+                disabled={resetBusy}
+                className="flex items-center gap-1.5 text-[12px] text-destructive tracking-wider uppercase font-medium rounded-lg border border-destructive/25 bg-destructive/10 hover:bg-destructive/20 px-3 py-2 transition-colors disabled:opacity-40"
+              >
+                {resetBusy ? (
+                  <motion.div
+                    className="w-3 h-3 border border-destructive/60 border-t-transparent rounded-full"
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
+                  />
+                ) : (
+                  <RotateCcw className="w-3.5 h-3.5" />
+                )}
+                Reset
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
