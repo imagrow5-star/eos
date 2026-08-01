@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useGetProfile, useGetMemoryFacts, useGetPersonalitySignals, getGetMemoryFactsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Sparkles, BookOpen, Check, Eye, X, Star, RotateCcw } from "lucide-react";
+import { Sparkles, X, Star, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
 
@@ -146,71 +146,22 @@ export default function Memory() {
         </div>
       ) : (
         <>
-          {/* ── Her read on you ─────────────────────────────────────────── */}
-          {signals.length > 0 && (
-            <section className="space-y-4">
-              <div className="flex items-center gap-2.5 mb-5">
-                <BookOpen className="w-4 h-4 text-primary/60" />
-                <h2 className="font-serif text-xl text-foreground/85">
-                  Her read on you
-                </h2>
-              </div>
-
-              <div className="grid gap-3">
-                {signals.map((signal, i) => (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.08 }}
-                    key={signal.id}
-                    className="bg-card border border-primary/15 rounded-xl p-4 flex flex-col gap-3"
-                  >
-                    <p className="text-sm text-foreground/85 leading-relaxed">
-                      {signal.signal}
-                    </p>
-
-                    <div className="flex items-center justify-between">
-                      <span
-                        className={cn(
-                          "text-[9px] uppercase tracking-[0.2em] flex items-center gap-1.5 font-medium",
-                          signal.isActive
-                            ? "text-primary/80"
-                            : "text-muted-foreground/70"
-                        )}
-                      >
-                        {signal.isActive ? (
-                          <Check className="w-3 h-3" />
-                        ) : (
-                          <Eye className="w-3 h-3" />
-                        )}
-                        {signal.isActive ? "Confirmed" : "Observing"}
-                      </span>
-
-                      {/* Confidence dots — gold fill */}
-                      <div className="flex gap-1.5">
-                        {[1, 2, 3].map((dot) => (
-                          <div
-                            key={dot}
-                            className={cn(
-                              "w-1.5 h-1.5 rounded-full transition-all",
-                              dot <= signal.observedCount
-                                ? signal.isActive
-                                  ? "bg-primary/70"
-                                  : "bg-secondary/40"
-                                : "bg-foreground/8"
-                            )}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </section>
-          )}
+          {/* ── Personality read — hidden until Sprint 4 ─────────────────── */}
+          {/* Hidden until Sprint 4 (Personality Synthesis) — raw personality signals aren't useful UX;
+              they're the substrate that gets synthesized into durable traits. Data continues to
+              extract + store + dedupe in the background. */}
+          {/* Soft placeholder in the section's old slot, so existing users who saw
+              "Her read on you" yesterday get a gentle transition rather than a
+              vanished section. */}
+          <section className="space-y-4">
+            <p className="text-sm text-muted-foreground/70 font-serif italic leading-relaxed max-w-md">
+              {companionName} is still learning who you are. As she gets to know you
+              deeper, this section will show what she's understood.
+            </p>
+          </section>
 
           {/* Gold hairline */}
-          {signals.length > 0 && facts.length > 0 && (
+          {facts.length > 0 && (
             <div className="h-px bg-primary/15" />
           )}
 
