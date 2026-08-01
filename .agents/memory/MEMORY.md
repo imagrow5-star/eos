@@ -37,3 +37,4 @@
 - [Data encryption at rest](data-encryption-at-rest.md) — enc:v1 GCM+AAD via drizzle customType; SQL can't peek encrypted cols (move checks to app code); keys via Secrets flow ONLY — setEnvVars→.replit leak burned a key
 - [Mobile web resilience](mobile-web-resilience.md) — tab discard reloads: persist non-sensitive per-tab drafts (sessionDrafts.ts), wipe at auth boundaries; RHF bare reset() restores dynamic defaults — use reset({content:""})
 - [Pre-publish build check](prepublish-build-check.md) — bare-shell vite build fails on missing PORT/BASE_PATH by design; publish pipeline injects them — verify vs last published commit, not raw shell
+- [Memory export](memory-export.md) — single export loader `fetchExportPayload` (all user tables, decrypts every col); Sprint E `/api/memory/export` (nested JSON + Markdown memoir, 1/hour); new user tables MUST join the loader; pure shaper in services/memoryExport.ts

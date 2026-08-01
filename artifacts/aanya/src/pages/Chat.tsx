@@ -1969,6 +1969,10 @@ export default function Chat() {
   useEffect(() => {
     if (showSettings) {
       handlePreviewExport();
+      // Fresh open — clear any leftover memory-export state so a new session
+      // starts from clean buttons, not a stale "downloaded" note.
+      setMemoryExportDone(false);
+      setMemoryExportError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showSettings]);
@@ -2105,6 +2109,54 @@ export default function Chat() {
     } finally {
       if (isHtml) setIsExportingHtml(false);
       else setIsExporting(false);
+    }
+  };
+
+  // ─── Memory export ("download your journal", Sprint E) ─────────────────────
+  // A cleaner, portable take on the export: a nested JSON built for other tools,
+  // and a warm Markdown "memoir" you can just read. Hits GET /api/memory/export,
+  // which is rate-limited to 1/hour — so after a successful download we gently
+  // note that and rest both buttons rather than inviting a guaranteed-fail
+  // second click. Same friendly error UX as the Sprint 2B star-toggle.
+  const [memoryExporting, setMemoryExporting] = useState<null | "json" | "markdown">(null);
+  const [memoryExportError, setMemoryExportError] = useState<string | null>(null);
+  const [memoryExportDone, setMemoryExportDone] = useState(false);
+
+  const handleMemoryExport = async (format: "json" | "markdown") => {
+    setMemoryExporting(format);
+    setMemoryExportError(null);
+    try {
+      const res = await apiFetch(
+        `${import.meta.env.BASE_URL}api/memory/export?format=${format}`,
+      );
+      if (!res.ok) {
+        // 429 (once an hour) gets its own gentle line; everything else is the
+        // standard try-again toast.
+        if (res.status === 429) {
+          setMemoryExportError(
+            "You just downloaded your data — you can grab a fresh copy again in a little while.",
+          );
+        } else {
+          setMemoryExportError("Couldn't generate your export — try again in a minute.");
+        }
+        return;
+      }
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      const dateSlug = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      a.download =
+        format === "markdown"
+          ? `eos-memory-export-${dateSlug}.md`
+          : `eos-memory-export-${dateSlug}.json`;
+      a.click();
+      URL.revokeObjectURL(objectUrl);
+      setMemoryExportDone(true);
+    } catch {
+      setMemoryExportError("Couldn't generate your export — try again in a minute.");
+    } finally {
+      setMemoryExporting(null);
     }
   };
 
@@ -3178,6 +3230,61 @@ export default function Chat() {
               {exportError && exportSummary && (
                 <p className="text-[11px] text-destructive/70">{exportError}</p>
               )}
+
+              {/* ── Your journal (memory export, Sprint E) ─────────────── */}
+              <div className="pt-3 mt-1 border-t border-primary/10 space-y-2.5">
+                <p className="text-[13px] text-foreground/75 leading-relaxed">
+                  This is everything {companionName} remembers about you — every
+                  conversation, every fact, every chapter. Your data is yours.
+                  Download it any time. Keep it somewhere safe.
+                </p>
+                {memoryExportDone ? (
+                  <p className="text-[11px] text-primary/70 leading-relaxed">
+                    Downloaded — it's yours to keep. You can export again in a
+                    little while.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <button
+                      onClick={() => handleMemoryExport("json")}
+                      disabled={memoryExporting !== null}
+                      className="flex items-center gap-1.5 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors disabled:opacity-40 font-medium rounded-lg border border-primary/25 bg-primary/8 hover:bg-primary/15 px-3 py-2"
+                      title="Structured JSON — for backup or import into other tools"
+                    >
+                      {memoryExporting === "json" ? (
+                        <motion.div
+                          className="w-3 h-3 border border-primary/40 border-t-transparent rounded-full"
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
+                        />
+                      ) : (
+                        <Download className="w-3 h-3" />
+                      )}
+                      {memoryExporting === "json" ? "Generating…" : "Download as JSON"}
+                    </button>
+                    <button
+                      onClick={() => handleMemoryExport("markdown")}
+                      disabled={memoryExporting !== null}
+                      className="flex items-center gap-1.5 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors disabled:opacity-40 font-medium rounded-lg border border-primary/25 bg-primary/8 hover:bg-primary/15 px-3 py-2"
+                      title="A warm, readable file you can open and read anywhere"
+                    >
+                      {memoryExporting === "markdown" ? (
+                        <motion.div
+                          className="w-3 h-3 border border-primary/40 border-t-transparent rounded-full"
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
+                        />
+                      ) : (
+                        <FileText className="w-3 h-3" />
+                      )}
+                      {memoryExporting === "markdown" ? "Generating…" : "Download as readable file"}
+                    </button>
+                  </div>
+                )}
+                {memoryExportError && (
+                  <p className="text-[11px] text-destructive/70">{memoryExportError}</p>
+                )}
+              </div>
             </div>
 
             {/* ── Delete account ──────────────────────────────────────── */}

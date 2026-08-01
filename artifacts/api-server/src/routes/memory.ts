@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, asc, and } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import {
   memoryFactsTable,
   personalitySignalsTable,
@@ -9,6 +9,16 @@ import {
   habitCompletionsTable,
   profileTable,
 } from "@workspace/db";
+import { fetchExportPayload } from "./account.js";
+import { memoryExportUsageLimits } from "../middleware/usageLimits.js";
+import {
+  shapeMemoryExport,
+  renderMemoryMarkdown,
+  memoryExportFilename,
+  type AccountBasics,
+} from "../services/memoryExport.js";
+import { logger } from "../lib/logger.js";
+import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import {
   GetMemoryFactsResponse,
   GetMemoryFactsResponseItem,
@@ -39,6 +49,98 @@ async function getUserTimezone(userId: number): Promise<string> {
     .limit(1);
   return (row as any)?.timezone ?? "UTC";
 }
+
+// ─── Export ("download your journal") ─────────────────────────────────────────
+// GET /memory/export?format=json|markdown
+//
+// The single user-triggered memory export. Auth is already enforced upstream
+// (requireAuth + requireVerified set req.userId), so this only ever returns the
+// caller's OWN data — every query inside fetchExportPayload is keyed on
+// req.userId. Read-only: it never mutates user state.
+//
+// Rate limited to 1/hour/user (memoryExportUsageLimits) to swallow accidental
+// double-clicks and guard the heavy full-account read. Every encrypted column
+// is decrypted for the user's own plaintext (that is the point of an export);
+// the shaping/formatting lives in services/memoryExport.ts (pure, unit-tested).
+
+/** Load the account-level bits that live on the users row, not the profile. */
+async function fetchAccountBasics(userId: number): Promise<AccountBasics> {
+  const r = await pool.query<{
+    email: string | null;
+    companion_name: string | null;
+    is_onboarding_complete: boolean | null;
+  }>(
+    `SELECT u.email,
+            p.companion_name,
+            p.is_onboarding_complete
+       FROM users u
+       LEFT JOIN profile p ON p.user_id = u.id
+      WHERE u.id = $1`,
+    [userId],
+  );
+  const row = r.rows[0];
+  return {
+    email: row?.email ?? null,
+    companionName: row?.companion_name ?? "Eos",
+    onboardingComplete: row?.is_onboarding_complete ?? false,
+  };
+}
+
+router.get(
+  "/memory/export",
+  ...memoryExportUsageLimits,
+  async (req, res): Promise<void> => {
+    const userId = req.userId;
+    const format =
+      (req.query.format as string | undefined)?.toLowerCase() === "markdown" ||
+      (req.query.format as string | undefined)?.toLowerCase() === "md"
+        ? "markdown"
+        : "json";
+
+    try {
+      // Reuse the single export loader (routes/account.ts) — every encrypted
+      // column arrives already decrypted. No date range: the journal export is
+      // always the whole history.
+      const [payload, basics] = await Promise.all([
+        fetchExportPayload(userId),
+        fetchAccountBasics(userId),
+      ]);
+
+      const filename = memoryExportFilename(format, new Date());
+
+      if (format === "markdown") {
+        const md = renderMemoryMarkdown(payload, basics);
+        res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+        res.send(md);
+      } else {
+        const json = shapeMemoryExport(payload, basics);
+        res.setHeader("Content-Type", "application/json");
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+        res.json(json);
+      }
+
+      // Log the ACTION only — hashed user id + format. Never the payload
+      // (Tier 3 guardrail: no raw userId, no content, in any log line).
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) logger.info({ uh, format }, "Memory export downloaded");
+      } catch {
+        /* logging must never crash the caller */
+      }
+    } catch (err) {
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) logger.error({ err, uh }, "Memory export failed");
+      } catch {
+        /* logging must never crash the caller */
+      }
+      res
+        .status(500)
+        .json({ error: "Couldn't generate your export — try again in a minute." });
+    }
+  },
+);
 
 // ─── Facts ───────────────────────────────────────────────────────────────────
 

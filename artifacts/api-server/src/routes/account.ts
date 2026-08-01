@@ -512,7 +512,7 @@ interface DateRange {
   to?: string;   // YYYY-MM-DD, inclusive
 }
 
-async function fetchExportPayload(userId: number, range: DateRange = {}) {
+export async function fetchExportPayload(userId: number, range: DateRange = {}) {
   // Each dataset filters on its own natural date column. The profile is the
   // user's single settings record and is always included regardless of range.
   const messagesRange = buildRangeClause("created_at", false, range, 2);
