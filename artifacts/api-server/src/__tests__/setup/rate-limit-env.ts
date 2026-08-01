@@ -19,3 +19,8 @@ process.env.VOICE_SESSION_LIMIT_PER_HOUR ??= "100000";
 process.env.VOICE_SESSION_LIMIT_PER_DAY ??= "100000";
 process.env.VOICE_TURN_LIMIT_PER_HOUR ??= "100000";
 process.env.VOICE_TURN_LIMIT_PER_DAY ??= "100000";
+
+// Memory export (middleware/usageLimits.ts). Production default is 1/hour;
+// keep it high in tests so integration suites can export more than once.
+// memory-export.test.ts sets it to 1 before importing the app to exercise 429.
+process.env.MEMORY_EXPORT_LIMIT_PER_HOUR ??= "100000";
