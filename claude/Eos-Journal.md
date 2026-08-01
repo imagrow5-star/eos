@@ -6,6 +6,20 @@ starts at Sprint E and forward.
 
 ## Shipped
 
+- **Sprint: Dedup & reset** ✅
+  Fixed the duplicate-extraction bug polluting the Memory Manifest (same
+  intention captured 3–4× across facts/habits/goals/commitments). Extraction now
+  runs a fail-open semantic dedup (cheap lexical pre-filter → small Haiku call)
+  before every insert and bumps the matched row's `times_referenced` instead of
+  adding a near-duplicate. A one-time, operator-gated
+  (`DEDUP_BACKFILL_ON_BOOT`) backfill clusters and merges legacy duplicates
+  (keeps the oldest, folds counters/weights/flags, deletes the rest). Added a
+  founder-gated `POST /api/memory/reset` (`MEMORY_RESET_ALLOWLIST`, 1/hour) that
+  wipes memory tables for clean testing while keeping conversations and chapters,
+  with a gated "Reset my memory (dev)" button in the Memory Manifest. Added
+  `times_referenced`/`last_referenced_at` to habits/goals/commitments (additive,
+  legacy-safe). See `.agents/memory/memory-dedup.md`.
+
 - **Sprint E — Memory export ("download your journal")** ✅
   User-triggered export of everything Eos remembers. `GET /api/memory/export`
   serves a portable nested JSON (`format=json`) and a warm, readable Markdown
