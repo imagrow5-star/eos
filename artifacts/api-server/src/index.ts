@@ -6,6 +6,7 @@ import { reconcileAgentConfig } from "./services/agentConfigGuard";
 import { runDataEncryptionMigration } from "./services/dataEncryptionMigration";
 import { backfillVoiceGender } from "./services/settings/voiceGenderBackfill";
 import { backfillMemoryImportance } from "./services/memory/backfill";
+import { runDedupBackfill } from "./services/memory/dedupBackfill";
 import { warnIfAgentEnvIncomplete } from "./services/voiceAgentRouting";
 
 // User content is encrypted at rest — without the master key the app can
@@ -64,6 +65,14 @@ app.listen(port, (err) => {
   // serving; until it completes, unseeded facts just score on their defaults.
   backfillMemoryImportance().catch((e) =>
     logger.error({ err: e }, "memory importance backfill failed — unseeded facts score on defaults"),
+  );
+
+  // One-time semantic-dedup sweep of legacy duplicate rows (memory_facts,
+  // habits, commitments, goals). Gated behind DEDUP_BACKFILL_ON_BOOT=true so it
+  // only runs on the deploy the operator opts into (per-user Haiku calls cost
+  // money); idempotent and background — never blocks serving.
+  runDedupBackfill().catch((e) =>
+    logger.error({ err: e }, "dedup backfill failed — duplicates remain; safe to retry next boot"),
   );
 
   // Initialise romantic community voices (non-blocking — failures logged and skipped)
