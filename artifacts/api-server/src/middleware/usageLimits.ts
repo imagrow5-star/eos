@@ -172,6 +172,18 @@ export const memoryExportUsageLimits: RequestHandler[] = [
   }),
 ];
 
+// Memory reset ("reset my memory (dev)", founder-gated). One wipe per hour per
+// user — stops an accidental double-click (or a testing hammer) from repeatedly
+// deleting. Env-overridable so the dedicated test can drive the 429 path.
+export const memoryResetUsageLimits: RequestHandler[] = [
+  makeLimiter({
+    windowMs: HOUR_MS,
+    limit: envLimit("MEMORY_RESET_LIMIT_PER_HOUR", 1),
+    message: "You just reset your memory — give it a moment before doing it again.",
+    keyGenerator: sessionUserKey,
+  }),
+];
+
 export const voiceTurnUsageLimits: RequestHandler[] = limiterPair({
   hourEnv: "VOICE_TURN_LIMIT_PER_HOUR",
   hourDefault: 600,

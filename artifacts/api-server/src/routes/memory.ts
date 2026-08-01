@@ -7,10 +7,16 @@ import {
   winsTable,
   habitsTable,
   habitCompletionsTable,
+  commitmentsTable,
+  goalsTable,
+  moodScoresTable,
+  usersTable,
   profileTable,
 } from "@workspace/db";
 import { fetchExportPayload } from "./account.js";
-import { memoryExportUsageLimits } from "../middleware/usageLimits.js";
+import { memoryExportUsageLimits, memoryResetUsageLimits } from "../middleware/usageLimits.js";
+import { resetAllowlistDecision } from "../services/memory/resetGate.js";
+import type { RequestHandler } from "express";
 import {
   shapeMemoryExport,
   renderMemoryMarkdown,
@@ -138,6 +144,109 @@ router.get(
       res
         .status(500)
         .json({ error: "Couldn't generate your export — try again in a minute." });
+    }
+  },
+);
+
+// ─── Reset ("reset my memory (dev)", founder-gated) ───────────────────────────
+// Wipes the authenticated user's memory tables for clean testing. Feature-gated
+// to an operator allowlist (MEMORY_RESET_ALLOWLIST): the endpoint doesn't exist
+// (404) unless the env var is set, and returns 403 for anyone not on the list.
+// Rate-limited to 1/hour. Read the header comment in services/memory/resetGate.ts
+// for the gate semantics.
+
+/** The user's email — the allowlist key. Null if the row somehow vanished. */
+async function fetchUserEmail(userId: number): Promise<string | null> {
+  const [row] = await db
+    .select({ email: usersTable.email })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+  return row?.email ?? null;
+}
+
+// GET /memory/reset-eligible — the UI calls this on load and only renders the
+// dev reset button when it returns { eligible: true }.
+router.get("/memory/reset-eligible", async (req, res): Promise<void> => {
+  const email = await fetchUserEmail(req.userId);
+  res.json({ eligible: resetAllowlistDecision(email) === "allowed" });
+});
+
+// Feature-gate middleware — runs BEFORE the rate limiter so a 404/403 never
+// consumes the hourly budget (only real wipes are limited).
+const resetFeatureGate: RequestHandler = async (req, res, next) => {
+  const email = await fetchUserEmail((req as any).userId as number);
+  const decision = resetAllowlistDecision(email);
+  if (decision === "not_configured") {
+    // Endpoint effectively doesn't exist when the feature isn't configured.
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+  if (decision === "forbidden") {
+    res.status(403).json({ error: "This feature isn't available for your account." });
+    return;
+  }
+  next();
+};
+
+router.post(
+  "/memory/reset",
+  resetFeatureGate,
+  ...memoryResetUsageLimits,
+  async (req, res): Promise<void> => {
+    const userId = req.userId;
+    try {
+      // Single transaction. Wipes ONLY memory tables — conversations (messages),
+      // chapters, sealed notes, profile, and subscription are deliberately left
+      // intact. habit_completions before habits (references habit_id); deleting
+      // goals cascades goal_tasks.
+      const deleted = await db.transaction(async (tx) => {
+        const hc = await tx
+          .delete(habitCompletionsTable)
+          .where(eq(habitCompletionsTable.userId, userId))
+          .returning({ id: habitCompletionsTable.id });
+        const habits = await tx
+          .delete(habitsTable)
+          .where(eq(habitsTable.userId, userId))
+          .returning({ id: habitsTable.id });
+        const goals = await tx
+          .delete(goalsTable)
+          .where(eq(goalsTable.userId, userId))
+          .returning({ id: goalsTable.id });
+        const commitments = await tx
+          .delete(commitmentsTable)
+          .where(eq(commitmentsTable.userId, userId))
+          .returning({ id: commitmentsTable.id });
+        const moodScores = await tx
+          .delete(moodScoresTable)
+          .where(eq(moodScoresTable.userId, userId))
+          .returning({ id: moodScoresTable.id });
+        const memoryFacts = await tx
+          .delete(memoryFactsTable)
+          .where(eq(memoryFactsTable.userId, userId))
+          .returning({ id: memoryFactsTable.id });
+        return {
+          memory_facts: memoryFacts.length,
+          habits: habits.length,
+          habit_completions: hc.length,
+          commitments: commitments.length,
+          goals: goals.length,
+          mood_scores: moodScores.length,
+        };
+      });
+
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) logger.info({ uh, deleted }, "Memory reset (dev)");
+      } catch { /* logging must never crash the caller */ }
+
+      res.json({ ok: true, deleted });
+    } catch (err) {
+      try {
+        const uh = hashUserIdForLog(userId);
+        if (uh) logger.error({ err, uh }, "Memory reset failed");
+      } catch { /* logging must never crash the caller */ }
+      res.status(500).json({ error: "Couldn't reset your memory — please try again." });
     }
   },
 );
