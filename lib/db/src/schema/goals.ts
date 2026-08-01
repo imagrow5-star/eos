@@ -13,6 +13,11 @@ export const goalsTable = pgTable("goals", {
   description: encryptedText("description", "goals.description").notNull().default(""),
   isComplete: boolean("is_complete").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // ── Dedup reference tracking (Sprint: dedup) ────────────────────────────────
+  // Bumped when extraction detects the user re-stating an existing goal instead
+  // of inserting a duplicate. Additive + defaulted so legacy rows stay valid.
+  timesReferenced: integer("times_referenced").notNull().default(1),
+  lastReferencedAt: timestamp("last_referenced_at"),
 });
 
 export const goalTasksTable = pgTable("goal_tasks", {

@@ -17,6 +17,13 @@ export const habitsTable = pgTable("habits", {
   streak: integer("streak").notNull().default(0),
   lastCompleted: text("last_completed"), // YYYY-MM-DD
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // ── Dedup reference tracking (Sprint: dedup) ────────────────────────────────
+  // When extraction detects the user re-stating an existing habit (semantically
+  // equivalent, not a completion), we bump these instead of inserting a
+  // duplicate row. Mirrors memory_facts' Sprint 2A columns. Additive + defaulted
+  // so legacy rows are valid immediately (no backfill required).
+  timesReferenced: integer("times_referenced").notNull().default(1),
+  lastReferencedAt: timestamp("last_referenced_at"),
 });
 
 export const habitCompletionsTable = pgTable("habit_completions", {
