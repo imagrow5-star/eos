@@ -57,6 +57,7 @@ function buildHtmlReport(data: {
   profile: ExportRow | null;
   messages: ExportRow[];
   memoryFacts: ExportRow[];
+  memoryFeelings: ExportRow[];
   wins: ExportRow[];
   habits: ExportRow[];
   habitCompletions: ExportRow[];
@@ -70,7 +71,7 @@ function buildHtmlReport(data: {
   sealedNotes: ExportRow[];
   crisisEvents: ExportRow[];
 }): string {
-  const { exportedAt, range, profile, messages, memoryFacts, wins, habits, habitCompletions, goals, moodScores, commitments, reminders, personalitySignals, personalizationState, weeklyChapters, sealedNotes, crisisEvents } = data;
+  const { exportedAt, range, profile, messages, memoryFacts, memoryFeelings, wins, habits, habitCompletions, goals, moodScores, commitments, reminders, personalitySignals, personalizationState, weeklyChapters, sealedNotes, crisisEvents } = data;
   const companionName = esc(profile?.companion_name ?? "Eos");
   const userPath = pathLabel(profile?.user_path as string);
 
@@ -146,6 +147,11 @@ function buildHtmlReport(data: {
   const memoryHtml = memoryFacts.length === 0
     ? `<p class="empty">No memories recorded yet.</p>`
     : `<ul>${memoryFacts.map((f) => `<li>${esc(f.fact)}</li>`).join("")}</ul>`;
+
+  // ── Feelings in context (Sprint 2C) ──────────────────────────────────────────
+  const feelingsHtml = memoryFeelings.length === 0
+    ? `<p class="empty">No feelings recorded yet.</p>`
+    : `<ul>${memoryFeelings.map((f) => `<li>${esc(f.feeling)}${f.category && f.category !== "other" ? ` <span class="ts">${esc(f.category)}</span>` : ""}</li>`).join("")}</ul>`;
 
   // ── Commitments ───────────────────────────────────────────────────────────────
   const commitmentsHtml = commitments.length === 0
@@ -425,6 +431,11 @@ function buildHtmlReport(data: {
   </div>
 
   <div class="section">
+    <div class="section-title">How things have felt (${memoryFeelings.length})</div>
+    ${feelingsHtml}
+  </div>
+
+  <div class="section">
     <div class="section-title">Commitments (${commitments.length})</div>
     ${commitmentsHtml}
   </div>
@@ -517,6 +528,7 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
   // user's single settings record and is always included regardless of range.
   const messagesRange = buildRangeClause("created_at", false, range, 2);
   const memoryRange = buildRangeClause("created_at", false, range, 2);
+  const feelingsRange = buildRangeClause("created_at", false, range, 2);
   const winsRange = buildRangeClause("created_at", false, range, 2);
   const habitsRange = buildRangeClause("created_at", false, range, 2);
   const habitCompletionsRange = buildRangeClause("hc.completed_date", true, range, 2);
@@ -538,6 +550,7 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
   const [
     messagesResult,
     memoryResult,
+    feelingsResult,
     winsResult,
     habitsResult,
     habitCompletionsResult,
@@ -566,6 +579,10 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
     pool.query(
       `SELECT fact, category, created_at, times_referenced, last_referenced_at, emotional_weight, user_marked_important FROM memory_facts WHERE user_id = $1${memoryRange.clause} ORDER BY created_at ASC`,
       [userId, ...memoryRange.params],
+    ),
+    pool.query(
+      `SELECT feeling, category, created_at, times_referenced, last_referenced_at, emotional_weight, user_marked_important FROM memory_feelings WHERE user_id = $1${feelingsRange.clause} ORDER BY created_at ASC`,
+      [userId, ...feelingsRange.params],
     ),
     pool.query(
       `SELECT content, created_at FROM wins WHERE user_id = $1${winsRange.clause} ORDER BY created_at ASC`,
@@ -702,6 +719,7 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
       content: dText(r.content, "messages.content"),
     })),
     memoryFacts: memoryResult.rows.map((r) => ({ ...r, fact: dText(r.fact, "memory_facts.fact") })),
+    memoryFeelings: feelingsResult.rows.map((r) => ({ ...r, feeling: dText(r.feeling, "memory_feelings.feeling") })),
     wins: winsResult.rows.map((r) => ({ ...r, content: dText(r.content, "wins.content") })),
     habits: habitsResult.rows.map((r) => ({
       ...r,
@@ -883,6 +901,7 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
       habitResult,
       moodResult,
       memResult,
+      feelingResult,
       winResult,
       goalResult,
       commitmentResult,
@@ -917,6 +936,10 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
       ),
       pool.query(
         `SELECT COUNT(*) AS count FROM memory_facts WHERE user_id = $1`,
+        [userId],
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM memory_feelings WHERE user_id = $1`,
         [userId],
       ),
       pool.query(
@@ -992,6 +1015,7 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
       habitCount:    parseInt(habitResult.rows[0].count, 10),
       moodCount:     parseInt(moodResult.rows[0].count, 10),
       memoryCount:   parseInt(memResult.rows[0].count, 10),
+      feelingCount:  parseInt(feelingResult.rows[0].count, 10),
       winCount:      parseInt(winResult.rows[0].count, 10),
       goalCount:     parseInt(goalResult.rows[0].count, 10),
       commitmentCount: parseInt(commitmentResult.rows[0].count, 10),

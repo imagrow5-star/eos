@@ -606,6 +606,7 @@ describe("GET /api/account/export?format=html", () => {
       goals: "Goals",
       moodScores: "Mood journal",
       memoryFacts: "knows about you",
+      memoryFeelings: "How things have felt",
       commitments: "Commitments",
       reminders: "Reminders",
       personalitySignals: "Personality insights",

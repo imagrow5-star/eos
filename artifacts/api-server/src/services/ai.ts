@@ -2,6 +2,7 @@ import { desc, eq, and, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   memoryFactsTable,
+  memoryFeelingsTable,
   personalitySignalsTable,
   winsTable,
   moodScoresTable,
@@ -757,6 +758,133 @@ Return empty arrays if nothing fits. Do NOT make things up.`;
   }
 }
 
+// ─── Feelings-in-context extraction (Sprint 2C) ───────────────────────────────
+// The second memory layer. Mirrors extractMemory exactly: a small Haiku pass
+// pulls emotional texture attached to specific moments, then the SHARED dedup
+// helper collapses re-statements and the SHARED importance columns rank them
+// alongside facts. Fires on the same every-4th-message cadence as extractMemory
+// (see runConversationExtractions). Fires-and-forgets; every failure is caught.
+
+interface ExtractedFeelings {
+  feelings?: Array<{ feeling: string; emotion?: string; intensity?: number }>;
+}
+
+// Emotions we recognise as a category axis. Anything else is stored as "other".
+const KNOWN_EMOTIONS = new Set([
+  "grief", "shame", "joy", "fear", "anger", "love", "loneliness", "hope",
+  "anxiety", "pride", "guilt", "relief", "sadness", "other",
+]);
+
+export async function extractFeelings(
+  profile: Profile,
+  recentMessages: { role: string; content: string }[],
+  opts?: { dedupFinder?: DedupFinder },
+): Promise<void> {
+  const anthropic = getAnthropic();
+  if (!anthropic) return;
+
+  const conversation = recentMessages
+    .map((m) => `${m.role === "user" ? profile.userName || "User" : profile.companionName}: ${m.content}`)
+    .join("\n");
+
+  const extractPrompt = `From this conversation, extract FEELINGS IN CONTEXT — the emotional texture attached to specific moments in ${profile.userName || "the user"}'s life. Not what happened (that's a "fact"), but how a moment landed emotionally.
+
+Conversation:
+${conversation}
+
+Return valid JSON only — no explanation:
+{
+  "feelings": [
+    { "feeling": "one sentence capturing the feeling in its moment", "emotion": "grief|shame|joy|fear|anger|love|loneliness|hope|anxiety|pride|guilt|relief|sadness|other", "intensity": <0.0-1.0 how charged it was> }
+  ]
+}
+
+Rules:
+- feeling: a specific, moment-anchored emotional read, in third person about the user — e.g. "The Sunday family dinner made them feel small, the way it always does" or "Finishing the run left them quietly proud for the first time in weeks". NOT a generic fact ("they visit family on Sundays").
+- Only extract feelings the conversation genuinely supports. Do NOT invent emotion.
+- emotion: the single closest family from the list. intensity: honest 0-1.
+- Return an empty array if no clear feeling-in-context is present. Quality over quantity — 0-2 per exchange is normal.`;
+
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 500,
+      messages: [{ role: "user", content: extractPrompt }],
+    });
+    logAiUsage("extract_feelings", "claude-haiku-4-5", response.usage);
+
+    const textBlock = response.content.find((b) => b.type === "text");
+    if (!textBlock) return;
+
+    let extracted: ExtractedFeelings;
+    try {
+      const raw = textBlock.text.replace(/```(?:json)?\n?/g, "").trim();
+      extracted = JSON.parse(raw) as ExtractedFeelings;
+    } catch {
+      // Privacy: never log the raw LLM output — it can quote the user's words.
+      logger.warn({ rawLength: textBlock.text.length }, "Failed to parse feelings extraction JSON");
+      return;
+    }
+
+    if (!extracted.feelings || extracted.feelings.length === 0) return;
+
+    const userId = (profile as any).userId as number;
+    const dedupFinder = opts?.dedupFinder ?? defaultDedupFinder;
+
+    // Semantic dedup vs the user's recent feelings — same helper + pattern as
+    // facts. The local `existing` array mirrors inserts so within-batch repeats
+    // collapse too. Fail-open (findSemanticDuplicate never throws).
+    const recentFeelings = await db
+      .select({ id: memoryFeelingsTable.id, feeling: memoryFeelingsTable.feeling })
+      .from(memoryFeelingsTable)
+      .where(eq(memoryFeelingsTable.userId, userId))
+      .orderBy(desc(memoryFeelingsTable.createdAt))
+      .limit(DEDUP_CANDIDATE_WINDOW);
+    const existing: DedupEntry[] = recentFeelings.map((r) => ({ id: r.id, content: r.feeling }));
+
+    let inserted = 0;
+    for (const f of extracted.feelings) {
+      if (!f.feeling || f.feeling.length < 8) continue;
+      const emotion = (f.emotion ?? "other").toLowerCase();
+      const category = KNOWN_EMOTIONS.has(emotion) ? emotion : "other";
+      // Clamp intensity → emotionalWeight; feelings default to a moderate 0.5.
+      const weight =
+        typeof f.intensity === "number" && f.intensity >= 0 && f.intensity <= 1 ? f.intensity : 0.5;
+
+      const decision = await dedupFinder(f.feeling, existing);
+      if (decision.isDuplicate && decision.matchingId != null) {
+        await db
+          .update(memoryFeelingsTable)
+          .set({
+            timesReferenced: sql`${memoryFeelingsTable.timesReferenced} + 1`,
+            lastReferencedAt: new Date(),
+            // Let a stronger restatement raise the weight; never lower it.
+            emotionalWeight: sql`GREATEST(${memoryFeelingsTable.emotionalWeight}, ${weight})`,
+          })
+          .where(and(eq(memoryFeelingsTable.id, decision.matchingId), eq(memoryFeelingsTable.userId, userId)));
+        try {
+          const uh = hashUserIdForLog(userId);
+          if (uh) logger.debug({ uh, table: "memory_feelings", matchingId: decision.matchingId }, "Extraction dedup — feeling merged into existing row");
+        } catch { /* logging must never crash the caller */ }
+        continue;
+      }
+
+      const [row] = await db
+        .insert(memoryFeelingsTable)
+        .values({ feeling: f.feeling, category, emotionalWeight: weight, userId })
+        .returning({ id: memoryFeelingsTable.id });
+      if (row) {
+        existing.unshift({ id: row.id, content: f.feeling });
+        inserted++;
+      }
+    }
+
+    logger.info({ feelings: inserted }, "Feelings extraction complete");
+  } catch (err) {
+    logger.error({ err }, "Feelings extraction failed");
+  }
+}
+
 // ─── Commitment extraction (runs after every message) ────────────────────────
 //
 // Detects:
@@ -1287,8 +1415,13 @@ export async function runConversationExtractions(
       .where(eq(messagesTable.userId, userId))
       .orderBy(desc(messagesTable.createdAt))
       .limit(8);
-    extractMemory(profile, last8.reverse()).catch((err) =>
+    const last8Chrono = last8.reverse();
+    extractMemory(profile, last8Chrono).catch((err) =>
       logger.error({ err }, "Background memory extraction failed"),
+    );
+    // Sprint 2C — feelings-in-context, same cadence + same window as facts.
+    extractFeelings(profile, last8Chrono).catch((err) =>
+      logger.error({ err }, "Background feelings extraction failed"),
     );
   }
 

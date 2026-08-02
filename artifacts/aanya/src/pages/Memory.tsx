@@ -103,6 +103,32 @@ export default function Memory() {
     }
   };
 
+  // ── Feelings-in-context (Sprint 2C) ────────────────────────────────────────
+  // Read-only: the second memory layer beside facts. Fetched via raw apiFetch
+  // (the endpoint returns plain JSON, no generated client type).
+  interface FeelingRow {
+    id: number;
+    feeling: string;
+    category: string;
+  }
+  const [feelings, setFeelings] = useState<FeelingRow[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await apiFetch(`${import.meta.env.BASE_URL}api/memory/feelings`);
+        if (!r.ok) return;
+        const data = (await r.json()) as FeelingRow[];
+        if (!cancelled && Array.isArray(data)) setFeelings(data);
+      } catch {
+        /* offline / not ready — leave the section absent */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const companionName = profile?.companionName || "Eos";
 
   const categories = [
@@ -113,7 +139,7 @@ export default function Memory() {
     { id: "life", label: "Life" },
   ];
 
-  const hasNoData = facts.length === 0 && signals.length === 0;
+  const hasNoData = facts.length === 0 && signals.length === 0 && feelings.length === 0;
 
   return (
     <div className="h-full overflow-y-auto px-6 py-10 pb-20 space-y-12">
@@ -233,6 +259,32 @@ export default function Memory() {
                     </div>
                   );
                 })}
+              </div>
+            </section>
+          )}
+
+          {/* ── How things have felt (Sprint 2C — feelings in context) ──────── */}
+          {feelings.length > 0 && (
+            <section className="space-y-4 pb-4">
+              <h2 className="font-serif text-xl text-foreground/85">
+                How things have felt
+              </h2>
+              <div className="space-y-2.5">
+                {feelings.map((f) => (
+                  <div
+                    key={f.id}
+                    className="bg-card border border-primary/15 rounded-xl px-4 py-3 flex items-start gap-3"
+                  >
+                    <p className="text-sm text-foreground/85 leading-relaxed flex-1">
+                      {f.feeling}
+                    </p>
+                    {f.category && f.category !== "other" && (
+                      <span className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground/55 mt-1 shrink-0">
+                        {f.category}
+                      </span>
+                    )}
+                  </div>
+                ))}
               </div>
             </section>
           )}

@@ -46,6 +46,7 @@ describe.skipIf(!HAS_DB)("GET /api/memory/export", () => {
         DELETE FROM crisis_events        WHERE user_id = ${uid};
         DELETE FROM messages             WHERE user_id = ${uid};
         DELETE FROM memory_facts         WHERE user_id = ${uid};
+        DELETE FROM memory_feelings      WHERE user_id = ${uid};
         DELETE FROM personality_signals  WHERE user_id = ${uid};
         DELETE FROM wins                 WHERE user_id = ${uid};
         DELETE FROM mood_scores          WHERE user_id = ${uid};
@@ -88,6 +89,7 @@ describe.skipIf(!HAS_DB)("GET /api/memory/export", () => {
     agent: ReturnType<typeof request.agent>;
     messageContent: string;
     memoryFact: string;
+    memoryFeeling: string;
     habitName: string;
     goalTitle: string;
     sealedText: string;
@@ -113,6 +115,13 @@ describe.skipIf(!HAS_DB)("GET /api/memory/export", () => {
       `INSERT INTO memory_facts (user_id, fact, category, times_referenced, emotional_weight, user_marked_important)
        VALUES ($1, $2, 'life', 5, 0.7, true)`,
       [userId, memoryFact],
+    );
+
+    const memoryFeeling = `secret feeling from ${tag} — felt small at dinner`;
+    await pool.query(
+      `INSERT INTO memory_feelings (user_id, feeling, category, times_referenced, emotional_weight)
+       VALUES ($1, $2, 'shame', 2, 0.8)`,
+      [userId, memoryFeeling],
     );
 
     await pool.query(`INSERT INTO wins (user_id, content) VALUES ($1, $2)`, [userId, `win-${tag}`]);
@@ -161,7 +170,7 @@ describe.skipIf(!HAS_DB)("GET /api/memory/export", () => {
       [userId],
     );
 
-    return { userId, email, agent, messageContent, memoryFact, habitName, goalTitle, sealedText };
+    return { userId, email, agent, messageContent, memoryFact, memoryFeeling, habitName, goalTitle, sealedText };
   }
 
   // ── JSON export ────────────────────────────────────────────────────────────
@@ -189,6 +198,7 @@ describe.skipIf(!HAS_DB)("GET /api/memory/export", () => {
 
     // Encrypted content decrypted to the caller's own plaintext
     expect(body.memory.facts.some((f: any) => f.fact === a.memoryFact)).toBe(true);
+    expect(body.memory.feelings.some((f: any) => f.feeling === a.memoryFeeling)).toBe(true);
     expect(body.messages.some((m: any) => m.content === a.messageContent)).toBe(true);
     expect(body.habits.some((h: any) => h.name === a.habitName)).toBe(true);
     expect(body.goals.some((g: any) => g.title === a.goalTitle)).toBe(true);

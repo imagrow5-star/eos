@@ -1129,7 +1129,7 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
     //
     // ── DIRECT tables (have a typed `user_id` column, deleted by `user_id = $1`) ──
     //   password_reset_tokens, email_verification_tokens, messages, memory_facts,
-    //   personality_signals, wins, mood_scores, reminders, habit_completions,
+    //   memory_feelings, personality_signals, wins, mood_scores, reminders, habit_completions,
     //   habits, goals, commitments, profile.
     //   The `users` row itself is deleted last, by its own PK (`id = $1`).
     //
@@ -1186,6 +1186,7 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
     await client.query(`DELETE FROM crisis_events     WHERE user_id = $1`, [userId]); // before messages (message_id FK)
     await client.query(`DELETE FROM messages          WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM memory_facts      WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM memory_feelings   WHERE user_id = $1`, [userId]); // Sprint 2C (also ON DELETE CASCADE, but explicit for parity)
     await client.query(`DELETE FROM personality_signals WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM wins              WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM mood_scores       WHERE user_id = $1`, [userId]);
