@@ -271,18 +271,18 @@ export default function Memory() {
               </h2>
               <div className="space-y-2.5">
                 {feelings.map((f) => (
+                  // The feeling sentence carries the emotion in the user's own
+                  // frame — no category tag (that read as a clinical diagnosis
+                  // label, cutting against Sprint 2C's "not a diagnosis"
+                  // principle). `category` still ships in the API for
+                  // ranking/grouping; it's just not surfaced here.
                   <div
                     key={f.id}
-                    className="bg-card border border-primary/15 rounded-xl px-4 py-3 flex items-start gap-3"
+                    className="bg-card border border-primary/15 rounded-xl px-4 py-3"
                   >
-                    <p className="text-sm text-foreground/85 leading-relaxed flex-1">
+                    <p className="text-sm text-foreground/85 leading-relaxed">
                       {f.feeling}
                     </p>
-                    {f.category && f.category !== "other" && (
-                      <span className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground/55 mt-1 shrink-0">
-                        {f.category}
-                      </span>
-                    )}
                   </div>
                 ))}
               </div>
