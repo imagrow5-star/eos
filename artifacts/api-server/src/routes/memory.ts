@@ -3,6 +3,7 @@ import { eq, desc, asc, and } from "drizzle-orm";
 import { db, pool } from "@workspace/db";
 import {
   memoryFactsTable,
+  memoryFeelingsTable,
   personalitySignalsTable,
   winsTable,
   habitsTable,
@@ -16,6 +17,7 @@ import {
 import { fetchExportPayload } from "./account.js";
 import { memoryExportUsageLimits, memoryResetUsageLimits } from "../middleware/usageLimits.js";
 import { resetAllowlistDecision } from "../services/memory/resetGate.js";
+import { rankFactsByImportance } from "../services/memory/importance.js";
 import type { RequestHandler } from "express";
 import {
   shapeMemoryExport,
@@ -225,8 +227,13 @@ router.post(
           .delete(memoryFactsTable)
           .where(eq(memoryFactsTable.userId, userId))
           .returning({ id: memoryFactsTable.id });
+        const memoryFeelings = await tx
+          .delete(memoryFeelingsTable)
+          .where(eq(memoryFeelingsTable.userId, userId))
+          .returning({ id: memoryFeelingsTable.id });
         return {
           memory_facts: memoryFacts.length,
+          memory_feelings: memoryFeelings.length,
           habits: habits.length,
           habit_completions: hc.length,
           commitments: commitments.length,
@@ -261,6 +268,30 @@ router.get("/memory/facts", async (req, res): Promise<void> => {
     .where(eq(memoryFactsTable.userId, userId))
     .orderBy(desc(memoryFactsTable.createdAt));
   res.json(GetMemoryFactsResponse.parse(facts));
+});
+
+// ─── Feelings-in-context (Sprint 2C) ──────────────────────────────────────────
+// Read-only. Returns the user's feelings ranked by the SAME importance scorer as
+// facts (most-important first), so the Memory Manifest's "How things have felt"
+// section leads with what matters. Plain JSON (no api-zod) — a small, additive
+// read that doesn't warrant regenerating the client types.
+router.get("/memory/feelings", async (req, res): Promise<void> => {
+  const userId = req.userId;
+  const rows = await db
+    .select()
+    .from(memoryFeelingsTable)
+    .where(eq(memoryFeelingsTable.userId, userId));
+  const ranked = rankFactsByImportance(rows, Date.now(), 50);
+  res.json(
+    ranked.map((f) => ({
+      id: f.id,
+      feeling: f.feeling,
+      category: f.category,
+      createdAt: f.createdAt,
+      emotionalWeight: f.emotionalWeight,
+      userMarkedImportant: f.userMarkedImportant,
+    })),
+  );
 });
 
 // ─── Forget this (Phase A privacy) ───────────────────────────────────────────

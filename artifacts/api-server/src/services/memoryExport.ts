@@ -41,6 +41,7 @@ export interface ExportSourcePayload {
   profile: Row | null;
   messages: Row[];
   memoryFacts: Row[];
+  memoryFeelings: Row[];
   personalitySignals: Row[];
   wins: Row[];
   moodScores: Row[];
@@ -115,6 +116,16 @@ export function shapeMemoryExport(payload: ExportSourcePayload, basics: AccountB
         created_at: f.created_at,
         // Sprint 2A importance columns — carried through so the user sees
         // exactly how a memory is weighted, not just its text.
+        times_referenced: f.times_referenced,
+        last_referenced_at: f.last_referenced_at,
+        emotional_weight: f.emotional_weight,
+        user_marked_important: f.user_marked_important,
+      })),
+      // Sprint 2C — feelings-in-context, the second memory layer beside facts.
+      feelings: payload.memoryFeelings.map((f) => ({
+        feeling: f.feeling,
+        emotion: f.category,
+        created_at: f.created_at,
         times_referenced: f.times_referenced,
         last_referenced_at: f.last_referenced_at,
         emotional_weight: f.emotional_weight,
@@ -331,6 +342,18 @@ export function renderMemoryMarkdown(
       }
       lines.push("");
     }
+  }
+
+  // ── How things have felt (Sprint 2C) ──────────────────────────────────────
+  if (payload.memoryFeelings.length > 0) {
+    lines.push(`## How things have felt`);
+    lines.push("");
+    for (const f of rankedFacts(payload.memoryFeelings)) {
+      const emotion = str(f.category);
+      const label = emotion && emotion !== "other" ? ` _(${emotion})_` : "";
+      lines.push(`- ${str(f.feeling)}${label}`);
+    }
+    lines.push("");
   }
 
   // ── Intentions and goals ──────────────────────────────────────────────────
