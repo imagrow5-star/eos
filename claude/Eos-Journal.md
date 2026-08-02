@@ -6,6 +6,16 @@ starts at Sprint E and forward.
 
 ## Shipped
 
+- **Sprint 2C — Feelings in context** ✅
+  The second memory layer. Where `memory_facts` stores what the user said,
+  `memory_feelings` stores the emotional texture of a moment ("the Sunday family
+  dinner made her feel small, the way it always does"). A near-exact mirror of
+  the Sprint 2A facts table, so it reuses the same extraction pattern, the same
+  semantic dedup helper, and the same importance scorer — surfaced in the system
+  prompt alongside facts, flowing through export, reset, and account-deletion,
+  with a read-only `GET /api/memory/feelings` and a "How things have felt"
+  section on the Memory Manifest. See `.agents/memory/memory-feelings.md`.
+
 - **Sprint: Dedup & reset** ✅
   Fixed the duplicate-extraction bug polluting the Memory Manifest (same
   intention captured 3–4× across facts/habits/goals/commitments). Extraction now
