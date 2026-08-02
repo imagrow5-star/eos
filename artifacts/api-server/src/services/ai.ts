@@ -775,19 +775,25 @@ const KNOWN_EMOTIONS = new Set([
   "anxiety", "pride", "guilt", "relief", "sadness", "other",
 ]);
 
-export async function extractFeelings(
-  profile: Profile,
+// Prompt for the feelings-in-context pass. Pure + exported so the subjectless
+// contract can be unit-tested.
+//
+// Sprint 2C fix — the stored `feeling` sentence must have NO personal subject:
+// the SITUATION carries the feeling. The earlier prompt said "third person about
+// the user" and fed the user's name in as the speaker label, so the model wrote
+// the user's name as the subject (a mangled name like "Hi" rendered as
+// "…, Hi felt a quiet frustration…"). We now (1) never pass the user's name into
+// the prompt — the user's turns are labelled with a neutral "User:" — and
+// (2) demand a subjectless, situation-anchored sentence.
+export function buildFeelingsPrompt(
   recentMessages: { role: string; content: string }[],
-  opts?: { dedupFinder?: DedupFinder },
-): Promise<void> {
-  const anthropic = getAnthropic();
-  if (!anthropic) return;
-
+  companionName: string,
+): string {
   const conversation = recentMessages
-    .map((m) => `${m.role === "user" ? profile.userName || "User" : profile.companionName}: ${m.content}`)
+    .map((m) => `${m.role === "user" ? "User" : companionName}: ${m.content}`)
     .join("\n");
 
-  const extractPrompt = `From this conversation, extract FEELINGS IN CONTEXT — the emotional texture attached to specific moments in ${profile.userName || "the user"}'s life. Not what happened (that's a "fact"), but how a moment landed emotionally.
+  return `From this conversation, extract FEELINGS IN CONTEXT — the emotional texture attached to specific moments in the user's life. Not what happened (that's a "fact"), but how a moment landed emotionally.
 
 Conversation:
 ${conversation}
@@ -800,10 +806,25 @@ Return valid JSON only — no explanation:
 }
 
 Rules:
-- feeling: a specific, moment-anchored emotional read, in third person about the user — e.g. "The Sunday family dinner made them feel small, the way it always does" or "Finishing the run left them quietly proud for the first time in weeks". NOT a generic fact ("they visit family on Sundays").
+- feeling: a specific, moment-anchored emotional read written SUBJECTLESS — the SITUATION is the grammatical subject and carries the feeling. NEVER name the user and NEVER use a personal subject ("he/she/they/you/I/${companionName}") as the one who felt it. Examples:
+  - "The Sunday family dinner brought that familiar smallness — the way it always does."
+  - "Finishing the run left a quiet pride, the first in weeks."
+  - "The contact refusing a Zoom call again settled into a quiet frustration — not explosive, but the weight of not understanding what was blocking it."
+  Do NOT write "they felt small", "you felt proud", "<name> felt frustrated", or a generic fact ("they visit family on Sundays").
 - Only extract feelings the conversation genuinely supports. Do NOT invent emotion.
 - emotion: the single closest family from the list. intensity: honest 0-1.
 - Return an empty array if no clear feeling-in-context is present. Quality over quantity — 0-2 per exchange is normal.`;
+}
+
+export async function extractFeelings(
+  profile: Profile,
+  recentMessages: { role: string; content: string }[],
+  opts?: { dedupFinder?: DedupFinder },
+): Promise<void> {
+  const anthropic = getAnthropic();
+  if (!anthropic) return;
+
+  const extractPrompt = buildFeelingsPrompt(recentMessages, profile.companionName);
 
   try {
     const response = await anthropic.messages.create({
