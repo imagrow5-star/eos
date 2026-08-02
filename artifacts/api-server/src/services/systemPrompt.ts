@@ -2,6 +2,7 @@ import { eq, and, desc, gte, sql, inArray } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   memoryFactsTable,
+  memoryFeelingsTable,
   personalitySignalsTable,
   habitsTable,
   habitCompletionsTable,
@@ -169,12 +170,23 @@ export async function buildSystemPrompt(
 
   const userId = (profile as any).userId as number;
 
-  const [allFacts, activeSignals, activeHabits, openCommitments, recentMoods, habitCompletionsLast7, personalizationRows, activeGoals, frozenThreadRows] =
+  const [allFacts, allFeelings, activeSignals, activeHabits, openCommitments, recentMoods, habitCompletionsLast7, personalizationRows, activeGoals, frozenThreadRows] =
     await Promise.all([
       // Importance ranking (Sprint 2A): fetch ALL facts (typical user <200) and
       // rank in app code below — an old-but-important fact must be able to beat
       // a newer trivial one, which "ORDER BY created_at LIMIT 30" could not.
       db.select().from(memoryFactsTable).where(eq(memoryFactsTable.userId, userId)),
+      // Sprint 2C — feelings-in-context. Same fetch-all-then-rank shape as facts
+      // (they share the importance columns and scorer). Guarded so a
+      // freshly-published prod without the table yet degrades to none, never
+      // breaks chat.
+      (async () => {
+        try {
+          return await db.select().from(memoryFeelingsTable).where(eq(memoryFeelingsTable.userId, userId));
+        } catch {
+          return [] as Array<typeof memoryFeelingsTable.$inferSelect>;
+        }
+      })(),
       db.select().from(personalitySignalsTable).where(and(eq(personalitySignalsTable.userId, userId), eq(personalitySignalsTable.isActive, true))).orderBy(desc(personalitySignalsTable.observedCount)).limit(12),
       db.select().from(habitsTable).where(and(eq(habitsTable.userId, userId), eq(habitsTable.isActive, true))),
       // Always fetched (not stage-gated): the companion must be able to answer
@@ -234,6 +246,12 @@ export async function buildSystemPrompt(
   const factNowMs = Date.now();
   const FACT_LIMIT = 40;
   const facts = rankFactsByImportance(allFacts, factNowMs, FACT_LIMIT);
+
+  // Sprint 2C — feelings ranked by the SAME importance scorer as facts (they
+  // carry the same columns). Kept to a smaller slice: feelings are texture, not
+  // the bulk of memory. `allFeelings` is [] on a pre-table prod (guarded fetch).
+  const FEELING_LIMIT = 15;
+  const feelings = rankFactsByImportance(allFeelings, factNowMs, FEELING_LIMIT);
 
   // Observability: how ranking is behaving, WITHOUT logging any fact content.
   // boundaryFactAgeDays = age of the lowest-ranked fact that still made the cut
@@ -320,6 +338,16 @@ export async function buildSystemPrompt(
     facts.length > 0
       ? `What you remember about ${name}:\n${facts.map((f) => `- [${f.category}] ${f.fact}`).join("\n")}`
       : `You are still getting to know ${name}. Everything they share matters — hold it carefully.`;
+
+  // Sprint 2C — feelings-in-context, surfaced alongside facts (ranked together
+  // by importance). Emotional texture the companion should hold gently, not
+  // recite: how specific moments landed for ${name}.
+  const feelingsBlock =
+    feelings.length > 0
+      ? `How things have felt for ${name} (emotional texture — hold gently, don't recite):\n${feelings
+          .map((f) => `- [${f.category}] ${f.feeling}`)
+          .join("\n")}`
+      : "";
 
   const signalsBlock =
     activeSignals.length > 0
@@ -1188,6 +1216,7 @@ ${rules}`;
   if (habitsBlock && moodTrendBlock) contextParts.push(`MOOD CONTEXT: ${moodTrendBlock}`);
   if (discoveryBlock) contextParts.push(discoveryBlock.trim());
   contextParts.push(factsBlock);
+  if (feelingsBlock) contextParts.push(feelingsBlock);
   if (signalsBlock) contextParts.push(signalsBlock);
   if (habitsBlock) contextParts.push(habitsBlock);
   if (goalsBlock) contextParts.push(goalsBlock);
