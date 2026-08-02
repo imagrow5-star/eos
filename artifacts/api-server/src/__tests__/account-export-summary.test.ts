@@ -37,6 +37,7 @@ async function cleanupUser(email: string): Promise<void> {
     DELETE FROM email_verification_tokens   WHERE user_id = ${uid};
     DELETE FROM messages                    WHERE user_id = ${uid};
     DELETE FROM memory_facts                WHERE user_id = ${uid};
+    DELETE FROM memory_feelings             WHERE user_id = ${uid};
     DELETE FROM personality_signals         WHERE user_id = ${uid};
     DELETE FROM wins                        WHERE user_id = ${uid};
     DELETE FROM mood_scores                 WHERE user_id = ${uid};
@@ -56,6 +57,7 @@ interface SummaryBody {
   habitCount: number;
   moodCount: number;
   memoryCount: number;
+  feelingCount: number;
   winCount: number;
   goalCount: number;
   commitmentCount: number;
@@ -81,6 +83,7 @@ interface PopulateCounts {
   habits: number;
   moods: number;
   memories: number;
+  feelings?: number;
   wins?: number;
   goals?: number;
   commitments?: number;
@@ -142,6 +145,13 @@ async function signupAndPopulate(
     await pool.query(
       `INSERT INTO memory_facts (user_id, fact, category) VALUES ($1, $2, 'life')`,
       [userId, `fact ${i} from ${tag}`],
+    );
+  }
+
+  for (let i = 0; i < (counts.feelings ?? 0); i++) {
+    await pool.query(
+      `INSERT INTO memory_feelings (user_id, feeling, category) VALUES ($1, $2, 'shame')`,
+      [userId, `feeling ${i} from ${tag}`],
     );
   }
 
@@ -333,6 +343,7 @@ describe("GET /api/account/export/summary", () => {
       habits: 2,
       moods: 4,
       memories: 5,
+      feelings: 11,
       wins: 6,
       goals: 7,
       commitments: 8,
@@ -359,6 +370,7 @@ describe("GET /api/account/export/summary", () => {
       ["habitCompletionCount", "habitCompletions"],
       ["moodCount", "moodScores"],
       ["memoryCount", "memoryFacts"],
+      ["feelingCount", "memoryFeelings"],
       ["winCount", "wins"],
       ["goalCount", "goals"],
       ["commitmentCount", "commitments"],

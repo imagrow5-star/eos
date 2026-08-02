@@ -53,6 +53,17 @@ function samplePayload(overrides: Partial<ExportSourcePayload> = {}): ExportSour
         user_marked_important: false,
       },
     ],
+    memoryFeelings: [
+      {
+        feeling: "The Sunday family dinner made her feel small, the way it always does.",
+        category: "shame",
+        created_at: "2026-02-05T00:00:00.000Z",
+        times_referenced: 3,
+        last_referenced_at: "2026-06-01T00:00:00.000Z",
+        emotional_weight: 0.8,
+        user_marked_important: false,
+      },
+    ],
     personalitySignals: [
       { signal: "reflective", observed_count: 4, is_active: true, created_at: "2026-02-10T00:00:00.000Z" },
     ],
@@ -212,6 +223,17 @@ describe("shapeMemoryExport — JSON structure", () => {
     });
   });
 
+  it("includes feelings-in-context (Sprint 2C) in the memory block", () => {
+    const out = shapeMemoryExport(samplePayload(), basics);
+    expect(out.memory.feelings).toHaveLength(1);
+    expect(out.memory.feelings[0]).toMatchObject({
+      feeling: "The Sunday family dinner made her feel small, the way it always does.",
+      emotion: "shame",
+      times_referenced: 3,
+      emotional_weight: 0.8,
+    });
+  });
+
   it("maps messages to role/content/created_at only", () => {
     const out = shapeMemoryExport(samplePayload(), basics);
     expect(out.messages).toHaveLength(2);
@@ -259,6 +281,7 @@ describe("shapeMemoryExport — JSON structure", () => {
       profile: null,
       messages: [],
       memoryFacts: [],
+      memoryFeelings: [],
       personalitySignals: [],
       wins: [],
       moodScores: [],
@@ -292,11 +315,22 @@ describe("renderMemoryMarkdown — memoir structure", () => {
     expect(md.startsWith("# Everything Aria remembers about you")).toBe(true);
     expect(md).toContain("## About you");
     expect(md).toContain("## What Aria remembers");
+    expect(md).toContain("## How things have felt");
     expect(md).toContain("## Your intentions and goals");
     expect(md).toContain("## Your habits");
     expect(md).toContain("## Your chapters");
     expect(md).toContain("## Your conversations");
     expect(md).toContain("## On the record");
+  });
+
+  it("renders the feelings-in-context section content (Sprint 2C)", () => {
+    const md = renderMemoryMarkdown(samplePayload(), basics);
+    const idx = md.indexOf("## How things have felt");
+    expect(idx).toBeGreaterThan(-1);
+    expect(md).toContain("made her feel small");
+    // Appears after facts, before goals (texture sits with memory).
+    expect(idx).toBeGreaterThan(md.indexOf("## What Aria remembers"));
+    expect(idx).toBeLessThan(md.indexOf("## Your intentions and goals"));
   });
 
   it("orders the sections as: about → memories → goals → habits → chapters → conversations → record", () => {
@@ -357,6 +391,7 @@ describe("renderMemoryMarkdown — memoir structure", () => {
       profile: null,
       messages: [],
       memoryFacts: [],
+      memoryFeelings: [],
       personalitySignals: [],
       wins: [],
       moodScores: [],

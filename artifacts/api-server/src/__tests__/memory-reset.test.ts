@@ -46,6 +46,7 @@ describe.skipIf(!DB)("POST /api/memory/reset", () => {
         DELETE FROM commitments       WHERE user_id = ${uid};
         DELETE FROM mood_scores       WHERE user_id = ${uid};
         DELETE FROM memory_facts      WHERE user_id = ${uid};
+        DELETE FROM memory_feelings   WHERE user_id = ${uid};
         DELETE FROM sealed_notes      WHERE user_id = ${uid};
         DELETE FROM weekly_chapters   WHERE user_id = ${uid};
         DELETE FROM messages          WHERE user_id = ${uid};
@@ -70,6 +71,7 @@ describe.skipIf(!DB)("POST /api/memory/reset", () => {
 
   async function populate(userId: number) {
     await pool.query(`INSERT INTO memory_facts (user_id, fact, category) VALUES ($1, 'a fact', 'life')`, [userId]);
+    await pool.query(`INSERT INTO memory_feelings (user_id, feeling, category) VALUES ($1, 'the dinner made them feel small', 'shame')`, [userId]);
     await pool.query(`INSERT INTO mood_scores (user_id, score, date) VALUES ($1, 6, '2026-07-14')`, [userId]);
     await pool.query(`INSERT INTO commitments (user_id, content, cue) VALUES ($1, 'text Sam', 'morning')`, [userId]);
     await pool.query(`INSERT INTO goals (user_id, title, description) VALUES ($1, 'sleep earlier', 'd')`, [userId]);
@@ -97,6 +99,7 @@ describe.skipIf(!DB)("POST /api/memory/reset", () => {
     expect(res.body.ok).toBe(true);
     expect(res.body.deleted).toMatchObject({
       memory_facts: 1,
+      memory_feelings: 1,
       habits: 1,
       habit_completions: 1,
       commitments: 1,
@@ -106,6 +109,7 @@ describe.skipIf(!DB)("POST /api/memory/reset", () => {
 
     // Memory tables are empty…
     expect(await count("memory_facts", userId)).toBe(0);
+    expect(await count("memory_feelings", userId)).toBe(0);
     expect(await count("habits", userId)).toBe(0);
     expect(await count("habit_completions", userId)).toBe(0);
     expect(await count("commitments", userId)).toBe(0);

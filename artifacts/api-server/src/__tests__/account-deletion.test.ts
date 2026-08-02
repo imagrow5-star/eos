@@ -49,6 +49,7 @@ async function cleanupUser(email: string): Promise<void> {
     DELETE FROM crisis_events     WHERE user_id = ${uid};
     DELETE FROM messages          WHERE user_id = ${uid};
     DELETE FROM memory_facts      WHERE user_id = ${uid};
+    DELETE FROM memory_feelings   WHERE user_id = ${uid};
     DELETE FROM personality_signals WHERE user_id = ${uid};
     DELETE FROM wins              WHERE user_id = ${uid};
     DELETE FROM mood_scores       WHERE user_id = ${uid};
@@ -122,6 +123,12 @@ describe("DELETE /api/auth/account", () => {
     // memory_facts
     await pool.query(
       `INSERT INTO memory_facts (user_id, fact, category) VALUES ($1, 'test fact', 'life')`,
+      [userId],
+    );
+
+    // memory_feelings (Sprint 2C)
+    await pool.query(
+      `INSERT INTO memory_feelings (user_id, feeling, category) VALUES ($1, 'the dinner made them feel small', 'shame')`,
       [userId],
     );
 
@@ -226,6 +233,9 @@ describe("DELETE /api/auth/account", () => {
 
     // memory_facts
     expect(await rowCount("memory_facts", "user_id = $1", [userId])).toBe(0);
+
+    // memory_feelings (Sprint 2C)
+    expect(await rowCount("memory_feelings", "user_id = $1", [userId])).toBe(0);
 
     // personality_signals
     expect(await rowCount("personality_signals", "user_id = $1", [userId])).toBe(0);
@@ -479,6 +489,7 @@ describe("DELETE /api/auth/account", () => {
       "profile",
       "messages",
       "memory_facts",
+      "memory_feelings",
       "personality_signals",
       "wins",
       "mood_scores",
