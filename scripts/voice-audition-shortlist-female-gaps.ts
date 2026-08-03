@@ -24,7 +24,10 @@
 
 const API = "https://api.elevenlabs.io/v1/shared-voices";
 const PAGE_SIZE = 100; // ElevenLabs max
-const MAX_PAGES = 8; // female-only is a thinner slice — page a little deeper
+// Native female voices are a thin slice inside a large multilingual-compatible
+// pool, so page deep to make sure they aren't left beyond the cap (only 2
+// buckets, so the extra requests are cheap).
+const MAX_PAGES = 15;
 const PER_BUCKET = 10;
 const REQUEST_SPACING_MS = 250;
 
@@ -128,13 +131,65 @@ async function fetchBucket(bucket: Bucket): Promise<SharedVoice[]> {
   return out;
 }
 
-// ─── Native-fit + companion-fit + quality ─────────────────────────────────────
+// ─── NATIVE-language gate ─────────────────────────────────────────────────────
+// The library's `language=fr` / `language=de` filter returns every voice that is
+// merely COMPATIBLE with that language via Multilingual v2 — including Hindi /
+// Spanish / English natives whose only French/German sample is an auto-generated
+// "lang_compat/<lang>" clip. Those are NOT native and must be excluded. A voice
+// qualifies as native only when its OWN primary language/locale/accent is the
+// target, OR it has a GENUINE verified-language entry (a real sample, not a
+// lang_compat clip) for the target.
 
-function verifiedIn(v: SharedVoice, lang: string): VerifiedLanguage | undefined {
-  return (v.verified_languages ?? []).find((x) => (x.language ?? "").toLowerCase() === lang);
+/** Auto-generated compatibility clip, not a real native sample. */
+function isLangCompat(url?: string): boolean {
+  return !!url && url.toLowerCase().includes("lang_compat");
 }
+
+/** A verified_languages entry for `lang` whose preview is a REAL sample. */
+function genuineVerified(v: SharedVoice, lang: string): VerifiedLanguage | undefined {
+  return (v.verified_languages ?? []).find(
+    (x) => (x.language ?? "").toLowerCase() === lang && !isLangCompat(x.preview_url),
+  );
+}
+
+const ACCENT_HINT: Record<string, RegExp> = {
+  fr: /french|français|francais|france|parisian/i,
+  de: /german|deutsch|germany|austrian|swiss/i,
+};
+
+/** The voice's OWN primary language is `lang` (its metadata, not the query). */
+function primaryIsNative(v: SharedVoice, lang: string): boolean {
+  const l = (v.language ?? "").toLowerCase();
+  const locale = (v.locale ?? "").toLowerCase();
+  const accent = (v.accent ?? "").toLowerCase();
+  if (l === lang) return true;
+  if (locale === lang || locale.startsWith(`${lang}-`)) return true;
+  return ACCENT_HINT[lang]?.test(accent) ?? false;
+}
+
+/** Native gate: primary metadata is the language, OR a genuine verified entry. */
+function isNative(v: SharedVoice, lang: string): boolean {
+  return primaryIsNative(v, lang) || !!genuineVerified(v, lang);
+}
+
+/** Human-readable reason it qualified — so the founder can trust the native call. */
+function nativeMatch(v: SharedVoice, lang: string): string {
+  const locale = (v.locale ?? "").toLowerCase();
+  if (locale === lang || locale.startsWith(`${lang}-`)) return `locale ${v.locale}`;
+  if ((v.language ?? "").toLowerCase() === lang) return `primary ${lang}`;
+  if (ACCENT_HINT[lang]?.test((v.accent ?? "").toLowerCase())) return `accent ${v.accent}`;
+  const g = genuineVerified(v, lang);
+  if (g) return `verified ${g.locale || g.accent || lang}`;
+  return "—";
+}
+
+/** NATIVE preview only — never a lang_compat clip. "" if no clean native sample. */
 function previewFor(v: SharedVoice, lang: string): string {
-  return verifiedIn(v, lang)?.preview_url ?? v.preview_url ?? "";
+  const g = genuineVerified(v, lang);
+  if (g?.preview_url && !isLangCompat(g.preview_url)) return g.preview_url;
+  if (v.preview_url && !isLangCompat(v.preview_url) && primaryIsNative(v, lang)) return v.preview_url;
+  if (v.preview_url && !isLangCompat(v.preview_url)) return v.preview_url;
+  return "";
 }
 
 // Voices that are the WRONG shape for a companion — narration/performance/agent.
@@ -172,10 +227,13 @@ function companionFitBoost(v: SharedVoice): number {
 
 function score(v: SharedVoice, lang: string): number {
   const cat = CATEGORY_BONUS[(v.category ?? "").toLowerCase()] ?? 0;
-  const nativeBump = verifiedIn(v, lang) ? 250_000 : 0;
+  // Nudge exact-region natives (fr-FR / de-DE) and genuine verifications up.
+  const locale = (v.locale ?? "").toLowerCase();
+  const regionBonus = locale === `${lang}-${lang}` ? 200_000 : 0; // fr-fr, de-de
+  const verifiedBonus = genuineVerified(v, lang) ? 150_000 : 0;
   const cloned = (v.cloned_by_count ?? 0) * 1000;
   const usage = Math.min((v.usage_character_count_1y ?? 0) / 1000, 200_000);
-  return cat + nativeBump + companionFitBoost(v) + cloned + usage;
+  return cat + regionBonus + verifiedBonus + companionFitBoost(v) + cloned + usage;
 }
 
 /** Personality-diverse top-N by "descriptive" so we span soft/bright/steady. */
@@ -209,13 +267,13 @@ function qualitySignal(v: SharedVoice, lang: string): string {
   if (typeof v.cloned_by_count === "number") bits.push(`${v.cloned_by_count.toLocaleString()} clones`);
   if (typeof v.usage_character_count_1y === "number")
     bits.push(`${Math.round(v.usage_character_count_1y / 1000).toLocaleString()}k chars/1y`);
-  if (verifiedIn(v, lang)) bits.push("native-verified");
+  if (genuineVerified(v, lang)) bits.push("native-verified");
   return bits.length ? bits.join(", ") : "—";
 }
 
 function row(v: SharedVoice, lang: string): string {
   const preview = previewFor(v, lang);
-  const previewCell = preview ? `[▶ listen](${preview})` : "—";
+  const previewCell = preview ? `[▶ listen](${preview})` : "— (no native sample)";
   const useCase = esc(v.use_case || "—");
   const desc = esc(v.description || v.descriptive || "");
   return `| ${[
@@ -223,7 +281,7 @@ function row(v: SharedVoice, lang: string): string {
     `\`${esc(v.voice_id)}\``,
     `\`${esc(v.public_owner_id)}\``,
     esc(v.gender),
-    esc([v.accent, v.locale].filter(Boolean).join(" / ") || "—"),
+    esc(nativeMatch(v, lang)),
     esc(v.category),
     useCase,
     esc(qualitySignal(v, lang)),
@@ -232,20 +290,26 @@ function row(v: SharedVoice, lang: string): string {
   ].join(" | ")} |`;
 }
 
-function section(bucket: Bucket, picks: SharedVoice[], found: number, afterFit: number): string {
+function section(
+  bucket: Bucket,
+  picks: SharedVoice[],
+  female: number,
+  native: number,
+  nativeFit: number,
+): string {
   const header =
-    "| Name | voice_id | public_owner_id | Gender | Accent/Locale | Category | Use case | Usage/quality signal | Description | Preview URL |\n" +
+    "| Name | voice_id | public_owner_id | Gender | Native match | Category | Use case | Usage/quality signal | Description | Preview URL |\n" +
     "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |";
   const rows = picks.map((v) => row(v, bucket.lang)).join("\n");
   const note =
     picks.length === 0
-      ? "\n> ⚠️ **No companion-fit female candidates** survived filtering — genuinely thin here.\n"
+      ? "\n> ⚠️ **No native companion-fit female voices** exist for this bucket — genuinely thin (shown nothing rather than padding with non-native).\n"
       : picks.length < PER_BUCKET
-        ? `\n> ⚠️ Only ${picks.length} companion-fit candidate(s) (target ${PER_BUCKET}) — thin bucket.\n`
+        ? `\n> ⚠️ Only ${picks.length} native companion-fit candidate(s) (target ${PER_BUCKET}) — **THIN**. Not padded with non-native/compatible voices.\n`
         : "";
   return (
     `## ${bucket.title}\n\n` +
-    `_${picks.length} shown · ${afterFit} companion-fit female of ${found} female returned by the library._\n${note}\n` +
+    `_Funnel: ${female} female → ${native} native (${bucket.lang}) → ${nativeFit} native + companion-fit → ${picks.length} shown._\n${note}\n` +
     `${header}\n${rows}\n`
   );
 }
@@ -256,7 +320,14 @@ async function main() {
   const OUT = process.env.OUT || process.argv[2] || "voice-audition-shortlist-female-gaps.md";
 
   const sections: string[] = [];
-  const summary: Array<{ bucket: string; female: number; companionFit: number; shown: number; thin?: string }> = [];
+  const summary: Array<{
+    bucket: string;
+    female: number;
+    native: number;
+    nativeFit: number;
+    shown: number;
+    thin?: string;
+  }> = [];
 
   for (const bucket of BUCKETS) {
     process.stderr.write(`Querying ${bucket.id} …\n`);
@@ -270,14 +341,22 @@ async function main() {
       return (v.gender ?? "").toLowerCase() === "female";
     });
 
-    const fit = female.filter(isCompanionFit);
-    const ranked = diverseTop([...fit].sort((a, b) => score(b, bucket.lang) - score(a, bucket.lang)), PER_BUCKET);
+    // Funnel: female → NATIVE (own language/locale/accent or genuine verified,
+    // NOT mere multilingual compatibility) → companion-fit. Never pad with
+    // non-native voices; a thin native pool is reported THIN.
+    const native = female.filter((v) => isNative(v, bucket.lang));
+    const nativeFit = native.filter(isCompanionFit);
+    const ranked = diverseTop(
+      [...nativeFit].sort((a, b) => score(b, bucket.lang) - score(a, bucket.lang)),
+      PER_BUCKET,
+    );
 
-    sections.push(section(bucket, ranked, female.length, fit.length));
+    sections.push(section(bucket, ranked, female.length, native.length, nativeFit.length));
     summary.push({
       bucket: bucket.id,
       female: female.length,
-      companionFit: fit.length,
+      native: native.length,
+      nativeFit: nativeFit.length,
       shown: ranked.length,
       thin: ranked.length < PER_BUCKET ? "THIN" : undefined,
     });
@@ -286,17 +365,25 @@ async function main() {
 
   const stamp = new Date().toISOString();
   const summaryTable =
-    "| Bucket | Female returned | Companion-fit | Shown | Note |\n| --- | --- | --- | --- | --- |\n" +
-    summary.map((s) => `| ${s.bucket} | ${s.female} | ${s.companionFit} | ${s.shown} | ${s.thin ?? ""} |`).join("\n");
+    "| Bucket | Female returned | Native | Native + companion-fit | Shown | Note |\n" +
+    "| --- | --- | --- | --- | --- | --- |\n" +
+    summary
+      .map((s) => `| ${s.bucket} | ${s.female} | ${s.native} | ${s.nativeFit} | ${s.shown} | ${s.thin ?? ""} |`)
+      .join("\n");
 
   const doc =
-    `# Voice audition shortlist — French & German FEMALE gaps\n\n` +
+    `# Voice audition shortlist — French & German FEMALE gaps (NATIVE only)\n\n` +
     `_Generated ${stamp} from the ElevenLabs shared Voice Library (GET /v1/shared-voices). ` +
     `Read-only audition aid — nothing was added to the account._\n\n` +
-    `Re-run of the fr/de buckets with **gender=female** and a **companion-fit** filter: warm, ` +
-    `conversational, natural voices only — narration / audiobook / trailer / character / news / ` +
-    `agent-IVR voices are filtered out. Preview links prefer each voice's native-language verified ` +
-    `sample. To add a chosen voice later you need both its \`voice_id\` and \`public_owner_id\`.\n\n` +
+    `Re-run of the fr/de buckets with **gender=female**, a **native-language gate**, and a ` +
+    `**companion-fit** filter. A voice qualifies as native only if its own primary language / ` +
+    `locale / accent is the target (e.g. fr-FR, de-DE) OR it has a *genuine* verified-language ` +
+    `entry — NOT a mere Multilingual-v2 compatibility clip (those show \`lang_compat/<lang>\` in ` +
+    `the preview URL and are excluded). Companion-fit keeps warm/conversational/natural voices and ` +
+    `filters out narration / audiobook / trailer / character / news / agent-IVR. The **Native match** ` +
+    `column shows why each voice qualified; **Preview URL** is the voice's native-language sample ` +
+    `(never a lang_compat clip). Thin buckets are flagged rather than padded with non-native voices. ` +
+    `To add a chosen voice later you need both its \`voice_id\` and \`public_owner_id\`.\n\n` +
     `## Summary\n\n${summaryTable}\n\n---\n\n` +
     sections.join("\n---\n\n");
 
