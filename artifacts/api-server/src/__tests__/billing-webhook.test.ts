@@ -206,7 +206,7 @@ describe("subscription lifecycle events", () => {
     expect(me.body.kind).toBe("subscribed");
     expect(me.body.tier).toBe("companion");
     expect(me.body.status).toBe("trialing");
-    expect(me.body.voiceMinutesPerMonth).toBe(150);
+    expect(me.body.voiceMinutesPerMonth).toBe(120);
   });
 
   it("is idempotent: the same event_id delivered twice processes once", async () => {
