@@ -45,7 +45,7 @@ export const TIERS: Record<TierId, TierConfig> = {
     displayName: "Companion",
     monthlyPriceCents: 1999,
     paddlePriceIdEnvVar: "PADDLE_PRICE_COMPANION",
-    voiceMinutesPerMonth: 150,
+    voiceMinutesPerMonth: 120,
     trialDays: 7,
   },
   closer: {
@@ -53,7 +53,7 @@ export const TIERS: Record<TierId, TierConfig> = {
     displayName: "Closer",
     monthlyPriceCents: 3999,
     paddlePriceIdEnvVar: "PADDLE_PRICE_CLOSER",
-    voiceMinutesPerMonth: 400,
+    voiceMinutesPerMonth: 300,
     trialDays: 7,
   },
   always: {
@@ -61,7 +61,7 @@ export const TIERS: Record<TierId, TierConfig> = {
     displayName: "Always",
     monthlyPriceCents: 5999,
     paddlePriceIdEnvVar: "PADDLE_PRICE_ALWAYS",
-    voiceMinutesPerMonth: 1000,
+    voiceMinutesPerMonth: 500,
     trialDays: 7,
   },
 };

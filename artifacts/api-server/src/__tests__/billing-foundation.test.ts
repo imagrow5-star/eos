@@ -67,9 +67,9 @@ describe("central tier config", () => {
     expect(TIERS.companion.monthlyPriceCents).toBe(1999);
     expect(TIERS.closer.monthlyPriceCents).toBe(3999);
     expect(TIERS.always.monthlyPriceCents).toBe(5999);
-    expect(TIERS.companion.voiceMinutesPerMonth).toBe(150);
-    expect(TIERS.closer.voiceMinutesPerMonth).toBe(400);
-    expect(TIERS.always.voiceMinutesPerMonth).toBe(1000);
+    expect(TIERS.companion.voiceMinutesPerMonth).toBe(120);
+    expect(TIERS.closer.voiceMinutesPerMonth).toBe(300);
+    expect(TIERS.always.voiceMinutesPerMonth).toBe(500);
     for (const t of Object.values(TIERS)) expect(t.trialDays).toBe(7);
     expect(TIERS.companion.paddlePriceIdEnvVar).toBe("PADDLE_PRICE_COMPANION");
     expect(TIERS.closer.paddlePriceIdEnvVar).toBe("PADDLE_PRICE_CLOSER");
@@ -109,7 +109,7 @@ describe("getUserTier", () => {
     if (tier.kind === "subscribed") {
       expect(tier.tier).toBe("companion");
       expect(tier.status).toBe("trialing");
-      expect(tier.voiceMinutesPerMonth).toBe(150);
+      expect(tier.voiceMinutesPerMonth).toBe(120);
       expect(tier.trialEndsAt).not.toBeNull();
       expect(tier.config.displayName).toBe("Companion");
     }
