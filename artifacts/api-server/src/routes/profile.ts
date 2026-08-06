@@ -10,6 +10,8 @@ import {
 } from "@workspace/api-zod";
 import { calculateStage } from "../services/stage.js";
 import { todayString } from "../services/stage.js";
+import { ensureProfileThemeColumns, isMissingThemeColumnError } from "../services/schemaGuard.js";
+import { logger } from "../lib/logger.js";
 import { sanitizeGenderWords } from "../services/systemPrompt.js";
 import { ageToBand, normalizeCountryForStorage, AGE_BANDS } from "../lib/basics.js";
 
@@ -18,6 +20,24 @@ const router: IRouter = Router();
 // ─── Shared helper — exported so chat/onboarding/journey can import ───────────
 
 export async function getOrCreateProfileForUser(userId: number): Promise<Profile> {
+  try {
+    return await readOrCreateProfile(userId);
+  } catch (e) {
+    // A database that predates the theme columns makes every profile SELECT
+    // throw 42703 — which used to hard-block login ("We couldn't load your
+    // profile"). Apply the idempotent guard and retry once; a theme column
+    // must never lock a user out. Anything else rethrows untouched.
+    if (!isMissingThemeColumnError(e)) throw e;
+    logger.warn(
+      { err: e },
+      "profile read hit missing theme columns — applying schema guard and retrying",
+    );
+    await ensureProfileThemeColumns();
+    return await readOrCreateProfile(userId);
+  }
+}
+
+async function readOrCreateProfile(userId: number): Promise<Profile> {
   const [existing] = await db
     .select()
     .from(profileTable)
