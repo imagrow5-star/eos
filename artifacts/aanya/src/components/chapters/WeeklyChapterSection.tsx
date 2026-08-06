@@ -185,7 +185,7 @@ function QuoteBlock({
 
   return (
     <div className="group relative pl-4 border-l border-primary/25">
-      <div className="text-[9px] uppercase tracking-[0.2em] text-primary/60 mb-1">
+      <div className="text-[9px] uppercase tracking-[0.2em] text-primary-strong/60 mb-1">
         {format(parseISO(quote.date), "MMMM d")}
       </div>
       <p
@@ -218,7 +218,7 @@ function ThemeBlock({ theme, chapterId }: { theme: ChapterTheme; chapterId: numb
       <div className="flex items-center gap-2">
         <span className="text-[10px] uppercase tracking-[0.22em] text-secondary/75">{theme.title}</span>
         {theme.stillTrue && (
-          <span className="text-[9px] px-2 py-0.5 rounded-full border border-primary/25 text-primary/70 tracking-wide">
+          <span className="text-[9px] px-2 py-0.5 rounded-full border border-primary/25 text-primary-strong/70 tracking-wide">
             still true
           </span>
         )}
@@ -281,9 +281,9 @@ function OfferCard({ offer, chapterId }: { offer: MicroOffer; chapterId: number 
 
   return (
     <div className="rounded-2xl border border-primary/30 bg-primary/5 p-5 space-y-4">
-      <div className="text-[10px] uppercase tracking-[0.22em] text-primary/70">From your own words</div>
+      <div className="text-[10px] uppercase tracking-[0.22em] text-primary-strong/70">From your own words</div>
       <div className="pl-4 border-l border-primary/25">
-        <div className="text-[9px] uppercase tracking-[0.2em] text-primary/60 mb-1">
+        <div className="text-[9px] uppercase tracking-[0.2em] text-primary-strong/60 mb-1">
           {format(parseISO(offer.seedDate), "MMMM d")}
         </div>
         <p className="font-serif text-[15px] leading-relaxed italic text-foreground/85">“{offer.seedQuote}”</p>
@@ -324,7 +324,7 @@ function WorkingThroughBlock({ wt }: { wt: WorkingThroughShape }) {
       <div className="space-y-4">
         {wt.entries.map((e, i) => (
           <div key={i} className="pl-4 border-l border-primary/25">
-            <div className="text-[9px] uppercase tracking-[0.2em] text-primary/60 mb-1">{e.weekLabel}</div>
+            <div className="text-[9px] uppercase tracking-[0.2em] text-primary-strong/60 mb-1">{e.weekLabel}</div>
             <p
               className={cn(
                 "font-serif text-[15px] leading-relaxed",
@@ -399,7 +399,7 @@ function SealResolutionCard({ chapterId, seal }: { chapterId: number; seal: Seal
             <motion.div
               animate={{ scale: [1, 1.05, 1] }}
               transition={{ duration: 2.4, repeat: Infinity, repeatDelay: 2 }}
-              className="w-14 h-14 mx-auto rounded-full bg-gradient-to-br from-secondary/85 to-secondary/50 border border-secondary/60 shadow-[0_0_24px_rgba(201,162,75,0.25)] flex items-center justify-center"
+              className="w-14 h-14 mx-auto rounded-full bg-gradient-to-br from-secondary/85 to-secondary/50 border border-secondary/60 shadow-[0_0_24px_hsl(var(--primary)/0.25)] flex items-center justify-center"
             >
               <Feather className="w-5 h-5 text-background/80" />
             </motion.div>
@@ -488,7 +488,7 @@ function NoteInviteCard({ chapterId, prompt }: { chapterId: number; prompt: stri
               initial={{ scale: 0, rotate: -30 }}
               animate={{ scale: 1, rotate: 0 }}
               transition={{ type: "spring", stiffness: 260, damping: 14 }}
-              className="w-12 h-12 mx-auto rounded-full bg-gradient-to-br from-secondary/85 to-secondary/55 border border-secondary/60 shadow-[0_0_20px_rgba(201,162,75,0.3)] flex items-center justify-center"
+              className="w-12 h-12 mx-auto rounded-full bg-gradient-to-br from-secondary/85 to-secondary/55 border border-secondary/60 shadow-[0_0_20px_hsl(var(--primary)/0.3)] flex items-center justify-center"
             >
               <Feather className="w-4 h-4 text-background/80" />
             </motion.div>
@@ -519,7 +519,7 @@ function NoteInviteCard({ chapterId, prompt }: { chapterId: number; prompt: stri
             className={cn(
               "px-3 py-1 rounded-full text-[10.5px] font-medium tracking-wide border transition-all",
               mode === val
-                ? "bg-primary/20 border-primary/50 text-primary"
+                ? "bg-primary/20 border-primary/50 text-primary-strong"
                 : "border-primary/15 text-muted-foreground/55 hover:border-primary/30 hover:text-foreground/70",
             )}
           >
@@ -552,7 +552,7 @@ function NoteInviteCard({ chapterId, prompt }: { chapterId: number; prompt: stri
           Seal it
         </Button>
       </div>
-      {error && <p className="text-[11px] text-amber-400/80 leading-relaxed">{error}</p>}
+      {error && <p className="text-[11px] text-amber-700 dark:text-amber-400/80 leading-relaxed">{error}</p>}
       <p className="text-[10px] text-muted-foreground/45 leading-relaxed">
         It stays sealed — even from me — until I hand it back inside a future chapter.
       </p>
@@ -589,7 +589,7 @@ function SealedChapter({ chapter }: { chapter: Chapter }) {
     <div className="bg-card border border-primary/25 rounded-2xl p-6 space-y-6">
       <div className="flex items-center gap-3">
         <div className="w-9 h-9 rounded-full bg-primary/15 border border-primary/40 flex items-center justify-center">
-          <Feather className="w-4 h-4 text-primary/80" />
+          <Feather className="w-4 h-4 text-primary-strong/80" />
         </div>
         <div>
           <div className="font-serif text-[18px] text-foreground/90">A new chapter is ready</div>
@@ -652,7 +652,7 @@ function ChapterReader({ chapter, isCurrent }: { chapter: Chapter; isCurrent?: b
     <div className="bg-card border border-primary/20 rounded-2xl p-6 space-y-8">
       <div>
         <div className="flex items-center gap-2 mb-4">
-          <Feather className="w-3.5 h-3.5 text-primary/70" />
+          <Feather className="w-3.5 h-3.5 text-primary-strong/70" />
           <span className="text-[10px] uppercase tracking-[0.22em] text-secondary/75">
             Week of {weekLabel(chapter.weekStart, chapter.weekEnd)}
           </span>
@@ -662,7 +662,7 @@ function ChapterReader({ chapter, isCurrent }: { chapter: Chapter; isCurrent?: b
 
       {chapter.thresholdAnswer && (
         <div className="rounded-xl bg-primary/6 border border-primary/15 px-4 py-3">
-          <div className="text-[9px] uppercase tracking-[0.2em] text-primary/60 mb-1">You said</div>
+          <div className="text-[9px] uppercase tracking-[0.2em] text-primary-strong/60 mb-1">You said</div>
           <p className="font-serif text-[14px] italic text-foreground/70">“{chapter.thresholdAnswer}”</p>
         </div>
       )}
@@ -797,7 +797,7 @@ export function WeeklyChapterSection() {
       {coldStart && (
         <div className="bg-card border border-primary/20 rounded-2xl p-6 text-center space-y-3">
           <div className="w-10 h-10 mx-auto rounded-full bg-primary/12 border border-primary/35 flex items-center justify-center">
-            <Feather className="w-4 h-4 text-primary/70" />
+            <Feather className="w-4 h-4 text-primary-strong/70" />
           </div>
           <p className="font-serif text-[16px] text-foreground/85">Your letters aren't ready yet.</p>
           <p className="text-[12px] leading-relaxed text-muted-foreground max-w-[300px] mx-auto">
@@ -809,7 +809,7 @@ export function WeeklyChapterSection() {
 
       {!coldStart && !current && (
         <div className="bg-card border border-primary/15 rounded-2xl px-5 py-4 flex items-center gap-3">
-          <Feather className="w-3.5 h-3.5 text-primary/60 flex-shrink-0" />
+          <Feather className="w-3.5 h-3.5 text-primary-strong/60 flex-shrink-0" />
           <p className="text-[12px] leading-relaxed text-muted-foreground">
             Your next chapter arrives Sunday evening — a letter I write you from your own words.
           </p>

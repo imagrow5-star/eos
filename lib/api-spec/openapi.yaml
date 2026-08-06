@@ -396,6 +396,12 @@ components:
         ageYears:
           type: ["integer", "null"]
           description: "Current age computed from birthYear — null when not shared"
+        theme:
+          type: ["string", "null"]
+          description: "Appearance theme: amber | dawn | sage | twilight — null when never chosen"
+        themeMode:
+          type: ["string", "null"]
+          description: "Appearance mode: light | dark — null when never chosen"
       required:
         - id
         - userName
@@ -441,6 +447,12 @@ components:
         ageYears:
           type: ["integer", "string"]
           description: "Age in years (18–120), or empty string / 0 to clear. Stored as birthYear; under-18 values are never stored."
+        theme:
+          type: string
+          description: "Appearance theme: amber | dawn | sage | twilight"
+        themeMode:
+          type: string
+          description: "Appearance mode: light | dark"
 
     Message:
       type: object

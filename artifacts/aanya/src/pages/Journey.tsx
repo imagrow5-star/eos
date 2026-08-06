@@ -71,8 +71,8 @@ function formatClockTime(hhmm: string): string {
 
 const STATE_META = {
   open:    { label: "In progress",  icon: CircleDot,    color: "text-secondary/70",  bg: "bg-secondary/8 border-secondary/20" },
-  done:    { label: "Done",         icon: CheckCircle2, color: "text-emerald-400/80", bg: "bg-emerald-500/8 border-emerald-500/20" },
-  partial: { label: "Partial",      icon: Clock,        color: "text-primary/80",     bg: "bg-primary/8 border-primary/20" },
+  done:    { label: "Done",         icon: CheckCircle2, color: "text-emerald-700 dark:text-emerald-400/80", bg: "bg-emerald-500/8 border-emerald-500/20" },
+  partial: { label: "Partial",      icon: Clock,        color: "text-primary-strong/80",     bg: "bg-primary/8 border-primary/20" },
   missed:  { label: "Missed",       icon: XCircle,      color: "text-foreground/30",  bg: "bg-foreground/5 border-foreground/10" },
 };
 
@@ -123,13 +123,13 @@ function CommitmentsSection() {
       <div className="flex items-center justify-between">
         <h2 className="font-serif text-xl text-foreground/85">Follow-through</h2>
         {rate !== null && (
-          <span className="text-[11px] text-primary/80 font-medium tracking-wide">{rate}% rate</span>
+          <span className="text-[11px] text-primary-strong/80 font-medium tracking-wide">{rate}% rate</span>
         )}
       </div>
 
       {total === 0 ? (
         <div className="bg-card/40 border border-primary/10 rounded-2xl p-5 text-center">
-          <TrendingUp className="w-7 h-7 text-primary/30 mx-auto mb-2" />
+          <TrendingUp className="w-7 h-7 text-primary-strong/30 mx-auto mb-2" />
           <p className="text-sm text-muted-foreground/60 font-serif italic">
             No commitments yet. When you and your companion agree on a next step in chat, it'll show up here.
           </p>
@@ -175,7 +175,7 @@ function CommitmentsSection() {
                         </p>
                       )}
                       {c.scheduledFollowupDate && (
-                        <p className="text-[10px] text-primary/60 mt-1 uppercase tracking-wide">
+                        <p className="text-[10px] text-primary-strong/60 mt-1 uppercase tracking-wide">
                           Follow-up {format(parseISO(c.scheduledFollowupDate), "MMM d")}
                         </p>
                       )}
@@ -186,7 +186,7 @@ function CommitmentsSection() {
                       )}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      <Button variant="ghost" size="icon" className="w-7 h-7 text-emerald-400/60 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-full"
+                      <Button variant="ghost" size="icon" className="w-7 h-7 text-emerald-700 dark:text-emerald-400/60 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-full"
                         onClick={() => updateCommitment.mutate({ id: c.id, state: "done" })} title="Mark done">
                         <Check className="w-3.5 h-3.5" strokeWidth={3} />
                       </Button>
@@ -286,7 +286,7 @@ function GoalsSection() {
               <div key={goal.id} className="bg-card border border-primary/15 rounded-2xl overflow-hidden">
                 <div className="flex items-center gap-3 p-4">
                   <div className="w-7 h-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
-                    <Target className="w-3.5 h-3.5 text-primary/60" />
+                    <Target className="w-3.5 h-3.5 text-primary-strong/60" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground/85 leading-snug">{goal.title}</p>
@@ -320,7 +320,7 @@ function GoalsSection() {
                           <button onClick={() => toggleTask.mutate({ goalId: goal.id, taskId: task.id, isComplete: !task.isComplete })}
                             className={cn("mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-all",
                               task.isComplete ? "bg-primary/20 border-primary/50" : "border-foreground/20 hover:border-primary/50")}>
-                            {task.isComplete && <Check className="w-2.5 h-2.5 text-primary" strokeWidth={3} />}
+                            {task.isComplete && <Check className="w-2.5 h-2.5 text-primary-strong" strokeWidth={3} />}
                           </button>
                           <p className={cn("text-[13px] leading-relaxed",
                             task.isComplete ? "text-muted-foreground/50 line-through" : "text-foreground/75")}>
@@ -339,7 +339,7 @@ function GoalsSection() {
               <p className="text-[10px] text-muted-foreground/50 uppercase tracking-[0.2em] pl-1">Completed</p>
               {doneGoals.map((goal) => (
                 <div key={goal.id} className="bg-card/40 border border-primary/8 rounded-xl px-4 py-3 flex items-center gap-3 opacity-50">
-                  <Check className="w-3.5 h-3.5 text-primary/60 shrink-0" />
+                  <Check className="w-3.5 h-3.5 text-primary-strong/60 shrink-0" />
                   <p className="text-sm text-foreground/60 line-through">{goal.title}</p>
                 </div>
               ))}
@@ -354,7 +354,7 @@ function GoalsSection() {
                 className="bg-background/50 border-primary/15 text-sm text-foreground/80 placeholder:text-muted-foreground/50" />
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" size="sm" className="text-muted-foreground h-8 text-xs" onClick={() => setAddOpen(false)}>Cancel</Button>
-                <Button size="sm" className="h-8 text-xs bg-primary/15 text-primary hover:bg-primary/25 border border-primary/25"
+                <Button size="sm" className="h-8 text-xs bg-primary/15 text-primary-strong hover:bg-primary/25 border border-primary/25"
                   disabled={!goalTitle.trim() || createGoal.isPending}
                   onClick={() => createGoal.mutate({ title: goalTitle, description: goalDesc })}>
                   {createGoal.isPending ? "Breaking it down…" : "Set goal"}
@@ -428,7 +428,7 @@ function HabitsSection() {
 
       {/* Science note */}
       <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-primary/5 border border-primary/12">
-        <Zap className="w-3.5 h-3.5 text-primary/50 shrink-0 mt-0.5" />
+        <Zap className="w-3.5 h-3.5 text-primary-strong/50 shrink-0 mt-0.5" />
         <p className="text-[11px] text-muted-foreground/60 leading-relaxed">
           Habits become automatic after <span className="text-secondary/70 font-medium">~66 days</span>, not 21. Missing one day costs nothing — just pick it back up tomorrow. Your companion will never push you to do more than one new thing at a time.
         </p>
@@ -483,15 +483,15 @@ function HabitsSection() {
                         <span className={cn(
                           "inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border",
                           habit.streak >= 7
-                            ? "bg-primary/15 border-primary/30 text-primary"
-                            : "bg-primary/8 border-primary/20 text-primary/80",
+                            ? "bg-primary/15 border-primary/30 text-primary-strong"
+                            : "bg-primary/8 border-primary/20 text-primary-strong/80",
                         )}>
                           <Flame className="w-2.5 h-2.5" />
                           {habit.streak}d streak
                         </span>
                       )}
                       {isCompletedToday && (
-                        <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-400/80 font-medium">
+                        <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-700 dark:text-emerald-400/80 font-medium">
                           <Check className="w-2.5 h-2.5" strokeWidth={3} />
                           Done today
                         </span>
@@ -510,8 +510,8 @@ function HabitsSection() {
                     className={cn(
                       "rounded-full w-10 h-10 shrink-0 transition-all",
                       isCompletedToday
-                        ? "bg-primary/15 text-primary border border-primary/30 cursor-default"
-                        : "bg-card border border-primary/20 text-muted-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/30",
+                        ? "bg-primary/15 text-primary-strong border border-primary/30 cursor-default"
+                        : "bg-card border border-primary/20 text-muted-foreground hover:bg-primary/10 hover:text-primary-strong hover:border-primary/30",
                     )}
                     onClick={() => !isCompletedToday && handleComplete(habit.id)}
                     disabled={!!isCompletedToday || completeHabit.isPending}
@@ -532,14 +532,14 @@ function HabitsSection() {
                           <div className={cn(
                             "w-full aspect-square max-w-[28px] rounded-md transition-all",
                             done
-                              ? "bg-primary/60 shadow-[0_0_6px_hsl(40_56%_50%/0.3)]"
+                              ? "bg-primary/60 shadow-[0_0_6px_hsl(var(--primary)/0.3)]"
                               : isToday
                                 ? "bg-foreground/8 border border-primary/20 border-dashed"
                                 : "bg-foreground/6",
                           )} />
                           <span className={cn(
                             "text-[9px] font-medium uppercase",
-                            isToday ? "text-primary/70" : "text-muted-foreground/40",
+                            isToday ? "text-primary-strong/70" : "text-muted-foreground/40",
                           )}>
                             {dayLabel}
                           </span>
@@ -583,7 +583,7 @@ function HabitsSection() {
                 className="bg-background/50 border-primary/15 text-sm h-9 text-foreground/80 placeholder:text-muted-foreground/50" />
               <div className="flex justify-end gap-2 pt-1">
                 <Button type="button" variant="ghost" size="sm" onClick={() => setAddOpen(false)} className="text-muted-foreground h-8 text-xs">Cancel</Button>
-                <Button type="submit" size="sm" className="h-8 text-xs bg-primary/15 text-primary hover:bg-primary/25 border border-primary/25"
+                <Button type="submit" size="sm" className="h-8 text-xs bg-primary/15 text-primary-strong hover:bg-primary/25 border border-primary/25"
                   disabled={!name.trim() || !whenThen.trim() || !reason.trim() || createHabit.isPending}>
                   {createHabit.isPending ? "Saving…" : "Start this routine"}
                 </Button>
@@ -634,7 +634,7 @@ function AddWinCard() {
       onSubmit={handleSubmit} className="bg-card/60 border border-primary/15 rounded-xl p-4 flex gap-2 items-start">
       <Input placeholder="What small thing did you do or feel today?" value={content} onChange={(e) => setContent(e.target.value)}
         className="bg-background/50 border-primary/15 text-sm text-foreground/80 placeholder:text-muted-foreground/50" />
-      <Button type="submit" className="bg-primary/15 text-primary hover:bg-primary/25 border border-primary/25 shrink-0" disabled={createWin.isPending}>
+      <Button type="submit" className="bg-primary/15 text-primary-strong hover:bg-primary/25 border border-primary/25 shrink-0" disabled={createWin.isPending}>
         {createWin.isPending ? "…" : "Save"}
       </Button>
     </motion.form>
@@ -742,7 +742,7 @@ export default function Journey() {
           <h1 className="font-serif text-[28px] text-foreground/90 tracking-wide mb-3">My Progress</h1>
           <div className="h-px bg-primary/20 mb-4" />
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-primary/25 bg-primary/8 text-[10px] font-medium tracking-[0.2em] uppercase text-secondary/80">
-            <Map className="w-3 h-3 text-primary/70" />
+            <Map className="w-3 h-3 text-primary-strong/70" />
             Chapter {journey.stage} — {journey.stageLabel}
           </div>
         </div>
@@ -754,7 +754,7 @@ export default function Journey() {
         <div className="grid grid-cols-2 gap-3">
           {[
             { label: "Day", value: journey.dayCounter, sub: "since you started" },
-            { label: "Streak", value: journey.streak, icon: <Flame className="w-3 h-3 text-primary/70" />, sub: "days in a row" },
+            { label: "Streak", value: journey.streak, icon: <Flame className="w-3 h-3 text-primary-strong/70" />, sub: "days in a row" },
           ].map(({ label, value, icon, sub }) => (
             <div key={label} className="bg-card border border-primary/15 rounded-2xl p-4 flex flex-col items-center justify-center gap-1 text-center">
               <span className="text-muted-foreground text-[9px] uppercase tracking-[0.2em] flex items-center gap-1">{icon}{label}</span>
@@ -766,9 +766,9 @@ export default function Journey() {
 
         <div className="grid grid-cols-3 gap-3">
           {[
-            { label: "Wins", value: journey.winCount, icon: <Trophy className="w-3 h-3 text-primary/70" /> },
-            { label: "Routines", value: journey.habitCount ?? 0, icon: <Zap className="w-3 h-3 text-primary/70" /> },
-            { label: "Best streak", value: bestStreak > 0 ? `${bestStreak}d` : "—", icon: <Flame className="w-3 h-3 text-primary/70" /> },
+            { label: "Wins", value: journey.winCount, icon: <Trophy className="w-3 h-3 text-primary-strong/70" /> },
+            { label: "Routines", value: journey.habitCount ?? 0, icon: <Zap className="w-3 h-3 text-primary-strong/70" /> },
+            { label: "Best streak", value: bestStreak > 0 ? `${bestStreak}d` : "—", icon: <Flame className="w-3 h-3 text-primary-strong/70" /> },
           ].map(({ label, value, icon }) => (
             <div key={label} className="bg-card border border-primary/15 rounded-2xl p-3 flex flex-col items-center justify-center gap-1 text-center">
               <span className="text-muted-foreground text-[9px] uppercase tracking-[0.15em] flex items-center gap-1">{icon}{label}</span>
@@ -790,16 +790,16 @@ export default function Journey() {
           {chartData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 10, right: 8, left: -24, bottom: 0 }}>
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "hsl(37 20% 50%)", fontSize: 10 }} dy={8} />
-                <YAxis domain={[1, 10]} axisLine={false} tickLine={false} tick={{ fill: "hsl(37 20% 50%)", fontSize: 10 }} />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} dy={8} />
+                <YAxis domain={[1, 10]} axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} />
                 <RechartsTooltip
-                  contentStyle={{ backgroundColor: "hsl(257 15% 18%)", border: "1px solid rgba(200,180,150,0.15)", borderRadius: "8px", fontSize: "12px" }}
-                  itemStyle={{ color: "hsl(38 44% 89%)" }}
-                  labelStyle={{ color: "hsl(268 8% 54%)", marginBottom: "3px" }}
+                  contentStyle={{ backgroundColor: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: "8px", fontSize: "12px" }}
+                  itemStyle={{ color: "hsl(var(--foreground))" }}
+                  labelStyle={{ color: "hsl(var(--muted-foreground))", marginBottom: "3px" }}
                 />
-                <Line type="monotone" dataKey="score" stroke="hsl(35 49% 57%)" strokeWidth={1.5}
-                  dot={{ fill: "hsl(253 15% 12%)", stroke: "hsl(35 49% 57%)", strokeWidth: 1.5, r: 3 }}
-                  activeDot={{ r: 5, fill: "hsl(35 49% 57%)" }} />
+                <Line type="monotone" dataKey="score" stroke="hsl(var(--chart-1))" strokeWidth={1.5}
+                  dot={{ fill: "hsl(var(--card))", stroke: "hsl(var(--chart-1))", strokeWidth: 1.5, r: 3 }}
+                  activeDot={{ r: 5, fill: "hsl(var(--chart-1))" }} />
               </LineChart>
             </ResponsiveContainer>
           ) : (
@@ -816,7 +816,7 @@ export default function Journey() {
         {/* Habit-mood insight — server-computed correlation or client fallback */}
         {habitCorrelation && (
           <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-emerald-500/6 border border-emerald-500/15">
-            <TrendingUp className="w-3.5 h-3.5 text-emerald-400/70 shrink-0 mt-0.5" />
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400/70 shrink-0 mt-0.5" />
             <p className="text-[12px] text-muted-foreground/70 leading-relaxed">
               {habitCorrelation.text}
             </p>
@@ -834,7 +834,7 @@ export default function Journey() {
             <motion.div key={win.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
               transition={{ delay: i * 0.04 }} className="bg-card border border-primary/15 rounded-xl p-4 flex gap-3">
               <div className="w-7 h-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
-                <Heart className="w-3.5 h-3.5 text-primary/60" />
+                <Heart className="w-3.5 h-3.5 text-primary-strong/60" />
               </div>
               <div>
                 <p className="text-sm text-foreground/80 leading-relaxed">{win.content}</p>
@@ -870,7 +870,7 @@ export default function Journey() {
               milestone.isUnlocked ? "bg-card border-primary/25" : "bg-card/30 border-primary/10 opacity-45 grayscale",
             )}>
               <div className={cn("w-7 h-7 rounded-full flex items-center justify-center",
-                milestone.isUnlocked ? "bg-primary/15 text-primary" : "bg-foreground/5 text-muted-foreground")}>
+                milestone.isUnlocked ? "bg-primary/15 text-primary-strong" : "bg-foreground/5 text-muted-foreground")}>
                 {milestone.isUnlocked ? <Star className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
               </div>
               <span className={cn("text-[11px] font-medium tracking-wide leading-snug",

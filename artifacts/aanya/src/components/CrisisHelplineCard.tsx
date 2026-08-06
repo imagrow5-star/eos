@@ -35,7 +35,7 @@ export default function CrisisHelplineCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: "easeOut" }}
       className={cn(
-        "relative bg-card border border-primary/25 rounded-2xl px-5 py-4 mt-2 shadow-[0_0_18px_hsl(35_49%_57%/0.10)]",
+        "relative bg-card border border-primary/25 rounded-2xl px-5 py-4 mt-2 shadow-[0_0_18px_hsl(var(--primary)/0.10)]",
         className,
       )}
     >
@@ -49,7 +49,7 @@ export default function CrisisHelplineCard({
       </button>
 
       <div className="flex items-center gap-2 mb-2.5 pr-7">
-        <HeartHandshake className="w-4 h-4 text-primary/70 shrink-0" />
+        <HeartHandshake className="w-4 h-4 text-primary-strong/70 shrink-0" />
         <p className="text-[13px] text-foreground/85 font-serif leading-snug">{titleLine}</p>
       </div>
 

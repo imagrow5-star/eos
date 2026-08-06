@@ -48,14 +48,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
               <div className={cn(
                 "p-2 rounded-full transition-all duration-300",
                 isActive
-                  ? "bg-primary/15 text-primary"
+                  ? "bg-primary/15 text-primary-strong"
                   : "text-muted-foreground group-hover:text-secondary/70"
               )}>
                 <item.icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 1.75} />
               </div>
               <span className={cn(
                 "text-[10px] tracking-widest uppercase transition-colors",
-                isActive ? "text-primary font-medium" : "text-muted-foreground"
+                isActive ? "text-primary-strong font-medium" : "text-muted-foreground"
               )}>
                 {item.label}
               </span>

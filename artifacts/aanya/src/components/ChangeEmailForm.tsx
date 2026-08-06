@@ -64,7 +64,7 @@ export function ChangeEmailForm({ currentEmail, compact }: Props) {
     return (
       <p
         className={
-          "text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-xl px-4 py-3 leading-relaxed " +
+          "text-emerald-700 dark:text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-xl px-4 py-3 leading-relaxed " +
           (compact ? "text-[12px]" : "text-sm")
         }
       >
@@ -101,13 +101,13 @@ export function ChangeEmailForm({ currentEmail, compact }: Props) {
         disabled={status === "sending"}
       />
       {error && (
-        <p className={"text-red-400 " + (compact ? "text-[12px]" : "text-sm")}>{error}</p>
+        <p className={"text-red-700 dark:text-red-400 " + (compact ? "text-[12px]" : "text-sm")}>{error}</p>
       )}
       <button
         type="submit"
         disabled={status === "sending"}
         className={
-          "w-full bg-primary/15 text-primary border border-primary/25 rounded-xl font-medium tracking-wide hover:bg-primary/25 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed " +
+          "w-full bg-primary/15 text-primary-strong border border-primary/25 rounded-xl font-medium tracking-wide hover:bg-primary/25 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed " +
           (compact ? "py-2.5 text-[13px]" : "py-3")
         }
       >

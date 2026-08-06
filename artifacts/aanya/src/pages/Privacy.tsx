@@ -30,7 +30,7 @@ export function Privacy() {
         <div className="space-y-3">
           <a
             href={appHome}
-            className="text-[11px] text-primary/70 hover:text-primary tracking-[0.2em] uppercase transition-colors"
+            className="text-[11px] text-primary-strong/70 hover:text-primary-strong tracking-[0.2em] uppercase transition-colors"
           >
             ← Back to Eos
           </a>
@@ -40,7 +40,7 @@ export function Privacy() {
           <div className="h-px bg-primary/20" />
           <p className="text-[13px] text-muted-foreground/60">
             Last updated July 22, 2026 · Questions? Write to{" "}
-            <a href="mailto:hello@eoscompanion.com" className="text-primary/80 hover:text-primary">
+            <a href="mailto:hello@eoscompanion.com" className="text-primary-strong/80 hover:text-primary-strong">
               hello@eoscompanion.com
             </a>
           </p>
@@ -156,7 +156,7 @@ export function Privacy() {
         <Section title="Questions, worries, requests">
           <p>
             Write to{" "}
-            <a href="mailto:hello@eoscompanion.com" className="text-primary/80 hover:text-primary">
+            <a href="mailto:hello@eoscompanion.com" className="text-primary-strong/80 hover:text-primary-strong">
               hello@eoscompanion.com
             </a>{" "}
             — a person reads it. If anything on this page ever changes in a way that matters,
@@ -167,7 +167,7 @@ export function Privacy() {
         <div className="pt-4">
           <a
             href={appHome}
-            className="text-[11px] text-primary/70 hover:text-primary tracking-[0.2em] uppercase transition-colors"
+            className="text-[11px] text-primary-strong/70 hover:text-primary-strong tracking-[0.2em] uppercase transition-colors"
           >
             ← Back to Eos
           </a>

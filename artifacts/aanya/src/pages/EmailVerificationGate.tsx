@@ -69,7 +69,7 @@ export function EmailVerificationGate({ email, onVerified }: Props) {
           {/* Icon */}
           <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-6">
             <svg
-              className="w-8 h-8 text-primary"
+              className="w-8 h-8 text-primary-strong"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -101,13 +101,13 @@ export function EmailVerificationGate({ email, onVerified }: Props) {
           </p>
 
           {error && (
-            <p className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3 mb-4">
+            <p className="text-sm text-red-700 dark:text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3 mb-4">
               {error}
             </p>
           )}
 
           {resendStatus === "sent" && (
-            <p className="text-sm text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-xl px-4 py-3 mb-4">
+            <p className="text-sm text-emerald-700 dark:text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-xl px-4 py-3 mb-4">
               A new verification link is on its way — give it a minute, and peek at
               Gmail's Promotions/Updates tabs if it isn't in your inbox.
             </p>
@@ -116,7 +116,7 @@ export function EmailVerificationGate({ email, onVerified }: Props) {
           <button
             onClick={handleResend}
             disabled={resendStatus === "sending" || resendStatus === "sent"}
-            className="w-full bg-primary text-background py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed mb-3"
+            className="w-full bg-primary text-primary-foreground py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed mb-3"
           >
             {resendStatus === "sending" ? "Sending…" : resendStatus === "sent" ? "Email sent ✓" : "Resend verification email"}
           </button>

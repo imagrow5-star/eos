@@ -15,7 +15,8 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-    <meta name="theme-color" content="#0D0B10" />
+    <!-- Twilight-light default; src/lib/theme.tsx re-points this after boot -->
+    <meta name="theme-color" content="#F3F0F7" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Eos" />
@@ -23,9 +24,13 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <!-- Inter 300 dropped: no font-light anywhere in the app -->
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:opsz,wght@14..32,400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&display=swap" rel="stylesheet">
-    <!-- Paint dark immediately: the app CSS arrives later, and without this
-         older/slower devices show a white flash before the theme loads. -->
-    <style>html{background:#0D0B10}</style>
+    <!-- Paint the Twilight-light shell immediately: the app CSS arrives later, and
+         without this slower devices show a stark white flash first.
+         theme-init.js flips this to the dark shell pre-paint when the user
+         chose dark mode. -->
+    <style>html{background:#F3F0F7}</style>
+    <!-- Pre-paint theme attribute stamp (external: CSP forbids inline JS) -->
+    <script src="theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>
@@ -36,15 +41,15 @@
               15s (failed download, runtime crash on an old engine), show the
               same message instead of a dead dark screen. -->
     <div id="browser-guard" hidden
-         style="position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:#0D0B10;padding:24px;text-align:center;font-family:Georgia,serif;color:#F0E9DC">
+         style="position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:#F3F0F7;padding:24px;text-align:center;font-family:Georgia,serif;color:#322B3A">
       <div style="max-width:420px">
         <p style="font-size:22px;letter-spacing:.3em;margin-bottom:14px">E O S</p>
-        <p style="font-size:15px;line-height:1.6;color:#B9B0A1">
+        <p style="font-size:15px;line-height:1.6;color:#7A5A52">
           Eos couldn&rsquo;t start in this browser. It may be out of date &mdash;
           please update it (or open this page in the latest Chrome or Safari)
           and try again.
         </p>
-        <p style="font-size:12px;line-height:1.6;color:#837B6E;margin-top:14px">
+        <p style="font-size:12px;line-height:1.6;color:#977C6F;margin-top:14px">
           Still stuck? Write to hello@eoscompanion.com and we&rsquo;ll help.
         </p>
       </div>

@@ -85,6 +85,8 @@ function buildProfilePayload(
       ? new Date().getFullYear() - (profile as any).birthYear
       : null,
     timezone: (profile as any).timezone ?? "UTC",
+    theme: (profile as any).theme ?? null,
+    themeMode: (profile as any).themeMode ?? null,
     pushOptIn: (profile as any).pushOptIn ?? false,
     consentVersion: (profile as any).consentVersion ?? null,
     consentAt: (profile as any).consentAt ?? null,
@@ -226,6 +228,20 @@ router.put("/profile", async (req, res): Promise<void> => {
     }
   }
   if ((data as any).timezone != null) updates.timezone = (data as any).timezone;
+  // Appearance — strict whitelists; anything else is silently ignored so a
+  // stale client can never write garbage the CSS doesn't know.
+  if (
+    (data as any).theme != null &&
+    ["amber", "dawn", "sage", "twilight"].includes((data as any).theme)
+  ) {
+    updates.theme = (data as any).theme;
+  }
+  if (
+    (data as any).themeMode != null &&
+    ["light", "dark"].includes((data as any).themeMode)
+  ) {
+    updates.themeMode = (data as any).themeMode;
+  }
 
   // Nothing valid to update (empty body, or only rejected values like an
   // unknown voiceTone) — return the current profile unchanged instead of

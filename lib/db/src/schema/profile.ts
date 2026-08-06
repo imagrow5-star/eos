@@ -47,6 +47,13 @@ export const profileTable = pgTable("profile", {
   userGender: text("user_gender"), // man | woman | custom (legacy: other) — nullable, optional
   userGenderCustom: encryptedText("user_gender_custom", "profile.user_gender_custom"), // their own words when userGender = "custom" (e.g. "non-binary") — encrypted at rest
   timezone: text("timezone").notNull().default("UTC"), // IANA timezone e.g. "America/New_York"
+  // ── Appearance (theme system) ─────────────────────────────────────────────
+  // theme: amber | dawn | sage | twilight · themeMode: light | dark.
+  // Null = never chosen on any device: clients keep their own default
+  // (twilight/light) and this row is only written on an explicit pick, so the
+  // choice follows the user across devices without stamping a fake history.
+  theme: text("theme"),
+  themeMode: text("theme_mode"),
   // Daily email preferences
   dailyEmailOptOut: boolean("daily_email_opt_out").notNull().default(false),
   // Web push — opt-in only, default OFF; flipped by subscribe/unsubscribe routes
