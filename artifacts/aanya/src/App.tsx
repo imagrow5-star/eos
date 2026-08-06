@@ -6,6 +6,7 @@ import { Shell } from "@/components/layout/Shell";
 import { SplashScreen } from "@/components/SplashScreen";
 import { CONSENT_VERSION } from "@/lib/consent";
 import { useTheme } from "@/lib/theme";
+import { resolveUnauthView } from "@/lib/authEntry";
 
 // Every page is code-split so first paint only ships the shell + the one
 // screen the visitor actually lands on. Chat alone drags in the ElevenLabs/
@@ -95,7 +96,8 @@ function AppRouter() {
 // door is public/welcome.html (served at "/" by the api-server) — the React
 // LandingPage was retired from this flow so "Enter Eos" reaches sign-up in
 // one click instead of a second landing page (LandingPage.tsx stays in the
-// repo, unrouted, in case it's ever wanted back).
+// repo, unrouted, in case it's ever wanted back). The tab decision itself is
+// pure and unit-tested in lib/authEntry.ts.
 type UnauthView = "login" | "signup";
 
 // Outcome of consuming a ?verifyToken link — drives the feedback banner so an
@@ -113,12 +115,9 @@ function AuthGate() {
   // carries ?mode=login, and a ?googleError= redirect (failed/cancelled
   // Google sign-in) must also land on login where the friendly message
   // renders.
-  const [unauthView, setUnauthView] = useState<UnauthView>(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.has("googleError") || params.get("mode") === "login"
-      ? "login"
-      : "signup";
-  });
+  const [unauthView, setUnauthView] = useState<UnauthView>(() =>
+    resolveUnauthView(window.location.search),
+  );
 
   // Handle ?verifyToken= in the URL — consume it immediately on mount
   useEffect(() => {
