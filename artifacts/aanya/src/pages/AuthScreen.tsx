@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { PasswordInput } from "@/components/PasswordInput";
+import { resolveInitialAuthTab } from "@/lib/authEntry";
 import {
   AUTH_DRAFT_KEY as DRAFT_KEY,
   RESET_TOKEN_KEY,
@@ -43,20 +44,17 @@ function readStoredResetToken(): string | null {
 
 export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "signup" }) {
   const [tab, setTab] = useState<Tab>(() => {
-    // A pending reset (user arrived from the email link, possibly reloaded
-    // since) takes precedence over any other remembered tab.
-    if (readStoredResetToken()) return "reset";
-    // welcome.html's CTAs state intent in the URL: "Sign in" carries
-    // ?mode=login, "Enter Eos"/"Begin your seven days" carry ?enter=1
-    // (sign-up). Fresh, explicit intent outranks a remembered draft tab —
-    // otherwise clicking "Enter Eos", going back, then "Sign in" would keep
-    // showing the sign-up tab. The draft still wins for plain mid-flow
-    // reloads (forgot-password especially), where no new intent exists.
-    const params = new URLSearchParams(window.location.search);
+    // Pure, unit-tested decision (lib/authEntry.ts): stored reset token wins;
+    // explicit URL intent (?mode=login, ?enter=1) outranks a remembered
+    // draft; mid-flow forgot-password drafts survive; reset is never
+    // restored without a token.
     const draftTab = readDraft().tab;
-    if (params.get("mode") === "login") return "login";
-    if (params.has("enter") && draftTab !== "forgot") return initialTab;
-    return draftTab === "reset" ? "login" : (draftTab ?? initialTab);
+    return resolveInitialAuthTab({
+      search: window.location.search,
+      hasStoredResetToken: readStoredResetToken() !== null,
+      draftTab: draftTab === "cancelled" || draftTab === "emailChangeCancelled" ? undefined : draftTab,
+      initialTab,
+    });
   });
   const [email, setEmail] = useState(() => readDraft().email ?? "");
   const [password, setPassword] = useState("");
