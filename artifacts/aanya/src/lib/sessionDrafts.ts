@@ -10,12 +10,17 @@
 export const AUTH_DRAFT_KEY = "eos-auth-draft";
 export const RESET_TOKEN_KEY = "eos-reset-token";
 export const CHAT_DRAFT_KEY = "eos-chat-draft";
+// In-progress onboarding "basics" answers (age / country / own-words gender):
+// testers lost these to app switches — mobile discards the tab, the reload
+// wiped plain useState, and they had to retype everything.
+export const ONBOARDING_DRAFT_KEY = "eos-onboarding-draft";
 
 export function clearSessionDrafts(): void {
   try {
     sessionStorage.removeItem(AUTH_DRAFT_KEY);
     sessionStorage.removeItem(RESET_TOKEN_KEY);
     sessionStorage.removeItem(CHAT_DRAFT_KEY);
+    sessionStorage.removeItem(ONBOARDING_DRAFT_KEY);
   } catch {
     // sessionStorage unavailable (rare private-mode edge cases) — nothing to clear.
   }

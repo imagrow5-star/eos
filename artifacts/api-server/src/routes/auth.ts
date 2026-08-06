@@ -1005,14 +1005,32 @@ router.post("/auth/forgot-password", async (req, res): Promise<void> => {
     const resetUrl = `${domain}/?resetToken=${token}`;
     const cancelUrl = `${domain}/?cancelReset=${token}`;
 
-    await Promise.all([
+    // Send both, but never let one failure hide the other — and if the RESET
+    // email failed, discard the token row so the per-address cooldown can't
+    // silently swallow the user's retry (previously a single failed send
+    // meant every attempt inside the cooldown window was skipped: the exact
+    // "reset isn't letting me" dead end a tester hit).
+    const [resetSend, alertSend] = await Promise.allSettled([
       sendPasswordResetEmail(user.email, resetUrl),
       sendSecurityAlertEmail(user.email, cancelUrl),
     ]);
-    try {
-      const uh = hashUserIdForLog(user.id);
-      if (uh) logger.info({ uh }, "Password reset email sent");
-    } catch { /* logging must never crash the caller */ }
+    if (resetSend.status === "rejected") {
+      await db
+        .delete(passwordResetTokensTable)
+        .where(eq(passwordResetTokensTable.token, token));
+      logger.error(
+        { err: resetSend.reason },
+        "Password-reset email FAILED — token discarded so the next attempt is not cooldown-blocked. If this repeats, check RESEND_API_KEY / sender domain.",
+      );
+    } else {
+      try {
+        const uh = hashUserIdForLog(user.id);
+        if (uh) logger.info({ uh }, "Password reset email sent");
+      } catch { /* logging must never crash the caller */ }
+    }
+    if (alertSend.status === "rejected") {
+      logger.error({ err: alertSend.reason }, "Security-alert email failed (reset email unaffected)");
+    }
   } catch (err) {
     logger.error({ err }, "forgot-password background error");
   }
