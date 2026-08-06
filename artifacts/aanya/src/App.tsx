@@ -31,9 +31,9 @@ const ConsentGate = lazy(() =>
 const Privacy = lazy(() =>
   import("@/pages/Privacy").then((m) => ({ default: m.Privacy })),
 );
-const LandingPage = lazy(() =>
-  import("@/pages/LandingPage").then((m) => ({ default: m.LandingPage })),
-);
+// NOTE: pages/LandingPage.tsx is intentionally NOT routed — welcome.html is
+// the marketing front door and unauth arrivals go straight to AuthScreen.
+// The file stays in the repo so the decision is reversible.
 
 // Same centered spinner the auth/consent gates already use, so a suspended
 // chunk load is visually indistinguishable from the existing loading states.
@@ -91,9 +91,12 @@ function AppRouter() {
 
 // ─── Auth gate — sits between QueryClientProvider and the main app ────────────
 
-// View shown to logged-out visitors before they touch the auth flow.
-// "landing" = marketing homepage; "login" / "signup" = auth screen.
-type UnauthView = "landing" | "login" | "signup";
+// Which AuthScreen tab a logged-out visitor lands on. The marketing front
+// door is public/welcome.html (served at "/" by the api-server) — the React
+// LandingPage was retired from this flow so "Enter Eos" reaches sign-up in
+// one click instead of a second landing page (LandingPage.tsx stays in the
+// repo, unrouted, in case it's ever wanted back).
+type UnauthView = "login" | "signup";
 
 // Outcome of consuming a ?verifyToken link — drives the feedback banner so an
 // expired/invalid link is never a silent dead-end.
@@ -104,14 +107,18 @@ function AuthGate() {
   const [verifying, setVerifying] = useState(false);
   const [verifyNotice, setVerifyNotice] = useState<VerifyNotice | null>(null);
 
-  // Landing page → auth screen navigation (no URL change needed; the
-  // public landing page IS the root, so we just switch React state).
-  // A ?googleError= redirect (failed/cancelled Google sign-in) must land on
-  // the AUTH screen where the friendly message renders — never the landing
-  // page, which would swallow it.
-  const [unauthView, setUnauthView] = useState<UnauthView>(() =>
-    new URLSearchParams(window.location.search).has("googleError") ? "login" : "landing",
-  );
+  // Logged-out visitors arrive from welcome.html's CTAs and land straight on
+  // the auth screen: sign-up by default ("Enter Eos" / "Begin your seven
+  // days"), the login tab when the URL says so — welcome's "Sign in" link
+  // carries ?mode=login, and a ?googleError= redirect (failed/cancelled
+  // Google sign-in) must also land on login where the friendly message
+  // renders.
+  const [unauthView, setUnauthView] = useState<UnauthView>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.has("googleError") || params.get("mode") === "login"
+      ? "login"
+      : "signup";
+  });
 
   // Handle ?verifyToken= in the URL — consume it immediately on mount
   useEffect(() => {
@@ -235,7 +242,8 @@ function AuthGate() {
     </div>
   );
 
-  // Not authenticated — landing page for the root, auth screen for login/signup
+  // Not authenticated — straight to the auth screen (welcome.html is the
+  // marketing front door; see the UnauthView note above).
   if (!data) {
     // /pricing works signed-out too: same cards, but choosing a plan routes
     // into account creation first (checkout requires a verified account).
@@ -255,21 +263,10 @@ function AuthGate() {
         </>
       );
     }
-    if (unauthView === "landing") {
-      return (
-        <>
-          {verifyBanner}
-          <LandingPage
-            onLogin={() => setUnauthView("login")}
-            onSignup={() => setUnauthView("signup")}
-          />
-        </>
-      );
-    }
     return (
       <>
         {verifyBanner}
-        <AuthScreen initialTab={unauthView === "signup" ? "signup" : "login"} />
+        <AuthScreen initialTab={unauthView} />
       </>
     );
   }
