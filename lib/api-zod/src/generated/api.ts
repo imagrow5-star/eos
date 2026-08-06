@@ -67,7 +67,9 @@ export const GetProfileResponse = zod.object({
   "pushOptIn": zod.boolean().optional().describe('Web-push notifications enabled (opt-in only, default false)'),
   "consentVersion": zod.string().nullish().describe('Version tag of the consent copy the user accepted — null = never consented'),
   "consentAt": zod.coerce.date().nullish().describe('Server timestamp when consent was recorded'),
-  "dataSharingOptIn": zod.boolean().optional().describe('Placeholder for future data-sharing — nothing shares today; default false')
+  "dataSharingOptIn": zod.boolean().optional().describe('Placeholder for future data-sharing — nothing shares today; default false'),
+  "theme": zod.string().nullish().describe('Appearance theme: amber | dawn | sage | twilight — null when never chosen'),
+  "themeMode": zod.string().nullish().describe('Appearance mode: light | dark — null when never chosen')
 })
 
 
@@ -88,7 +90,9 @@ export const UpdateProfileBody = zod.object({
   "userGender": zod.string().optional(),
   "userGenderCustom": zod.string().optional(),
   "ageYears": zod.union([zod.number(), zod.string()]).optional(),
-  "timezone": zod.string().optional()
+  "timezone": zod.string().optional(),
+  "theme": zod.string().optional().describe('Appearance theme: amber | dawn | sage | twilight'),
+  "themeMode": zod.string().optional().describe('Appearance mode: light | dark')
 })
 
 export const UpdateProfileResponse = zod.object({
@@ -110,7 +114,9 @@ export const UpdateProfileResponse = zod.object({
   "userGenderCustom": zod.string().nullish().describe('Their own words when userGender = custom — e.g. non-binary'),
   "birthYear": zod.number().nullish().describe('Approximate birth year — adults only, null when not shared'),
   "ageYears": zod.number().nullish().describe('Current age computed from birthYear — null when not shared'),
-  "timezone": zod.string().describe('IANA timezone string e.g. America/New_York')
+  "timezone": zod.string().describe('IANA timezone string e.g. America/New_York'),
+  "theme": zod.string().nullish().describe('Appearance theme: amber | dawn | sage | twilight — null when never chosen'),
+  "themeMode": zod.string().nullish().describe('Appearance mode: light | dark — null when never chosen')
 })
 
 

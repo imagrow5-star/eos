@@ -71,7 +71,7 @@ function formatClockTime(hhmm: string): string {
 
 const STATE_META = {
   open:    { label: "In progress",  icon: CircleDot,    color: "text-secondary/70",  bg: "bg-secondary/8 border-secondary/20" },
-  done:    { label: "Done",         icon: CheckCircle2, color: "text-emerald-400/80", bg: "bg-emerald-500/8 border-emerald-500/20" },
+  done:    { label: "Done",         icon: CheckCircle2, color: "text-emerald-700 dark:text-emerald-400/80", bg: "bg-emerald-500/8 border-emerald-500/20" },
   partial: { label: "Partial",      icon: Clock,        color: "text-primary-strong/80",     bg: "bg-primary/8 border-primary/20" },
   missed:  { label: "Missed",       icon: XCircle,      color: "text-foreground/30",  bg: "bg-foreground/5 border-foreground/10" },
 };
@@ -186,7 +186,7 @@ function CommitmentsSection() {
                       )}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      <Button variant="ghost" size="icon" className="w-7 h-7 text-emerald-400/60 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-full"
+                      <Button variant="ghost" size="icon" className="w-7 h-7 text-emerald-700 dark:text-emerald-400/60 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-full"
                         onClick={() => updateCommitment.mutate({ id: c.id, state: "done" })} title="Mark done">
                         <Check className="w-3.5 h-3.5" strokeWidth={3} />
                       </Button>
@@ -491,7 +491,7 @@ function HabitsSection() {
                         </span>
                       )}
                       {isCompletedToday && (
-                        <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-400/80 font-medium">
+                        <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-700 dark:text-emerald-400/80 font-medium">
                           <Check className="w-2.5 h-2.5" strokeWidth={3} />
                           Done today
                         </span>
@@ -816,7 +816,7 @@ export default function Journey() {
         {/* Habit-mood insight — server-computed correlation or client fallback */}
         {habitCorrelation && (
           <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-emerald-500/6 border border-emerald-500/15">
-            <TrendingUp className="w-3.5 h-3.5 text-emerald-400/70 shrink-0 mt-0.5" />
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400/70 shrink-0 mt-0.5" />
             <p className="text-[12px] text-muted-foreground/70 leading-relaxed">
               {habitCorrelation.text}
             </p>

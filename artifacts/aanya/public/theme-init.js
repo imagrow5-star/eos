@@ -3,13 +3,21 @@
 // External file (not inline) because the production CSP is script-src 'self'.
 //
 // Source of truth for the *choice* is localStorage ("eos-theme"/"eos-mode",
-// owned by src/lib/theme.tsx). Anything invalid or blocked falls back to the
-// default dawn/light silently — :root already carries dawn/light, so even if
-// this script never runs the page still paints correctly.
+// owned by src/lib/theme.tsx; the server profile is adopted after auth).
+// Anything invalid or blocked falls back to the default twilight/light —
+// :root already carries twilight/light, so even if this script never runs
+// the page still paints correctly.
 (function () {
-  var THEMES = { dawn: 1 }; // Phase B: amber, sage, twilight
+  var THEMES = { amber: 1, dawn: 1, sage: 1, twilight: 1 };
   var MODES = { light: 1, dark: 1 };
-  var theme = 'dawn';
+  // Dark shell color per theme — keep in sync with index.css backgrounds.
+  var DARK_SHELL = {
+    amber: '#1B1512',
+    dawn: '#241A19',
+    sage: '#171C17',
+    twilight: '#1C1922',
+  };
+  var theme = 'twilight';
   var mode = 'light';
   try {
     var t = localStorage.getItem('eos-theme');
@@ -22,8 +30,8 @@
   var el = document.documentElement;
   el.setAttribute('data-theme', theme);
   el.setAttribute('data-mode', mode);
-  // index.html inlines the light shell color on <html> so the pre-CSS frame
-  // is correct for the default; flip it here when dark was chosen so a slow
-  // stylesheet never shows a bright flash to a dark-mode user.
-  if (mode === 'dark') el.style.backgroundColor = '#241A19';
+  // index.html inlines the twilight-light shell on <html> so the pre-CSS
+  // frame is correct for the default; flip it here when dark was chosen so
+  // a slow stylesheet never shows a bright flash to a dark-mode user.
+  if (mode === 'dark') el.style.backgroundColor = DARK_SHELL[theme] || '#1C1922';
 })();

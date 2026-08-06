@@ -552,7 +552,7 @@ function NoteInviteCard({ chapterId, prompt }: { chapterId: number; prompt: stri
           Seal it
         </Button>
       </div>
-      {error && <p className="text-[11px] text-amber-400/80 leading-relaxed">{error}</p>}
+      {error && <p className="text-[11px] text-amber-700 dark:text-amber-400/80 leading-relaxed">{error}</p>}
       <p className="text-[10px] text-muted-foreground/45 leading-relaxed">
         It stays sealed — even from me — until I hand it back inside a future chapter.
       </p>

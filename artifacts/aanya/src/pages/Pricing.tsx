@@ -195,7 +195,7 @@ export function Pricing({
         </div>
 
         {checkoutError && (
-          <p className="text-center text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3 max-w-md mx-auto mb-6">
+          <p className="text-center text-sm text-red-700 dark:text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3 max-w-md mx-auto mb-6">
             {checkoutError}
           </p>
         )}

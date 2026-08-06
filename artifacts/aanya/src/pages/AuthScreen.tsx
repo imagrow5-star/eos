@@ -537,7 +537,7 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
-                    className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3"
+                    className="text-sm text-red-700 dark:text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3"
                   >
                     {error}
                   </motion.p>
@@ -548,7 +548,7 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
-                    className="text-sm text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-xl px-4 py-3"
+                    className="text-sm text-emerald-700 dark:text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-xl px-4 py-3"
                   >
                     {success}
                   </motion.p>

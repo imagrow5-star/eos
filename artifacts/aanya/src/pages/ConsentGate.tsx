@@ -141,7 +141,7 @@ export function ConsentGate({
             </button>
           </div>
 
-          {error && <p className="text-[12px] text-amber-400/80">{error}</p>}
+          {error && <p className="text-[12px] text-amber-700 dark:text-amber-400/80">{error}</p>}
 
           <button
             onClick={agree}

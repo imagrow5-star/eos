@@ -101,13 +101,13 @@ export function EmailVerificationGate({ email, onVerified }: Props) {
           </p>
 
           {error && (
-            <p className="text-sm text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3 mb-4">
+            <p className="text-sm text-red-700 dark:text-red-400 bg-red-400/10 border border-red-400/20 rounded-xl px-4 py-3 mb-4">
               {error}
             </p>
           )}
 
           {resendStatus === "sent" && (
-            <p className="text-sm text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-xl px-4 py-3 mb-4">
+            <p className="text-sm text-emerald-700 dark:text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-xl px-4 py-3 mb-4">
               A new verification link is on its way — give it a minute, and peek at
               Gmail's Promotions/Updates tabs if it isn't in your inbox.
             </p>

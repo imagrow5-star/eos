@@ -5,6 +5,7 @@ import { Route, Switch, Router as WouterRouter } from "wouter";
 import { Shell } from "@/components/layout/Shell";
 import { SplashScreen } from "@/components/SplashScreen";
 import { CONSENT_VERSION } from "@/lib/consent";
+import { useTheme } from "@/lib/theme";
 
 // Every page is code-split so first paint only ships the shell + the one
 // screen the visitor actually lands on. Chat alone drags in the ElevenLabs/
@@ -182,10 +183,22 @@ function AuthGate() {
     queryFn: async () => {
       const r = await apiFetch(`${import.meta.env.BASE_URL}api/profile`);
       if (!r.ok) throw new Error("Profile unavailable");
-      return r.json() as Promise<{ consentVersion?: string | null; userName?: string }>;
+      return r.json() as Promise<{
+        consentVersion?: string | null;
+        userName?: string;
+        theme?: string | null;
+        themeMode?: string | null;
+      }>;
     },
     staleTime: Infinity,
   });
+
+  // Cross-device theme: adopt the profile's stored choice once it loads —
+  // a no-op when this device already has an explicit local choice.
+  const { adoptProfileTheme } = useTheme();
+  useEffect(() => {
+    if (consentProfile) adoptProfileTheme(consentProfile.theme, consentProfile.themeMode);
+  }, [consentProfile, adoptProfileTheme]);
 
   // Loading state (initial fetch or verifying token)
   if (isLoading || verifying) {
@@ -204,8 +217,8 @@ function AuthGate() {
       className={
         "fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-sm rounded-xl border px-4 py-3 text-sm shadow-xl backdrop-blur-md " +
         (verifyNotice.kind === "ok"
-          ? "bg-emerald-400/10 border-emerald-400/30 text-emerald-400"
-          : "bg-red-400/10 border-red-400/30 text-red-400")
+          ? "bg-emerald-400/10 border-emerald-400/30 text-emerald-700 dark:text-emerald-400"
+          : "bg-red-400/10 border-red-400/30 text-red-700 dark:text-red-400")
       }
     >
       <div className="flex items-start gap-3">

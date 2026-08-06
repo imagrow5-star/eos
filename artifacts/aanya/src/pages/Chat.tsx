@@ -3,7 +3,7 @@ import { apiFetch } from "@/lib/api";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2, Square, Sun, Moon } from "lucide-react";
-import { useTheme } from "@/lib/theme";
+import { useTheme, AVAILABLE_THEMES, THEME_LABELS, THEME_SWATCHES } from "@/lib/theme";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { enablePush, disablePush, sendTestPush, needsInstallFirst } from "@/lib/push";
@@ -230,8 +230,8 @@ export default function Chat() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [continuousVoice, setContinuousVoice] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  // Appearance (Phase A: light/dark; Phase B adds the theme picker)
-  const { mode, setMode } = useTheme();
+  // Appearance — theme picker + light/dark toggle in Settings
+  const { theme, mode, setTheme, setMode } = useTheme();
   // "Forget this" (Phase A privacy) — tap a message to arm, confirm to delete
   const [forgetArmedId, setForgetArmedId] = useState<number | null>(null);
   const [forgetBusyId, setForgetBusyId] = useState<number | null>(null);
@@ -2351,7 +2351,7 @@ export default function Chat() {
                     <button
                       onClick={() => handleForgetMessage(msg.id)}
                       disabled={forgetBusyId === msg.id}
-                      className="text-[10px] uppercase tracking-wider text-amber-400/90 hover:text-amber-300 transition-colors disabled:opacity-50"
+                      className="text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400/90 hover:text-amber-300 transition-colors disabled:opacity-50"
                     >
                       {forgetBusyId === msg.id ? "Forgetting…" : "Forget"}
                     </button>
@@ -2395,7 +2395,7 @@ export default function Chat() {
               exit={{ opacity: 0 }}
               className="self-start max-w-[85%]"
             >
-              <div className="px-[18px] py-3 rounded-2xl rounded-tl-sm bg-red-500/8 border border-red-500/20 text-[13.5px] text-red-400/80 font-sans leading-relaxed">
+              <div className="px-[18px] py-3 rounded-2xl rounded-tl-sm bg-red-500/8 border border-red-500/20 text-[13.5px] text-red-700 dark:text-red-400/80 font-sans leading-relaxed">
                 {streamError}
               </div>
             </motion.div>
@@ -2593,11 +2593,38 @@ export default function Chat() {
             exit={{ opacity: 0, height: 0 }}
             className="bg-muted/95 border-b border-border px-5 py-5 backdrop-blur-xl z-10 shrink-0 space-y-6 overflow-hidden"
           >
-            {/* ── Appearance — light/dark (theme picker arrives in Phase B) ── */}
+            {/* ── Appearance — theme swatches + light/dark ─────────────────── */}
             <div>
               <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
                 Appearance
               </p>
+              {/* Color themes — swatch chips show each theme's accent hue */}
+              <div className="flex gap-1.5 flex-wrap mb-2.5">
+                {AVAILABLE_THEMES.map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setTheme(t)}
+                    aria-pressed={theme === t}
+                    className={cn(
+                      "flex items-center gap-2 pl-2 pr-3.5 py-1.5 rounded-full text-[12px] font-medium tracking-wider transition-all border",
+                      theme === t
+                        ? "bg-primary/15 text-primary-strong border-primary/40"
+                        : "text-muted-foreground border-border hover:text-foreground/70 hover:border-secondary/40",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "w-4 h-4 rounded-full border",
+                        theme === t ? "border-primary-strong/60" : "border-border",
+                      )}
+                      style={{ background: THEME_SWATCHES[t] }}
+                      aria-hidden="true"
+                    />
+                    {THEME_LABELS[t]}
+                    {theme === t && <Check className="w-3 h-3" />}
+                  </button>
+                ))}
+              </div>
               <div className="flex gap-1.5">
                 {([
                   { value: "light", label: "Light", Icon: Sun },
@@ -2824,7 +2851,7 @@ export default function Chat() {
                   </Button>
                 </div>
                 {settingsAgeNote && (
-                  <p className="text-[11px] text-amber-400/70 mt-1.5 leading-relaxed">{settingsAgeNote}</p>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400/70 mt-1.5 leading-relaxed">{settingsAgeNote}</p>
                 )}
               </div>
 
@@ -2967,7 +2994,7 @@ export default function Chat() {
                           <button
                             onClick={handleCancelSubscription}
                             disabled={cancelBusy}
-                            className="text-[10px] uppercase tracking-wider text-amber-400/90 hover:text-amber-300 transition-colors disabled:opacity-50"
+                            className="text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400/90 hover:text-amber-300 transition-colors disabled:opacity-50"
                           >
                             {cancelBusy ? "Cancelling…" : "Yes, cancel"}
                           </button>
@@ -3037,7 +3064,7 @@ export default function Chat() {
                 </button>
               )}
               {pushNote && (
-                <p className="text-[10.5px] text-amber-400/70 mt-2 leading-relaxed">{pushNote}</p>
+                <p className="text-[10.5px] text-amber-700 dark:text-amber-400/70 mt-2 leading-relaxed">{pushNote}</p>
               )}
             </div>
 
@@ -3472,7 +3499,7 @@ export default function Chat() {
                     className="bg-background/60 border-primary/20 text-sm text-foreground/85 placeholder:text-muted-foreground/40 h-10 w-36"
                   />
                   {basicsError && (
-                    <p className="text-[12px] text-amber-400/75 mt-2 leading-relaxed">{basicsError}</p>
+                    <p className="text-[12px] text-amber-700 dark:text-amber-400/75 mt-2 leading-relaxed">{basicsError}</p>
                   )}
                 </div>
               )}
@@ -3724,7 +3751,7 @@ export default function Chat() {
                   <p className={cn(
                     "text-[11px] uppercase tracking-[0.22em]",
                     voiceCallPhase === "error"
-                      ? "text-red-400/80"
+                      ? "text-red-700 dark:text-red-400/80"
                       : "text-muted-foreground/60",
                   )}>
                     {voiceCallPhase === "listening" ? "Listening…"
@@ -3769,7 +3796,7 @@ export default function Chat() {
                       className={cn(
                         "text-center text-[12px] leading-relaxed px-2 max-w-xs",
                         voiceCallPhase === "error"
-                          ? "text-red-400/70"
+                          ? "text-red-700 dark:text-red-400/70"
                           : "text-muted-foreground/55",
                       )}
                     >
@@ -3892,7 +3919,7 @@ export default function Chat() {
               {/* End call button */}
               <button
                 onClick={toggleContinuousVoice}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-red-500/10 border border-red-500/25 text-red-400/75 hover:bg-red-500/18 hover:text-red-400 text-[12px] font-medium tracking-widest uppercase transition-all"
+                className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-red-500/10 border border-red-500/25 text-red-700 dark:text-red-400/75 hover:bg-red-500/18 hover:text-red-400 text-[12px] font-medium tracking-widest uppercase transition-all"
               >
                 <PhoneOff className="w-3.5 h-3.5" />
                 End call
@@ -4039,7 +4066,7 @@ export default function Chat() {
                       initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0 }}
-                      className="text-center text-[12px] text-amber-400/75 mt-2.5 leading-relaxed px-2"
+                      className="text-center text-[12px] text-amber-700 dark:text-amber-400/75 mt-2.5 leading-relaxed px-2"
                     >
                       {voice.error || voiceError}
                     </motion.p>

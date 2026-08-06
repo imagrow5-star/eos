@@ -240,7 +240,7 @@ export default function Memory() {
                               <button
                                 onClick={() => forgetFact(fact.id)}
                                 disabled={busyFactId === fact.id}
-                                className="text-[9px] uppercase tracking-[0.15em] text-amber-400/90 hover:text-amber-300 font-sans transition-colors disabled:opacity-50"
+                                className="text-[9px] uppercase tracking-[0.15em] text-amber-700 dark:text-amber-400/90 hover:text-amber-300 font-sans transition-colors disabled:opacity-50"
                               >
                                 {busyFactId === fact.id ? "…" : "forget?"}
                               </button>
