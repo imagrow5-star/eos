@@ -38,8 +38,8 @@ export const THEME_SWATCHES: Record<ThemeName, string> = {
 
 const THEME_KEY = "eos-theme";
 const MODE_KEY = "eos-mode";
-const DEFAULT_THEME: ThemeName = "twilight";
-const DEFAULT_MODE: ThemeMode = "light";
+const DEFAULT_THEME: ThemeName = "amber"; // "Warm Dark" default
+const DEFAULT_MODE: ThemeMode = "dark";
 
 /** Browser-chrome color per theme+mode — keep in sync with index.css shells. */
 const SHELL_COLORS: Record<string, string> = {
