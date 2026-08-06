@@ -22,7 +22,7 @@ import {
 import { useContextualGreeting } from "@/api/contextualGreeting";
 import { ChangeEmailForm } from "@/components/ChangeEmailForm";
 import { chatMessageSchema, type ChatMessageFormValues } from "@/lib/schemas";
-import { CHAT_DRAFT_KEY } from "@/lib/sessionDrafts";
+import { CHAT_DRAFT_KEY, ONBOARDING_DRAFT_KEY } from "@/lib/sessionDrafts";
 import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -632,7 +632,31 @@ export default function Chat() {
 
   // ── About you (gender) — settings chips + onboarding "in my own words" ────
   const [genderChoice, setGenderChoice] = useState<"man" | "woman" | "custom" | null>(null);
-  const [genderCustomValue, setGenderCustomValue] = useState("");
+  // Onboarding drafts — survive the tab-discard reload that happens when the
+  // app is backgrounded mid-onboarding (per-tab storage, cleared on submit
+  // and at auth boundaries via clearSessionDrafts).
+  const readObDraft = (field: string): string => {
+    try {
+      const raw = sessionStorage.getItem(ONBOARDING_DRAFT_KEY);
+      if (!raw) return "";
+      const v = (JSON.parse(raw) as Record<string, unknown>)[field];
+      return typeof v === "string" ? v : "";
+    } catch {
+      return "";
+    }
+  };
+  const writeObDraft = (field: string, value: string) => {
+    try {
+      const raw = sessionStorage.getItem(ONBOARDING_DRAFT_KEY);
+      const obj = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+      if (value) obj[field] = value;
+      else delete obj[field];
+      if (Object.keys(obj).length) sessionStorage.setItem(ONBOARDING_DRAFT_KEY, JSON.stringify(obj));
+      else sessionStorage.removeItem(ONBOARDING_DRAFT_KEY);
+    } catch {}
+  };
+  const [genderCustomValue, setGenderCustomValueState] = useState(() => readObDraft("genderCustom"));
+  const setGenderCustomValue = (v: string) => { setGenderCustomValueState(v); writeObDraft("genderCustom", v); };
   const [customGenderMode, setCustomGenderMode] = useState(false);
   useEffect(() => {
     const g = profile?.userGender ?? null;
@@ -645,9 +669,11 @@ export default function Chat() {
   }, [profile?.userGender, profile?.userGenderCustom]);
 
   // ── Profile basics (age + country) — onboarding card + settings rows ──────
-  const [basicsAge, setBasicsAge] = useState("");
+  const [basicsAge, setBasicsAgeState] = useState(() => readObDraft("age"));
+  const setBasicsAge = (v: string) => { setBasicsAgeState(v); writeObDraft("age", v); };
   const [basicsCountry, setBasicsCountry] = useState<Country | null>(null);
-  const [basicsCountryQuery, setBasicsCountryQuery] = useState("");
+  const [basicsCountryQuery, setBasicsCountryQueryState] = useState(() => readObDraft("country"));
+  const setBasicsCountryQuery = (v: string) => { setBasicsCountryQueryState(v); writeObDraft("country", v); };
   const [basicsError, setBasicsError] = useState<string | null>(null);
   const countrySuggestion = useMemo(() => suggestCountry(), []);
   const [settingsAge, setSettingsAge] = useState("");
@@ -1099,6 +1125,9 @@ export default function Chat() {
       { data: { step: "ageBand", answer: ageText } },
       {
         onSuccess: (ageStatus) => {
+          // Accepted — the in-progress draft has served its purpose.
+          writeObDraft("age", "");
+          writeObDraft("country", "");
           if (ageStatus.isComplete) {
             queryClient.setQueryData(getGetOnboardingStatusQueryKey(), ageStatus);
             setIsTyping(false);
@@ -1889,7 +1918,12 @@ export default function Chat() {
     if (!words) return;
     updateProfile.mutate(
       { data: { userGender: "custom", userGenderCustom: words } },
-      { onSuccess: refreshProfile },
+      {
+        onSuccess: () => {
+          writeObDraft("genderCustom", "");
+          refreshProfile();
+        },
+      },
     );
   };
 
