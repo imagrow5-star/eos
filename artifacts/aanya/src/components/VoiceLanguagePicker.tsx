@@ -54,7 +54,7 @@ const chipClass = (selected: boolean) =>
   cn(
     "px-3 py-1.5 rounded-full text-[11px] font-medium tracking-wide border transition-all",
     selected
-      ? "bg-primary/20 border-primary/50 text-primary"
+      ? "bg-primary/20 border-primary/50 text-primary-strong"
       : "border-primary/15 text-muted-foreground/55 hover:border-primary/30 hover:text-foreground/70",
   );
 
@@ -168,9 +168,9 @@ export function VoiceChips({
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium tracking-wide border transition-all",
               isSelected
-                ? "bg-primary text-primary-foreground border-primary shadow-[0_2px_8px_hsl(35_49%_57%/0.3)]"
+                ? "bg-primary text-primary-foreground border-primary shadow-[0_2px_8px_hsl(var(--primary)/0.3)]"
                 : isArmed
-                  ? "bg-primary/15 border-primary/55 text-primary"
+                  ? "bg-primary/15 border-primary/55 text-primary-strong"
                   : "border-primary/15 text-muted-foreground/60 hover:border-primary/35 hover:text-foreground/75",
             )}
           >

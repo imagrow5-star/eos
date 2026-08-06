@@ -285,7 +285,7 @@ function AuthGate() {
         </p>
         <button
           onClick={() => window.location.reload()}
-          className="px-6 py-2.5 rounded-xl border border-primary/40 text-primary text-sm hover:bg-primary/10 transition-colors"
+          className="px-6 py-2.5 rounded-xl border border-primary/40 text-primary-strong text-sm hover:bg-primary/10 transition-colors"
         >
           Try again
         </button>

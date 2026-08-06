@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2, Square } from "lucide-react";
+import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2, Square, Sun, Moon } from "lucide-react";
+import { useTheme } from "@/lib/theme";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { enablePush, disablePush, sendTestPush, needsInstallFirst } from "@/lib/push";
@@ -187,7 +188,7 @@ function LiveCaption({ text, revealedWords }: { text: string; revealedWords: num
               className={cn(
                 "inline-block",
                 isCurrentWord
-                  ? "text-primary/95 font-[490]"  // gold tint on current word
+                  ? "text-primary-strong/95 font-[490]"  // gold tint on current word
                   : "text-foreground/90",
               )}
             >
@@ -229,6 +230,8 @@ export default function Chat() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [continuousVoice, setContinuousVoice] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // Appearance (Phase A: light/dark; Phase B adds the theme picker)
+  const { mode, setMode } = useTheme();
   // "Forget this" (Phase A privacy) — tap a message to arm, confirm to delete
   const [forgetArmedId, setForgetArmedId] = useState<number | null>(null);
   const [forgetBusyId, setForgetBusyId] = useState<number | null>(null);
@@ -2304,13 +2307,13 @@ export default function Chat() {
                     <p className={cn(
                       isCompanion
                         ? cn("companion-message text-foreground/90", isBereavement ? "text-[17px]" : "text-[16px]")
-                        : "font-sans text-[14.5px] text-secondary/85",
+                        : "font-sans text-[14.5px] text-user-bubble-text",
                     )}>
                       {msgBody}
                     </p>
                   )}
                   {msg.isMorningNote && (
-                    <span className="absolute -top-3 left-4 text-[9px] text-primary/70 tracking-[0.2em] uppercase bg-background px-2 font-medium">
+                    <span className="absolute -top-3 left-4 text-[9px] text-primary-strong/70 tracking-[0.2em] uppercase bg-background px-2 font-medium">
                       Morning Note
                     </span>
                   )}
@@ -2369,8 +2372,8 @@ export default function Chat() {
                     className={cn(
                       "mt-1 ml-1 flex items-center gap-1 px-2.5 py-1 rounded-full text-[10.5px] font-medium transition-all",
                       speakingMessageId === String(msg.id)
-                        ? "bg-primary/20 text-primary border border-primary/35"
-                        : "text-muted-foreground/45 hover:text-primary/80 hover:bg-primary/10 border border-transparent hover:border-primary/20",
+                        ? "bg-primary/20 text-primary-strong border border-primary/35"
+                        : "text-muted-foreground/45 hover:text-primary-strong/80 hover:bg-primary/10 border border-transparent hover:border-primary/20",
                     )}
                   >
                     <Volume2 className="w-3 h-3 shrink-0" />
@@ -2456,7 +2459,7 @@ export default function Chat() {
           >
             <header className="h-14 flex items-center justify-between px-5 border-b border-primary/20 bg-background/98 backdrop-blur-xl shrink-0">
               <div className="flex items-center gap-2 min-w-0">
-                <FileText className="w-4 h-4 text-primary/70 shrink-0" />
+                <FileText className="w-4 h-4 text-primary-strong/70 shrink-0" />
                 <span className="text-[11px] text-muted-foreground/80 tracking-widest uppercase font-medium truncate">
                   Your full report
                 </span>
@@ -2467,7 +2470,7 @@ export default function Chat() {
                   size="sm"
                   onClick={() => handleExport("html")}
                   disabled={isExportingHtml}
-                  className="text-[11px] text-muted-foreground/60 hover:text-primary tracking-wider uppercase gap-1.5"
+                  className="text-[11px] text-muted-foreground/60 hover:text-primary-strong tracking-wider uppercase gap-1.5"
                   title="Download this report"
                 >
                   <Download className="w-3.5 h-3.5" />
@@ -2500,7 +2503,7 @@ export default function Chat() {
                   <p className="text-[13px] text-destructive/80">{reportError}</p>
                   <button
                     onClick={handleViewReport}
-                    className="text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors"
+                    className="text-[11px] text-primary-strong/80 hover:text-primary-strong tracking-wider uppercase transition-colors"
                   >
                     Retry
                   </button>
@@ -2519,13 +2522,13 @@ export default function Chat() {
       </AnimatePresence>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <header className="h-16 flex items-center justify-between px-5 border-b border-[rgba(200,180,150,0.09)] bg-muted/95 backdrop-blur-xl z-20 shrink-0 relative">
+      <header className="h-16 flex items-center justify-between px-5 border-b border-border bg-muted/95 backdrop-blur-xl z-20 shrink-0 relative">
         {/* Companion presence — left */}
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="relative shrink-0">
             <div className={cn(
               "w-8 h-8 rounded-full bg-card border flex items-center justify-center transition-all",
-              isSpeaking ? "border-primary/60 shadow-[0_0_8px_hsl(35_49%_57%/0.35)]" : "border-primary/25",
+              isSpeaking ? "border-primary/60 shadow-[0_0_8px_hsl(var(--primary)/0.35)]" : "border-primary/25",
             )}>
               <span className="font-serif text-[11px] text-secondary/80 tracking-wider">
                 {companionInitials}
@@ -2569,8 +2572,8 @@ export default function Chat() {
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium tracking-wider uppercase transition-all duration-200",
               showSettings
-                ? "bg-primary/15 text-primary border border-primary/30"
-                : "text-foreground/45 border border-[rgba(200,180,150,0.14)] hover:text-foreground/70 hover:border-[rgba(200,180,150,0.24)]",
+                ? "bg-primary/15 text-primary-strong border border-primary/30"
+                : "text-foreground/45 border border-border hover:text-foreground/70 hover:border-secondary/40",
             )}
           >
             {showSettings
@@ -2588,8 +2591,35 @@ export default function Chat() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="bg-muted/95 border-b border-[rgba(200,180,150,0.09)] px-5 py-5 backdrop-blur-xl z-10 shrink-0 space-y-6 overflow-hidden"
+            className="bg-muted/95 border-b border-border px-5 py-5 backdrop-blur-xl z-10 shrink-0 space-y-6 overflow-hidden"
           >
+            {/* ── Appearance — light/dark (theme picker arrives in Phase B) ── */}
+            <div>
+              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
+                Appearance
+              </p>
+              <div className="flex gap-1.5">
+                {([
+                  { value: "light", label: "Light", Icon: Sun },
+                  { value: "dark", label: "Dark", Icon: Moon },
+                ] as const).map(({ value, label, Icon }) => (
+                  <button
+                    key={value}
+                    onClick={() => setMode(value)}
+                    className={cn(
+                      "flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-medium tracking-wider transition-all border",
+                      mode === value
+                        ? "bg-primary/15 text-primary-strong border-primary/30"
+                        : "text-muted-foreground border-border hover:text-foreground/70 hover:border-secondary/40",
+                    )}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* ── Companion name ─────────────────────────────────────────── */}
             <div>
               <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
@@ -2606,7 +2636,7 @@ export default function Chat() {
                 />
                 <Button
                   size="sm"
-                  className="h-9 bg-primary/15 text-primary hover:bg-primary/25 border border-primary/25 px-4"
+                  className="h-9 bg-primary/15 text-primary-strong hover:bg-primary/25 border border-primary/25 px-4"
                   onClick={handleRename}
                   disabled={updateProfile.isPending}
                 >
@@ -2629,7 +2659,7 @@ export default function Chat() {
                     className={cn(
                       "px-3 py-1.5 rounded-full text-[11px] font-medium tracking-wide border transition-all",
                       genderChoice === val
-                        ? "bg-primary/20 border-primary/50 text-primary"
+                        ? "bg-primary/20 border-primary/50 text-primary-strong"
                         : "border-primary/15 text-muted-foreground/55 hover:border-primary/30 hover:text-foreground/70",
                     )}
                   >
@@ -2649,7 +2679,7 @@ export default function Chat() {
                   />
                   <Button
                     size="sm"
-                    className="h-9 bg-primary/15 text-primary hover:bg-primary/25 border border-primary/25 px-4"
+                    className="h-9 bg-primary/15 text-primary-strong hover:bg-primary/25 border border-primary/25 px-4"
                     onClick={handleSaveCustomGender}
                     disabled={updateProfile.isPending || !genderCustomValue.trim()}
                   >
@@ -2675,7 +2705,7 @@ export default function Chat() {
                       onSelect={handleLanguageSelect}
                     />
                     {languageNote && (
-                      <p className="text-[11px] text-primary/70 mt-2 leading-relaxed">{languageNote}</p>
+                      <p className="text-[11px] text-primary-strong/70 mt-2 leading-relaxed">{languageNote}</p>
                     )}
                   </>
                 ) : (
@@ -2786,7 +2816,7 @@ export default function Chat() {
                   />
                   <Button
                     size="sm"
-                    className="h-9 bg-primary/15 text-primary hover:bg-primary/25 border border-primary/25 px-4"
+                    className="h-9 bg-primary/15 text-primary-strong hover:bg-primary/25 border border-primary/25 px-4"
                     onClick={handleSaveAge}
                     disabled={updateProfile.isPending}
                   >
@@ -2805,7 +2835,7 @@ export default function Chat() {
                 </p>
                 {profile?.country && countryName(profile.country) ? (
                   <div className="flex items-center gap-2.5">
-                    <span className="px-3 py-1.5 rounded-full text-[11px] font-medium bg-primary/15 border border-primary/40 text-primary">
+                    <span className="px-3 py-1.5 rounded-full text-[11px] font-medium bg-primary/15 border border-primary/40 text-primary-strong">
                       {countryName(profile.country)}
                     </span>
                     <button
@@ -2859,7 +2889,7 @@ export default function Chat() {
                   </span>
                   <button
                     onClick={() => setShowChangeEmail(true)}
-                    className="shrink-0 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors"
+                    className="shrink-0 text-[11px] text-primary-strong/80 hover:text-primary-strong tracking-wider uppercase transition-colors"
                   >
                     Change
                   </button>
@@ -2890,7 +2920,7 @@ export default function Chat() {
                     </p>
                     <a
                       href={`${import.meta.env.BASE_URL}pricing`}
-                      className="shrink-0 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors"
+                      className="shrink-0 text-[11px] text-primary-strong/80 hover:text-primary-strong tracking-wider uppercase transition-colors"
                     >
                       See plans
                     </a>
@@ -2916,7 +2946,7 @@ export default function Chat() {
                       </div>
                       <a
                         href={`${import.meta.env.BASE_URL}pricing`}
-                        className="shrink-0 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors"
+                        className="shrink-0 text-[11px] text-primary-strong/80 hover:text-primary-strong tracking-wider uppercase transition-colors"
                       >
                         Change plan
                       </a>
@@ -3001,7 +3031,7 @@ export default function Chat() {
                 <button
                   type="button"
                   onClick={handleSendTestPush}
-                  className="mt-2 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors"
+                  className="mt-2 text-[11px] text-primary-strong/80 hover:text-primary-strong tracking-wider uppercase transition-colors"
                 >
                   Send a test
                 </button>
@@ -3026,7 +3056,7 @@ export default function Chat() {
                 href={`${import.meta.env.BASE_URL}privacy`}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-block mt-2 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors"
+                className="inline-block mt-2 text-[11px] text-primary-strong/80 hover:text-primary-strong tracking-wider uppercase transition-colors"
               >
                 Read the privacy page
               </a>
@@ -3050,7 +3080,7 @@ export default function Chat() {
                       className={cn(
                         "flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-pointer transition-all active:scale-[0.98]",
                         isSelected
-                          ? "bg-primary/12 border-primary/45 shadow-[0_0_0_1px_hsl(40_56%_50%/0.15)]"
+                          ? "bg-primary/12 border-primary/45 shadow-[0_0_0_1px_hsl(var(--primary)/0.15)]"
                           : "bg-background/50 border-primary/12 hover:border-primary/30 hover:bg-primary/6",
                       )}
                     >
@@ -3135,7 +3165,7 @@ export default function Chat() {
                   <p className="text-[11px] text-destructive/70">{exportError}</p>
                   <button
                     onClick={handlePreviewExport}
-                    className="text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors"
+                    className="text-[11px] text-primary-strong/80 hover:text-primary-strong tracking-wider uppercase transition-colors"
                   >
                     Retry
                   </button>
@@ -3184,7 +3214,7 @@ export default function Chat() {
               {/* View full report — read everything in-app, no download needed */}
               <button
                 onClick={handleViewReport}
-                className="flex items-center justify-center gap-2 w-full text-[12px] text-primary tracking-wider uppercase font-medium rounded-xl border border-primary/30 bg-primary/8 hover:bg-primary/15 hover:border-primary/45 transition-all py-2.5"
+                className="flex items-center justify-center gap-2 w-full text-[12px] text-primary-strong tracking-wider uppercase font-medium rounded-xl border border-primary/30 bg-primary/8 hover:bg-primary/15 hover:border-primary/45 transition-all py-2.5"
                 title="Read your full report inside the app"
               >
                 <FileText className="w-3.5 h-3.5" />
@@ -3200,7 +3230,7 @@ export default function Chat() {
                 <button
                   onClick={() => handleExport("html")}
                   disabled={isExportingHtml || isExporting || rangeError}
-                  className="flex items-center gap-1.5 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors disabled:opacity-40 font-medium"
+                  className="flex items-center gap-1.5 text-[11px] text-primary-strong/80 hover:text-primary-strong tracking-wider uppercase transition-colors disabled:opacity-40 font-medium"
                   title="Human-readable report you can open in any browser"
                 >
                   {isExportingHtml ? (
@@ -3246,7 +3276,7 @@ export default function Chat() {
                   Download it any time. Keep it somewhere safe.
                 </p>
                 {memoryExportDone ? (
-                  <p className="text-[11px] text-primary/70 leading-relaxed">
+                  <p className="text-[11px] text-primary-strong/70 leading-relaxed">
                     Downloaded — it's yours to keep. You can export again in a
                     little while.
                   </p>
@@ -3255,7 +3285,7 @@ export default function Chat() {
                     <button
                       onClick={() => handleMemoryExport("json")}
                       disabled={memoryExporting !== null}
-                      className="flex items-center gap-1.5 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors disabled:opacity-40 font-medium rounded-lg border border-primary/25 bg-primary/8 hover:bg-primary/15 px-3 py-2"
+                      className="flex items-center gap-1.5 text-[11px] text-primary-strong/80 hover:text-primary-strong tracking-wider uppercase transition-colors disabled:opacity-40 font-medium rounded-lg border border-primary/25 bg-primary/8 hover:bg-primary/15 px-3 py-2"
                       title="Structured JSON — for backup or import into other tools"
                     >
                       {memoryExporting === "json" ? (
@@ -3272,7 +3302,7 @@ export default function Chat() {
                     <button
                       onClick={() => handleMemoryExport("markdown")}
                       disabled={memoryExporting !== null}
-                      className="flex items-center gap-1.5 text-[11px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors disabled:opacity-40 font-medium rounded-lg border border-primary/25 bg-primary/8 hover:bg-primary/15 px-3 py-2"
+                      className="flex items-center gap-1.5 text-[11px] text-primary-strong/80 hover:text-primary-strong tracking-wider uppercase transition-colors disabled:opacity-40 font-medium rounded-lg border border-primary/25 bg-primary/8 hover:bg-primary/15 px-3 py-2"
                       title="A warm, readable file you can open and read anywhere"
                     >
                       {memoryExporting === "markdown" ? (
@@ -3454,7 +3484,7 @@ export default function Chat() {
                 </p>
                 {basicsCountry ? (
                   <div className="flex items-center gap-2.5">
-                    <span className="px-3 py-1.5 rounded-full text-[12px] font-medium bg-primary/15 border border-primary/40 text-primary">
+                    <span className="px-3 py-1.5 rounded-full text-[12px] font-medium bg-primary/15 border border-primary/40 text-primary-strong">
                       {basicsCountry.name}
                     </span>
                     <button
@@ -3516,7 +3546,7 @@ export default function Chat() {
                 <Button
                   onClick={handleBasicsSubmit}
                   disabled={isTyping || submitAnswer.isPending}
-                  className="h-10 px-6 bg-primary text-primary-foreground hover:bg-primary/85 rounded-full shadow-[0_2px_10px_hsl(35_49%_57%/0.30)]"
+                  className="h-10 px-6 bg-primary text-primary-foreground hover:bg-primary/85 rounded-full shadow-[0_2px_10px_hsl(var(--primary)/0.30)]"
                 >
                   Continue
                 </Button>
@@ -3559,7 +3589,7 @@ export default function Chat() {
                       }}
                     />
                     {languageNote && obVoiceLanguage !== "en" && (
-                      <p className="text-[11px] text-primary/70 mt-2 leading-relaxed">{languageNote}</p>
+                      <p className="text-[11px] text-primary-strong/70 mt-2 leading-relaxed">{languageNote}</p>
                     )}
                   </>
                 ) : (
@@ -3628,7 +3658,7 @@ export default function Chat() {
                 <Button
                   onClick={handleVoiceStepContinue}
                   disabled={isTyping || submitAnswer.isPending}
-                  className="h-10 px-6 bg-primary text-primary-foreground hover:bg-primary/85 rounded-full shadow-[0_2px_10px_hsl(35_49%_57%/0.30)]"
+                  className="h-10 px-6 bg-primary text-primary-foreground hover:bg-primary/85 rounded-full shadow-[0_2px_10px_hsl(var(--primary)/0.30)]"
                 >
                   Continue
                 </Button>
@@ -3653,15 +3683,15 @@ export default function Chat() {
             transition={{ duration: 0.25, ease: "easeOut" }}
             className="px-4 sm:px-6 pb-5 pt-3 bg-background shrink-0 z-10"
           >
-            <div className="h-px bg-[rgba(200,180,150,0.10)] mb-4" />
-            <div className="max-w-3xl mx-auto bg-card border border-[rgba(200,180,150,0.09)] rounded-2xl px-5 py-5 flex flex-col items-center gap-4">
+            <div className="h-px bg-border mb-4" />
+            <div className="max-w-3xl mx-auto bg-card border border-border rounded-2xl px-5 py-5 flex flex-col items-center gap-4">
 
               {/* Companion avatar with phase animation */}
               <div className="relative">
                 <div className={cn(
                   "w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500",
                   voiceCallPhase === "speaking"
-                    ? "bg-primary/15 border-2 border-primary/50 shadow-[0_0_24px_hsl(35_49%_57%/0.28)]"
+                    ? "bg-primary/15 border-2 border-primary/50 shadow-[0_0_24px_hsl(var(--primary)/0.28)]"
                     : voiceCallPhase === "listening"
                       ? "bg-primary/8 border-2 border-primary/25"
                       : voiceCallPhase === "error"
@@ -3707,7 +3737,7 @@ export default function Chat() {
 
                 {/* Engine indicator — realtime calls have native interruption */}
                 {voiceEngine === "realtime" && (
-                  <p className="text-center text-[10px] uppercase tracking-[0.18em] text-primary/50">
+                  <p className="text-center text-[10px] uppercase tracking-[0.18em] text-primary-strong/50">
                     Realtime voice
                   </p>
                 )}
@@ -3776,7 +3806,7 @@ export default function Chat() {
                     transition={{ duration: 0.2 }}
                     className="w-full px-1"
                   >
-                    <div className="bg-[#141219]/70 border border-[rgba(200,180,150,0.07)] rounded-xl px-4 py-2.5 text-center">
+                    <div className="bg-muted/70 border border-border rounded-xl px-4 py-2.5 text-center">
                       <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/50 mb-1">You said</p>
                       <p className="text-[13px] text-secondary/75 leading-snug">{voiceCallRecognizedText}</p>
                     </div>
@@ -3798,7 +3828,7 @@ export default function Chat() {
                     transition={{ duration: 0.25, ease: "easeOut" }}
                     className="w-full px-1"
                   >
-                    <div className="bg-[#141219]/90 border border-[rgba(200,180,150,0.09)] rounded-xl px-4 py-3 text-center">
+                    <div className="bg-muted/90 border border-border rounded-xl px-4 py-3 text-center">
                       <p className="companion-message text-[15px] leading-relaxed text-foreground/85 min-h-[1.5em]">
                         <LiveCaption
                           text={voiceCallCaptionText}
@@ -3816,7 +3846,7 @@ export default function Chat() {
               {voiceCallPhase === "speaking" && voiceEngine !== "realtime" && (
                 <button
                   onClick={() => interruptSpeech({ resumeListening: true })}
-                  className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-primary/20 border-2 border-primary/50 text-primary hover:bg-primary/30 text-[12px] font-semibold tracking-wider uppercase transition-all shadow-[0_0_16px_hsl(35_49%_57%/0.18)]"
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-primary/20 border-2 border-primary/50 text-primary-strong hover:bg-primary/30 text-[12px] font-semibold tracking-wider uppercase transition-all shadow-[0_0_16px_hsl(var(--primary)/0.18)]"
                 >
                   <Square className="w-3 h-3 fill-current" />
                   Tap to interrupt
@@ -3831,7 +3861,7 @@ export default function Chat() {
                     voice.stopListening();
                     voice.startListening();
                   }}
-                  className="flex items-center gap-2 px-5 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary/70 hover:bg-primary/18 hover:text-primary text-[12px] font-medium tracking-wider uppercase transition-all"
+                  className="flex items-center gap-2 px-5 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary-strong/70 hover:bg-primary/18 hover:text-primary-strong text-[12px] font-medium tracking-wider uppercase transition-all"
                 >
                   <Mic className="w-3 h-3" />
                   Tap to speak
@@ -3852,7 +3882,7 @@ export default function Chat() {
                     voice.clearError();
                     voice.startListening();
                   }}
-                  className="flex items-center gap-2 px-5 py-2 rounded-full bg-primary/15 border border-primary/30 text-primary/80 hover:bg-primary/25 text-[12px] font-medium tracking-wider uppercase transition-all"
+                  className="flex items-center gap-2 px-5 py-2 rounded-full bg-primary/15 border border-primary/30 text-primary-strong/80 hover:bg-primary/25 text-[12px] font-medium tracking-wider uppercase transition-all"
                 >
                   <Mic className="w-3 h-3" />
                   Tap to speak
@@ -3879,7 +3909,7 @@ export default function Chat() {
             transition={{ duration: 0.2 }}
             className="px-4 sm:px-6 pb-5 pt-3 bg-background shrink-0 relative z-10"
           >
-            <div className="h-px bg-[rgba(200,180,150,0.10)] mb-4" />
+            <div className="h-px bg-border mb-4" />
 
             {showTextInput && (
               <>
@@ -3889,8 +3919,8 @@ export default function Chat() {
                     className={cn(
                       "flex items-center gap-2 max-w-3xl mx-auto bg-popover border rounded-full pl-5 pr-2 py-1.5 shadow-sm transition-all",
                       voice.isListening
-                        ? "border-primary/45 shadow-[0_0_0_3px_hsl(35_49%_57%/0.10)]"
-                        : "border-[rgba(200,180,150,0.12)]",
+                        ? "border-primary/45 shadow-[0_0_0_3px_hsl(var(--primary)/0.10)]"
+                        : "border-border",
                     )}
                   >
                     <FormField
@@ -3934,7 +3964,7 @@ export default function Chat() {
                           onFocus={() => voiceSessionPrefetcher.prefetch()}
                           onTouchStart={() => voiceSessionPrefetcher.prefetch()}
                           title="Start voice call"
-                          className="flex items-center gap-1.5 pl-3 pr-3.5 py-2 rounded-full bg-primary/12 text-primary/80 border border-primary/20 text-[11.5px] font-medium tracking-widest uppercase shrink-0 hover:bg-primary/18 hover:text-primary active:scale-95 transition-all"
+                          className="flex items-center gap-1.5 pl-3 pr-3.5 py-2 rounded-full bg-primary/12 text-primary-strong/80 border border-primary/20 text-[11.5px] font-medium tracking-widest uppercase shrink-0 hover:bg-primary/18 hover:text-primary-strong active:scale-95 transition-all"
                         >
                           <Phone className="w-3.5 h-3.5" strokeWidth={2.5} />
                           Voice
@@ -3956,8 +3986,8 @@ export default function Chat() {
                         className={cn(
                           "rounded-full w-10 h-10 transition-all shrink-0",
                           voice.isListening
-                            ? "text-primary bg-primary/18 shadow-[0_0_0_3px_hsl(35_49%_57%/0.14),0_0_12px_hsl(35_49%_57%/0.14)]"
-                            : "text-muted-foreground/70 hover:text-primary hover:bg-primary/10",
+                            ? "text-primary-strong bg-primary/18 shadow-[0_0_0_3px_hsl(var(--primary)/0.14),0_0_12px_hsl(var(--primary)/0.14)]"
+                            : "text-muted-foreground/70 hover:text-primary-strong hover:bg-primary/10",
                         )}
                         onClick={() => {
                           if (!voice.isSupported) {
@@ -3992,7 +4022,7 @@ export default function Chat() {
                       <Button
                         type="submit"
                         size="icon"
-                        className="rounded-full w-9 h-9 bg-primary text-primary-foreground hover:bg-primary/85 transition-all shrink-0 shadow-[0_2px_10px_hsl(35_49%_57%/0.30)]"
+                        className="rounded-full w-9 h-9 bg-primary text-primary-foreground hover:bg-primary/85 transition-all shrink-0 shadow-[0_2px_10px_hsl(var(--primary)/0.30)]"
                         disabled={isTyping || isStreaming || !form.watch("content")}
                       >
                         <Send className="w-[16px] h-[16px] ml-0.5" strokeWidth={2} />
@@ -4054,7 +4084,7 @@ export default function Chat() {
                   <Button
                     type="submit"
                     size="sm"
-                    className="h-9 bg-primary/15 text-primary hover:bg-primary/25 border border-primary/25"
+                    className="h-9 bg-primary/15 text-primary-strong hover:bg-primary/25 border border-primary/25"
                     disabled={isTyping || !form.watch("content")}
                   >
                     <Send className="w-4 h-4" />

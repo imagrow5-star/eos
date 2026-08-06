@@ -161,7 +161,7 @@ export function Pricing({
               </p>
               <button
                 onClick={() => navigate("/")}
-                className="bg-primary text-background px-6 py-2.5 rounded-xl text-sm font-medium"
+                className="bg-primary text-primary-foreground px-6 py-2.5 rounded-xl text-sm font-medium"
               >
                 Back to Eos
               </button>
@@ -184,7 +184,7 @@ export function Pricing({
     <div className="min-h-[100dvh] bg-background px-5 py-10 overflow-y-auto">
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-10">
-          <p className="text-[11px] tracking-[0.35em] uppercase text-primary/70 mb-3">Membership</p>
+          <p className="text-[11px] tracking-[0.35em] uppercase text-primary-strong/70 mb-3">Membership</p>
           <h1 className="font-serif text-3xl md:text-4xl text-foreground mb-3">
             Choose how close you want her to be.
           </h1>
@@ -212,12 +212,12 @@ export function Pricing({
                   className={cn(
                     "rounded-2xl border p-6 flex flex-col bg-card",
                     highlighted
-                      ? "border-primary/50 shadow-[0_0_40px_-12px_hsl(35_49%_57%/0.35)]"
+                      ? "border-primary/50 shadow-[0_0_40px_-12px_hsl(var(--primary)/0.35)]"
                       : "border-border/60",
                   )}
                 >
                   {highlighted && (
-                    <span className="self-start text-[9.5px] tracking-[0.25em] uppercase text-primary border border-primary/40 rounded px-2 py-0.5 mb-3">
+                    <span className="self-start text-[9.5px] tracking-[0.25em] uppercase text-primary-strong border border-primary/40 rounded px-2 py-0.5 mb-3">
                       Where most begin
                     </span>
                   )}
@@ -242,8 +242,8 @@ export function Pricing({
                     className={cn(
                       "w-full py-3 rounded-xl text-sm font-medium transition-all active:scale-[0.98] disabled:opacity-50",
                       highlighted
-                        ? "bg-primary text-background hover:bg-primary/90"
-                        : "border border-primary/30 text-primary hover:bg-primary/10",
+                        ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                        : "border border-primary/30 text-primary-strong hover:bg-primary/10",
                     )}
                   >
                     {signedOut
@@ -265,16 +265,16 @@ export function Pricing({
         )}
 
         <div className="text-center mt-10 space-x-5">
-          <a href="/terms" className="text-[11.5px] text-muted-foreground/70 underline underline-offset-2 hover:text-primary">
+          <a href="/terms" className="text-[11.5px] text-muted-foreground/70 underline underline-offset-2 hover:text-primary-strong">
             Terms
           </a>
-          <a href="/refunds" className="text-[11.5px] text-muted-foreground/70 underline underline-offset-2 hover:text-primary">
+          <a href="/refunds" className="text-[11.5px] text-muted-foreground/70 underline underline-offset-2 hover:text-primary-strong">
             Refunds
           </a>
           {!signedOut && (
             <button
               onClick={() => navigate("/")}
-              className="text-[11.5px] text-muted-foreground/70 underline underline-offset-2 hover:text-primary"
+              className="text-[11.5px] text-muted-foreground/70 underline underline-offset-2 hover:text-primary-strong"
             >
               Back to Eos
             </button>

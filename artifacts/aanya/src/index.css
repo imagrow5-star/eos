@@ -9,7 +9,9 @@
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
 
-@custom-variant dark (&:is(.dark *));
+/* Dark styling is keyed off the html[data-mode] attribute set by the theme
+   provider (src/lib/theme.tsx) and pre-paint by public/theme-init.js. */
+@custom-variant dark (&:is([data-mode='dark'] *));
 
 @theme inline {
   --color-background: hsl(var(--background));
@@ -28,6 +30,10 @@
 
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
+  /* Readable variant of primary for TEXT accents: primary itself is a fill
+     color (buttons) and is too light to read on the light background; this
+     one passes AA as text in both modes (equals --primary in dark). */
+  --color-primary-strong: hsl(var(--primary-strong));
 
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
@@ -41,6 +47,11 @@
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
 
+  /* Chat bubbles */
+  --color-user-bubble: hsl(var(--user-bubble));
+  --color-user-bubble-text: hsl(var(--user-bubble-text));
+  --color-eos-bubble: hsl(var(--eos-bubble));
+
   --font-sans: 'Inter', sans-serif;
   --font-serif: 'Playfair Display', serif;
   --font-mono: 'IBM Plex Mono', monospace;
@@ -53,94 +64,138 @@
   --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   THEME TOKENS
+   Themes are keyed on html[data-theme] × html[data-mode] (set pre-paint by
+   public/theme-init.js, managed by src/lib/theme.tsx). :root carries the
+   default — DAWN LIGHT — so a storage-blocked or scriptless load still paints
+   correctly with zero flash. Values are bare HSL triplets consumed through
+   the @theme inline block above; do not change the format.
+
+   Contract (verified per palette, keep it when editing):
+     foreground/background ≥ AAA · muted-foreground/background ≥ AA
+     primary-foreground/primary ≥ AA · user-bubble-text/user-bubble ≥ AA
+     primary-strong is the TEXT-safe accent (≥ AA on background/card/muted).
+
+   Phase B adds: [data-theme='amber'|'sage'|'twilight'] blocks in both modes.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── DAWN · LIGHT (default) ─────────────────────────────────────────────── */
 :root {
-  /* ─────────────────────────────────────────────────────────────────────────
-     DEEP CHARCOAL / GOLD
-     Near-black charcoal base (#0D0B10), warm cream text (#F0E9DC),
-     accent gold (#DDB264) — matched to the marketing landing palette.
-     ───────────────────────────────────────────────────────────────────────── */
+  /* Warm shell #FBF3EE */
+  --background: 23 62% 96%;
+  /* Deep warm brown text #3A2A2A */
+  --foreground: 0 16% 20%;
 
-  /* Deep near-black charcoal #0D0B10 */
-  --background: 264 19% 5%;
-  /* Warm cream #F0E9DC */
-  --foreground: 39 40% 90%;
+  /* Raised card #FFFCF9 */
+  --card: 30 100% 99%;
+  --card-foreground: 0 16% 20%;
+  --card-border: 19 52% 88%;
 
-  /* Card surface #16131C */
-  --card: 259 19% 9%;
-  --card-foreground: 39 40% 90%;
-  --card-border: 38 20% 20%;
+  --popover: 30 100% 99%;
+  --popover-foreground: 0 16% 20%;
+  --popover-border: 19 52% 88%;
 
-  /* Raised surface #121016 */
-  --popover: 260 16% 7%;
-  --popover-foreground: 39 40% 90%;
-  --popover-border: 39 10% 15%;
+  /* Golden button #E0B36A with deep amber text #3A2A16 */
+  --primary: 37 66% 65%;
+  --primary-foreground: 33 45% 16%;
+  /* Deep amber #8F6528 — accent as TEXT (AA on bg/card/muted) */
+  --primary-strong: 36 56% 36%;
 
-  /* Accent gold #DDB264 */
-  --primary: 39 64% 63%;
-  /* Dark button text #291D07 */
-  --primary-foreground: 39 71% 9%;
+  /* Secondary text #7A5A52 (same role as muted-foreground) */
+  --secondary: 12 20% 40%;
+  --secondary-foreground: 23 62% 96%;
 
-  /* Secondary text #B9B0A1 */
-  --secondary: 38 15% 68%;
-  --secondary-foreground: 264 19% 5%;
+  /* Recessed panel #F6E7DF */
+  --muted: 21 56% 92%;
+  --muted-foreground: 12 20% 40%;
 
-  /* Muted panel #121016 */
-  --muted: 260 16% 7%;
-  /* Muted text #837B6E */
-  --muted-foreground: 37 9% 47%;
+  /* Dawn salmon #E19B85 */
+  --accent: 14 61% 70%;
+  --accent-foreground: 33 45% 16%;
 
-  /* Hover/active surface — slightly lifted above card */
-  --accent: 259 15% 12%;
-  --accent-foreground: 39 40% 90%;
-
-  /* Soft crimson — rarely used */
+  /* FIXED red — crisis/error surfaces never re-point with themes */
   --destructive: 0 42% 32%;
   --destructive-foreground: 39 40% 90%;
 
-  /* Warm hairline — approximates rgba(232,222,205,.08) on dark */
-  --border: 39 10% 16%;
-  /* Input surface */
-  --input: 260 16% 7%;
-  --ring: 39 64% 63%;
+  /* Hairline #F0DAD0 */
+  --border: 19 52% 88%;
+  --input: 19 52% 88%;
+  /* Focus ring — deep amber so it is visible on the light shell */
+  --ring: 36 56% 36%;
 
-  /* Chart */
-  --chart-1: 39 64% 63%;    /* accent gold #DDB264 */
-  --chart-2: 39 40% 90%;    /* warm cream */
-  --chart-3: 38 15% 68%;    /* secondary text */
-  --chart-4: 37 9% 47%;     /* muted */
-  --chart-5: 259 19% 9%;    /* card surface */
+  /* Chart — dark-enough fills for a light canvas */
+  --chart-1: 36 56% 36%;    /* deep amber */
+  --chart-2: 14 44% 49%;    /* clay salmon */
+  --chart-3: 12 20% 40%;    /* warm gray-brown */
+  --chart-4: 0 16% 20%;     /* ink */
+  --chart-5: 21 56% 92%;    /* shell */
 
+  /* Chat bubbles: user speaks in dawn salmon, Eos answers from the card */
+  --user-bubble: 14 61% 70%;
+  --user-bubble-text: 0 29% 18%;
+  --eos-bubble: 30 100% 99%;
+
+  /* Non-color theme atoms */
+  --bubble-shadow: 0 2px 12px hsl(12 20% 40% / 0.10), 0 1px 3px hsl(12 20% 40% / 0.08);
   --radius: 0.75rem;
 }
 
-/* Single palette — no dark-mode toggle needed */
-.dark {
-  --background: 264 19% 5%;
-  --foreground: 39 40% 90%;
-  --card: 259 19% 9%;
-  --card-foreground: 39 40% 90%;
-  --card-border: 38 20% 20%;
-  --popover: 260 16% 7%;
-  --popover-foreground: 39 40% 90%;
-  --popover-border: 39 10% 15%;
-  --primary: 39 64% 63%;
-  --primary-foreground: 39 71% 9%;
-  --secondary: 38 15% 68%;
-  --secondary-foreground: 264 19% 5%;
-  --muted: 260 16% 7%;
-  --muted-foreground: 37 9% 47%;
-  --accent: 259 15% 12%;
-  --accent-foreground: 39 40% 90%;
+/* ── DAWN · DARK ────────────────────────────────────────────────────────── */
+[data-mode='dark'] {
+  /* Warm ember shell #241A19 */
+  --background: 5 18% 12%;
+  /* Warm cream text #F3E7DF */
+  --foreground: 24 45% 91%;
+
+  /* Card #2E211F */
+  --card: 8 19% 15%;
+  --card-foreground: 24 45% 91%;
+  --card-border: 14 21% 24%;
+
+  --popover: 8 19% 15%;
+  --popover-foreground: 24 45% 91%;
+  --popover-border: 14 21% 24%;
+
+  /* Golden button #E0B36A with near-black amber text #241A0F */
+  --primary: 37 66% 65%;
+  --primary-foreground: 31 41% 10%;
+  /* On dark the button gold already reads as text (8.7:1) */
+  --primary-strong: 37 66% 65%;
+
+  /* Secondary text #C9AEA4 */
+  --secondary: 16 26% 72%;
+  --secondary-foreground: 5 18% 12%;
+
+  /* Recessed panel #3A2A27 */
+  --muted: 9 20% 19%;
+  --muted-foreground: 16 26% 72%;
+
+  /* Dawn salmon #E19B85 */
+  --accent: 14 61% 70%;
+  --accent-foreground: 31 41% 10%;
+
+  /* FIXED red — crisis/error surfaces never re-point with themes */
   --destructive: 0 42% 32%;
   --destructive-foreground: 39 40% 90%;
-  --border: 39 10% 16%;
-  --input: 260 16% 7%;
-  --ring: 39 64% 63%;
-  --chart-1: 39 64% 63%;
-  --chart-2: 39 40% 90%;
-  --chart-3: 38 15% 68%;
-  --chart-4: 37 9% 47%;
-  --chart-5: 259 19% 9%;
+
+  /* Hairline #4A3630 */
+  --border: 14 21% 24%;
+  --input: 14 21% 24%;
+  --ring: 37 66% 65%;
+
+  --chart-1: 37 66% 65%;    /* gold */
+  --chart-2: 14 61% 70%;    /* salmon */
+  --chart-3: 16 26% 72%;    /* warm gray */
+  --chart-4: 24 45% 91%;    /* cream */
+  --chart-5: 9 20% 19%;     /* panel */
+
+  --user-bubble: 14 61% 70%;
+  --user-bubble-text: 4 31% 11%;
+  --eos-bubble: 8 19% 15%;
+
+  /* Gentle amber glow instead of the light mode's soft drop shadow */
+  --bubble-shadow: 0 2px 14px hsl(0 0% 0% / 0.28), 0 0 18px hsl(37 66% 65% / 0.06);
 }
 
 /* ── Older-browser fallback: dvh units (Chrome 108+/Safari 15.4+) ─────────────
@@ -163,11 +218,7 @@
   }
 
   body {
-    @apply font-sans antialiased text-foreground;
-    /*
-     * Deep charcoal #0D0B10 — matches landing page base exactly.
-     */
-    background-color: #0D0B10;
+    @apply font-sans antialiased text-foreground bg-background;
   }
 
   /* Companion messages always render in serif */
@@ -176,7 +227,7 @@
   }
 }
 
-/* ── Scrollbar — charcoal palette ─────────────────────────────────────────── */
+/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
@@ -185,7 +236,7 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--accent));
+  background: hsl(var(--muted));
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -193,43 +244,43 @@
 }
 
 /* ── Companion message bubble ─────────────────────────────────────────────────
-   Her card: card surface, subtle shadow, 2px gold left border.
-   Hairlines use rgba(232,222,205,.08) — the landing-page spec value.
+   Her card: eos-bubble surface, theme shadow, 2px gold left border.
 ─────────────────────────────────────────────────────────────────────────────── */
 .companion-bubble {
-  background-color: hsl(var(--card));
-  border-top: 1px solid rgba(232, 222, 205, 0.08);
-  border-right: 1px solid rgba(232, 222, 205, 0.08);
-  border-bottom: 1px solid rgba(232, 222, 205, 0.08);
+  background-color: hsl(var(--eos-bubble));
+  border-top: 1px solid hsl(var(--border));
+  border-right: 1px solid hsl(var(--border));
+  border-bottom: 1px solid hsl(var(--border));
   border-left: 2px solid hsl(var(--primary) / 0.65);
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.28), 0 1px 4px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--bubble-shadow);
 }
 
 /* ── User message bubble ──────────────────────────────────────────────────────
-   Recessed dark: the user speaks from the darkness.
+   The user speaks in dawn salmon.
 ─────────────────────────────────────────────────────────────────────────────── */
 .user-bubble {
-  background-color: #0D0B10;
-  border: 1px solid rgba(232, 222, 205, 0.08);
+  background-color: hsl(var(--user-bubble));
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--user-bubble-text));
 }
 
 /* ── Hairline divider utility ───────────────────────────────────────────────── */
 .hairline {
-  border-color: rgba(232, 222, 205, 0.08);
+  border-color: hsl(var(--border));
 }
 
 /* ── Warm hairline hr ───────────────────────────────────────────────────────── */
 .warm-rule {
-  background-color: rgba(232, 222, 205, 0.08);
+  background-color: hsl(var(--border));
   height: 1px;
   border: none;
 }
 
 /* ── Voice mode pulse — gold variant ────────────────────────────────────────── */
 @keyframes voice-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(221, 178, 100, 0.35); }
-  70%  { box-shadow: 0 0 0 14px rgba(221, 178, 100, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(221, 178, 100, 0); }
+  0%   { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.35); }
+  70%  { box-shadow: 0 0 0 14px hsl(var(--primary) / 0); }
+  100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0); }
 }
 .voice-active {
   animation: voice-pulse 2s infinite;

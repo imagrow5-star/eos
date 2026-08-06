@@ -107,7 +107,7 @@ export function ChangeEmailForm({ currentEmail, compact }: Props) {
         type="submit"
         disabled={status === "sending"}
         className={
-          "w-full bg-primary/15 text-primary border border-primary/25 rounded-xl font-medium tracking-wide hover:bg-primary/25 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed " +
+          "w-full bg-primary/15 text-primary-strong border border-primary/25 rounded-xl font-medium tracking-wide hover:bg-primary/25 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed " +
           (compact ? "py-2.5 text-[13px]" : "py-3")
         }
       >

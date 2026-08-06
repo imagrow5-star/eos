@@ -103,7 +103,7 @@ export function ConsentGate({
             href={`${import.meta.env.BASE_URL}privacy`}
             target="_blank"
             rel="noreferrer"
-            className="inline-block text-[12px] text-primary/80 hover:text-primary tracking-wider uppercase transition-colors"
+            className="inline-block text-[12px] text-primary-strong/80 hover:text-primary-strong tracking-wider uppercase transition-colors"
           >
             Read the full privacy page →
           </a>
@@ -146,7 +146,7 @@ export function ConsentGate({
           <button
             onClick={agree}
             disabled={busy}
-            className="w-full py-3.5 rounded-2xl bg-primary/20 border border-primary/50 text-primary font-medium text-[14px] tracking-wide hover:bg-primary/30 transition-all disabled:opacity-50"
+            className="w-full py-3.5 rounded-2xl bg-primary/20 border border-primary/50 text-primary-strong font-medium text-[14px] tracking-wide hover:bg-primary/30 transition-all disabled:opacity-50"
           >
             {busy ? "Saving…" : "I understand — continue"}
           </button>

@@ -13,7 +13,7 @@ export default function Chapters() {
         <h1 className="font-serif text-[28px] text-foreground/90 tracking-wide mb-3">Chapters</h1>
         <div className="h-px bg-primary/20 mb-4" />
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-primary/25 bg-primary/8 text-[10px] font-medium tracking-[0.2em] uppercase text-secondary/80">
-          <Feather className="w-3 h-3 text-primary/70" />
+          <Feather className="w-3 h-3 text-primary-strong/70" />
           Letters from our weeks
         </div>
       </div>

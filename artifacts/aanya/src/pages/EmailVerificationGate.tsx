@@ -69,7 +69,7 @@ export function EmailVerificationGate({ email, onVerified }: Props) {
           {/* Icon */}
           <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-6">
             <svg
-              className="w-8 h-8 text-primary"
+              className="w-8 h-8 text-primary-strong"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -116,7 +116,7 @@ export function EmailVerificationGate({ email, onVerified }: Props) {
           <button
             onClick={handleResend}
             disabled={resendStatus === "sending" || resendStatus === "sent"}
-            className="w-full bg-primary text-background py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed mb-3"
+            className="w-full bg-primary text-primary-foreground py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed mb-3"
           >
             {resendStatus === "sending" ? "Sending…" : resendStatus === "sent" ? "Email sent ✓" : "Resend verification email"}
           </button>

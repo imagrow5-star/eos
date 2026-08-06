@@ -299,7 +299,7 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
                   className={cn(
                     "flex-1 py-2.5 text-sm rounded-lg font-medium tracking-wide transition-all duration-200",
                     tab === t
-                      ? "bg-primary text-background shadow-sm"
+                      ? "bg-primary text-primary-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
@@ -348,14 +348,14 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
                   setConfirmPassword("");
                   switchTab("forgot");
                 }}
-                className="w-full bg-primary text-background py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all mt-2"
+                className="w-full bg-primary text-primary-foreground py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all mt-2"
               >
                 Request a new link
               </button>
               <button
                 type="button"
                 onClick={() => switchTab("login")}
-                className="w-full text-xs text-muted-foreground hover:text-primary transition-colors underline underline-offset-2 pb-1"
+                className="w-full text-xs text-muted-foreground hover:text-primary-strong transition-colors underline underline-offset-2 pb-1"
               >
                 ← Back to sign in
               </button>
@@ -382,14 +382,14 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
               <button
                 type="button"
                 onClick={() => switchTab("forgot")}
-                className="w-full bg-primary text-background py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all mt-2"
+                className="w-full bg-primary text-primary-foreground py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all mt-2"
               >
                 Request a new link
               </button>
               <button
                 type="button"
                 onClick={() => switchTab("login")}
-                className="w-full text-xs text-muted-foreground hover:text-primary transition-colors underline underline-offset-2 pb-1"
+                className="w-full text-xs text-muted-foreground hover:text-primary-strong transition-colors underline underline-offset-2 pb-1"
               >
                 ← Back to sign in
               </button>
@@ -416,7 +416,7 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
               <button
                 type="button"
                 onClick={() => switchTab("login")}
-                className="w-full bg-primary text-background py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all mt-2"
+                className="w-full bg-primary text-primary-foreground py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all mt-2"
               >
                 Back to sign in
               </button>
@@ -443,7 +443,7 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
               <button
                 type="button"
                 onClick={() => switchTab("login")}
-                className="w-full bg-primary text-background py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all mt-2"
+                className="w-full bg-primary text-primary-foreground py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all mt-2"
               >
                 Back to sign in
               </button>
@@ -522,7 +522,7 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
                   <button
                     type="button"
                     onClick={() => switchTab("forgot")}
-                    className="text-[11px] text-muted-foreground hover:text-primary transition-colors underline underline-offset-2"
+                    className="text-[11px] text-muted-foreground hover:text-primary-strong transition-colors underline underline-offset-2"
                   >
                     Forgot password?
                   </button>
@@ -559,7 +559,7 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full bg-primary text-background py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-1"
+                className="w-full bg-primary text-primary-foreground py-3.5 rounded-xl font-medium tracking-wide hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-1"
               >
                 {isSubmitting
                   ? "Please wait…"
@@ -591,9 +591,10 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
                 onClick={() => {
                   window.location.href = `${import.meta.env.BASE_URL}api/auth/google`;
                 }}
-                // Google's dark-theme button spec: #131314 fill, #8E918F
-                // stroke, official multicolor G, "Continue with Google".
-                className="w-full flex items-center justify-center gap-3 bg-[#131314] border border-[#8E918F]/50 text-foreground/90 py-3 rounded-xl font-medium text-[14.5px] hover:border-[#8E918F]/80 hover:bg-[#1b1b1d] active:scale-[0.98] transition-all"
+                // Neutral theme-aware surface (tracks light/dark) with the
+                // official multicolor G — matches Google's light and dark
+                // button specs closely enough in both modes.
+                className="w-full flex items-center justify-center gap-3 bg-card border border-border text-foreground/90 py-3 rounded-xl font-medium text-[14.5px] hover:border-secondary/40 hover:bg-muted active:scale-[0.98] transition-all"
               >
                 <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
                   <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/>
@@ -614,7 +615,7 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
                 <button
                   type="button"
                   onClick={() => switchTab(tab === "login" ? "signup" : "login")}
-                  className="text-primary/80 hover:text-primary transition-colors underline underline-offset-2"
+                  className="text-primary-strong/80 hover:text-primary-strong transition-colors underline underline-offset-2"
                 >
                   {tab === "login" ? "Create an account" : "Sign in instead"}
                 </button>
@@ -625,7 +626,7 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
                 <button
                   type="button"
                   onClick={() => switchTab("login")}
-                  className="text-primary/80 hover:text-primary transition-colors underline underline-offset-2"
+                  className="text-primary-strong/80 hover:text-primary-strong transition-colors underline underline-offset-2"
                 >
                   ← Back to sign in
                 </button>
@@ -645,7 +646,7 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
         Your conversations and memories are completely private — visible only to you.{" "}
         <a
           href={`${import.meta.env.BASE_URL}privacy`}
-          className="text-primary/60 hover:text-primary underline underline-offset-2 transition-colors"
+          className="text-primary-strong/60 hover:text-primary-strong underline underline-offset-2 transition-colors"
         >
           How your data is handled
         </a>

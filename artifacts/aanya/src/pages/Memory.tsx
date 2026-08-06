@@ -164,7 +164,7 @@ export default function Memory() {
       {hasNoData ? (
         <div className="bg-card border border-primary/15 rounded-2xl p-10 text-center flex flex-col items-center gap-5">
           <div className="w-11 h-11 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
-            <Sparkles className="w-5 h-5 text-primary/50" />
+            <Sparkles className="w-5 h-5 text-primary-strong/50" />
           </div>
           <p className="text-sm text-muted-foreground font-serif italic max-w-[220px] leading-relaxed">
             {companionName} is still getting to know you. The more you share, the more she'll hold.
@@ -207,7 +207,7 @@ export default function Memory() {
 
                   return (
                     <div key={category.id} className="space-y-3">
-                      <h3 className="text-[9px] uppercase tracking-[0.25em] text-primary/60 pl-1">
+                      <h3 className="text-[9px] uppercase tracking-[0.25em] text-primary-strong/60 pl-1">
                         {category.label}
                       </h3>
                       <div className="flex flex-wrap gap-2">
@@ -230,8 +230,8 @@ export default function Memory() {
                                 className={cn(
                                   "w-3.5 h-3.5 transition-colors",
                                   fact.userMarkedImportant
-                                    ? "text-primary fill-primary"
-                                    : "text-foreground/25 hover:text-primary/60",
+                                    ? "text-primary-strong fill-primary"
+                                    : "text-foreground/25 hover:text-primary-strong/60",
                                 )}
                               />
                             </button>
