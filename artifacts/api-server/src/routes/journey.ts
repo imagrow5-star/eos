@@ -12,30 +12,15 @@ import {
 import { GetJourneyResponse, GetMoodHistoryResponse } from "@workspace/api-zod";
 import { calculateStage, stageMeta, todayString, formatDate } from "../services/stage.js";
 import { getOrCreateProfileForUser } from "./profile.js";
+import { kindStreak } from "../lib/kindStreak.js";
 
 const router: IRouter = Router();
 
+// Kind streak: days shown up, where a miss pauses the count — never resets
+// it. Semantics live in lib/kindStreak (unit-tested); this wrapper keeps the
+// call-site name readable.
 function calculateStreak(visitDates: string[]): number {
-  if (visitDates.length === 0) return 0;
-
-  const dateSet = new Set(visitDates);
-  const today = todayString();
-  const yesterday = formatDate(
-    new Date(new Date(today).setDate(new Date(today).getDate() - 1)),
-  );
-
-  const anchor = dateSet.has(today) ? today : dateSet.has(yesterday) ? yesterday : null;
-  if (!anchor) return 0;
-
-  let streak = 0;
-  let checkDate = anchor;
-  while (dateSet.has(checkDate)) {
-    streak++;
-    const d = new Date(checkDate);
-    d.setDate(d.getDate() - 1);
-    checkDate = formatDate(d);
-  }
-  return streak;
+  return kindStreak(visitDates);
 }
 
 interface MilestoneCheck {
@@ -53,10 +38,10 @@ interface MilestoneCheck {
 const MILESTONE_DEFINITIONS: MilestoneCheck[] = [
   { id: "first_conversation", label: "First conversation", check: ({ messageCount }) => messageCount >= 2 },
   { id: "first_win", label: "First win logged", check: ({ winCount }) => winCount >= 1 },
-  { id: "streak_3", label: "3 days in a row", check: ({ streak }) => streak >= 3 },
+  { id: "streak_3", label: "3 days showing up", check: ({ streak }) => streak >= 3 },
   { id: "one_week", label: "One week", check: ({ daysSinceStart }) => daysSinceStart >= 7 },
   { id: "five_wins", label: "5 wins", check: ({ winCount }) => winCount >= 5 },
-  { id: "streak_7", label: "7-day streak", check: ({ streak }) => streak >= 7 },
+  { id: "streak_7", label: "7 days showing up", check: ({ streak }) => streak >= 7 },
   { id: "fifteen_wins", label: "15 wins", check: ({ winCount }) => winCount >= 15 },
   { id: "thirty_days", label: "30 days", check: ({ daysSinceStart }) => daysSinceStart >= 30 },
 ];

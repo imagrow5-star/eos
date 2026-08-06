@@ -17,6 +17,7 @@ import {
   useGetMoodHistory,
   useGetHabits,
   useGetWins,
+  useGetProfile,
   useCompleteHabit,
   useCreateHabit,
   useCreateWin,
@@ -73,7 +74,7 @@ const STATE_META = {
   open:    { label: "In progress",  icon: CircleDot,    color: "text-secondary/70",  bg: "bg-secondary/8 border-secondary/20" },
   done:    { label: "Done",         icon: CheckCircle2, color: "text-emerald-700 dark:text-emerald-400/80", bg: "bg-emerald-500/8 border-emerald-500/20" },
   partial: { label: "Partial",      icon: Clock,        color: "text-primary-strong/80",     bg: "bg-primary/8 border-primary/20" },
-  missed:  { label: "Missed",       icon: XCircle,      color: "text-foreground/30",  bg: "bg-foreground/5 border-foreground/10" },
+  missed:  { label: "Not this time", icon: Clock,        color: "text-muted-foreground",  bg: "bg-foreground/5 border-foreground/10" },
 };
 
 function CommitmentsSection() {
@@ -102,16 +103,12 @@ function CommitmentsSection() {
   });
 
   const total = commitments.length;
-  const done = commitments.filter((c) => c.state === "done").length;
-  const partial = commitments.filter((c) => c.state === "partial").length;
-  const missed = commitments.filter((c) => c.state === "missed").length;
   const open = commitments.filter((c) => c.state === "open");
   const closed = commitments.filter((c) => c.state !== "open");
-  const rate = total > 0 ? Math.round(((done + partial * 0.5) / total) * 100) : null;
 
   if (isLoading) return (
     <section className="space-y-4">
-      <h2 className="font-serif text-xl text-foreground/85">Follow-through</h2>
+      <h2 className="font-serif text-xl text-foreground/90">What you&rsquo;re working on</h2>
       <div className="h-20 flex items-center justify-center">
         <div className="w-5 h-5 rounded-full border border-primary/40 border-t-transparent animate-spin" />
       </div>
@@ -120,11 +117,11 @@ function CommitmentsSection() {
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-serif text-xl text-foreground/85">Follow-through</h2>
-        {rate !== null && (
-          <span className="text-[11px] text-primary-strong/80 font-medium tracking-wide">{rate}% rate</span>
-        )}
+      <div>
+        <h2 className="font-serif text-xl text-foreground/90">What you&rsquo;re working on</h2>
+        <p className="text-[12px] text-muted-foreground mt-1">
+          Your own next steps, in your own time. Nothing here is graded.
+        </p>
       </div>
 
       {total === 0 ? (
@@ -136,25 +133,6 @@ function CommitmentsSection() {
         </div>
       ) : (
         <div className="space-y-3">
-          {total >= 2 && (
-            <div className="bg-card border border-primary/15 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between text-[11px] text-muted-foreground/70">
-                <span className="uppercase tracking-[0.15em]">Completion rate</span>
-                <span className="font-serif text-lg text-foreground/80">{rate}%</span>
-              </div>
-              <div className="h-1.5 bg-foreground/8 rounded-full overflow-hidden">
-                <motion.div className="h-full bg-primary/60 rounded-full" initial={{ width: 0 }}
-                  animate={{ width: `${rate}%` }} transition={{ duration: 0.8, ease: "easeOut" }} />
-              </div>
-              <div className="flex gap-4 text-[10px] text-muted-foreground/60 uppercase tracking-wider">
-                <span>{done} done</span>
-                {partial > 0 && <span>{partial} partial</span>}
-                {missed > 0 && <span>{missed} missed</span>}
-                {open.length > 0 && <span>{open.length} open</span>}
-              </div>
-            </div>
-          )}
-
           {open.length > 0 && (
             <div className="space-y-2">
               <p className="text-[10px] text-muted-foreground/50 uppercase tracking-[0.2em] pl-1">In progress</p>
@@ -203,7 +181,7 @@ function CommitmentsSection() {
 
           {closed.length > 0 && (
             <div className="space-y-2">
-              <p className="text-[10px] text-muted-foreground/50 uppercase tracking-[0.2em] pl-1 mt-4">History</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-[0.2em] pl-1 mt-4">Earlier</p>
               {closed.slice(0, 6).map((c) => {
                 const meta = STATE_META[c.state];
                 const Icon = meta.icon;
@@ -215,7 +193,7 @@ function CommitmentsSection() {
                     <Icon className={cn("w-3.5 h-3.5 mt-0.5 shrink-0", meta.color)} />
                     <div className="min-w-0">
                       <p className={cn("text-sm leading-snug",
-                        c.state === "done" ? "text-foreground/75" : "text-foreground/40 line-through")}>
+                        c.state === "done" ? "text-foreground/75" : "text-muted-foreground")}>
                         {c.content}
                       </p>
                       {c.qualityNote && (
@@ -655,34 +633,48 @@ function GrowthIndicatorCard({ score }: { score: number }) {
     "deep roots";
 
   return (
-    <div className="bg-card border border-primary/20 rounded-2xl p-5 space-y-4 relative overflow-hidden">
+    <div className="bg-card border border-primary/20 rounded-2xl p-5 relative overflow-hidden">
       {/* Subtle background glow */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/4 to-transparent pointer-events-none" />
 
       <div className="relative">
-        <div className="flex items-start justify-between mb-1">
-          <div>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/60">Growth</p>
-            <p className="font-serif text-[11px] text-secondary/70 italic mt-0.5">{label}</p>
-          </div>
-          <div className="text-right">
-            <span className="font-serif text-[40px] text-secondary/90 leading-none tabular-nums">{score}</span>
-            <span className="text-[14px] text-secondary/50 ml-0.5">%</span>
-          </div>
-        </div>
+        {/* Calm by design: the phrase carries the meaning, not a big number */}
+        <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Growth</p>
+        <p className="font-serif text-lg text-secondary italic mt-1">{label}</p>
 
-        {/* Progress bar — soft, never harsh */}
         <div className="h-1.5 bg-foreground/8 rounded-full overflow-hidden mt-3">
           <motion.div
             className="h-full rounded-full bg-gradient-to-r from-primary/50 to-secondary/70"
             initial={{ width: 0 }}
-            animate={{ width: `${score}%` }}
+            animate={{ width: `${Math.max(score, 4)}%` }}
             transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
           />
         </div>
 
-        <p className="text-[10px] text-muted-foreground/45 mt-2.5 leading-relaxed">
-          Compounds with every routine, win, and check-in. Never goes down — rest days just pause the clock.
+        <p className="text-[11px] text-muted-foreground mt-2.5 leading-relaxed">
+          Grows with every routine, win, and check-in. Never goes down — rest days just pause the clock.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Kind streak card ─────────────────────────────────────────────────────────
+// Days shown up, counted gently. Backed by the kind-streak semantics on the
+// server: a missed day pauses the number — it never resets it.
+
+function KindStreakCard({ days }: { days: number }) {
+  return (
+    <div className="bg-card border border-primary/20 rounded-2xl p-5 flex items-center gap-4">
+      <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/25 flex items-center justify-center shrink-0">
+        <Flame className="w-4 h-4 text-primary-strong" />
+      </div>
+      <div className="min-w-0">
+        <p className="font-serif text-lg text-foreground/90 leading-tight">
+          {days === 0 ? "Day one starts whenever you do" : `${days} ${days === 1 ? "day" : "days"}, gently`}
+        </p>
+        <p className="text-[12px] text-muted-foreground mt-0.5 leading-relaxed">
+          Miss one? It just pauses — never resets.
         </p>
       </div>
     </div>
@@ -696,6 +688,7 @@ export default function Journey() {
   const { data: moodHistory = [] } = useGetMoodHistory();
   const { data: habits = [] } = useGetHabits();
   const { data: wins = [] } = useGetWins();
+  const { data: profile } = useGetProfile();
 
   if (journeyLoading || !journey) {
     return (
@@ -708,10 +701,13 @@ export default function Journey() {
   // Cast to access new fields before types regenerate
   const growthScore = (journey as any).growthScore as number ?? 1;
   const habitMoodInsight = (journey as any).habitMoodInsight as string | null ?? null;
+  const userName = (profile as any)?.userName as string | undefined;
 
-  const chartData = moodHistory
-    .map((entry) => ({ name: format(parseISO(entry.date), "MMM d"), score: entry.score }))
-    .reverse();
+  // Time axis reads oldest LEFT → newest RIGHT, regardless of API order —
+  // sort by date explicitly instead of trusting (and reversing) the payload.
+  const chartData = [...moodHistory]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((entry) => ({ name: format(parseISO(entry.date), "MMM d"), score: entry.score }));
 
   // Mood correlation — prefer server-computed insight, fall back to client calc
   const habitCorrelation = (() => {
@@ -731,57 +727,32 @@ export default function Journey() {
     };
   })();
 
-  const bestStreak = habits.reduce((max, h) => Math.max(max, h.streak ?? 0), 0);
-
   return (
     <div className="h-full overflow-y-auto px-6 py-10 pb-20 space-y-12">
 
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      {/* ── Header — chip, heading, warm lede ─────────────────────────────── */}
       <div className="space-y-4">
         <div>
-          <h1 className="font-serif text-[28px] text-foreground/90 tracking-wide mb-3">My Progress</h1>
-          <div className="h-px bg-primary/20 mb-4" />
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-primary/25 bg-primary/8 text-[10px] font-medium tracking-[0.2em] uppercase text-secondary/80">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-primary/25 bg-primary/8 text-[10px] font-medium tracking-[0.2em] uppercase text-secondary mb-4">
             <Map className="w-3 h-3 text-primary-strong/70" />
             Chapter {journey.stage} — {journey.stageLabel}
           </div>
+          <h1 className="font-display text-[34px] font-medium text-foreground tracking-wide leading-tight">
+            Your journey
+          </h1>
+          {/* Warm lede — mirrors the user back instead of scoring them */}
+          <p className="font-serif text-[15px] text-secondary italic leading-relaxed mt-2 max-w-md">
+            {journey.dayCounter} {journey.dayCounter === 1 ? "day" : "days"} in{userName ? `, ${userName}` : ""}. You keep
+            choosing yourself, quietly, even on the hard days.
+          </p>
         </div>
 
-        {/* ── 1% Better growth indicator ────────────────────────────────────── */}
+        {/* ── Growth — calm, no loud number ─────────────────────────────────── */}
         <GrowthIndicatorCard score={growthScore} />
 
-        {/* ── Stat grid ─────────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-3">
-          {[
-            { label: "Day", value: journey.dayCounter, sub: "since you started" },
-            { label: "Streak", value: journey.streak, icon: <Flame className="w-3 h-3 text-primary-strong/70" />, sub: "days in a row" },
-          ].map(({ label, value, icon, sub }) => (
-            <div key={label} className="bg-card border border-primary/15 rounded-2xl p-4 flex flex-col items-center justify-center gap-1 text-center">
-              <span className="text-muted-foreground text-[9px] uppercase tracking-[0.2em] flex items-center gap-1">{icon}{label}</span>
-              <span className="font-serif text-[32px] text-secondary/90 leading-none">{value}</span>
-              <span className="text-[9px] text-muted-foreground/50 tracking-wide">{sub}</span>
-            </div>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: "Wins", value: journey.winCount, icon: <Trophy className="w-3 h-3 text-primary-strong/70" /> },
-            { label: "Routines", value: journey.habitCount ?? 0, icon: <Zap className="w-3 h-3 text-primary-strong/70" /> },
-            { label: "Best streak", value: bestStreak > 0 ? `${bestStreak}d` : "—", icon: <Flame className="w-3 h-3 text-primary-strong/70" /> },
-          ].map(({ label, value, icon }) => (
-            <div key={label} className="bg-card border border-primary/15 rounded-2xl p-3 flex flex-col items-center justify-center gap-1 text-center">
-              <span className="text-muted-foreground text-[9px] uppercase tracking-[0.15em] flex items-center gap-1">{icon}{label}</span>
-              <span className="font-serif text-[22px] text-secondary/90 leading-none">{value}</span>
-            </div>
-          ))}
-        </div>
+        {/* ── Kind streak ───────────────────────────────────────────────────── */}
+        <KindStreakCard days={journey.streak} />
       </div>
-
-      {/* ── Daily Routines / Habits ─────────────────────────────────────────── */}
-      <HabitsSection />
-
-      <div className="h-px bg-primary/12" />
 
       {/* ── Mood chart ─────────────────────────────────────────────────────── */}
       <section className="space-y-4">
@@ -810,8 +781,13 @@ export default function Journey() {
         </div>
 
         {journey.moodCaption && (
-          <p className="text-sm text-secondary/60 italic font-serif px-1">"{journey.moodCaption}"</p>
+          <p className="text-sm text-secondary italic font-serif px-1">"{journey.moodCaption}"</p>
         )}
+
+        {/* Validating caption — dips are data, not verdicts */}
+        <p className="text-[12px] text-muted-foreground leading-relaxed px-1">
+          The dips are part of it. Feeling low on a day isn't going backwards — it's a day, and you kept going.
+        </p>
 
         {/* Habit-mood insight — server-computed correlation or client fallback */}
         {habitCorrelation && (
@@ -826,10 +802,15 @@ export default function Journey() {
 
       <div className="h-px bg-primary/12" />
 
-      {/* ── Small Wins ─────────────────────────────────────────────────────── */}
+      {/* ── Small things you did for yourself ──────────────────────────────── */}
       <section className="space-y-4">
-        <h2 className="font-serif text-xl text-foreground/85">Small Wins</h2>
+        <h2 className="font-serif text-xl text-foreground/90">Small things you did for yourself</h2>
         <div className="space-y-3">
+          {wins.length === 0 && (
+            <p className="text-sm text-muted-foreground font-serif italic px-1">
+              The small stuff counts here — a shower on a heavy day, a text you finally sent.
+            </p>
+          )}
           {wins.map((win, i) => (
             <motion.div key={win.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
               transition={{ delay: i * 0.04 }} className="bg-card border border-primary/15 rounded-xl p-4 flex gap-3">
@@ -837,8 +818,8 @@ export default function Journey() {
                 <Heart className="w-3.5 h-3.5 text-primary-strong/60" />
               </div>
               <div>
-                <p className="text-sm text-foreground/80 leading-relaxed">{win.content}</p>
-                <span className="text-[10px] text-muted-foreground/60 mt-1.5 block uppercase tracking-wider">
+                <p className="text-sm text-foreground/85 leading-relaxed">{win.content}</p>
+                <span className="text-[10px] text-muted-foreground mt-1.5 block uppercase tracking-wider">
                   {format(parseISO(win.createdAt), "MMM d, yyyy")}
                 </span>
               </div>
@@ -850,8 +831,13 @@ export default function Journey() {
 
       <div className="h-px bg-primary/12" />
 
-      {/* ── Follow-through / Commitments ───────────────────────────────────── */}
+      {/* ── What you're working on (commitments) ───────────────────────────── */}
       <CommitmentsSection />
+
+      <div className="h-px bg-primary/12" />
+
+      {/* ── Daily Routines ─────────────────────────────────────────────────── */}
+      <HabitsSection />
 
       <div className="h-px bg-primary/12" />
 
