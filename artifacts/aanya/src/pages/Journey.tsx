@@ -4,7 +4,7 @@ import { format, parseISO } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Flame, Check, Plus, Trophy, Lock, Heart, Star, Map, Target,
+  Flame, Check, Plus, Trophy, Heart, Star, Map, Target,
   Trash2, ChevronDown, ChevronUp, CircleDot, CheckCircle2,
   XCircle, Clock, TrendingUp, Zap,
 } from "lucide-react";
@@ -846,27 +846,26 @@ export default function Journey() {
 
       <div className="h-px bg-primary/12" />
 
-      {/* ── Milestones ─────────────────────────────────────────────────────── */}
-      <section className="space-y-4 pb-8">
-        <h2 className="font-serif text-xl text-foreground/85">Milestones</h2>
-        <div className="grid grid-cols-2 gap-3">
-          {journey.milestones.map((milestone) => (
-            <div key={milestone.id} className={cn(
-              "p-4 rounded-xl border flex flex-col items-center justify-center text-center gap-2 transition-all",
-              milestone.isUnlocked ? "bg-card border-primary/25" : "bg-card/30 border-primary/10 opacity-45 grayscale",
-            )}>
-              <div className={cn("w-7 h-7 rounded-full flex items-center justify-center",
-                milestone.isUnlocked ? "bg-primary/15 text-primary-strong" : "bg-foreground/5 text-muted-foreground")}>
-                {milestone.isUnlocked ? <Star className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+      {/* ── Milestones — only what's been reached; nothing locked or greyed
+           out, no "not yet" states staring back at the user ─────────────── */}
+      {journey.milestones.some((m) => m.isUnlocked) && (
+        <section className="space-y-4 pb-8">
+          <h2 className="font-serif text-xl text-foreground/90">Milestones</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {journey.milestones.filter((m) => m.isUnlocked).map((milestone) => (
+              <div key={milestone.id}
+                className="p-4 rounded-xl border bg-card border-primary/25 flex flex-col items-center justify-center text-center gap-2">
+                <div className="w-7 h-7 rounded-full flex items-center justify-center bg-primary/15 text-primary-strong">
+                  <Star className="w-3.5 h-3.5" />
+                </div>
+                <span className="text-[11px] font-medium tracking-wide leading-snug text-foreground/80">
+                  {milestone.label}
+                </span>
               </div>
-              <span className={cn("text-[11px] font-medium tracking-wide leading-snug",
-                milestone.isUnlocked ? "text-foreground/80" : "text-muted-foreground")}>
-                {milestone.label}
-              </span>
-            </div>
-          ))}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
