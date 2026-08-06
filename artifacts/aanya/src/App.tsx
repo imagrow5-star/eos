@@ -48,7 +48,15 @@ function PageLoader() {
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { retry: false },
+    queries: {
+      retry: false,
+      // Every app switch used to refetch every mounted query (auth, profile,
+      // messages, journey, moods, habits, wins…) — testers experienced it as
+      // the app "getting refreshed quite often". Nothing here changes outside
+      // the user's own actions, and every mutation already invalidates what
+      // it touches, so focus refetching only added flicker and races.
+      refetchOnWindowFocus: false,
+    },
   },
 });
 
