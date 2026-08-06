@@ -46,7 +46,16 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
     // A pending reset (user arrived from the email link, possibly reloaded
     // since) takes precedence over any other remembered tab.
     if (readStoredResetToken()) return "reset";
+    // welcome.html's CTAs state intent in the URL: "Sign in" carries
+    // ?mode=login, "Enter Eos"/"Begin your seven days" carry ?enter=1
+    // (sign-up). Fresh, explicit intent outranks a remembered draft tab —
+    // otherwise clicking "Enter Eos", going back, then "Sign in" would keep
+    // showing the sign-up tab. The draft still wins for plain mid-flow
+    // reloads (forgot-password especially), where no new intent exists.
+    const params = new URLSearchParams(window.location.search);
     const draftTab = readDraft().tab;
+    if (params.get("mode") === "login") return "login";
+    if (params.has("enter") && draftTab !== "forgot") return initialTab;
     return draftTab === "reset" ? "login" : (draftTab ?? initialTab);
   });
   const [email, setEmail] = useState(() => readDraft().email ?? "");
