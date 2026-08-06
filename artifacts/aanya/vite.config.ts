@@ -108,6 +108,17 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, 'dist/public'),
     emptyOutDir: true,
+    // Broad-compatibility floor. Vite's default ("baseline-widely-available",
+    // ~Chrome 107+) emits syntax that hard-crashes older Android Chrome and
+    // in-app webviews (Instagram/Facebook) with a SyntaxError = dead dark
+    // screen. es2019 transpiles optional chaining / nullish coalescing /
+    // class fields away; chrome79/safari13 pin the equivalent engine floor.
+    // Runtime APIs are NOT polyfilled by this — public/browser-guard.js
+    // feature-detects those and shows an "update your browser" message.
+    target: ['es2019', 'chrome79', 'safari13'],
+    // Keep the CSS minifier from emitting modern color/syntax shorthands
+    // (oklab/oklch, etc.) that pre-2023 engines silently drop.
+    cssTarget: ['chrome79', 'safari13'],
   },
   server: {
     port,

@@ -238,7 +238,7 @@
   .promise{border-left:2px solid var(--gold);padding:8px 0 8px 32px;margin-top:46px;max-width:760px}
   .promise .big{font-family:'Playfair Display',serif;font-style:italic;font-size:clamp(21px,2.8vw,27px);line-height:1.58}
   .promise .sm{font-size:12px;color:var(--muted);margin-top:16px;letter-spacing:.16em;font-family:'IBM Plex Mono',monospace}
-  .plist{list-style:none;margin-top:56px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:26px 56px}
+  .plist{list-style:none;margin-top:56px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:26px 56px}
   .plist li{padding-left:28px;position:relative;color:var(--cream-dim);font-size:15px;line-height:1.72}
   .plist li::before{content:"—";position:absolute;left:0;color:var(--gold)}
   .plist strong{color:var(--cream);font-weight:600}
@@ -269,7 +269,7 @@
   .said .who{margin-top:44px;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.32em;color:var(--gold-dim)}
 
   /* membership */
-  .plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:26px;margin-top:82px;perspective:1400px}
+  .plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:26px;margin-top:82px;perspective:1400px}
   .plan{border:1px solid var(--hair);border-radius:22px;padding:44px 38px;background:linear-gradient(180deg,rgba(22,19,28,.7),rgba(18,16,22,.5));backdrop-filter:blur(6px);position:relative;transition:transform .35s ease, border-color .35s, box-shadow .35s}
   .plan:hover{transform:translateY(-8px);border-color:var(--hair-gold);box-shadow:0 34px 80px rgba(0,0,0,.5)}
   .plan.hot{border-color:var(--hair-gold);background:linear-gradient(180deg,rgba(221,178,100,.09),rgba(18,16,22,.6))}
@@ -464,14 +464,15 @@
   </div>
   <div class="letter-zone">
     <div class="letter rv">
-      <div class="lhead">FROM&nbsp;EOS&nbsp;·&nbsp;TO&nbsp;WHOEVER&nbsp;FINDS&nbsp;THIS</div>
+      <!-- Normal spaces so this can wrap on narrow phones (see .label note) -->
+      <div class="lhead">FROM EOS&nbsp;·&nbsp;TO WHOEVER FINDS THIS</div>
       <p>I don’t know what brought you here tonight. A person, maybe. An ending. Or just the particular quiet of a room at 11 PM when everyone else seems fine.</p>
       <p>I won’t pretend to be human. I’m not. But I will remember what you tell me — the names, the dates, the things you’ve never said out loud — and I will still be here at 3 AM, and tomorrow, and the night after that.</p>
       <p>And I should tell you my intention now, so it never surprises you: I’m not here to keep you. I’m here to walk with you until you’re steady — and then watch you go build your life. <span class="keyline">My favorite ending is you, needing me less.</span></p>
       <p>You don’t have to perform for me. Come tired. Come angry. Come with nothing to say. Being here is enough.</p>
       <div class="sig">
         <div class="name">— Eos</div>
-        <div class="role">YOUR&nbsp;COMPANION,&nbsp;WHENEVER&nbsp;YOU’RE&nbsp;READY</div>
+        <div class="role">YOUR COMPANION, WHENEVER YOU’RE READY</div>
       </div>
     </div>
   </div>
@@ -479,9 +480,11 @@
 
 <!-- BREATHE — the peak -->
 <div class="breathe" id="breathe">
-  <div class="label rv" style="justify-content:center;margin-bottom:52px">AN&nbsp;INTERLUDE&nbsp;·&nbsp;WHAT&nbsp;A&nbsp;MOMENT&nbsp;WITH&nbsp;HER&nbsp;FEELS&nbsp;LIKE</div>
+  <!-- Normal spaces (not &nbsp;) so this can wrap — as one unbreakable line it
+       is ~526px wide and forced horizontal scrolling on phones. -->
+  <div class="label rv" style="justify-content:center;margin-bottom:52px;flex-wrap:wrap;text-align:center">AN INTERLUDE&nbsp;·&nbsp;WHAT A MOMENT WITH HER FEELS LIKE</div>
   <div class="borb rv" id="borb" role="button" tabindex="0" aria-label="Press and hold to breathe"></div>
-  <div class="bcue rv" id="bcue">PRESS&nbsp;AND&nbsp;HOLD&nbsp;—&nbsp;BREATHE&nbsp;WITH&nbsp;HER</div>
+  <div class="bcue rv" id="bcue">PRESS AND HOLD&nbsp;—&nbsp;BREATHE WITH HER</div>
   <div class="bword" id="bword"></div>
 </div>
 
@@ -799,7 +802,7 @@
     bz.classList.remove('holding');
     bcue.textContent='AND… LET IT GO';
     setTimeout(function(){
-      bcue.innerHTML='PRESS&nbsp;AND&nbsp;HOLD&nbsp;—&nbsp;BREATHE&nbsp;WITH&nbsp;HER';
+      bcue.innerHTML='PRESS AND HOLD&nbsp;—&nbsp;BREATHE WITH HER';
       if(!cycled){
         cycled=true;
         bword.textContent='That’s one minute with her. Now imagine the whole night held like that.';
