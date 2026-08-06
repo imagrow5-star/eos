@@ -215,6 +215,7 @@ function LiveCaption({ text, revealedWords }: { text: string; revealedWords: num
 export default function Chat() {
   const queryClient = useQueryClient();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
   const { data: onboarding } = useGetOnboardingStatus();
   const { data: profile } = useGetProfile();
@@ -1062,6 +1063,8 @@ export default function Chat() {
     // which may hold a draft restored from sessionStorage — the sent message
     // would reappear in the box (and get re-persisted by the watcher).
     form.reset({ content: "" });
+    // collapse the auto-grow textarea back to one line
+    if (composerRef.current) composerRef.current.style.height = "auto";
 
     if (!onboarding?.isComplete) {
       // Onboarding uses the regular mutation — no streaming needed
@@ -3978,7 +3981,9 @@ export default function Chat() {
                   <form
                     onSubmit={form.handleSubmit(handleSend)}
                     className={cn(
-                      "flex items-center gap-2 max-w-3xl mx-auto bg-popover border rounded-full pl-5 pr-2 py-1.5 shadow-sm transition-all",
+                      // items-end keeps mic/send pinned to the bottom row as
+                      // the textarea grows; rounded-3xl stays soft at any height
+                      "flex items-end gap-2 max-w-3xl mx-auto bg-popover border rounded-3xl pl-5 pr-2 py-1.5 shadow-sm transition-all",
                       voice.isListening
                         ? "border-primary/45 shadow-[0_0_0_3px_hsl(var(--primary)/0.10)]"
                         : "border-border",
@@ -3990,14 +3995,34 @@ export default function Chat() {
                       render={({ field }) => (
                         <FormItem className="flex-1">
                           <FormControl>
-                            <Input
+                            {/* Auto-grow textarea: height follows content up
+                                to ~5 lines, then scrolls. 16px on touch
+                                screens so mobile browsers don't zoom-jump on
+                                focus. Enter sends, Shift+Enter adds a line. */}
+                            <textarea
                               {...field}
+                              ref={(el) => {
+                                field.ref(el);
+                                composerRef.current = el;
+                              }}
+                              rows={1}
+                              onInput={(e) => {
+                                const el = e.currentTarget;
+                                el.style.height = "auto";
+                                el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && !e.shiftKey) {
+                                  e.preventDefault();
+                                  form.handleSubmit(handleSend)();
+                                }
+                              }}
                               placeholder={
                                 voice.isListening
                                   ? "Listening — speak now…"
                                   : "Tell me what's on your mind…"
                               }
-                              className="border-0 bg-transparent shadow-none focus-visible:ring-0 px-0 placeholder:text-muted-foreground/40 text-[14.5px] h-auto py-1.5 text-foreground/85"
+                              className="w-full resize-none border-0 bg-transparent outline-none placeholder:text-muted-foreground/40 text-base sm:text-[14.5px] leading-relaxed py-1.5 text-foreground/85 max-h-[132px] overflow-y-auto disabled:opacity-50"
                               disabled={isTyping || isStreaming}
                               autoComplete="off"
                               maxLength={4000}
