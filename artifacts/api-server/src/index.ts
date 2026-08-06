@@ -5,6 +5,7 @@ import { initVoiceLibrary } from "./services/voiceLibrary";
 import { reconcileAgentConfig } from "./services/agentConfigGuard";
 import { runDataEncryptionMigration } from "./services/dataEncryptionMigration";
 import { backfillVoiceGender } from "./services/settings/voiceGenderBackfill";
+import { ensureProfileThemeColumns } from "./services/schemaGuard";
 import { backfillMemoryImportance } from "./services/memory/backfill";
 import { runDedupBackfill } from "./services/memory/dedupBackfill";
 import { warnIfAgentEnvIncomplete } from "./services/voiceAgentRouting";
@@ -36,6 +37,18 @@ const port = Number(rawPort);
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
+
+// Schema guard BEFORE accepting traffic: deploys don't run drizzle-kit push,
+// and a database missing the theme columns 500s every profile read (broke
+// production login). Idempotent ADD COLUMN IF NOT EXISTS — instant no-op once
+// applied. On failure we still boot (DB may be briefly unreachable): the
+// in-request retry inside getOrCreateProfileForUser covers the gap.
+await ensureProfileThemeColumns().catch((e) =>
+  logger.error(
+    { err: e },
+    "profile theme column guard failed at boot — profile reads will self-heal per request",
+  ),
+);
 
 app.listen(port, (err) => {
   if (err) {
