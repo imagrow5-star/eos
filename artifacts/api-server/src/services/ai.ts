@@ -17,6 +17,7 @@ import {
   type Profile,
 } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { kindStreak } from "../lib/kindStreak.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { recordMemoryReferences } from "./memory/references.js";
 import { detectRememberIntent } from "./memory/rememberTriggers.js";
@@ -1119,30 +1120,10 @@ async function recalcHabitStreak(habitId: number, today: string): Promise<void> 
     .from(habitCompletionsTable)
     .where(eq(habitCompletionsTable.habitId, habitId));
 
-  const completedDates = new Set(allCompletions.map((c) => c.date));
-
-  let streak = 0;
-  let checkDate = today;
-
-  if (!completedDates.has(today)) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - 1);
-    const yesterday = d.toISOString().slice(0, 10);
-    if (!completedDates.has(yesterday)) {
-      streak = 0;
-    } else {
-      checkDate = yesterday;
-    }
-  }
-
-  if (completedDates.has(checkDate)) {
-    while (completedDates.has(checkDate)) {
-      streak++;
-      const d = new Date(checkDate);
-      d.setDate(d.getDate() - 1);
-      checkDate = d.toISOString().slice(0, 10);
-    }
-  }
+  // Kind streak: every day this habit was done counts, and a missed day just
+  // pauses the number — it never resets to 1. Matches the in-app copy
+  // "missing one day won't break it" (see lib/kindStreak, unit-tested).
+  const streak = kindStreak(allCompletions.map((c) => c.date));
 
   await db
     .update(habitsTable)

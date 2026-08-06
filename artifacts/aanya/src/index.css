@@ -391,6 +391,12 @@
   .companion-message {
     font-family: 'Playfair Display', serif;
   }
+
+  /* Display serif for big warm headings (Journey page) — Cormorant with
+     Playfair fallback so nothing breaks if the font is slow/blocked. */
+  .font-display {
+    font-family: 'Cormorant', 'Playfair Display', serif;
+  }
 }
 
 /* ── Scrollbar ─────────────────────────────────────────────────────────────── */
