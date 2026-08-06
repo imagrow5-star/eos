@@ -82,134 +82,134 @@
      Tailwind red/amber scale with dark: variants — never theme-hued.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── TWILIGHT · LIGHT (default) ────────────────────────────────────────── */
+/* ── TWILIGHT · LIGHT (default) ─── tokens from Eos theme spec (#F3F0F7, #9C8FBE) */
 :root {
-  --background: 266 30% 95%;        /* #F3F0F7 */
-  --foreground: 268 15% 20%;        /* #322B3A */
-  --card: 260 60% 99%;              /* #FCFBFE */
+  --background: 266 30% 95%;  /* #F3F0F7 */
+  --foreground: 268 15% 20%;  /* #322B3A */
+  --card: 260 60% 99%;  /* #FCFBFE */
   --card-foreground: 268 15% 20%;
-  --card-border: 264 30% 87%;
+  --card-border: 265 35% 90%;
   --popover: 260 60% 99%;
   --popover-foreground: 268 15% 20%;
-  --popover-border: 264 30% 87%;
-  --primary: 257 27% 65%;           /* #9C8FBE */
-  --primary-foreground: 262 23% 14%;/* #211B2B */
-  --primary-strong: 255 23% 41%;    /* #5D5182 — text-safe */
-  --secondary: 258 14% 41%;         /* #635A78 */
+  --popover-border: 265 35% 90%;
+  --primary: 257 27% 65%;  /* #9C8FBE */
+  --primary-foreground: 262 23% 14%;  /* #211B2B */
+  --primary-strong: 255 23% 41%;  /* #5D5182 — text-safe accent */
+  --secondary: 266 12% 40%;  /* #655A73 */
   --secondary-foreground: 266 30% 95%;
-  --muted: 263 32% 92%;             /* #E9E4F1 */
-  --muted-foreground: 258 14% 41%;
-  --accent: 257 27% 65%;
+  --muted: 263 32% 92%;  /* #E9E4F1 */
+  --muted-foreground: 266 12% 40%;
+  --accent: 257 27% 65%;  /* #9C8FBE */
   --accent-foreground: 262 23% 14%;
-  --destructive: 0 42% 32%;         /* FIXED across all themes/modes */
+  --destructive: 0 42% 32%;        /* FIXED across all themes/modes */
   --destructive-foreground: 39 40% 90%;
-  --border: 264 30% 87%;            /* #DCD4E8 */
-  --input: 264 30% 87%;
+  --border: 265 35% 90%;  /* #E5DEEF */
+  --input: 265 35% 90%;
   --ring: 255 23% 41%;
   --chart-1: 255 23% 41%;
-  --chart-2: 259 22% 47%;
-  --chart-3: 258 14% 41%;
+  --chart-2: 255 22% 47%;
+  --chart-3: 266 12% 40%;
   --chart-4: 268 15% 20%;
   --chart-5: 263 32% 92%;
-  --user-bubble: 257 27% 65%;
-  --user-bubble-text: 262 23% 14%;
+  --user-bubble: 257 27% 65%;  /* #9C8FBE */
+  --user-bubble-text: 262 23% 14%;  /* #211B2B */
   --eos-bubble: 260 60% 99%;
-  --bubble-shadow: 0 2px 12px hsl(258 14% 41% / 0.10), 0 1px 3px hsl(258 14% 41% / 0.08);
+  --bubble-shadow: 0 2px 12px hsl(266 12% 40% / 0.10), 0 1px 3px hsl(266 12% 40% / 0.08);
   --radius: 0.75rem;
 }
 
-/* ── TWILIGHT · DARK ───────────────────────────────────────────────────── */
+/* ── TWILIGHT · DARK ─── tokens from Eos theme spec (#1C1922, #B7A6D6) */
 [data-mode='dark'] {
-  --background: 260 15% 12%;        /* #1C1922 */
-  --foreground: 260 35% 93%;        /* #ECE8F4 */
-  --card: 265 15% 16%;              /* #28232F */
-  --card-foreground: 260 35% 93%;
-  --card-border: 264 14% 27%;
+  --background: 260 15% 12%;  /* #1C1922 */
+  --foreground: 273 30% 93%;  /* #EDE7F2 */
+  --card: 265 15% 16%;  /* #28232F */
+  --card-foreground: 273 30% 93%;
+  --card-border: 267 15% 24%;
   --popover: 265 15% 16%;
-  --popover-foreground: 260 35% 93%;
-  --popover-border: 264 14% 27%;
-  --primary: 261 37% 75%;           /* #B7A6D6 */
-  --primary-foreground: 270 23% 10%;/* #1A1420 */
-  --primary-strong: 261 37% 75%;
-  --secondary: 258 24% 74%;         /* #B5ABCC */
+  --popover-foreground: 273 30% 93%;
+  --popover-border: 267 15% 24%;
+  --primary: 261 37% 75%;  /* #B7A6D6 */
+  --primary-foreground: 270 23% 10%;  /* #1A1420 */
+  --primary-strong: 261 37% 75%;  /* #B7A6D6 — text-safe accent */
+  --secondary: 265 22% 74%;  /* #BBAFCC */
   --secondary-foreground: 260 15% 12%;
-  --muted: 264 14% 21%;             /* #332D3C */
-  --muted-foreground: 258 24% 74%;
-  --accent: 257 27% 65%;
-  --accent-foreground: 263 25% 10%;
-  --destructive: 0 42% 32%;
+  --muted: 267 17% 20%;  /* #332B3D */
+  --muted-foreground: 265 22% 74%;
+  --accent: 261 37% 75%;  /* #B7A6D6 */
+  --accent-foreground: 270 23% 10%;
+  --destructive: 0 42% 32%;        /* FIXED across all themes/modes */
   --destructive-foreground: 39 40% 90%;
-  --border: 264 14% 27%;            /* #443C50 */
-  --input: 264 14% 27%;
+  --border: 267 15% 24%;  /* #3D3547 */
+  --input: 267 15% 24%;
   --ring: 261 37% 75%;
   --chart-1: 261 37% 75%;
   --chart-2: 257 27% 65%;
-  --chart-3: 258 24% 74%;
-  --chart-4: 260 35% 93%;
-  --chart-5: 264 14% 21%;
-  --user-bubble: 257 27% 65%;
-  --user-bubble-text: 263 25% 10%;
+  --chart-3: 265 22% 74%;
+  --chart-4: 273 30% 93%;
+  --chart-5: 267 17% 20%;
+  --user-bubble: 257 27% 65%;  /* #9C8FBE */
+  --user-bubble-text: 263 25% 10%;  /* #181320 */
   --eos-bubble: 265 15% 16%;
   --bubble-shadow: 0 2px 14px hsl(0 0% 0% / 0.28), 0 0 18px hsl(261 37% 75% / 0.06);
 }
 
-/* ── DAWN · LIGHT ──────────────────────────────────────────────────────── */
+/* ── DAWN · LIGHT ─── tokens from Eos theme spec (#FBF3EE, #E19B85) */
 [data-theme='dawn'] {
-  --background: 23 62% 96%;
-  --foreground: 0 16% 20%;
-  --card: 30 100% 99%;
+  --background: 23 62% 96%;  /* #FBF3EE */
+  --foreground: 0 16% 20%;  /* #3A2A2A */
+  --card: 30 100% 99%;  /* #FFFCF9 */
   --card-foreground: 0 16% 20%;
   --card-border: 19 52% 88%;
   --popover: 30 100% 99%;
   --popover-foreground: 0 16% 20%;
   --popover-border: 19 52% 88%;
-  --primary: 37 66% 65%;
-  --primary-foreground: 33 45% 16%;
-  --primary-strong: 35 56% 33%;
-  --secondary: 12 20% 40%;
+  --primary: 37 66% 65%;  /* #E0B36A */
+  --primary-foreground: 33 45% 16%;  /* #3A2A16 */
+  --primary-strong: 35 56% 33%;  /* #855D25 — text-safe accent */
+  --secondary: 12 20% 40%;  /* #7A5A52 */
   --secondary-foreground: 23 62% 96%;
-  --muted: 21 56% 92%;
+  --muted: 21 56% 92%;  /* #F6E7DF */
   --muted-foreground: 12 20% 40%;
-  --accent: 14 61% 70%;
+  --accent: 14 61% 70%;  /* #E19B85 */
   --accent-foreground: 0 29% 18%;
-  --destructive: 0 42% 32%;
+  --destructive: 0 42% 32%;        /* FIXED across all themes/modes */
   --destructive-foreground: 39 40% 90%;
-  --border: 19 52% 88%;
+  --border: 19 52% 88%;  /* #F0DAD0 */
   --input: 19 52% 88%;
   --ring: 35 56% 33%;
   --chart-1: 35 56% 33%;
-  --chart-2: 14 44% 49%;
+  --chart-2: 15 42% 50%;
   --chart-3: 12 20% 40%;
   --chart-4: 0 16% 20%;
   --chart-5: 21 56% 92%;
-  --user-bubble: 14 61% 70%;
-  --user-bubble-text: 0 29% 18%;
+  --user-bubble: 14 61% 70%;  /* #E19B85 */
+  --user-bubble-text: 0 29% 18%;  /* #3A2020 */
   --eos-bubble: 30 100% 99%;
   --bubble-shadow: 0 2px 12px hsl(12 20% 40% / 0.10), 0 1px 3px hsl(12 20% 40% / 0.08);
 }
 
-/* ── DAWN · DARK ───────────────────────────────────────────────────────── */
+/* ── DAWN · DARK ─── tokens from Eos theme spec (#241A19, #E19B85) */
 [data-theme='dawn'][data-mode='dark'] {
-  --background: 5 18% 12%;
-  --foreground: 24 45% 91%;
-  --card: 8 19% 15%;
+  --background: 5 18% 12%;  /* #241A19 */
+  --foreground: 24 45% 91%;  /* #F3E7DF */
+  --card: 8 19% 15%;  /* #2E211F */
   --card-foreground: 24 45% 91%;
   --card-border: 14 21% 24%;
   --popover: 8 19% 15%;
   --popover-foreground: 24 45% 91%;
   --popover-border: 14 21% 24%;
-  --primary: 37 66% 65%;
-  --primary-foreground: 31 41% 10%;
-  --primary-strong: 37 66% 65%;
-  --secondary: 16 26% 72%;
+  --primary: 37 66% 65%;  /* #E0B36A */
+  --primary-foreground: 31 41% 10%;  /* #241A0F */
+  --primary-strong: 37 66% 65%;  /* #E0B36A — text-safe accent */
+  --secondary: 16 26% 72%;  /* #C9AEA4 */
   --secondary-foreground: 5 18% 12%;
-  --muted: 9 20% 19%;
+  --muted: 9 20% 19%;  /* #3A2A27 */
   --muted-foreground: 16 26% 72%;
-  --accent: 14 61% 70%;
+  --accent: 14 61% 70%;  /* #E19B85 */
   --accent-foreground: 4 31% 11%;
-  --destructive: 0 42% 32%;
+  --destructive: 0 42% 32%;        /* FIXED across all themes/modes */
   --destructive-foreground: 39 40% 90%;
-  --border: 14 21% 24%;
+  --border: 14 21% 24%;  /* #4A3630 */
   --input: 14 21% 24%;
   --ring: 37 66% 65%;
   --chart-1: 37 66% 65%;
@@ -217,150 +217,150 @@
   --chart-3: 16 26% 72%;
   --chart-4: 24 45% 91%;
   --chart-5: 9 20% 19%;
-  --user-bubble: 14 61% 70%;
-  --user-bubble-text: 4 31% 11%;
+  --user-bubble: 14 61% 70%;  /* #E19B85 */
+  --user-bubble-text: 4 31% 11%;  /* #241413 */
   --eos-bubble: 8 19% 15%;
   --bubble-shadow: 0 2px 14px hsl(0 0% 0% / 0.28), 0 0 18px hsl(37 66% 65% / 0.06);
 }
 
-/* ── GOLDEN AMBER · LIGHT ──────────────────────────────────────────────── */
+/* ── GOLDEN AMBER · LIGHT ─── tokens from Eos theme spec (#F5EEE1, #C79A5B) */
 [data-theme='amber'] {
-  --background: 39 50% 92%;
-  --foreground: 24 13% 15%;
-  --card: 43 100% 99%;
+  --background: 39 50% 92%;  /* #F5EEE1 */
+  --foreground: 24 13% 15%;  /* #2B2521 */
+  --card: 43 100% 99%;  /* #FFFDF8 */
   --card-foreground: 24 13% 15%;
-  --card-border: 37 49% 81%;
+  --card-border: 38 42% 84%;
   --popover: 43 100% 99%;
   --popover-foreground: 24 13% 15%;
-  --popover-border: 37 49% 81%;
-  --primary: 35 49% 57%;
-  --primary-foreground: 30 24% 11%;
-  --primary-strong: 39 53% 32%;
-  --secondary: 36 28% 34%;
+  --popover-border: 38 42% 84%;
+  --primary: 35 49% 57%;  /* #C79A5B */
+  --primary-foreground: 30 24% 11%;  /* #241D16 */
+  --primary-strong: 39 53% 32%;  /* #7D5F26 — text-safe accent */
+  --secondary: 32 21% 35%;  /* #6B5A46 */
   --secondary-foreground: 39 50% 92%;
-  --muted: 38 49% 87%;
-  --muted-foreground: 36 28% 34%;
-  --accent: 35 49% 57%;
+  --muted: 39 53% 88%;  /* #F1E6D2 */
+  --muted-foreground: 32 21% 35%;
+  --accent: 35 49% 57%;  /* #C79A5B */
   --accent-foreground: 30 24% 11%;
-  --destructive: 0 42% 32%;
+  --destructive: 0 42% 32%;        /* FIXED across all themes/modes */
   --destructive-foreground: 39 40% 90%;
-  --border: 37 49% 81%;
-  --input: 37 49% 81%;
+  --border: 38 42% 84%;  /* #E7DAC4 */
+  --input: 38 42% 84%;
   --ring: 39 53% 32%;
   --chart-1: 39 53% 32%;
-  --chart-2: 36 44% 41%;
-  --chart-3: 36 28% 34%;
+  --chart-2: 38 47% 37%;
+  --chart-3: 32 21% 35%;
   --chart-4: 24 13% 15%;
-  --chart-5: 38 49% 87%;
-  --user-bubble: 35 49% 57%;
-  --user-bubble-text: 30 24% 11%;
+  --chart-5: 39 53% 88%;
+  --user-bubble: 35 49% 57%;  /* #C79A5B */
+  --user-bubble-text: 30 24% 11%;  /* #241D16 */
   --eos-bubble: 43 100% 99%;
-  --bubble-shadow: 0 2px 12px hsl(36 28% 34% / 0.10), 0 1px 3px hsl(36 28% 34% / 0.08);
+  --bubble-shadow: 0 2px 12px hsl(32 21% 35% / 0.10), 0 1px 3px hsl(32 21% 35% / 0.08);
 }
 
-/* ── GOLDEN AMBER · DARK ───────────────────────────────────────────────── */
+/* ── GOLDEN AMBER · DARK ─── tokens from Eos theme spec (#1B1512, #D8A860) */
 [data-theme='amber'][data-mode='dark'] {
-  --background: 20 20% 9%;
-  --foreground: 35 40% 92%;
-  --card: 23 18% 14%;
-  --card-foreground: 35 40% 92%;
-  --card-border: 30 21% 23%;
+  --background: 20 20% 9%;  /* #1B1512 */
+  --foreground: 38 51% 90%;  /* #F3EADA */
+  --card: 23 18% 14%;  /* #2A221D */
+  --card-foreground: 38 51% 90%;
+  --card-border: 26 21% 20%;
   --popover: 23 18% 14%;
-  --popover-foreground: 35 40% 92%;
-  --popover-border: 30 21% 23%;
-  --primary: 36 61% 61%;
-  --primary-foreground: 33 59% 7%;
-  --primary-strong: 36 61% 61%;
-  --secondary: 31 28% 69%;
+  --popover-foreground: 38 51% 90%;
+  --popover-border: 26 21% 20%;
+  --primary: 36 61% 61%;  /* #D8A860 */
+  --primary-foreground: 33 59% 7%;  /* #1B1207 */
+  --primary-strong: 36 61% 61%;  /* #D8A860 — text-safe accent */
+  --secondary: 34 25% 71%;  /* #C7B7A2 */
   --secondary-foreground: 20 20% 9%;
-  --muted: 27 20% 18%;
-  --muted-foreground: 31 28% 69%;
-  --accent: 35 49% 57%;
+  --muted: 23 21% 16%;  /* #332821 */
+  --muted-foreground: 34 25% 71%;
+  --accent: 36 61% 61%;  /* #D8A860 */
   --accent-foreground: 33 59% 7%;
-  --destructive: 0 42% 32%;
+  --destructive: 0 42% 32%;        /* FIXED across all themes/modes */
   --destructive-foreground: 39 40% 90%;
-  --border: 30 21% 23%;
-  --input: 30 21% 23%;
+  --border: 26 21% 20%;  /* #3D3128 */
+  --input: 26 21% 20%;
   --ring: 36 61% 61%;
   --chart-1: 36 61% 61%;
   --chart-2: 35 49% 57%;
-  --chart-3: 31 28% 69%;
-  --chart-4: 35 40% 92%;
-  --chart-5: 27 20% 18%;
-  --user-bubble: 35 49% 57%;
-  --user-bubble-text: 26 28% 10%;
+  --chart-3: 34 25% 71%;
+  --chart-4: 38 51% 90%;
+  --chart-5: 23 21% 16%;
+  --user-bubble: 35 49% 57%;  /* #C79A5B */
+  --user-bubble-text: 20 20% 9%;  /* #1B1512 */
   --eos-bubble: 23 18% 14%;
   --bubble-shadow: 0 2px 14px hsl(0 0% 0% / 0.28), 0 0 18px hsl(36 61% 61% / 0.06);
 }
 
-/* ── SAGE · LIGHT (green accents, terracotta CTA per the design) ───────── */
+/* ── SAGE · LIGHT ─── tokens from Eos theme spec (#F1F2EA, #7E9A80) */
 [data-theme='sage'] {
-  --background: 67 24% 93%;
-  --foreground: 103 7% 19%;
-  --card: 72 56% 98%;
+  --background: 67 24% 93%;  /* #F1F2EA */
+  --foreground: 103 7% 19%;  /* #2E332C */
+  --card: 72 45% 98%;  /* #FBFCF7 */
   --card-foreground: 103 7% 19%;
-  --card-border: 83 20% 83%;
-  --popover: 72 56% 98%;
+  --card-border: 80 21% 86%;
+  --popover: 72 45% 98%;
   --popover-foreground: 103 7% 19%;
-  --popover-border: 83 20% 83%;
-  --primary: 21 46% 60%;            /* terracotta #C88B6A */
-  --primary-foreground: 24 41% 12%;
-  --primary-strong: 124 16% 36%;    /* deep sage for text accents */
-  --secondary: 107 10% 38%;
+  --popover-border: 80 21% 86%;
+  --primary: 124 12% 55%;  /* #7E9A80 */
+  --primary-foreground: 111 11% 12%;  /* #1C221B */
+  --primary-strong: 124 16% 36%;  /* #4E6B50 — text-safe accent */
+  --secondary: 93 12% 35%;  /* #59654F */
   --secondary-foreground: 67 24% 93%;
-  --muted: 78 23% 89%;
-  --muted-foreground: 107 10% 38%;
-  --accent: 124 12% 55%;            /* sage green #7E9A80 */
+  --muted: 77 26% 89%;  /* #E7EBDD */
+  --muted-foreground: 93 12% 35%;
+  --accent: 124 12% 55%;  /* #7E9A80 */
   --accent-foreground: 111 11% 12%;
-  --destructive: 0 42% 32%;
+  --destructive: 0 42% 32%;        /* FIXED across all themes/modes */
   --destructive-foreground: 39 40% 90%;
-  --border: 83 20% 83%;
-  --input: 83 20% 83%;
+  --border: 80 21% 86%;  /* #DDE2D3 */
+  --input: 80 21% 86%;
   --ring: 124 16% 36%;
   --chart-1: 124 16% 36%;
-  --chart-2: 21 40% 42%;
-  --chart-3: 107 10% 38%;
+  --chart-2: 118 13% 42%;
+  --chart-3: 93 12% 35%;
   --chart-4: 103 7% 19%;
-  --chart-5: 78 23% 89%;
-  --user-bubble: 124 12% 55%;
-  --user-bubble-text: 111 11% 12%;
-  --eos-bubble: 72 56% 98%;
-  --bubble-shadow: 0 2px 12px hsl(107 10% 38% / 0.10), 0 1px 3px hsl(107 10% 38% / 0.08);
+  --chart-5: 77 26% 89%;
+  --user-bubble: 124 12% 55%;  /* #7E9A80 */
+  --user-bubble-text: 111 11% 12%;  /* #1C221B */
+  --eos-bubble: 72 45% 98%;
+  --bubble-shadow: 0 2px 12px hsl(93 12% 35% / 0.10), 0 1px 3px hsl(93 12% 35% / 0.08);
 }
 
-/* ── SAGE · DARK ───────────────────────────────────────────────────────── */
+/* ── SAGE · DARK ─── tokens from Eos theme spec (#1A1E18, #8FB08E) */
 [data-theme='sage'][data-mode='dark'] {
-  --background: 120 10% 10%;
-  --foreground: 105 20% 92%;
-  --card: 120 10% 15%;
-  --card-foreground: 105 20% 92%;
-  --card-border: 120 9% 27%;
-  --popover: 120 10% 15%;
-  --popover-foreground: 105 20% 92%;
-  --popover-border: 120 9% 27%;
-  --primary: 22 55% 66%;            /* lifted terracotta #D89B78 */
-  --primary-foreground: 20 63% 8%;
-  --primary-strong: 122 18% 71%;    /* pale sage reads as text on dark */
-  --secondary: 117 15% 72%;
-  --secondary-foreground: 120 10% 10%;
-  --muted: 120 9% 20%;
-  --muted-foreground: 117 15% 72%;
-  --accent: 124 12% 55%;
-  --accent-foreground: 120 16% 9%;
-  --destructive: 0 42% 32%;
+  --background: 100 11% 11%;  /* #1A1E18 */
+  --foreground: 78 25% 92%;  /* #EDF0E6 */
+  --card: 93 12% 15%;  /* #262B22 */
+  --card-foreground: 78 25% 92%;
+  --card-border: 94 12% 23%;
+  --popover: 93 12% 15%;
+  --popover-foreground: 78 25% 92%;
+  --popover-border: 94 12% 23%;
+  --primary: 118 18% 62%;  /* #8FB08E */
+  --primary-foreground: 95 36% 9%;  /* #16200F */
+  --primary-strong: 118 18% 62%;  /* #8FB08E — text-safe accent */
+  --secondary: 96 14% 71%;  /* #B4C0AC */
+  --secondary-foreground: 100 11% 11%;
+  --muted: 93 11% 19%;  /* #30362B */
+  --muted-foreground: 96 14% 71%;
+  --accent: 118 18% 62%;  /* #8FB08E */
+  --accent-foreground: 95 36% 9%;
+  --destructive: 0 42% 32%;        /* FIXED across all themes/modes */
   --destructive-foreground: 39 40% 90%;
-  --border: 120 9% 27%;
-  --input: 120 9% 27%;
-  --ring: 22 55% 66%;
-  --chart-1: 22 55% 66%;
+  --border: 94 12% 23%;  /* #3A4234 */
+  --input: 94 12% 23%;
+  --ring: 118 18% 62%;
+  --chart-1: 118 18% 62%;
   --chart-2: 124 12% 55%;
-  --chart-3: 117 15% 72%;
-  --chart-4: 105 20% 92%;
-  --chart-5: 120 9% 20%;
-  --user-bubble: 124 12% 55%;
-  --user-bubble-text: 120 16% 9%;
-  --eos-bubble: 120 10% 15%;
-  --bubble-shadow: 0 2px 14px hsl(0 0% 0% / 0.28), 0 0 18px hsl(22 55% 66% / 0.06);
+  --chart-3: 96 14% 71%;
+  --chart-4: 78 25% 92%;
+  --chart-5: 93 11% 19%;
+  --user-bubble: 124 12% 55%;  /* #7E9A80 */
+  --user-bubble-text: 111 16% 9%;  /* #141A13 */
+  --eos-bubble: 93 12% 15%;
+  --bubble-shadow: 0 2px 14px hsl(0 0% 0% / 0.28), 0 0 18px hsl(118 18% 62% / 0.06);
 }
 
 /* ── Older-browser fallback: dvh units (Chrome 108+/Safari 15.4+) ─────────────

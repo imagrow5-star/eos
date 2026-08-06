@@ -14,7 +14,7 @@
   var DARK_SHELL = {
     amber: '#1B1512',
     dawn: '#241A19',
-    sage: '#171C17',
+    sage: '#1A1E18',
     twilight: '#1C1922',
   };
   var theme = 'twilight';

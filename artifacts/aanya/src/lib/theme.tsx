@@ -48,7 +48,7 @@ const SHELL_COLORS: Record<string, string> = {
   "dawn/light": "#FBF3EE",
   "dawn/dark": "#241A19",
   "sage/light": "#F1F2EA",
-  "sage/dark": "#171C17",
+  "sage/dark": "#1A1E18",
   "twilight/light": "#F3F0F7",
   "twilight/dark": "#1C1922",
 };
