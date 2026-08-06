@@ -28,7 +28,11 @@ import { Button } from "@/components/ui/button";
 import { useSpeechRecognition, speakText, stopSpeaking, unlockAudioOnGesture } from "@/lib/voice";
 import { shouldAutoplayChatReply } from "@/lib/ttsAutoplay";
 import { countryName, suggestCountry, searchCountries, type Country } from "@/lib/countries";
-import { startRealtimeCall, type AttemptResult, type RealtimeConversation, type RealtimeSessionInfo } from "@/lib/realtimeVoice";
+// Type-only import — erased at build time. The realtimeVoice module itself
+// (which drags in the ~600 KB ElevenLabs/LiveKit WebRTC stack) is loaded via
+// dynamic import() only when the user actually starts a voice call, so it
+// never weighs down the initial chunk.
+import type { AttemptResult, RealtimeConversation, RealtimeSessionInfo } from "@/lib/realtimeVoice";
 import { VoiceSessionPrefetcher } from "@/lib/voiceSessionPrefetch";
 import { CaptionSyncEngine } from "@/lib/captionSync";
 import { splitCrisisBlock } from "@/lib/crisisBlock";
@@ -1573,6 +1577,9 @@ export default function Chat() {
           // its own dead engine — never a newer call's captions.
           const captionEngine = new CaptionSyncEngine();
           captionEngineRef.current = captionEngine;
+          // Loaded on demand — see the type-only import note at the top.
+          const { startRealtimeCall } = await import("@/lib/realtimeVoice");
+          if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) return; // ended while the module loaded
           const convo = await startRealtimeCall(session, activeVoiceId, {
             onMode: (mode) => {
               if (realtimeGenRef.current !== rtGen || !continuousVoiceRef.current) return;

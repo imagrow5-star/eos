@@ -1,20 +1,48 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Route, Switch, Router as WouterRouter } from "wouter";
 import { Shell } from "@/components/layout/Shell";
-import Chat from "@/pages/Chat";
-import Journey from "@/pages/Journey";
-import Chapters from "@/pages/Chapters";
-import Memory from "@/pages/Memory";
-import { AuthScreen } from "@/pages/AuthScreen";
-import { Pricing } from "@/pages/Pricing";
-import { EmailVerificationGate } from "@/pages/EmailVerificationGate";
-import { ConsentGate } from "@/pages/ConsentGate";
-import { Privacy } from "@/pages/Privacy";
-import { LandingPage } from "@/pages/LandingPage";
 import { SplashScreen } from "@/components/SplashScreen";
 import { CONSENT_VERSION } from "@/lib/consent";
+
+// Every page is code-split so first paint only ships the shell + the one
+// screen the visitor actually lands on. Chat alone drags in the ElevenLabs/
+// LiveKit voice stack and Journey drags in recharts — neither belongs in the
+// entry bundle that logged-out visitors (and every first-time tester on a
+// mid-range phone) must download before anything renders.
+const Chat = lazy(() => import("@/pages/Chat"));
+const Journey = lazy(() => import("@/pages/Journey"));
+const Chapters = lazy(() => import("@/pages/Chapters"));
+const Memory = lazy(() => import("@/pages/Memory"));
+const AuthScreen = lazy(() =>
+  import("@/pages/AuthScreen").then((m) => ({ default: m.AuthScreen })),
+);
+const Pricing = lazy(() =>
+  import("@/pages/Pricing").then((m) => ({ default: m.Pricing })),
+);
+const EmailVerificationGate = lazy(() =>
+  import("@/pages/EmailVerificationGate").then((m) => ({ default: m.EmailVerificationGate })),
+);
+const ConsentGate = lazy(() =>
+  import("@/pages/ConsentGate").then((m) => ({ default: m.ConsentGate })),
+);
+const Privacy = lazy(() =>
+  import("@/pages/Privacy").then((m) => ({ default: m.Privacy })),
+);
+const LandingPage = lazy(() =>
+  import("@/pages/LandingPage").then((m) => ({ default: m.LandingPage })),
+);
+
+// Same centered spinner the auth/consent gates already use, so a suspended
+// chunk load is visually indistinguishable from the existing loading states.
+function PageLoader() {
+  return (
+    <div className="min-h-[100dvh] bg-background flex items-center justify-center">
+      <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+    </div>
+  );
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -40,6 +68,9 @@ function AppRouter() {
 
   return (
     <Shell>
+      {/* Inner boundary: switching tabs swaps only the page area while the
+          shell (bottom nav) stays mounted. */}
+      <Suspense fallback={<PageLoader />}>
       <Switch>
         <Route path="/" component={Chat} />
         <Route path="/journey" component={Journey} />
@@ -52,6 +83,7 @@ function AppRouter() {
           </div>
         </Route>
       </Switch>
+      </Suspense>
     </Shell>
   );
 }
@@ -335,7 +367,11 @@ function App() {
   };
 
   if (isPrivacyPage) {
-    return <Privacy />;
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <Privacy />
+      </Suspense>
+    );
   }
 
   return (
@@ -346,7 +382,9 @@ function App() {
        * time the splash is gone the correct screen (login or chat) is already
        * ready underneath.
        */}
-      <AuthGate />
+      <Suspense fallback={<PageLoader />}>
+        <AuthGate />
+      </Suspense>
 
       {/*
        * Splash overlay — fixed z-50, sits on top of AuthGate.

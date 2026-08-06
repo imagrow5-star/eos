@@ -21,10 +21,37 @@
     <meta name="apple-mobile-web-app-title" content="Eos" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:opsz,wght@14..32,300;400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&display=swap" rel="stylesheet">
+    <!-- Inter 300 dropped: no font-light anywhere in the app -->
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:opsz,wght@14..32,400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&display=swap" rel="stylesheet">
+    <!-- Paint dark immediately: the app CSS arrives later, and without this
+         older/slower devices show a white flash before the theme loads. -->
+    <style>html{background:#0D0B10}</style>
   </head>
   <body>
     <div id="root"></div>
+    <!-- Old-browser guard. Deliberately ES5-only so it parses everywhere.
+         Two layers:
+           1. Feature-detect the floor the bundle needs; too old -> message.
+           2. Watchdog: if the bundle didn't mount anything into #root within
+              15s (failed download, runtime crash on an old engine), show the
+              same message instead of a dead dark screen. -->
+    <div id="browser-guard" hidden
+         style="position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:#0D0B10;padding:24px;text-align:center;font-family:Georgia,serif;color:#F0E9DC">
+      <div style="max-width:420px">
+        <p style="font-size:22px;letter-spacing:.3em;margin-bottom:14px">E O S</p>
+        <p style="font-size:15px;line-height:1.6;color:#B9B0A1">
+          Eos couldn&rsquo;t start in this browser. It may be out of date &mdash;
+          please update it (or open this page in the latest Chrome or Safari)
+          and try again.
+        </p>
+        <p style="font-size:12px;line-height:1.6;color:#837B6E;margin-top:14px">
+          Still stuck? Write to hello@eoscompanion.com and we&rsquo;ll help.
+        </p>
+      </div>
+    </div>
+    <!-- External (not inline) so the production CSP's script-src 'self'
+         allows it; plain non-module script so pre-ES2015 engines still run it. -->
+    <script src="browser-guard.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
