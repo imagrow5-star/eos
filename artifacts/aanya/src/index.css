@@ -68,8 +68,9 @@
    THEME TOKENS
    Four themes × two modes, keyed on html[data-theme] × html[data-mode]
    (set pre-paint by public/theme-init.js, managed by src/lib/theme.tsx).
-   :root carries the default — TWILIGHT LIGHT — so a storage-blocked or
-   scriptless load still paints correctly with zero flash. Values are bare
+   The RUNTIME default is WARM DARK (amber + dark, stamped by theme-init.js
+   and theme.tsx); :root below keeps Twilight light as the pure-CSS fallback
+   for the no-JS edge, where the app cannot boot anyway. Values are bare
    HSL triplets consumed through the @theme inline block above; do not
    change the format.
 

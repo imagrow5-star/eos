@@ -4,8 +4,8 @@
 //
 // Source of truth for the *choice* is localStorage ("eos-theme"/"eos-mode",
 // owned by src/lib/theme.tsx; the server profile is adopted after auth).
-// Anything invalid or blocked falls back to the default twilight/light —
-// :root already carries twilight/light, so even if this script never runs
+// Anything invalid or blocked falls back to the default amber/dark ("Warm Dark") —
+// index.html pre-paints the Warm-Dark shell, so a scriptless load still opens dark.
 // the page still paints correctly.
 (function () {
   var THEMES = { amber: 1, dawn: 1, sage: 1, twilight: 1 };
@@ -17,8 +17,8 @@
     sage: '#1A1E18',
     twilight: '#1C1922',
   };
-  var theme = 'twilight';
-  var mode = 'light';
+  var theme = 'amber'; // default: Warm Dark (Golden Amber, dark)
+  var mode = 'dark';
   try {
     var t = localStorage.getItem('eos-theme');
     var m = localStorage.getItem('eos-mode');
