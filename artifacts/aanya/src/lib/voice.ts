@@ -165,6 +165,10 @@ export interface SpeakOptions {
    * totalWords: total word count in the text.
    */
   onWordReveal?: (revealedCount: number, totalWords: number) => void;
+  /** BCP-47 language for the browser-TTS fallback (e.g. "fr", "hi-IN").
+      Without it the fallback used an English voice even for non-English
+      users — heard as a wrong-language voice under the real one. */
+  lang?: string;
 }
 
 // ─── Active-audio tracking (module-level singleton) ──────────────────────────
@@ -247,7 +251,7 @@ export function unlockAudioOnGesture(): void {
 }
 
 export async function speakText(text: string, options?: SpeakOptions): Promise<void> {
-  const { onStart, onEnd, voiceId, signal: externalSignal, onWordReveal } = options ?? {};
+  const { onStart, onEnd, voiceId, signal: externalSignal, onWordReveal, lang } = options ?? {};
 
   if (!text?.trim()) { onEnd?.(); return; }
 
@@ -408,7 +412,7 @@ export async function speakText(text: string, options?: SpeakOptions): Promise<v
 
   // ── Browser Web Speech API fallback ──────────────────────────────────────
   const totalWords = text.trim().split(/\s+/).length;
-  browserSpeak(text, onStart, onEnd, onWordReveal, totalWords);
+  browserSpeak(text, onStart, onEnd, onWordReveal, totalWords, lang);
 }
 
 function browserSpeak(
@@ -417,6 +421,7 @@ function browserSpeak(
   onEnd?: () => void,
   onWordReveal?: (revealedCount: number, totalWords: number) => void,
   totalWords?: number,
+  lang?: string,
 ) {
   if (typeof window === "undefined" || !window.speechSynthesis) {
     onEnd?.();
@@ -424,7 +429,15 @@ function browserSpeak(
   }
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "en-US";
+  // Match the user's language; prefer an installed voice for it so the
+  // fallback never reads French (etc.) in an English voice.
+  utterance.lang = lang || "en-US";
+  if (lang) {
+    const match = window.speechSynthesis
+      .getVoices()
+      .find((v) => v.lang === lang || v.lang.startsWith(lang.split("-")[0] + "-"));
+    if (match) utterance.voice = match;
+  }
   utterance.rate = 0.88;
   utterance.pitch = 1.05;
   onStart?.();

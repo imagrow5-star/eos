@@ -594,6 +594,10 @@ export default function Chat() {
   const isBereavement = profile?.userPath === "bereavement";
   const companionGender = (profile as any)?.companionGender ?? "woman";
   const activeVoiceId = (profile as any)?.voiceId ?? (companionGender === "man" ? DEFAULT_MALE_VOICE : DEFAULT_FEMALE_VOICE);
+  // For the browser-TTS fallback: never read a non-English user's reply in an
+  // English voice (secondary guard — the primary rule is that the realtime
+  // agent is the only audio source during a call).
+  const speechLang = ((profile as any)?.preferredLanguage as string | undefined) || "en";
   const activeVoiceTone: string = (profile as any)?.voiceTone ?? "auto";
 
   // Fetch romantic voice availability from the server
@@ -779,6 +783,7 @@ export default function Chat() {
     if (continuousVoiceRef.current) spokenTextRef.current = text;
     speakText(text, {
       voiceId: activeVoiceId,
+      lang: speechLang,
       onStart: () => {
         setIsSpeaking(true);
         if (continuousVoiceRef.current && voiceTtsGenRef.current === gen) {
@@ -906,7 +911,7 @@ export default function Chat() {
             // In voice call mode, start TTS on the first complete sentence
             // rather than waiting for the entire reply to finish streaming.
             // Sentence = ≥8 chars ending in . ! or ? followed by a space or end.
-            if (continuousVoiceRef.current && !voiceEarlyFired && voiceTtsGenRef.current === ttsGen) {
+            if (continuousVoiceRef.current && voiceEngineRef.current !== "realtime" && !voiceEarlyFired && voiceTtsGenRef.current === ttsGen) {
               const m = finalContent.match(/^(.{8,}?[.!?])(?=\s|$)/);
               if (m?.[1]) {
                 voiceEarlyText  = m[1];
@@ -924,6 +929,7 @@ export default function Chat() {
                 voice.startListening();                 // arm the mic for voice barge-in
                 speakText(voiceEarlyText, {
                   voiceId: activeVoiceId,
+      lang: speechLang,
                   onStart: () => setIsSpeaking(true),
                   onEnd: () => {
                     // Mark the early TTS as done
@@ -1196,6 +1202,15 @@ export default function Chat() {
   // Talk mode: auto-send. Mic mode: fill input for user review.
   const handleVoiceResult = (text: string) => {
     if (continuousVoiceRef.current) {
+      // Realtime engine: the ElevenLabs agent owns mic AND audio. A locally
+      // armed recognizer here would transcribe the user's (or the agent's)
+      // speech and auto-send it into the classic chat pipeline, whose reply
+      // then plays through speakText — the "second English voice underneath"
+      // testers heard on non-English calls. Kill the mic and bail.
+      if (voiceEngineRef.current === "realtime") {
+        voice.stopListening();
+        return;
+      }
       const phase = voiceCallPhaseRef.current;
 
       if (phase === "speaking") {
@@ -1235,6 +1250,8 @@ export default function Chat() {
   // Mic mode: fill the input as the user is still speaking.
   const handleVoiceInterim = (text: string) => {
     if (continuousVoiceRef.current) {
+      if (voiceEngineRef.current === "realtime") return; // agent owns audio
+
       // Voice barge-in (best-effort): the user starts talking over her.
       // Require ≥2 recognized words that don't look like her own echo, then
       // stop her audio and keep this same recognition session running — the
@@ -1258,11 +1275,13 @@ export default function Chat() {
   // for barge-in). Other phases (thinking/error) manage their own transitions.
   const handleRecognitionEnd = useCallback(() => {
     if (!continuousVoiceRef.current) return;
+    if (voiceEngineRef.current === "realtime") return; // agent owns the mic
     const phase = voiceCallPhaseRef.current;
     if (phase !== "listening" && phase !== "speaking") return;
     // Brief pause before restart to avoid hammering the browser
     setTimeout(() => {
       if (!continuousVoiceRef.current) return;
+      if (voiceEngineRef.current === "realtime") return; // connected meanwhile
       const p = voiceCallPhaseRef.current;
       if (p === "listening" || p === "speaking") {
         voice.startListening();
@@ -1345,6 +1364,9 @@ export default function Chat() {
   // wordOffset: how many words from the FULL reply were already spoken before
   // this chunk (0 for the first/only chunk; earlyWordCount for the remainder).
   const speakVoiceRemainder = (text: string, wordOffset: number) => {
+    // Classic-engine path only — during a realtime call the agent is the
+    // single audio source and local TTS must never run on top of it.
+    if (voiceEngineRef.current === "realtime") return;
     // Capture the generation at invocation. Call sites verify it just before
     // calling, and any interrupt after this point bumps it — so stale
     // onStart/onEnd callbacks (e.g. a cancelled browser-TTS utterance that
@@ -1365,6 +1387,7 @@ export default function Chat() {
     spokenTextRef.current = text; // echo-guard reference for barge-in
     speakText(text, {
       voiceId: activeVoiceId,
+      lang: speechLang,
       onStart: () => {
         if (voiceTtsGenRef.current !== gen) return; // interrupted before audio began
         setIsSpeaking(true);
@@ -1483,6 +1506,12 @@ export default function Chat() {
       setVoiceError(null);
       voice.clearError();
       unlockAudioOnGesture(); // unlock Audio.play() + speechSynthesis in this gesture context
+      // A call is starting: silence any in-flight chat TTS immediately, and
+      // make sure no previous agent session is still alive (a language
+      // switch must never leave two agents connected at once).
+      stopSpeaking();
+      realtimeConvoRef.current?.endSession().catch(() => {});
+      realtimeConvoRef.current = null;
       setContinuousVoice(true);
       continuousVoiceRef.current = true; // sync now — recognition callbacks may fire before the re-render
       voiceEngineRef.current = null;
@@ -1726,6 +1755,11 @@ export default function Chat() {
           }
           realtimeConvoRef.current = convo;
           voiceEngineRef.current = "realtime";
+          // From this instant the agent is the only audio source: kill any
+          // classic TTS or local recognition that started during the
+          // handshake window before the engine flag existed.
+          stopSpeaking();
+          voice.stopListening();
           setVoiceEngine("realtime");
           setVoiceCallMessage(null);
           console.log("[voice-call] realtime engine connected");
