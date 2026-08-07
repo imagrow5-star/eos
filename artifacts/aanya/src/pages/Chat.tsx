@@ -2647,9 +2647,9 @@ export default function Chat() {
 
         {/* Eos wordmark — centered */}
         <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center select-none pointer-events-none gap-0">
-          <span className="font-serif text-[13px] font-medium tracking-[0.46em] text-foreground/80">E O S</span>
-          <div className="h-px w-6 bg-primary/50 my-[3px]" />
-          <p className="font-serif italic text-[9px] tracking-[0.16em] text-muted-foreground/70">a new dawn</p>
+          <span className="font-serif text-[19px] font-medium tracking-[0.42em] text-foreground/90">E O S</span>
+          <div className="h-px w-9 bg-primary/50 my-[3px]" />
+          <p className="font-serif italic text-[10.5px] tracking-[0.16em] text-muted-foreground">a new dawn</p>
         </div>
 
         {/* Right actions */}
@@ -3513,7 +3513,7 @@ export default function Chat() {
           !isStreaming && "scroll-smooth",
         )}
       >
-        <div className="flex flex-col justify-end min-h-full pb-4">
+        <div className="flex flex-col justify-end min-h-full pb-4 max-w-3xl mx-auto w-full">
           {chatContent()}
 
           <AnimatePresence>
