@@ -270,6 +270,8 @@ export default function Chat() {
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   // Streaming state: text accumulates token-by-token while the model generates
   const [streamingContent, setStreamingContent] = useState("");
+  const pendingStreamRef = useRef("");
+  const streamFlushRafRef = useRef<number | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
   // Message ids whose reply was the honest provider-outage fallback (the SSE
@@ -831,6 +833,8 @@ export default function Chat() {
     streamAbortRef.current = streamAbort;
 
     setIsStreaming(true);
+    if (streamFlushRafRef.current !== null) { cancelAnimationFrame(streamFlushRafRef.current); streamFlushRafRef.current = null; }
+    pendingStreamRef.current = "";
     setStreamingContent("");
     setStreamError(null);
 
@@ -904,8 +908,19 @@ export default function Chat() {
           const data = JSON.parse(eventData) as Record<string, unknown>;
           if (eventName === "delta") {
             const chunk = data.text as string;
-            setStreamingContent((prev) => prev + chunk);
             finalContent += chunk;
+            // Batch chunk flushes to one state update per animation frame.
+            // Long replies stream many small deltas; updating state per delta
+            // re-rendered the whole page per network packet — the stutter
+            // testers felt on long answers. The ref accumulates synchronously
+            // (voice early-TTS below reads finalContent, not state).
+            pendingStreamRef.current = finalContent;
+            if (streamFlushRafRef.current === null) {
+              streamFlushRafRef.current = requestAnimationFrame(() => {
+                streamFlushRafRef.current = null;
+                setStreamingContent(pendingStreamRef.current);
+              });
+            }
 
             // ── Voice early TTS ────────────────────────────────────────────
             // In voice call mode, start TTS on the first complete sentence
@@ -1004,6 +1019,8 @@ export default function Chat() {
     }
 
     setIsStreaming(false);
+    if (streamFlushRafRef.current !== null) { cancelAnimationFrame(streamFlushRafRef.current); streamFlushRafRef.current = null; }
+    pendingStreamRef.current = "";
     setStreamingContent("");
 
     if (finalMessageId && finalContent) {
@@ -3488,7 +3505,13 @@ export default function Chat() {
       {/* ── Messages area ──────────────────────────────────────────────────── */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto px-4 sm:px-6 py-7 scroll-smooth"
+        className={cn(
+          "flex-1 overflow-y-auto px-4 sm:px-6 py-7",
+          // scroll-smooth during streaming makes every frame's follow-scroll
+          // an animated scroll that fights the next one — instant while
+          // streaming, smooth the rest of the time.
+          !isStreaming && "scroll-smooth",
+        )}
       >
         <div className="flex flex-col justify-end min-h-full pb-4">
           {chatContent()}
