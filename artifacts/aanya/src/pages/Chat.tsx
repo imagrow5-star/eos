@@ -3506,7 +3506,7 @@ export default function Chat() {
       <div
         ref={scrollRef}
         className={cn(
-          "flex-1 overflow-y-auto px-4 sm:px-6 py-7",
+          "flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-7",
           // scroll-smooth during streaming makes every frame's follow-scroll
           // an animated scroll that fights the next one — instant while
           // streaming, smooth the rest of the time.
@@ -3572,7 +3572,7 @@ export default function Chat() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="px-4 sm:px-6 pb-4 shrink-0"
+            className="px-4 sm:px-6 pb-4 min-h-0 overflow-y-auto"
           >
             <div className="max-w-3xl mx-auto bg-card border border-primary/15 rounded-2xl px-5 py-5 space-y-5">
               {currentStep === "ageBand" && (
@@ -3690,7 +3690,7 @@ export default function Chat() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="px-4 sm:px-6 pb-4 shrink-0"
+            className="px-4 sm:px-6 pb-4 min-h-0 overflow-y-auto"
           >
             <div className="max-w-3xl mx-auto bg-card border border-primary/15 rounded-2xl px-5 py-5 space-y-5">
               <div>
