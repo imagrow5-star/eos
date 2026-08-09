@@ -17,6 +17,7 @@ import {
   getGetOnboardingStatusQueryKey,
   getGetMessagesQueryKey,
   getGetProfileQueryKey,
+  type Message,
 } from "@workspace/api-client-react";
 
 import { useContextualGreeting } from "@/api/contextualGreeting";
@@ -838,6 +839,26 @@ export default function Chat() {
     setStreamingContent("");
     setStreamError(null);
 
+    // Optimistically show the user's own message right away. Without this it
+    // only appeared after the whole reply finished streaming and the messages
+    // query refetched — so users saw the reply arrive BEFORE their own
+    // question ("first the response, then my message shows up, and it's slow").
+    // The post-stream invalidate reconciles this temporary entry with the
+    // server's canonical list (real id + persisted reply). Negative id can't
+    // collide with a real (positive) server id and is a stable React key.
+    const messagesKey = getGetMessagesQueryKey();
+    const optimisticUserId = -Date.now();
+    queryClient.setQueryData<Message[]>(messagesKey, (old = []) => [
+      ...old,
+      {
+        id: optimisticUserId,
+        role: "user",
+        content,
+        createdAt: new Date().toISOString(),
+        isMorningNote: false,
+      },
+    ]);
+
     // Reset voice early-TTS coordination state for this message
     voicePendingRemainderRef.current = null;
     voiceEarlyTTSEndedRef.current    = false;
@@ -1005,6 +1026,13 @@ export default function Chat() {
         return;
       }
       console.error("[stream] Error:", err);
+      // Send failed (pre-stream rejection or mid-stream error). Drop the
+      // optimistic bubble — a pre-stream rejection never persisted it, and for
+      // a mid-stream failure the invalidate below refetches whatever the server
+      // did save. This avoids the message flashing in, then vanishing.
+      queryClient.setQueryData<Message[]>(messagesKey, (old = []) =>
+        old.filter((m) => m.id !== optimisticUserId),
+      );
       const serverMessage =
         err instanceof Error && (err as { serverMessage?: boolean }).serverMessage
           ? err.message
