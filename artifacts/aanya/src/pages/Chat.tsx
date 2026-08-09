@@ -522,6 +522,11 @@ export default function Chat() {
   const [voiceEngine, setVoiceEngine] = useState<"realtime" | "classic" | null>(null);
   const voiceEngineRef   = useRef<"realtime" | "classic" | null>(null);
   const realtimeConvoRef = useRef<RealtimeConversation | null>(null);
+  // Manual realtime interrupt: the ElevenLabs SDK has no "stop speaking" call,
+  // so tapping interrupt mutes her output (setVolume 0) and yields the turn.
+  // This flag restores volume the instant her NEXT reply begins (onMode
+  // "speaking"), so a manual interrupt never silences future replies.
+  const realtimeMutedRef = useRef(false);
   // Session identity for realtime calls — bumped at every call start AND end.
   // Callbacks capture the value at registration; late events from a previous
   // session (delayed onDisconnect, stale transcripts) compare and no-op, so
@@ -1244,6 +1249,30 @@ export default function Chat() {
     }
   };
 
+  // ── Realtime interrupt (barge-in fallback) ────────────────────────────────
+  // In realtime calls the ElevenLabs agent owns turn-taking, and its SDK
+  // exposes no "stop speaking" method — automatic barge-in depends entirely on
+  // their server-side voice detection, which sometimes misses the user. This
+  // gives a GUARANTEED manual stop: mute her audio immediately (setVolume 0),
+  // hand the turn back, and signal user activity so the agent yields. Volume is
+  // restored the moment her next reply starts (see onMode below).
+  const interruptRealtime = () => {
+    const convo = realtimeConvoRef.current;
+    if (!convo) return;
+    realtimeMutedRef.current = true;
+    try { convo.setVolume({ volume: 0 }); } catch { /* best-effort */ }
+    // Freeze the caption where her voice was cut and clear the live overlay.
+    captionEngineRef.current?.markInterrupted();
+    setVoiceCallCaptionText("");
+    setVoiceCallCaptionRevealed(0);
+    // Hand the turn to the user.
+    voiceCallPhaseRef.current = "listening";
+    setVoiceCallPhase("listening");
+    setVoiceCallRecognizedText("");
+    // Tell the agent the user is active so it stops waiting on its own turn.
+    try { convo.sendUserActivity(); } catch { /* best-effort */ }
+  };
+
   // Talk mode: auto-send. Mic mode: fill input for user review.
   const handleVoiceResult = (text: string) => {
     if (continuousVoiceRef.current) {
@@ -1298,13 +1327,15 @@ export default function Chat() {
       if (voiceEngineRef.current === "realtime") return; // agent owns audio
 
       // Voice barge-in (best-effort): the user starts talking over her.
-      // Require ≥2 recognized words that don't look like her own echo, then
-      // stop her audio and keep this same recognition session running — the
-      // final transcript of the user's sentence arrives in "listening" phase
-      // and is sent normally, so their first words are not lost.
+      // Cut her off as soon as we hear speech that isn't an echo of her own
+      // voice. A short one-word interrupt ("stop", "wait", "no") must count —
+      // the old ≥2-word gate silently ignored exactly those — so we require
+      // only ≥2 non-space characters. The echo guard still blocks her own
+      // voice from self-interrupting. Recognition keeps running, so the final
+      // transcript of the user's sentence arrives normally and isn't lost.
       if (
         voiceCallPhaseRef.current === "speaking" &&
-        text.trim().split(/\s+/).length >= 2 &&
+        text.replace(/\s/g, "").length >= 2 &&
         !isLikelyEcho(text)
       ) {
         console.log("[voice-call] barge-in (interim, len " + text.length + ")");
@@ -1692,6 +1723,13 @@ export default function Chat() {
           const convo = await startRealtimeCall(session, activeVoiceId, {
             onMode: (mode) => {
               if (realtimeGenRef.current !== rtGen || !continuousVoiceRef.current) return;
+              // Her next reply is starting — undo any manual-interrupt mute so
+              // this turn is audible again. (A manual interrupt muted the
+              // PREVIOUS turn; this transition to "speaking" is a fresh reply.)
+              if (mode === "speaking" && realtimeMutedRef.current) {
+                realtimeMutedRef.current = false;
+                try { realtimeConvoRef.current?.setVolume({ volume: 1 }); } catch { /* best-effort */ }
+              }
               captionEngine.setMode(mode);
               voiceCallPhaseRef.current = mode;
               setVoiceCallPhase(mode);
@@ -3901,7 +3939,7 @@ export default function Chat() {
                 {voiceCallPhase === "speaking" && !voiceCallMessage && (
                   <p className="text-center text-[11px] text-muted-foreground/45 px-2">
                     {voiceEngine === "realtime"
-                      ? "Just start talking — she'll stop and listen"
+                      ? "Just start talking — or tap the button below to stop her"
                       : "Start talking to interrupt — or tap the button below"}
                   </p>
                 )}
@@ -3995,6 +4033,19 @@ export default function Chat() {
               {voiceCallPhase === "speaking" && voiceEngine !== "realtime" && (
                 <button
                   onClick={() => interruptSpeech({ resumeListening: true })}
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-primary/20 border-2 border-primary/50 text-primary-strong hover:bg-primary/30 text-[12px] font-semibold tracking-wider uppercase transition-all shadow-[0_0_16px_hsl(var(--primary)/0.18)]"
+                >
+                  <Square className="w-3 h-3 fill-current" />
+                  Tap to interrupt
+                </button>
+              )}
+
+              {/* Realtime engine: the ElevenLabs SDK can't force a stop, so this
+                  mutes her instantly and hands the turn back — a guaranteed way
+                  to interrupt when their voice detection misses you. */}
+              {voiceCallPhase === "speaking" && voiceEngine === "realtime" && (
+                <button
+                  onClick={interruptRealtime}
                   className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-primary/20 border-2 border-primary/50 text-primary-strong hover:bg-primary/30 text-[12px] font-semibold tracking-wider uppercase transition-all shadow-[0_0_16px_hsl(var(--primary)/0.18)]"
                 >
                   <Square className="w-3 h-3 fill-current" />
