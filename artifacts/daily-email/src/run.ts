@@ -855,6 +855,38 @@ async function triggerMorningPush(): Promise<void> {
   }
 }
 
+// ─── Weekly reflection sweep trigger ──────────────────────────────────────────
+// Same shared-secret scheme, different stamp prefix. The api-server decides who
+// is due (at most one auto reflection per rolling week per user) and enforces
+// the minimum-content bar and a per-run cap, so calling this every hour is safe.
+
+async function triggerReflectionSweep(): Promise<void> {
+  if (!SESSION_SECRET) {
+    log("SESSION_SECRET not set — skipping reflection sweep trigger");
+    return;
+  }
+  try {
+    const stamp = new Date().toISOString().slice(0, 13); // YYYY-MM-DDTHH
+    const token = createHmac("sha256", SESSION_SECRET)
+      .update(`reflection-run:${stamp}`)
+      .digest("hex");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 240_000);
+    const resp = await fetch(`${APP_URL}/api/internal/reflection/weekly-run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-internal-token": token },
+      // Honor the single-user test hook so local runs never fan out.
+      body: JSON.stringify(ONLY_USER !== null ? { userId: ONLY_USER } : {}),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const body: unknown = await resp.json().catch(() => null);
+    log("Reflection sweep triggered", { status: resp.status, result: body as Record<string, unknown> | null });
+  } catch (err) {
+    logErr("Reflection sweep trigger failed (non-fatal)", err);
+  }
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export async function run(): Promise<void> {
@@ -871,6 +903,7 @@ export async function run(): Promise<void> {
   } else {
     await triggerChapterSweep();
     await triggerMorningPush();
+    await triggerReflectionSweep();
   }
 
   if (!RESEND_API_KEY && !DRY_RUN) {
