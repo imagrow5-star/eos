@@ -139,6 +139,42 @@ describe.skipIf(!HAS_DB)("/api/reflection", () => {
     expect(res.status).toBe(401);
   });
 
+  it("exports a report as markdown, txt and pdf (ownership-checked)", async () => {
+    const { agent, userId } = await signup("export");
+    const body = "**This period, in short**\nYou mentioned wanting to leave your job.\n\n- came up 3 times";
+    const id = await seedReport(userId, body);
+
+    const md = await agent.get(`/api/reflection/${id}/export?format=md`);
+    expect(md.status).toBe(200);
+    expect(md.headers["content-type"]).toContain("text/markdown");
+    expect(md.headers["content-disposition"]).toContain("eos-reflection-");
+    expect(md.headers["content-disposition"]).toContain(".md");
+    expect(md.text).toContain("wanting to leave your job");
+
+    const txt = await agent.get(`/api/reflection/${id}/export?format=txt`);
+    expect(txt.status).toBe(200);
+    expect(txt.headers["content-type"]).toContain("text/plain");
+    expect(txt.text).not.toContain("**"); // markdown stripped
+    expect(txt.text).toContain("wanting to leave your job");
+
+    const pdf = await agent.get(`/api/reflection/${id}/export?format=pdf`).buffer(true);
+    expect(pdf.status).toBe(200);
+    expect(pdf.headers["content-type"]).toBe("application/pdf");
+    expect(pdf.headers["content-disposition"]).toContain(".pdf");
+    expect(Buffer.isBuffer(pdf.body)).toBe(true);
+    expect(pdf.body.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+
+    // An unknown format falls back to txt, never errors.
+    const weird = await agent.get(`/api/reflection/${id}/export?format=zzz`);
+    expect(weird.status).toBe(200);
+    expect(weird.headers["content-type"]).toContain("text/plain");
+
+    // Another user can't export it.
+    const b = await signup("export-intruder");
+    const denied = await b.agent.get(`/api/reflection/${id}/export?format=md`);
+    expect(denied.status).toBe(404);
+  });
+
   it("generate degrades to 503 when the model is unavailable (no API key in test env)", async () => {
     const { agent, userId } = await signup("gen");
     // Give the period some content so we exercise the LLM path, not the gate.

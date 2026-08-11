@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { Sparkles, X, Star, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
+import ReflectionsSection from "@/components/ReflectionsSection";
 
 export default function Memory() {
   const { data: profile } = useGetProfile();
@@ -290,6 +291,9 @@ export default function Memory() {
           )}
         </>
       )}
+
+      {/* ── Reflections (generate / read / download / delete) ──────────────── */}
+      <ReflectionsSection />
 
       {/* ── Reset my memory (dev, founder-gated) ───────────────────────────── */}
       {resetEligible && (
