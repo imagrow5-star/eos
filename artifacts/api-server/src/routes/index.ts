@@ -19,6 +19,7 @@ import accountRouter from "./account";
 import voiceLlmRouter from "./voice-llm";
 import voiceAgentRouter from "./voice-agent";
 import chaptersRouter, { chaptersInternalRouter } from "./chapters";
+import { reflectionInternalRouter } from "./reflection-internal";
 import pushRouter, { pushInternalRouter } from "./push";
 import billingRouter, { billingPublicRouter } from "./billing";
 import billingWebhookRouter from "./billingWebhook";
@@ -39,6 +40,9 @@ router.use(voiceLlmRouter);
 router.use(chaptersInternalRouter);
 // Morning push-nudge sweep — same caller, same HMAC scheme.
 router.use(pushInternalRouter);
+// Weekly reflection sweep — same hourly caller, same HMAC scheme; idempotent
+// per (user, week) so calling every hour is safe.
+router.use(reflectionInternalRouter);
 // Paddle webhook — called by Paddle's servers; authenticated per-delivery by
 // the Paddle-Signature HMAC over the raw body (raw-body mount in app.ts).
 router.use(billingWebhookRouter);
