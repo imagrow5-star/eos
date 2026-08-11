@@ -161,6 +161,9 @@ export default function Memory() {
         </p>
       </div>
 
+      {/* ── Reflections — first thing on the page, above memories/feelings ──── */}
+      <ReflectionsSection />
+
       {/* ── Empty state ─────────────────────────────────────────────────────── */}
       {hasNoData ? (
         <div className="bg-card border border-primary/15 rounded-2xl p-10 text-center flex flex-col items-center gap-5">
@@ -291,9 +294,6 @@ export default function Memory() {
           )}
         </>
       )}
-
-      {/* ── Reflections (generate / read / download / delete) ──────────────── */}
-      <ReflectionsSection />
 
       {/* ── Reset my memory (dev, founder-gated) ───────────────────────────── */}
       {resetEligible && (
