@@ -490,6 +490,7 @@ describe("DELETE /api/auth/account", () => {
       "messages",
       "memory_facts",
       "memory_feelings",
+      "reflection_reports",
       "personality_signals",
       "wins",
       "mood_scores",

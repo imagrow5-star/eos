@@ -361,6 +361,8 @@ describe("GET /api/account/export", () => {
     const INTENTIONAL_EXCEPTIONS: Record<string, string> = {
       password_reset_tokens: "Internal security tokens — not user product data; excluded from export for security.",
       email_verification_tokens: "Internal security tokens — not user product data; excluded from export for security.",
+      reflection_reports:
+        "Derived content — each report is generated ENTIRELY from data already in this export (transcript + memories + goals), so nothing unique is lost by excluding it. Reports are separately portable via GET /api/reflection and the per-report download (MD/TXT/PDF), so the user can always retrieve them.",
       // user_sessions stores userId inside a jsonb column, not a typed user_id
       // column, so it never appears in the information_schema query below.
     };

@@ -1205,6 +1205,7 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
     await client.query(`DELETE FROM messages          WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM memory_facts      WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM memory_feelings   WHERE user_id = $1`, [userId]); // Sprint 2C (also ON DELETE CASCADE, but explicit for parity)
+    await client.query(`DELETE FROM reflection_reports WHERE user_id = $1`, [userId]); // (also ON DELETE CASCADE, but explicit for parity)
     await client.query(`DELETE FROM personality_signals WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM wins              WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM mood_scores       WHERE user_id = $1`, [userId]);

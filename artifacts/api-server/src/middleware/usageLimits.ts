@@ -172,6 +172,21 @@ export const memoryExportUsageLimits: RequestHandler[] = [
   }),
 ];
 
+// Reflection report generation. Unlike the memory export (a pure DB read), each
+// generate makes a PAID pair of LLM calls (report + self-check), so this ceiling
+// controls a real bill, not just double-clicks. A few per hour is plenty for a
+// "reflect on my week" action. Env-overridable so the dedicated test can drive
+// the 429 path (setup/rate-limit-env.ts keeps the default high everywhere else).
+export const reflectionGenerateUsageLimits: RequestHandler[] = [
+  makeLimiter({
+    windowMs: HOUR_MS,
+    limit: envLimit("REFLECTION_GENERATE_LIMIT_PER_HOUR", 3),
+    message:
+      "You just created a reflection — give it a little while before generating another. Your past reflections are all still here.",
+    keyGenerator: sessionUserKey,
+  }),
+];
+
 // Memory reset ("reset my memory (dev)", founder-gated). One wipe per hour per
 // user — stops an accidental double-click (or a testing hammer) from repeatedly
 // deleting. Env-overridable so the dedicated test can drive the 429 path.

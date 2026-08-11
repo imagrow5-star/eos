@@ -5,7 +5,7 @@ import { initVoiceLibrary } from "./services/voiceLibrary";
 import { reconcileAgentConfig } from "./services/agentConfigGuard";
 import { runDataEncryptionMigration } from "./services/dataEncryptionMigration";
 import { backfillVoiceGender } from "./services/settings/voiceGenderBackfill";
-import { ensureProfileThemeColumns } from "./services/schemaGuard";
+import { ensureProfileThemeColumns, ensureReflectionReportsTable } from "./services/schemaGuard";
 import { backfillMemoryImportance } from "./services/memory/backfill";
 import { runDedupBackfill } from "./services/memory/dedupBackfill";
 import { warnIfAgentEnvIncomplete } from "./services/voiceAgentRouting";
@@ -47,6 +47,16 @@ await ensureProfileThemeColumns().catch((e) =>
   logger.error(
     { err: e },
     "profile theme column guard failed at boot — profile reads will self-heal per request",
+  ),
+);
+
+// Create the reflection_reports table if a deploy predates it (deploys don't run
+// drizzle-kit push). Idempotent; instant no-op once applied. On failure we still
+// boot — the first reflection generate/list would surface the error instead.
+await ensureReflectionReportsTable().catch((e) =>
+  logger.error(
+    { err: e },
+    "reflection_reports table guard failed at boot — reflection endpoints may error until the table exists",
   ),
 );
 
