@@ -33,7 +33,7 @@ import { describeUserGender, describeUserBasics } from "./systemPrompt.js";
 // Anthropic client — lazy init so mock mode works without the key
 let _anthropic: import("@anthropic-ai/sdk").Anthropic | null = null;
 
-function getAnthropic(): import("@anthropic-ai/sdk").Anthropic | null {
+export function getAnthropic(): import("@anthropic-ai/sdk").Anthropic | null {
   if (!process.env.ANTHROPIC_API_KEY) return null;
   if (!_anthropic) {
     const Anthropic =

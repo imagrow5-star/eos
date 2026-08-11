@@ -27,6 +27,34 @@ export async function ensureProfileThemeColumns(): Promise<void> {
   logger.info("schema guard: profile.theme / profile.theme_mode present");
 }
 
+/**
+ * Idempotent schema guard for the reflection_reports table.
+ *
+ * Deploys don't run `drizzle-kit push` (see the note above), so a brand-new
+ * TABLE — not just a column — won't exist in production unless created here.
+ * CREATE TABLE IF NOT EXISTS is non-destructive and a no-op forever after the
+ * first boot. Columns/constraints mirror lib/db/src/schema/reflection-reports.ts
+ * exactly; `content` is a plain text column (drizzle's encryptedText writes the
+ * ciphertext string into it). Runs at boot before the server accepts traffic.
+ */
+export async function ensureReflectionReportsTable(): Promise<void> {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS reflection_reports (
+      id serial PRIMARY KEY,
+      user_id integer REFERENCES users(id) ON DELETE CASCADE,
+      content text NOT NULL,
+      period_start timestamp NOT NULL,
+      period_end timestamp NOT NULL,
+      generated_by text NOT NULL DEFAULT 'on_demand',
+      created_at timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(
+    sql`CREATE INDEX IF NOT EXISTS reflection_reports_user_id_idx ON reflection_reports (user_id)`,
+  );
+  logger.info("schema guard: reflection_reports table present");
+}
+
 /** True when an error is Postgres 42703 for the theme columns specifically. */
 export function isMissingThemeColumnError(e: unknown): boolean {
   const err = e as { code?: string; message?: string } | null;

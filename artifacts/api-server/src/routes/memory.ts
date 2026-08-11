@@ -13,6 +13,7 @@ import {
   moodScoresTable,
   usersTable,
   profileTable,
+  reflectionReportsTable,
 } from "@workspace/db";
 import { fetchExportPayload } from "./account.js";
 import { memoryExportUsageLimits, memoryResetUsageLimits } from "../middleware/usageLimits.js";
@@ -231,9 +232,16 @@ router.post(
           .delete(memoryFeelingsTable)
           .where(eq(memoryFeelingsTable.userId, userId))
           .returning({ id: memoryFeelingsTable.id });
+        // Reflection reports are DERIVED from memory/conversation, so a memory
+        // reset (for clean testing) wipes them too.
+        const reflectionReports = await tx
+          .delete(reflectionReportsTable)
+          .where(eq(reflectionReportsTable.userId, userId))
+          .returning({ id: reflectionReportsTable.id });
         return {
           memory_facts: memoryFacts.length,
           memory_feelings: memoryFeelings.length,
+          reflection_reports: reflectionReports.length,
           habits: habits.length,
           habit_completions: hc.length,
           commitments: commitments.length,
