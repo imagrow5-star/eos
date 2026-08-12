@@ -53,6 +53,12 @@ export const commitmentsTable = pgTable("commitments", {
   // defaulted so legacy rows stay valid without a backfill.
   timesReferenced: integer("times_referenced").notNull().default(1),
   lastReferencedAt: timestamp("last_referenced_at"),
+
+  // When this commitment was last SURFACED in a proactive morning note/greeting
+  // (distinct from lastReferencedAt / followedUpAt). The morning generators
+  // stamp this when they ask "how did X go?" so an unanswered follow-up isn't
+  // repeated the next day. Nullable/additive — no backfill needed.
+  lastSurfacedAt: timestamp("last_surfaced_at"),
 });
 
 export type Commitment = typeof commitmentsTable.$inferSelect;

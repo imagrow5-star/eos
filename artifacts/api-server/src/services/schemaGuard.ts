@@ -55,6 +55,24 @@ export async function ensureReflectionReportsTable(): Promise<void> {
   logger.info("schema guard: reflection_reports table present");
 }
 
+/**
+ * Idempotent schema guard for the morning-note "last surfaced" columns.
+ *
+ * The morning-note/greeting staleness fix reads/writes `last_surfaced_at` on
+ * memory_facts and commitments so a one-time event isn't re-asked every day.
+ * Deploys don't run `drizzle-kit push`, so add the nullable columns here.
+ * ADD COLUMN IF NOT EXISTS is non-destructive and a no-op after the first boot.
+ */
+export async function ensureMorningNoteColumns(): Promise<void> {
+  await db.execute(
+    sql`ALTER TABLE memory_facts ADD COLUMN IF NOT EXISTS last_surfaced_at timestamp`,
+  );
+  await db.execute(
+    sql`ALTER TABLE commitments ADD COLUMN IF NOT EXISTS last_surfaced_at timestamp`,
+  );
+  logger.info("schema guard: memory_facts.last_surfaced_at / commitments.last_surfaced_at present");
+}
+
 /** True when an error is Postgres 42703 for the theme columns specifically. */
 export function isMissingThemeColumnError(e: unknown): boolean {
   const err = e as { code?: string; message?: string } | null;

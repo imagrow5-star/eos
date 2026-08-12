@@ -21,6 +21,7 @@ import {
   buildVoiceCallAddendum,
 } from "../services/ai.js";
 import { calculateStage, todayInTimezone, getTimeContext, describeCommitmentTiming } from "../services/stage.js";
+import { selectFollowUpCommitments, stampCommitmentsSurfaced } from "../services/morning/threadSelection.js";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { chatUsageLimits } from "../middleware/usageLimits.js";
 import { logger } from "../lib/logger.js";
@@ -446,22 +447,10 @@ router.post("/chat/contextual-greeting", async (req, res): Promise<void> => {
 
   // Fetch greeting context in parallel
   const [pendingFollowUps, activeHabits, todayCompletions, recentMoods, greetingPersonalizationRows] = await Promise.all([
-    // Commitments overdue for follow-up
-    db.select({
-      id: commitmentsTable.id,
-      content: commitmentsTable.content,
-      cue: commitmentsTable.cue,
-      scheduledDate: commitmentsTable.scheduledDate,
-      scheduledTime: commitmentsTable.scheduledTime,
-    })
-      .from(commitmentsTable)
-      .where(and(
-        eq(commitmentsTable.userId, userId),
-        sql`${commitmentsTable.state} = 'open'`,
-        sql`${commitmentsTable.scheduledFollowupDate} IS NOT NULL
-            AND ${commitmentsTable.scheduledFollowupDate} <= ${today}`,
-      ))
-      .limit(2),
+    // Commitments genuinely due for follow-up — vetted for staleness and the
+    // "already asked, no answer" cooldown so a one-time thing isn't re-asked
+    // every morning (see services/morning/threadSelection.ts).
+    selectFollowUpCommitments(userId, today),
     db.select({ id: habitsTable.id, name: habitsTable.name, streak: habitsTable.streak })
       .from(habitsTable)
       .where(and(eq(habitsTable.userId, userId), eq(habitsTable.isActive, true))),
@@ -508,6 +497,10 @@ router.post("/chat/contextual-greeting", async (req, res): Promise<void> => {
     moodSummary,
     recentPhrases: greetingRecentPhrases,
   });
+
+  // Stamp the follow-ups we just surfaced so tomorrow's greeting won't repeat
+  // them if the user never answers (the "asked but not answered" cooldown).
+  await stampCommitmentsSurfaced(pendingFollowUps.map((c) => c.id));
 
   const [greetingMsg] = await db
     .insert(messagesTable)

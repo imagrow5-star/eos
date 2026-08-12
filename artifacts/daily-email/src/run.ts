@@ -308,9 +308,15 @@ async function gatherContext(
   const sevenDaysAgo = d7.toISOString().slice(0, 10);
 
   const [facts, wins, habits, moods, pending, personalizationRows, goals] = await Promise.all([
+    // Age out stale one-time EVENTS so a 3-week-old "had a meeting" stops
+    // surfacing every morning (keep in sync with the api-server morning
+    // selection: services/morning/threadSelection.ts, EVENT_FRESH_DAYS=10).
     db.select({ fact: memoryFactsTable.fact })
       .from(memoryFactsTable)
-      .where(eq(memoryFactsTable.userId, userId))
+      .where(and(
+        eq(memoryFactsTable.userId, userId),
+        sql`NOT (${memoryFactsTable.category} = 'event' AND ${memoryFactsTable.createdAt} < now() - interval '10 days')`,
+      ))
       .orderBy(desc(memoryFactsTable.createdAt))
       .limit(14),
 
@@ -342,6 +348,11 @@ async function gatherContext(
         eq(commitmentsTable.userId, userId),
         sql`${commitmentsTable.state} = 'open'`,
         sql`${commitmentsTable.scheduledFollowupDate} IS NOT NULL AND ${commitmentsTable.scheduledFollowupDate} <= ${today}`,
+        // Staleness window + "already asked, no answer" cooldown — stops a
+        // one-time follow-up from being re-asked every morning forever (in sync
+        // with services/morning/threadSelection.ts: STALE=10d, COOLDOWN=3d).
+        sql`${commitmentsTable.scheduledFollowupDate}::date >= (${today}::date - 10)`,
+        sql`(${commitmentsTable.lastSurfacedAt} IS NULL OR ${commitmentsTable.lastSurfacedAt} < now() - interval '3 days')`,
       ))
       .limit(1),
 
@@ -1064,6 +1075,17 @@ export async function run(): Promise<void> {
         await sendEmail(user.email, subject, html);
         await markSent(user.userId, today);
         noteCoveredCommitmentId = ctx.pendingCommitmentId;
+
+        // Stamp the surfaced follow-up so tomorrow's email won't repeat it if
+        // the user never responds (asked-but-not-answered cooldown). Non-fatal.
+        if (ctx.pendingCommitmentId) {
+          try {
+            await db
+              .update(commitmentsTable)
+              .set({ lastSurfacedAt: new Date() })
+              .where(eq(commitmentsTable.id, ctx.pendingCommitmentId));
+          } catch { /* non-fatal */ }
+        }
 
         // The note mentioned their waiting chapter — remember, so tomorrow's
         // note doesn't repeat it (non-fatal if it fails).
