@@ -5,7 +5,7 @@ import { initVoiceLibrary } from "./services/voiceLibrary";
 import { reconcileAgentConfig } from "./services/agentConfigGuard";
 import { runDataEncryptionMigration } from "./services/dataEncryptionMigration";
 import { backfillVoiceGender } from "./services/settings/voiceGenderBackfill";
-import { ensureProfileThemeColumns, ensureReflectionReportsTable } from "./services/schemaGuard";
+import { ensureProfileThemeColumns, ensureReflectionReportsTable, ensureMorningNoteColumns } from "./services/schemaGuard";
 import { backfillMemoryImportance } from "./services/memory/backfill";
 import { runDedupBackfill } from "./services/memory/dedupBackfill";
 import { warnIfAgentEnvIncomplete } from "./services/voiceAgentRouting";
@@ -57,6 +57,16 @@ await ensureReflectionReportsTable().catch((e) =>
   logger.error(
     { err: e },
     "reflection_reports table guard failed at boot — reflection endpoints may error until the table exists",
+  ),
+);
+
+// Add the morning-note last_surfaced_at columns if a deploy predates them.
+// Idempotent; instant no-op once applied. On failure we still boot — the
+// morning generators tolerate the column being absent (they treat it as null).
+await ensureMorningNoteColumns().catch((e) =>
+  logger.error(
+    { err: e },
+    "morning-note column guard failed at boot — staleness tracking may be degraded until the columns exist",
   ),
 );
 

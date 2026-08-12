@@ -29,6 +29,13 @@ import {
 import { todayInTimezone, describeCommitmentTiming } from "./stage.js";
 import type { SystemPromptParts } from "./systemPrompt.js";
 import { describeUserGender, describeUserBasics } from "./systemPrompt.js";
+import {
+  selectFollowUpCommitments,
+  selectReferenceFacts,
+  selectActiveGoals,
+  stampCommitmentsSurfaced,
+  stampFactsSurfaced,
+} from "./morning/threadSelection.js";
 
 // Anthropic client — lazy init so mock mode works without the key
 let _anthropic: import("@anthropic-ai/sdk").Anthropic | null = null;
@@ -425,21 +432,17 @@ export async function generateMorningNoteContent(
   const today = todayInTimezone((profile as any).timezone ?? "UTC");
 
   const userId = (profile as any).userId as number;
-  const [facts, wins, pendingFollowUps] = await Promise.all([
-    db.select().from(memoryFactsTable).where(eq(memoryFactsTable.userId, userId)).orderBy(desc(memoryFactsTable.createdAt)).limit(10),
+  // Vetted selection (services/morning/threadSelection.ts): facts with stale
+  // one-time EVENTS aged out, commitments filtered for staleness + the
+  // "already asked" cooldown, and ongoing GOALS to lean on when nothing is
+  // fresh. This is the fix for re-asking a 3-week-old one-time event daily.
+  const [facts, wins, pendingFollowUps, activeGoals] = await Promise.all([
+    selectReferenceFacts(userId),
     db.select().from(winsTable).where(eq(winsTable.userId, userId)).orderBy(desc(winsTable.createdAt)).limit(3),
     // Not stage-gated: user-declared plans deserve follow-up at any stage —
     // the tone rules below keep it presence-first for early stages.
-    db
-      .select()
-      .from(commitmentsTable)
-      .where(
-        and(
-          eq(commitmentsTable.userId, userId),
-          sql`${commitmentsTable.state} = 'open' AND ${commitmentsTable.scheduledFollowupDate} <= ${today}`,
-        ),
-      )
-      .limit(2),
+    selectFollowUpCommitments(userId, today),
+    selectActiveGoals(userId),
   ]);
 
   const tzForTiming = (profile as any).timezone ?? "UTC";
@@ -455,6 +458,13 @@ export async function generateMorningNoteContent(
     return stage <= 2
       ? `Good morning, ${name}. I was thinking about you. You don't need to have it figured out today. Just showing up is enough.`
       : `Good morning, ${name}. Day ${daysSinceStart} since we started talking. You've come further than you think. One small thing today — that's all.`;
+  }
+
+  // Nothing fresh to anchor to and no live goal to check on — send a light,
+  // open greeting rather than forcing a stale item onto the note.
+  if (facts.length === 0 && wins.length === 0 && pendingFollowUps.length === 0 && activeGoals.length === 0) {
+    const n = profile.userName ? `, ${profile.userName}` : "";
+    return `Morning${n}. What's on your mind as the day starts?`;
   }
 
   const factsText =
@@ -474,6 +484,15 @@ export async function generateMorningNoteContent(
     contextLines.push(
       `Pending commitment(s) to gently check in on:\n${pendingFollowUps
         .map((c) => `• "${c.content}"${c.cue ? ` (cue: ${c.cue})` : ""}${describeCommitmentTiming((c as any).scheduledDate, (c as any).scheduledTime, tzForTiming)}`)
+        .join("\n")}`,
+    );
+  }
+  if (activeGoals.length > 0) {
+    // Ongoing goals RECUR by design — a light, regular check-in is the desired
+    // behavior, and they're the thing to lean on when there's nothing fresh.
+    contextLines.push(
+      `Ongoing goal(s) ${profile.userName || "they"} set — a light, recurring check-in is welcome:\n${activeGoals
+        .map((g) => `• ${g.title}`)
         .join("\n")}`,
     );
   }
@@ -512,6 +531,11 @@ Write only the note text.`;
       messages: [{ role: "user", content: prompt }],
     });
     logAiUsage("morning_note", "claude-sonnet-4-5-20250929", response.usage);
+    // Stamp what we just surfaced so tomorrow's note won't repeat it: the
+    // follow-ups, and any one-time EVENT facts (goals/people are allowed to
+    // recur, so they're not stamped). Fire-and-forget — never break the note.
+    void stampCommitmentsSurfaced(pendingFollowUps.map((c) => c.id)).catch(() => {});
+    void stampFactsSurfaced(facts.filter((f) => f.category === "event").map((f) => f.id)).catch(() => {});
     const textBlock = response.content.find((b) => b.type === "text");
     return (
       textBlock?.text ??

@@ -26,6 +26,11 @@ export const memoryFactsTable = pgTable("memory_facts", {
   // Sprint 2B "remember this" command sets this; declared now so the score
   // formula can already honour it. Trumps every other factor when true.
   userMarkedImportant: boolean("user_marked_important").notNull().default(false),
+  // When this fact was last SURFACED in a proactive morning note/greeting
+  // (distinct from lastReferencedAt, which tracks conversational mentions).
+  // Lets the morning generators avoid re-asking about the same one-time
+  // "event" fact day after day. Nullable/additive — no backfill needed.
+  lastSurfacedAt: timestamp("last_surfaced_at"),
 });
 
 export const personalitySignalsTable = pgTable("personality_signals", {
