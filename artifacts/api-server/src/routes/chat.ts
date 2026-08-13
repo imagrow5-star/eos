@@ -27,6 +27,7 @@ import { chatUsageLimits } from "../middleware/usageLimits.js";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { detectCrisis } from "../services/crisis/detector.js";
+import { detectCrisisSemantic, resolveCrisisOutcome } from "../services/crisis/semanticDetector.js";
 import { CRISIS_REINFORCEMENT_BLOCK } from "../services/crisis/reinforcement.js";
 import { resolveHelplines, buildHelplineBlockText } from "../services/crisis/helplines.js";
 import { recordChatCrisisEvent, dismissChatCrisisBlock } from "../services/crisis/events.js";
@@ -173,6 +174,15 @@ router.post("/chat/stream", ...chatUsageLimits, async (req, res): Promise<void> 
     // Runs the user's language pattern set PLUS English (union).
     const userLanguage = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
     const crisis = detectCrisis(content, userLanguage);
+    // Semantic backstop: fire NOW (in parallel), await just before generation.
+    // Only when regex MISSED — a regex hit already means crisis, so we skip the
+    // Haiku call (saves cost + latency). The promise runs concurrently with the
+    // DB inserts + system-prompt build below, so a normal turn pays only
+    // whatever the classifier exceeds that already-happening work — and a real
+    // crisis turn gets the full reinforcement, never a weaker response.
+    const semanticP = crisis.matched
+      ? Promise.resolve({ matched: false, available: false })
+      : detectCrisisSemantic(content);
     // Sprint 2B: did the user explicitly ask Eos to remember this turn?
     const rememberIntent = detectRememberIntent(content, userLanguage);
 
@@ -195,6 +205,12 @@ router.post("/chat/stream", ...chatUsageLimits, async (req, res): Promise<void> 
         .limit(21),
     ]);
 
+    // Await the backstop and union it with regex. EITHER positive → crisis path.
+    // A classifier that couldn't run (no key/error/timeout → available:false)
+    // simply leaves the regex result standing — never a missed detection.
+    const semantic = await semanticP;
+    const { active: crisisActive, pattern: crisisPattern } = resolveCrisisOutcome(crisis, semantic);
+
     // Drop the just-inserted user message from context window
     const contextMessages = [...recentMessages].reverse().slice(0, -1);
 
@@ -208,7 +224,7 @@ router.post("/chat/stream", ...chatUsageLimits, async (req, res): Promise<void> 
       {
         // Classic voice engine has no ElevenLabs system tools — never include
         // the listening/skip_turn rules here.
-        systemExtra: composeChatSystemExtra({ voiceMode, crisisDetected: crisis.matched }),
+        systemExtra: composeChatSystemExtra({ voiceMode, crisisDetected: crisisActive }),
         callType: voiceMode ? "voice_fallback" : "chat",
       },
     );
@@ -219,7 +235,7 @@ router.post("/chat/stream", ...chatUsageLimits, async (req, res): Promise<void> 
     // The block is part of the persisted message (history + exports show it);
     // the `done` event also carries it separately so the client renders it as
     // a distinct, dismissible card rather than Eos's own words.
-    const resolved = crisis.matched ? resolveHelplines(profile.country) : null;
+    const resolved = crisisActive ? resolveHelplines(profile.country, userLanguage) : null;
     const helplineBlockText = resolved ? buildHelplineBlockText(resolved.lines, userLanguage) : null;
     const persistedContent = helplineBlockText
       ? `${aiContent}\n\n${helplineBlockText}`
@@ -232,11 +248,11 @@ router.post("/chat/stream", ...chatUsageLimits, async (req, res): Promise<void> 
       .values({ userId, role: "assistant", content: persistedContent, isMorningNote: false })
       .returning();
 
-    if (crisis.matched && resolved && assistantMsg) {
+    if (crisisActive && resolved && assistantMsg) {
       await recordChatCrisisEvent({
         userId,
         messageId: assistantMsg.id,
-        patternMatched: crisis.pattern!,
+        patternMatched: crisisPattern!,
         countryServed: resolved.countryServed,
       }).catch((err) => {
       try {
@@ -294,6 +310,11 @@ router.post("/chat/send", ...chatUsageLimits, async (req, res): Promise<void> =>
   // Crisis floor: detect BEFORE generation (same guarantee as /chat/stream).
   const userLanguage = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
   const crisis = detectCrisis(content, userLanguage);
+  // Semantic backstop, fired in parallel (regex-miss only), awaited before
+  // generation — same fire-early/await-late flow as /chat/stream.
+  const semanticP = crisis.matched
+    ? Promise.resolve({ matched: false, available: false })
+    : detectCrisisSemantic(content);
   const rememberIntent = detectRememberIntent(content, userLanguage);
 
   const [userMsg] = await db
@@ -319,9 +340,14 @@ router.post("/chat/send", ...chatUsageLimits, async (req, res): Promise<void> =>
     .orderBy(desc(messagesTable.createdAt))
     .limit(21);
 
+  // Union the backstop with regex before generation (fail-safe: a classifier
+  // that couldn't run leaves the regex result standing).
+  const semantic = await semanticP;
+  const { active: crisisActive, pattern: crisisPattern } = resolveCrisisOutcome(crisis, semantic);
+
   const contextMessages = recentMessages.reverse().slice(0, -1);
   const reply = await getCompanionReply(systemPrompt, contextMessages, content, stage, {
-    systemExtra: composeChatSystemExtra({ voiceMode: false, crisisDetected: crisis.matched }),
+    systemExtra: composeChatSystemExtra({ voiceMode: false, crisisDetected: crisisActive }),
   });
   const aiContent = reply.text;
 
@@ -335,7 +361,7 @@ router.post("/chat/send", ...chatUsageLimits, async (req, res): Promise<void> =>
 
   // Crisis floor: deterministic helpline append after generation (works even
   // on a degraded reply — that is the point of a floor).
-  const resolved = crisis.matched ? resolveHelplines(profile.country) : null;
+  const resolved = crisisActive ? resolveHelplines(profile.country, userLanguage) : null;
   const helplineBlockText = resolved ? buildHelplineBlockText(resolved.lines, userLanguage) : null;
   const persistedContent = helplineBlockText ? `${aiContent}\n\n${helplineBlockText}` : aiContent;
 
@@ -344,11 +370,11 @@ router.post("/chat/send", ...chatUsageLimits, async (req, res): Promise<void> =>
     .values({ userId, role: "assistant", content: persistedContent, isMorningNote: false })
     .returning();
 
-  if (crisis.matched && resolved && assistantMsg) {
+  if (crisisActive && resolved && assistantMsg) {
     await recordChatCrisisEvent({
       userId,
       messageId: assistantMsg.id,
-      patternMatched: crisis.pattern!,
+      patternMatched: crisisPattern!,
       countryServed: resolved.countryServed,
     }).catch((err) => {
       try {

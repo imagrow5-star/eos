@@ -18,16 +18,58 @@ export interface ResolvedHelplines {
   lines: HelplineEntry[];
 }
 
+// ─── Language → representative helpline country (country-skipped fallback) ────
+// When a crisis user never set profile.country (it's optional at onboarding),
+// their language is the next-best signal: a same-language national line is
+// strictly closer than stranding them on the US/UK global set. Maps ONLY the
+// activated non-English languages to the directory entry that speaks it.
+//
+// Deliberate, documented limitation: Spanish and Portuguese resolve to the
+// EUROPEAN entry (ES → Línea 024, PT → SOS Voz Amiga), not a Latin-American
+// line (MX/AR/BR exist in the directory but can't be distinguished from
+// language alone). Still same-language and far closer than US/UK; refining to
+// LatAm would need a region signal we deliberately don't collect (no IP geo).
+// English and any unmapped language keep today's global fallback (already
+// English), so nothing regresses.
+const LANGUAGE_TO_COUNTRY: Readonly<Record<string, string>> = {
+  de: "DE",
+  nl: "NL",
+  fr: "FR",
+  es: "ES",
+  it: "IT",
+  pt: "PT",
+  sv: "SE",
+  no: "NO",
+  da: "DK",
+  pl: "PL",
+};
+
 /**
  * profile.country → helplines. Accepts the stored codes as-is ("US", "UK",
- * "IN", "", "other", null…). Unknown/absent → the global fallback set.
+ * "IN", "", "other", null…). When the country doesn't resolve, an optional
+ * `language` is used to infer a same-language national directory before the
+ * global fallback. A real, resolvable country ALWAYS wins over language.
  */
-export function resolveHelplines(country: string | null | undefined): ResolvedHelplines {
+export function resolveHelplines(
+  country: string | null | undefined,
+  language?: string | null | undefined,
+): ResolvedHelplines {
   const code = (country ?? "").trim().toUpperCase();
   const entry = code ? HELPLINE_DIRECTORY.get(code) : undefined;
-  if (!entry) return { countryServed: "fallback", lines: FALLBACK_HELPLINES };
-  // "UK" alias resolves to the GB entry — report the code we actually served.
-  return { countryServed: entry.country, lines: entry.lines.slice(0, 3) };
+  if (entry) {
+    // "UK" alias resolves to the GB entry — report the code we actually served.
+    return { countryServed: entry.country, lines: entry.lines.slice(0, 3) };
+  }
+
+  // Country missing/skipped/unknown → try the user's language before global.
+  const lang = (language ?? "").trim().toLowerCase();
+  const inferredCode = LANGUAGE_TO_COUNTRY[lang];
+  const inferred = inferredCode ? HELPLINE_DIRECTORY.get(inferredCode) : undefined;
+  if (inferred) {
+    return { countryServed: inferred.country, lines: inferred.lines.slice(0, 3) };
+  }
+
+  return { countryServed: "fallback", lines: FALLBACK_HELPLINES };
 }
 
 // ─── Card copy per language (Sprint 1.6) ─────────────────────────────────────

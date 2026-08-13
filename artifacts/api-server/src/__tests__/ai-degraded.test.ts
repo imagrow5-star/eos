@@ -115,10 +115,13 @@ describe("honest degraded mode (provider outage)", () => {
     );
     expect(rows.rows.map((r) => r.role)).toContain("assistant");
 
-    // …and no extraction pipeline fired (only the ONE failed chat call —
-    // extraction would have added more Anthropic calls).
+    // …and no extraction pipeline fired. Two Anthropic calls happen on a
+    // regex-miss message: the semantic crisis backstop (fired pre-generation,
+    // in parallel) and the chat reply itself. Extraction — skipped on a
+    // degraded reply — would have added several MORE Haiku calls, so this count
+    // still proves extraction never ran.
     await new Promise((r) => setTimeout(r, 300));
-    expect(anthropicCalls - callsBefore).toBe(1);
+    expect(anthropicCalls - callsBefore).toBe(2);
   });
 
   it("/chat/stream: SSE done event carries degraded:true with the honest text", async () => {
