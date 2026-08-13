@@ -59,8 +59,8 @@ export function ConsentGate({
       body: "Export everything, delete a single message or memory, or delete your whole account — anytime, in Settings. Deleting is real deletion, not hiding.",
     },
     {
-      title: "Eos is companionship, not medical care",
-      body: "She's not a therapist or a crisis service. If things ever feel like an emergency, she will always point you to real people who can help right away.",
+      title: "Eos is an AI, not a person",
+      body: "Eos is an AI companion, here to listen anytime, but it isn't a person or a substitute for professional help. If things ever feel like an emergency, it will always point you to real people who can help right away.",
     },
   ];
 
