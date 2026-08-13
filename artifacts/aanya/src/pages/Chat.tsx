@@ -4314,6 +4314,15 @@ export default function Chat() {
                 </form>
               </Form>
             )}
+
+            {/* AI disclosure (EU AI Act Art. 50) — plain-language, always
+                visible at the point of conversation so a user can tell they're
+                talking to an AI without asking. Present every session (not a
+                one-time flash) and in both the normal composer and onboarding
+                choice modes. */}
+            <p className="text-center text-[11px] text-muted-foreground/50 mt-3 px-4 leading-relaxed max-w-3xl mx-auto">
+              Eos is an AI — here to listen anytime, but it isn't a person or a substitute for professional help.
+            </p>
           </motion.div>
         )}
       </AnimatePresence>
