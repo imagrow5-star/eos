@@ -211,8 +211,8 @@ router.get("/voice-agent/crisis-status", async (req, res): Promise<void> => {
     return;
   }
   const profile = await getOrCreateProfileForUser(userId);
-  const resolved = resolveHelplines(profile.country);
   const language = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
+  const resolved = resolveHelplines(profile.country, language);
   res.json({
     active: true,
     event: {

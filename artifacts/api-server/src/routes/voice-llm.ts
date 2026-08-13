@@ -17,6 +17,7 @@ import { voiceTurnUsageLimits } from "../middleware/usageLimits.js";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { detectCrisis } from "../services/crisis/detector.js";
+import { detectCrisisSemantic, resolveCrisisOutcome } from "../services/crisis/semanticDetector.js";
 import { CRISIS_REINFORCEMENT_BLOCK_VOICE } from "../services/crisis/reinforcement.js";
 import { resolveHelplines } from "../services/crisis/helplines.js";
 import { recordVoiceCrisisEvent } from "../services/crisis/events.js";
@@ -345,18 +346,13 @@ router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (re
     // only (one uncached turn; the frozen call prefix resumes next turn).
     const voiceUserLanguage = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
     const crisis = synthetic ? { matched: false as const } : detectCrisis(freshUserContent, voiceUserLanguage);
-    if (crisis.matched) {
-      void recordVoiceCrisisEvent({
-        userId,
-        patternMatched: crisis.pattern!,
-        countryServed: resolveHelplines(profile.country).countryServed,
-      }).catch((err) => {
-      try {
-        const uh = hashUserIdForLog(userId);
-        if (uh) logger.error({ err, uh }, "crisis floor: recording voice event failed");
-      } catch { /* logging must never crash the caller */ }
-    });
-    }
+    // Semantic backstop: fire NOW (regex-miss, non-synthetic only) and await it
+    // just before building this turn's prompt — the DB round-trips below overlap
+    // the classifier, so a normal spoken turn isn't taxed while a paraphrased
+    // crisis still earns the full reinforcement + on-screen helpline card.
+    const semanticP = synthetic || crisis.matched
+      ? Promise.resolve({ matched: false, available: false })
+      : detectCrisisSemantic(freshUserContent);
     const [stage, preCallRows] = await Promise.all([
       calculateStage(profile),
       db
@@ -367,6 +363,24 @@ router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (re
         .limit(12),
     ]);
     const { parts: systemPrompt, toneExtra } = await getFrozenSystem(userId, issuedAt, profile, stage);
+
+    // Union the backstop with regex (fail-safe: an unavailable classifier
+    // leaves the regex result standing). The event row is what flips
+    // /voice-agent/crisis-status → the UI overlays the on-screen helpline card.
+    const semantic = await semanticP;
+    const { active: crisisActive, pattern: crisisPattern } = resolveCrisisOutcome(crisis, semantic);
+    if (crisisActive) {
+      void recordVoiceCrisisEvent({
+        userId,
+        patternMatched: crisisPattern!,
+        countryServed: resolveHelplines(profile.country, voiceUserLanguage).countryServed,
+      }).catch((err) => {
+        try {
+          const uh = hashUserIdForLog(userId);
+          if (uh) logger.error({ err, uh }, "crisis floor: recording voice event failed");
+        } catch { /* logging must never crash the caller */ }
+      });
+    }
 
     // Pre-call chat history (token issuedAt = call start, so in-call turns we
     // persist below are never double-counted) + the call transcript itself.
@@ -455,7 +469,7 @@ router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (re
         systemExtra:
           buildVoiceCallAddendum(tools.length > 0) +
           toneExtra +
-          (crisis.matched ? `\n${CRISIS_REINFORCEMENT_BLOCK_VOICE}` : "") +
+          (crisisActive ? `\n${CRISIS_REINFORCEMENT_BLOCK_VOICE}` : "") +
           (rememberIntent ? `\n${REMEMBER_ACK_GUIDANCE}` : ""),
         callType: "voice",
         cacheConversation: true,
