@@ -1,9 +1,10 @@
 import { useState } from "react";
+import { RowList, Row } from "@/components/ui/RowList";
 import { apiFetch } from "@/lib/api";
 import { format, parseISO } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Feather, X, ChevronDown, ChevronUp } from "lucide-react";
+import { Feather, X } from "lucide-react";
 import { getGetJourneyQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -738,30 +739,19 @@ function ArchiveItem({ entry }: { entry: ArchiveEntry }) {
   });
 
   return (
-    <div className="border border-primary/12 rounded-xl overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-primary/5 transition-colors"
-      >
-        <span className="text-[12px] tracking-wide text-foreground/65">
-          {weekLabel(entry.weekStart, entry.weekEnd)}
-        </span>
-        {open ? (
-          <ChevronUp className="w-3.5 h-3.5 text-foreground/35" />
-        ) : (
-          <ChevronDown className="w-3.5 h-3.5 text-foreground/35" />
-        )}
-      </button>
+    <Row
+      title={<span className="text-foreground/70">{weekLabel(entry.weekStart, entry.weekEnd)}</span>}
+      onOpenChange={setOpen}
+    >
       <AnimatePresence>
         {open && chapter && (
           <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.25 }}
           >
-            <div className="px-1 pb-1">
+            <div className="px-0 pb-1 -mx-3">
               {chapter.status === "revealed" ? (
                 <ChapterReader chapter={chapter} />
               ) : (
@@ -771,7 +761,7 @@ function ArchiveItem({ entry }: { entry: ArchiveEntry }) {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </Row>
   );
 }
 
@@ -836,9 +826,11 @@ export function WeeklyChapterSection() {
       {archive.length > 0 && (
         <div className="space-y-2">
           <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/60 px-1">Past chapters</div>
-          {archive.slice(0, 8).map((e) => (
-            <ArchiveItem key={e.id} entry={e} />
-          ))}
+          <RowList>
+            {archive.slice(0, 8).map((e) => (
+              <ArchiveItem key={e.id} entry={e} />
+            ))}
+          </RowList>
         </div>
       )}
     </div>

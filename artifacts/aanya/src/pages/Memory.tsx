@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { RowList, Row } from "@/components/ui/RowList";
 import { useGetProfile, useGetMemoryFacts, useGetPersonalitySignals, getGetMemoryFactsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
@@ -157,7 +158,7 @@ export default function Memory() {
         </h1>
         <div className="h-px bg-primary/20" />
         <p className="text-sm text-muted-foreground/70 font-serif italic">
-          The pieces of you she holds.
+          The pieces of you it holds.
         </p>
       </div>
 
@@ -171,7 +172,7 @@ export default function Memory() {
             <Sparkles className="w-5 h-5 text-primary-strong/50" />
           </div>
           <p className="text-sm text-muted-foreground font-serif italic max-w-[220px] leading-relaxed">
-            {companionName} is still getting to know you. The more you share, the more she'll hold.
+            {companionName} is still getting to know you. The more you share, the more it will hold.
           </p>
         </div>
       ) : (
@@ -185,8 +186,8 @@ export default function Memory() {
               vanished section. */}
           <section className="space-y-4">
             <p className="text-sm text-muted-foreground/70 font-serif italic leading-relaxed max-w-md">
-              {companionName} is still learning who you are. As she gets to know you
-              deeper, this section will show what she's understood.
+              {companionName} is still learning who you are. As it gets to know you
+              deeper, this section will show what it's understood.
             </p>
           </section>
 
@@ -195,11 +196,11 @@ export default function Memory() {
             <div className="h-px bg-primary/15" />
           )}
 
-          {/* ── Things she knows ─────────────────────────────────────────── */}
+          {/* ── Things Eos knows ─────────────────────────────────────────── */}
           {facts.length > 0 && (
             <section className="space-y-6 pb-4">
               <h2 className="font-serif text-xl text-foreground/85">
-                Things she knows
+                Things {companionName} knows
               </h2>
 
               <div className="space-y-8">
@@ -273,23 +274,18 @@ export default function Memory() {
               <h2 className="font-serif text-xl text-foreground/85">
                 How things have felt
               </h2>
-              <div className="space-y-2.5">
+              {/* The feeling sentence carries the emotion in the user's own
+                  frame — no category tag (that read as a clinical diagnosis
+                  label, cutting against Sprint 2C's "not a diagnosis"
+                  principle). `category` still ships in the API for
+                  ranking/grouping; it's just not surfaced here. */}
+              <RowList>
                 {feelings.map((f) => (
-                  // The feeling sentence carries the emotion in the user's own
-                  // frame — no category tag (that read as a clinical diagnosis
-                  // label, cutting against Sprint 2C's "not a diagnosis"
-                  // principle). `category` still ships in the API for
-                  // ranking/grouping; it's just not surfaced here.
-                  <div
-                    key={f.id}
-                    className="bg-card border border-primary/15 rounded-xl px-4 py-3"
-                  >
-                    <p className="text-sm text-foreground/85 leading-relaxed">
-                      {f.feeling}
-                    </p>
-                  </div>
+                  <Row key={f.id} title={f.feeling}>
+                    <p className="text-[13.5px] text-foreground/80 leading-relaxed">{f.feeling}</p>
+                  </Row>
                 ))}
-              </div>
+              </RowList>
             </section>
           )}
         </>

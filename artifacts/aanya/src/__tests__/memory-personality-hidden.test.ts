@@ -31,7 +31,7 @@ describe("Memory Manifest — personality signals hidden until Sprint 4", () => 
 
   it("shows the soft placeholder in the section's old slot", () => {
     expect(source).toContain("still learning who you are");
-    expect(source).toContain("this section will show what she's understood");
+    expect(source).toContain("this section will show what it's understood");
   });
 
   it("documents why it's hidden (Sprint 4 rationale)", () => {
@@ -44,7 +44,7 @@ describe("Memory Manifest — personality signals hidden until Sprint 4", () => 
       expect(source).toContain(`label: "${label}"`);
     }
     // …and the surrounding sections still render.
-    expect(source).toContain("Things she knows");
+    expect(source).toContain("Things {companionName} knows");
     expect(source).toContain("Reset my memory (dev)"); // founder-gated control untouched
   });
 
