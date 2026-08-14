@@ -197,13 +197,16 @@ export default function Memory() {
           )}
 
           {/* ── Things Eos knows ─────────────────────────────────────────── */}
+          {/* Same two-tap layer as the feelings: headline first, then the
+              category labels (Preferences / People / Moments / Hopes / Life)
+              each open on their own tap to reveal the facts. */}
           {facts.length > 0 && (
-            <section className="space-y-6 pb-4">
-              <h2 className="font-serif text-xl text-foreground/85">
-                Things {companionName} knows
-              </h2>
-
-              <div className="space-y-8">
+            <DisclosureSection
+              title={<>Things {companionName} knows</>}
+              count={facts.length}
+              className="pb-4"
+            >
+              <div className="space-y-5">
                 {categories.map((category) => {
                   const categoryFacts = facts.filter(
                     (f) => f.category === category.id
@@ -211,10 +214,12 @@ export default function Memory() {
                   if (categoryFacts.length === 0) return null;
 
                   return (
-                    <div key={category.id} className="space-y-3">
-                      <h3 className="text-[9px] uppercase tracking-[0.25em] text-primary-strong/60 pl-1">
-                        {category.label}
-                      </h3>
+                    <DisclosureSection
+                      key={category.id}
+                      small
+                      title={category.label}
+                      count={categoryFacts.length}
+                    >
                       <div className="flex flex-wrap gap-2">
                         {categoryFacts.map((fact) => (
                           <span
@@ -261,11 +266,11 @@ export default function Memory() {
                           </span>
                         ))}
                       </div>
-                    </div>
+                    </DisclosureSection>
                   );
                 })}
               </div>
-            </section>
+            </DisclosureSection>
           )}
 
           {/* ── How things have felt (Sprint 2C — feelings in context) ──────── */}

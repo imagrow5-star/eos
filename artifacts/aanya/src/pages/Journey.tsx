@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { RowList, Row } from "@/components/ui/RowList";
+import { RowList, Row, DisclosureSection } from "@/components/ui/RowList";
 import { apiFetch } from "@/lib/api";
 import { format, parseISO } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
@@ -108,22 +108,18 @@ function CommitmentsSection() {
   const closed = commitments.filter((c) => c.state !== "open");
 
   if (isLoading) return (
-    <section className="space-y-4">
-      <h2 className="font-serif text-xl text-foreground/90">What you&rsquo;re working on</h2>
+    <DisclosureSection title={<>What you&rsquo;re working on</>}>
       <div className="h-20 flex items-center justify-center">
         <div className="w-5 h-5 rounded-full border border-primary/40 border-t-transparent animate-spin" />
       </div>
-    </section>
+    </DisclosureSection>
   );
 
   return (
-    <section className="space-y-4">
-      <div>
-        <h2 className="font-serif text-xl text-foreground/90">What you&rsquo;re working on</h2>
-        <p className="text-[12px] text-muted-foreground mt-1">
-          Your own next steps, in your own time. Nothing here is graded.
-        </p>
-      </div>
+    <DisclosureSection title={<>What you&rsquo;re working on</>} count={total}>
+      <p className="text-[12px] text-muted-foreground">
+        Your own next steps, in your own time. Nothing here is graded.
+      </p>
 
       {total === 0 ? (
         <div className="bg-card/40 border border-primary/10 rounded-2xl p-5 text-center">
@@ -217,7 +213,7 @@ function CommitmentsSection() {
           )}
         </div>
       )}
-    </section>
+    </DisclosureSection>
   );
 }
 
@@ -259,8 +255,7 @@ function GoalsSection() {
   const doneGoals = goals.filter((g) => g.isComplete);
 
   return (
-    <section className="space-y-4">
-      <h2 className="font-serif text-xl text-foreground/85">Goals</h2>
+    <DisclosureSection title="Goals" count={goals.length}>
       {isLoading ? (
         <div className="h-20 flex items-center justify-center">
           <div className="w-5 h-5 rounded-full border border-primary/40 border-t-transparent animate-spin" />
@@ -360,7 +355,7 @@ function GoalsSection() {
           )}
         </div>
       )}
-    </section>
+    </DisclosureSection>
   );
 }
 
@@ -400,19 +395,15 @@ function HabitsSection() {
   };
 
   return (
-    <section className="space-y-4">
-      {/* Section header */}
-      <div className="flex items-center justify-between">
-        <h2 className="font-serif text-xl text-foreground/85">Daily Routines</h2>
-        {habits.length > 0 && (
-          <span className="text-[10px] text-muted-foreground/50 uppercase tracking-[0.15em]">
-            {habits.filter((h) => {
-              const today = format(new Date(), "yyyy-MM-dd");
-              return h.lastCompleted && format(parseISO(h.lastCompleted), "yyyy-MM-dd") === today;
-            }).length} / {habits.length} done today
-          </span>
-        )}
-      </div>
+    <DisclosureSection title="Daily Routines" count={habits.length}>
+      {habits.length > 0 && (
+        <p className="text-[10px] text-muted-foreground/50 uppercase tracking-[0.15em]">
+          {habits.filter((h) => {
+            const today = format(new Date(), "yyyy-MM-dd");
+            return h.lastCompleted && format(parseISO(h.lastCompleted), "yyyy-MM-dd") === today;
+          }).length} / {habits.length} done today
+        </p>
+      )}
 
       {/* Science note */}
       <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-primary/5 border border-primary/12">
@@ -586,7 +577,7 @@ function HabitsSection() {
           )}
         </div>
       )}
-    </section>
+    </DisclosureSection>
   );
 }
 
@@ -765,8 +756,7 @@ export default function Journey() {
       </div>
 
       {/* ── Mood chart ─────────────────────────────────────────────────────── */}
-      <section className="space-y-4">
-        <h2 className="font-serif text-xl text-foreground/85">How you've been feeling</h2>
+      <DisclosureSection title="How you've been feeling">
         <div className="bg-card/50 border border-primary/15 rounded-2xl p-5 h-[210px] relative">
           {chartData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
@@ -808,13 +798,12 @@ export default function Journey() {
             </p>
           </div>
         )}
-      </section>
+      </DisclosureSection>
 
       <div className="h-px bg-primary/12" />
 
       {/* ── Small things you did for yourself ──────────────────────────────── */}
-      <section className="space-y-4">
-        <h2 className="font-serif text-xl text-foreground/90">Small things you did for yourself</h2>
+      <DisclosureSection title="Small things you did for yourself" count={wins.length}>
         <div className="space-y-3">
           {wins.length === 0 && (
             <p className="text-sm text-muted-foreground font-serif italic px-1">
@@ -839,7 +828,7 @@ export default function Journey() {
           )}
           <AddWinCard />
         </div>
-      </section>
+      </DisclosureSection>
 
       <div className="h-px bg-primary/12" />
 
@@ -861,8 +850,11 @@ export default function Journey() {
       {/* ── Milestones — only what's been reached; nothing locked or greyed
            out, no "not yet" states staring back at the user ─────────────── */}
       {journey.milestones.some((m) => m.isUnlocked) && (
-        <section className="space-y-4 pb-8">
-          <h2 className="font-serif text-xl text-foreground/90">Milestones</h2>
+        <DisclosureSection
+          title="Milestones"
+          count={journey.milestones.filter((m) => m.isUnlocked).length}
+          className="pb-8"
+        >
           <div className="grid grid-cols-2 gap-3">
             {journey.milestones.filter((m) => m.isUnlocked).map((milestone) => (
               <div key={milestone.id}
@@ -876,7 +868,7 @@ export default function Journey() {
               </div>
             ))}
           </div>
-        </section>
+        </DisclosureSection>
       )}
     </div>
   );
