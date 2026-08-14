@@ -2,17 +2,22 @@
 // palette applies before the first frame (no flash of wrong theme).
 // External file (not inline) because the production CSP is script-src 'self'.
 //
-// The multi-theme system was retired: the product uses ONE calm light
-// palette everywhere. Any legacy stored choice ("eos-theme"/"eos-mode",
-// from the old picker) is cleared so every device lands on the one theme.
+// ONE palette product-wide; the only choice is an opt-in calm dark mode
+// ("eos-mode" in localStorage, default light). Legacy "eos-theme" keys from
+// the retired multi-theme picker are cleared.
 (function () {
+  var mode = 'light';
+  try {
+    var m = localStorage.getItem('eos-mode');
+    if (m === 'dark') mode = 'dark';
+    localStorage.removeItem('eos-theme');
+  } catch (e) {
+    /* storage blocked — keep light */
+  }
   var el = document.documentElement;
   el.setAttribute('data-theme', 'sage');
-  el.setAttribute('data-mode', 'light');
-  try {
-    localStorage.removeItem('eos-theme');
-    localStorage.removeItem('eos-mode');
-  } catch (e) {
-    /* storage blocked — attributes above still applied */
-  }
+  el.setAttribute('data-mode', mode);
+  // index.html pre-paints the cream shell; flip it when dark was chosen so a
+  // slow stylesheet never flashes bright at a night user.
+  if (mode === 'dark') el.style.backgroundColor = '#1A1E18';
 })();

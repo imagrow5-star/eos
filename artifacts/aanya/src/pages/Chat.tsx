@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2, Square } from "lucide-react";
+import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2, Square, Sun, Moon } from "lucide-react";
+import { useTheme } from "@/lib/theme";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { enablePush, disablePush, sendTestPush, needsInstallFirst } from "@/lib/push";
@@ -231,6 +232,8 @@ export default function Chat() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [continuousVoice, setContinuousVoice] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // Appearance — the one remaining choice: opt-in calm dark mode (default light)
+  const { mode: themeMode, setMode: setThemeMode } = useTheme();
   // "Forget this" (Phase A privacy) — tap a message to arm, confirm to delete
   const [forgetArmedId, setForgetArmedId] = useState<number | null>(null);
   const [forgetBusyId, setForgetBusyId] = useState<number | null>(null);
@@ -2743,6 +2746,34 @@ export default function Chat() {
             exit={{ opacity: 0, height: 0 }}
             className="bg-muted/95 border-b border-border px-5 py-5 backdrop-blur-xl z-10 shrink-0 space-y-6 overflow-hidden"
           >
+            {/* ── Appearance — light default, opt-in calm dark for night ──── */}
+            <div>
+              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
+                Appearance
+              </p>
+              <div className="flex gap-1.5">
+                {([
+                  { value: "light", label: "Light", Icon: Sun },
+                  { value: "dark", label: "Dark", Icon: Moon },
+                ] as const).map(({ value, label, Icon }) => (
+                  <button
+                    key={value}
+                    onClick={() => setThemeMode(value)}
+                    aria-pressed={themeMode === value}
+                    className={cn(
+                      "flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-medium tracking-wider transition-all border",
+                      themeMode === value
+                        ? "bg-primary/15 text-primary-strong border-primary/30"
+                        : "text-muted-foreground border-border hover:text-foreground/70 hover:border-secondary/40",
+                    )}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* ── Companion name ─────────────────────────────────────────── */}
             <div>
               <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">

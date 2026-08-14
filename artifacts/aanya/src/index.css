@@ -65,10 +65,12 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   THEME TOKENS — ONE palette for the whole product.
-   The multi-theme system (amber/dawn/sage/twilight × light/dark) was retired:
-   the product uses the calm landing-page palette everywhere — warm cream,
-   soft green, muted terracotta (welcome.html: #FBF7EF bg, #567751 green).
+   THEME TOKENS — ONE palette, plus one optional calm dark variant.
+   The multi-theme system (amber/dawn/sage/twilight) was retired: the
+   product uses the calm landing-page palette everywhere — warm cream, soft
+   green, muted terracotta (welcome.html: #FBF7EF bg, #567751 green). The
+   only user choice left is an opt-in calm DARK MODE for night use
+   ([data-mode='dark'] block below); cream light is the default.
    Values are bare HSL triplets consumed through the @theme inline block
    above; do not change the format.
    Contrast contract (verified): foreground/background AAA ·
@@ -111,6 +113,45 @@
   --eos-bubble: 40 43% 99%;
   --bubble-shadow: 0 2px 12px hsl(30 14% 37% / 0.10), 0 1px 3px hsl(30 14% 37% / 0.08);
   --radius: 0.75rem;
+}
+
+/* ── CALM DARK (optional, opt-in) ─── the one dark variant, for night use.
+   Same calm identity as the light palette: soft green on warm charcoal, no
+   gold. Applied ONLY when the user flips the Settings toggle (html
+   [data-mode='dark']); the default everyone sees first is the cream light
+   palette above. Contrast contract holds (was the verified sage/dark set). */
+[data-mode='dark'] {
+  --background: 100 11% 11%;  /* #1A1E18 */
+  --foreground: 78 25% 92%;  /* #EDF0E6 */
+  --card: 93 12% 15%;  /* #262B22 */
+  --card-foreground: 78 25% 92%;
+  --card-border: 94 12% 23%;
+  --popover: 93 12% 15%;
+  --popover-foreground: 78 25% 92%;
+  --popover-border: 94 12% 23%;
+  --primary: 118 18% 62%;  /* #8FB08E */
+  --primary-foreground: 95 36% 9%;  /* #16200F */
+  --primary-strong: 118 18% 62%;  /* text-safe accent in dark */
+  --secondary: 96 14% 71%;  /* #B4C0AC */
+  --secondary-foreground: 100 11% 11%;
+  --muted: 93 11% 19%;  /* #30362B */
+  --muted-foreground: 96 14% 71%;
+  --accent: 118 18% 62%;
+  --accent-foreground: 95 36% 9%;
+  --destructive: 0 42% 32%;
+  --destructive-foreground: 39 40% 90%;
+  --border: 94 12% 23%;  /* #3A4234 */
+  --input: 94 12% 23%;
+  --ring: 118 18% 62%;
+  --chart-1: 118 18% 62%;
+  --chart-2: 124 12% 55%;
+  --chart-3: 96 14% 71%;
+  --chart-4: 78 25% 92%;
+  --chart-5: 93 11% 19%;
+  --user-bubble: 124 12% 55%;  /* #7E9A80 */
+  --user-bubble-text: 111 16% 9%;  /* #141A13 */
+  --eos-bubble: 93 12% 15%;
+  --bubble-shadow: 0 2px 14px hsl(0 0% 0% / 0.28), 0 0 18px hsl(118 18% 62% / 0.06);
 }
 
 /* ── Older-browser fallback: dvh units (Chrome 108+/Safari 15.4+) ─────────────
