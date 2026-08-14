@@ -5,7 +5,6 @@ import { Route, Switch, Router as WouterRouter } from "wouter";
 import { Shell } from "@/components/layout/Shell";
 import { SplashScreen } from "@/components/SplashScreen";
 import { CONSENT_VERSION } from "@/lib/consent";
-import { useTheme } from "@/lib/theme";
 import { resolveUnauthView } from "@/lib/authEntry";
 
 // Every page is code-split so first paint only ships the shell + the one
@@ -203,13 +202,6 @@ function AuthGate() {
     },
     staleTime: Infinity,
   });
-
-  // Cross-device theme: adopt the profile's stored choice once it loads —
-  // a no-op when this device already has an explicit local choice.
-  const { adoptProfileTheme } = useTheme();
-  useEffect(() => {
-    if (consentProfile) adoptProfileTheme(consentProfile.theme, consentProfile.themeMode);
-  }, [consentProfile, adoptProfileTheme]);
 
   // Loading state (initial fetch or verifying token)
   if (isLoading || verifying) {
