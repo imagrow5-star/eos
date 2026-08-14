@@ -1,8 +1,8 @@
 /**
  * Send-sound preference + fail-safety.
- *  - OFF by default (opt-in: no surprise noise).
+ *  - ON by default (the chime is quiet by design; explicit "off" silences).
  *  - Toggling stores the per-device choice.
- *  - Garbage / missing storage reads as OFF.
+ *  - Garbage values read as ON (only an explicit "off" silences).
  *  - playSendSound never throws, even with no AudioContext (node env here),
  *    whether enabled, disabled, or forced — sound-off must feel complete.
  */
@@ -27,8 +27,8 @@ afterAll(() => {
 beforeEach(() => store.clear());
 
 describe("send sound preference", () => {
-  it("is OFF by default (opt-in)", () => {
-    expect(sendSoundEnabled()).toBe(false);
+  it("is ON by default", () => {
+    expect(sendSoundEnabled()).toBe(true);
   });
 
   it("turns on and off, persisted per-device", () => {
@@ -40,8 +40,10 @@ describe("send sound preference", () => {
     expect(sendSoundEnabled()).toBe(false);
   });
 
-  it("garbage stored value reads as OFF", () => {
+  it("only an explicit 'off' silences; garbage reads as ON", () => {
     store.set("eos-send-sound", "banana");
+    expect(sendSoundEnabled()).toBe(true);
+    store.set("eos-send-sound", "off");
     expect(sendSoundEnabled()).toBe(false);
   });
 });

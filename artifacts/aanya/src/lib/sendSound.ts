@@ -6,17 +6,19 @@
 // exponential decay, all over in ~0.26 s at a low peak gain. A warm chime,
 // not a zip or a ping — it must never startle someone at night.
 //
-// Opt-in and per-device: default OFF ("we don't make noise at people by
-// surprise"), toggled in Settings → Appearance, stored in localStorage.
-// Plays ONLY on user sends — never on Eos's replies.
+// Per-device, DEFAULT ON: the chime is quiet enough to ship on for everyone,
+// and anyone who wants silence turns it off in Settings → Appearance → Send
+// sound (one tap). Only an explicit "off" silences; anything else (fresh
+// user, garbage value) means on. Plays ONLY on user sends — never on Eos's
+// replies.
 
 const KEY = "eos-send-sound";
 
 export function sendSoundEnabled(): boolean {
   try {
-    return localStorage.getItem(KEY) === "on";
+    return localStorage.getItem(KEY) !== "off";
   } catch {
-    return false; // storage blocked → stay silent (the safe default)
+    return false; // storage blocked → stay silent (never risk surprise noise)
   }
 }
 
@@ -37,7 +39,9 @@ function scheduleChime(ac: AudioContext): void {
   master.connect(ac.destination);
   // Envelope: soft attack to a LOW peak, then quick exponential decay.
   master.gain.setValueAtTime(0.0001, t0);
-  master.gain.exponentialRampToValueAtTime(0.11, t0 + 0.02);
+  // Peak 0.08: ~3 dB quieter than the first cut — it plays for everyone by
+  // default now, so err on the quiet side. Must never startle at night.
+  master.gain.exponentialRampToValueAtTime(0.08, t0 + 0.02);
   master.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.26);
 
   // Warm dyad: A5 + its fifth, softer. Sine only — no upper harmonics.
