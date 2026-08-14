@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { RowList, Row } from "@/components/ui/RowList";
 import { apiFetch } from "@/lib/api";
 import { format, parseISO } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
@@ -136,73 +137,84 @@ function CommitmentsSection() {
           {open.length > 0 && (
             <div className="space-y-2">
               <p className="text-[10px] text-muted-foreground/50 uppercase tracking-[0.2em] pl-1">In progress</p>
-              {open.map((c) => {
-                const meta = STATE_META[c.state];
-                const Icon = meta.icon;
-                return (
-                  <motion.div key={c.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-                    className={cn("bg-card border rounded-xl p-4 flex items-start gap-3", meta.bg)}>
-                    <Icon className={cn("w-4 h-4 mt-0.5 shrink-0", meta.color)} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-foreground/85 leading-snug">{c.content}</p>
-                      {c.cue && <p className="text-[11px] text-muted-foreground/55 mt-0.5">{c.cue}</p>}
-                      {c.scheduledDate && (
-                        <p className="text-[10px] text-secondary/70 mt-1 uppercase tracking-wide">
-                          Planned for {format(parseISO(c.scheduledDate), "MMM d")}
-                          {c.scheduledTime && ` · ${formatClockTime(c.scheduledTime)}`}
-                        </p>
+              <RowList>
+                {open.map((c) => {
+                  const meta = STATE_META[c.state];
+                  const Icon = meta.icon;
+                  const hasDetail = Boolean(c.cue || c.scheduledDate || c.scheduledFollowupDate || c.missCount > 0);
+                  return (
+                    <Row
+                      key={c.id}
+                      icon={<Icon className={cn("w-3.5 h-3.5", meta.color)} />}
+                      title={c.content}
+                      meta={c.scheduledDate ? format(parseISO(c.scheduledDate), "MMM d") : undefined}
+                      actions={
+                        <>
+                          <Button variant="ghost" size="icon" className="w-7 h-7 text-emerald-700 dark:text-emerald-400/60 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-full"
+                            onClick={() => updateCommitment.mutate({ id: c.id, state: "done" })} title="Mark done">
+                            <Check className="w-3.5 h-3.5" strokeWidth={3} />
+                          </Button>
+                          <Button variant="ghost" size="icon" className="w-7 h-7 text-muted-foreground/40 hover:text-red-400/70 hover:bg-red-500/8 rounded-full"
+                            onClick={() => deleteCommitment.mutate(c.id)} title="Remove">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </>
+                      }
+                    >
+                      {hasDetail ? (
+                        <div className="space-y-1">
+                          <p className="text-[13.5px] text-foreground/80 leading-relaxed">{c.content}</p>
+                          {c.cue && <p className="text-[11px] text-muted-foreground/55">{c.cue}</p>}
+                          {c.scheduledDate && (
+                            <p className="text-[10px] text-secondary/70 uppercase tracking-wide">
+                              Planned for {format(parseISO(c.scheduledDate), "MMM d")}
+                              {c.scheduledTime && ` · ${formatClockTime(c.scheduledTime)}`}
+                            </p>
+                          )}
+                          {c.scheduledFollowupDate && (
+                            <p className="text-[10px] text-primary-strong/60 uppercase tracking-wide">
+                              Follow-up {format(parseISO(c.scheduledFollowupDate), "MMM d")}
+                            </p>
+                          )}
+                          {c.missCount > 0 && (
+                            <p className="text-[10px] text-foreground/35">
+                              {c.missCount === 1 ? "Missed once" : `Missed ${c.missCount}×`} — your companion will suggest something smaller
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-[13.5px] text-foreground/80 leading-relaxed">{c.content}</p>
                       )}
-                      {c.scheduledFollowupDate && (
-                        <p className="text-[10px] text-primary-strong/60 mt-1 uppercase tracking-wide">
-                          Follow-up {format(parseISO(c.scheduledFollowupDate), "MMM d")}
-                        </p>
-                      )}
-                      {c.missCount > 0 && (
-                        <p className="text-[10px] text-foreground/35 mt-0.5">
-                          {c.missCount === 1 ? "Missed once" : `Missed ${c.missCount}×`} — your companion will suggest something smaller
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button variant="ghost" size="icon" className="w-7 h-7 text-emerald-700 dark:text-emerald-400/60 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-full"
-                        onClick={() => updateCommitment.mutate({ id: c.id, state: "done" })} title="Mark done">
-                        <Check className="w-3.5 h-3.5" strokeWidth={3} />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="w-7 h-7 text-muted-foreground/40 hover:text-red-400/70 hover:bg-red-500/8 rounded-full"
-                        onClick={() => deleteCommitment.mutate(c.id)} title="Remove">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                  </motion.div>
-                );
-              })}
+                    </Row>
+                  );
+                })}
+              </RowList>
             </div>
           )}
 
           {closed.length > 0 && (
             <div className="space-y-2">
               <p className="text-[10px] text-muted-foreground uppercase tracking-[0.2em] pl-1 mt-4">Earlier</p>
-              {closed.slice(0, 6).map((c) => {
-                const meta = STATE_META[c.state];
-                const Icon = meta.icon;
-                return (
-                  <div key={c.id} className={cn(
-                    "border rounded-xl px-4 py-3 flex items-start gap-3",
-                    c.state === "done" ? "bg-emerald-500/5 border-emerald-500/15" : "bg-foreground/3 border-foreground/8 opacity-55",
-                  )}>
-                    <Icon className={cn("w-3.5 h-3.5 mt-0.5 shrink-0", meta.color)} />
-                    <div className="min-w-0">
-                      <p className={cn("text-sm leading-snug",
-                        c.state === "done" ? "text-foreground/75" : "text-muted-foreground")}>
-                        {c.content}
-                      </p>
+              <RowList>
+                {closed.slice(0, 6).map((c) => {
+                  const meta = STATE_META[c.state];
+                  const Icon = meta.icon;
+                  return (
+                    <Row
+                      key={c.id}
+                      dim={c.state !== "done"}
+                      icon={<Icon className={cn("w-3.5 h-3.5", meta.color)} />}
+                      title={c.content}
+                      meta={c.state === "done" ? "done" : undefined}
+                    >
+                      <p className="text-[13.5px] text-foreground/75 leading-relaxed">{c.content}</p>
                       {c.qualityNote && (
                         <p className="text-[11px] text-muted-foreground/55 mt-1 italic">"{c.qualityNote}"</p>
                       )}
-                    </div>
-                  </div>
-                );
-              })}
+                    </Row>
+                  );
+                })}
+              </RowList>
             </div>
           )}
         </div>
@@ -811,20 +823,23 @@ export default function Journey() {
               The small stuff counts here — a shower on a heavy day, a text you finally sent.
             </p>
           )}
-          {wins.map((win, i) => (
-            <motion.div key={win.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.04 }} className="bg-card border border-primary/15 rounded-xl p-4 flex gap-3">
-              <div className="w-7 h-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
-                <Heart className="w-3.5 h-3.5 text-primary-strong/60" />
-              </div>
-              <div>
-                <p className="text-sm text-foreground/85 leading-relaxed">{win.content}</p>
-                <span className="text-[10px] text-muted-foreground mt-1.5 block uppercase tracking-wider">
-                  {format(parseISO(win.createdAt), "MMM d, yyyy")}
-                </span>
-              </div>
-            </motion.div>
-          ))}
+          {wins.length > 0 && (
+            <RowList>
+              {wins.map((win) => (
+                <Row
+                  key={win.id}
+                  icon={<Heart className="w-3.5 h-3.5 text-primary-strong/50" />}
+                  title={win.content}
+                  meta={format(parseISO(win.createdAt), "MMM d")}
+                >
+                  <p className="text-[13.5px] text-foreground/80 leading-relaxed">{win.content}</p>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mt-1.5">
+                    {format(parseISO(win.createdAt), "MMMM d, yyyy")}
+                  </p>
+                </Row>
+              ))}
+            </RowList>
+          )}
           <AddWinCard />
         </div>
       </section>

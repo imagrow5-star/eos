@@ -2485,7 +2485,7 @@ export default function Chat() {
                 {/* ── Honest degraded-reply indicator (provider outage) ── */}
                 {isCompanion && degradedMessageIds.has(msg.id) && (
                   <span className="text-[10.5px] text-muted-foreground/55 italic mt-1 ml-1.5">
-                    A connection hiccup on our side — Eos will be back to her full self shortly.
+                    A connection hiccup on our side — Eos will be back to its full self shortly.
                   </span>
                 )}
 
@@ -3032,7 +3032,7 @@ export default function Chat() {
                   </div>
                 )}
                 <p className="text-[10.5px] text-muted-foreground/45 mt-2 leading-relaxed">
-                  Both optional — they help {profile?.companionName || "her"} meet you where you are, and know who to point you to if you ever need local support.
+                  Both optional — they help {profile?.companionName || "Eos"} meet you where you are, and know who to point you to if you ever need local support.
                 </p>
               </div>
             </div>
@@ -3209,7 +3209,7 @@ export default function Chat() {
               <p className="text-[13px] text-foreground/75">Your words stay yours</p>
               <p className="text-[10.5px] text-muted-foreground/45 mt-1 leading-relaxed">
                 What's kept, who helps run Eos, and how to take anything back — in plain language.
-                To make her forget something specific, tap any message in your conversation, or a
+                To make {companionName} forget something specific, tap any message in your conversation, or a
                 memory on the Memory page.
               </p>
               <a

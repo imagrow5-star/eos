@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { RowList, Row } from "@/components/ui/RowList";
 import { motion } from "framer-motion";
 import { Sparkles, X, Download, Trash2 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
@@ -206,32 +207,30 @@ export default function ReflectionsSection() {
       )}
 
       {reports.length > 0 && (
-        <div className="space-y-2.5">
+        <RowList>
           {reports.map((r) => (
-            <div key={r.id} className="bg-card border border-primary/15 rounded-xl px-4 py-3 space-y-2.5">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="min-w-0">
-                  <p className="text-sm text-foreground/85">{fmtRange(r.periodStart, r.periodEnd)}</p>
-                  <p className="text-[10.5px] text-muted-foreground/50 mt-0.5">
-                    {new Date(r.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-                    {r.generatedBy === "auto" ? " · weekly" : ""}
-                  </p>
-                </div>
+            <Row
+              key={r.id}
+              title={fmtRange(r.periodStart, r.periodEnd)}
+              meta={
+                new Date(r.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+                (r.generatedBy === "auto" ? " · weekly" : "")
+              }
+            >
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={() => view(r.id)}
                   disabled={busyId === r.id}
-                  className="text-[11px] font-medium tracking-wider uppercase text-primary-strong/85 hover:text-primary-strong rounded-full border border-primary/20 hover:border-primary/40 px-3 py-1.5 transition-colors disabled:opacity-50 shrink-0"
+                  className="text-[11px] font-medium tracking-wider uppercase text-primary-strong/85 hover:text-primary-strong rounded-full border border-primary/20 hover:border-primary/40 px-3 py-1.5 transition-colors disabled:opacity-50"
                 >
                   Read
                 </button>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap pt-0.5 border-t border-primary/8">
-                <span className="text-[10px] text-muted-foreground/45 tracking-wider uppercase pt-2">Download</span>
+                <span className="text-[10px] text-muted-foreground/45 tracking-wider uppercase ml-1">Download</span>
                 {(["md", "txt", "pdf"] as const).map((f) => (
                   <button
                     key={f}
                     onClick={() => download(r.id, f)}
-                    className="mt-2 flex items-center gap-1 text-[10.5px] uppercase tracking-wider text-muted-foreground/60 hover:text-primary-strong/80 rounded-md border border-primary/15 hover:border-primary/35 px-2 py-1 transition-colors"
+                    className="flex items-center gap-1 text-[10.5px] uppercase tracking-wider text-muted-foreground/60 hover:text-primary-strong/80 rounded-md border border-primary/15 hover:border-primary/35 px-2 py-1 transition-colors"
                   >
                     <Download className="w-3 h-3" />
                     {f}
@@ -239,15 +238,15 @@ export default function ReflectionsSection() {
                 ))}
                 <button
                   onClick={() => setConfirmDelete(r.id)}
-                  className="mt-2 ml-auto flex items-center gap-1 text-[10.5px] uppercase tracking-wider text-muted-foreground/45 hover:text-destructive/80 transition-colors"
+                  className="ml-auto flex items-center gap-1 text-[10.5px] uppercase tracking-wider text-muted-foreground/45 hover:text-destructive/80 transition-colors"
                 >
                   <Trash2 className="w-3 h-3" />
                   Delete
                 </button>
               </div>
-            </div>
+            </Row>
           ))}
-        </div>
+        </RowList>
       )}
 
       {/* ── Read modal ─────────────────────────────────────────────────────── */}
