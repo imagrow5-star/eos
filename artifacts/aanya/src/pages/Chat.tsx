@@ -2744,8 +2744,14 @@ export default function Chat() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="bg-muted/95 border-b border-border px-5 py-5 backdrop-blur-xl z-10 shrink-0 space-y-6 overflow-hidden"
+            className="bg-muted/95 border-b border-border backdrop-blur-xl z-10 shrink-0 overflow-hidden"
           >
+            {/* The panel is taller than most viewports: the motion.div above
+                must keep overflow-hidden for the height animation, so the
+                SCROLLING lives on this inner wrapper — capped below the
+                viewport height so every field stays reachable on laptop and
+                mobile alike. */}
+            <div className="max-h-[calc(100dvh-7rem)] overflow-y-auto overscroll-contain px-5 py-5 space-y-6">
             {/* ── Appearance — light default, opt-in calm dark for night ──── */}
             <div>
               <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
@@ -3536,6 +3542,7 @@ export default function Chat() {
                   </div>
                 </div>
               )}
+            </div>
             </div>
           </motion.div>
         )}
