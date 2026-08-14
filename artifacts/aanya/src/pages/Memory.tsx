@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { RowList, Row } from "@/components/ui/RowList";
+import { RowList, Row, DisclosureSection } from "@/components/ui/RowList";
 import { useGetProfile, useGetMemoryFacts, useGetPersonalitySignals, getGetMemoryFactsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
@@ -269,11 +269,15 @@ export default function Memory() {
           )}
 
           {/* ── How things have felt (Sprint 2C — feelings in context) ──────── */}
+          {/* Two-tap layer: the section is JUST its headline until tapped
+              (DisclosureSection), then the rows appear, then a row tap
+              reveals its full sentence. */}
           {feelings.length > 0 && (
-            <section className="space-y-4 pb-4">
-              <h2 className="font-serif text-xl text-foreground/85">
-                How things have felt
-              </h2>
+            <DisclosureSection
+              title="How things have felt"
+              count={feelings.length}
+              className="pb-4"
+            >
               {/* The feeling sentence carries the emotion in the user's own
                   frame — no category tag (that read as a clinical diagnosis
                   label, cutting against Sprint 2C's "not a diagnosis"
@@ -286,7 +290,7 @@ export default function Memory() {
                   <Row key={f.id} title={f.feeling} />
                 ))}
               </RowList>
-            </section>
+            </DisclosureSection>
           )}
         </>
       )}

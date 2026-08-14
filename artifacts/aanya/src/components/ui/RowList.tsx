@@ -12,6 +12,68 @@ import { cn } from "@/lib/utils";
 // shared by Journey (wins, commitments), Memory (feelings, reflections) and
 // Chapters (past chapters) so the whole app scans the same way.
 
+// ─── DisclosureSection — a whole section behind its headline ─────────────────
+// One more layer above RowList: the section renders as JUST its headline
+// (plus a quiet count and chevron) and nothing else until tapped. Tap the
+// headline to reveal the content (typically a RowList whose rows then expand
+// individually); tap again to put it away. Keeps long pages scannable —
+// headlines first, lists on demand.
+export function DisclosureSection({
+  title,
+  count,
+  children,
+  defaultOpen = false,
+  className,
+}: {
+  /** Section headline — styled like the page's h2s. */
+  title: string;
+  /** Quiet item count shown beside the headline. */
+  count?: number;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className={cn("space-y-4", className)}>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2.5 text-left cursor-pointer group focus-visible:outline-none"
+      >
+        <h2 className="font-serif text-xl text-foreground/85 group-hover:text-foreground transition-colors">
+          {title}
+        </h2>
+        {typeof count === "number" && count > 0 && (
+          <span className="text-[10.5px] uppercase tracking-wider text-muted-foreground/55 tabular-nums mt-1">
+            {count}
+          </span>
+        )}
+        <ChevronDown
+          className={cn(
+            "w-4 h-4 shrink-0 text-foreground/30 group-hover:text-foreground/50 transition-transform duration-200 mt-1",
+            open && "rotate-180",
+          )}
+        />
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+            className="overflow-hidden"
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </section>
+  );
+}
+
 export function RowList({
   children,
   className,
