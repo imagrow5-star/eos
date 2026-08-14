@@ -23,36 +23,56 @@ export function DisclosureSection({
   count,
   children,
   defaultOpen = false,
+  small = false,
   className,
 }: {
-  /** Section headline — styled like the page's h2s. */
-  title: string;
+  /** Section headline — styled like the page's h2s (or quiet uppercase
+   *  labels with `small`). ReactNode so callers can interpolate names. */
+  title: React.ReactNode;
   /** Quiet item count shown beside the headline. */
   count?: number;
   children: React.ReactNode;
   defaultOpen?: boolean;
+  /** Sub-section variant: the small uppercase group label (e.g. the fact
+   *  categories inside "Things … knows") instead of a full h2. */
+  small?: boolean;
   className?: string;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <section className={cn("space-y-4", className)}>
+    <section className={cn(small ? "space-y-3" : "space-y-4", className)}>
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2.5 text-left cursor-pointer group focus-visible:outline-none"
+        className={cn(
+          "w-full flex items-center text-left cursor-pointer group focus-visible:outline-none",
+          small ? "gap-2 pl-1" : "gap-2.5",
+        )}
       >
-        <h2 className="font-serif text-xl text-foreground/85 group-hover:text-foreground transition-colors">
-          {title}
-        </h2>
+        {small ? (
+          <h3 className="text-[9px] uppercase tracking-[0.25em] text-primary-strong/60 group-hover:text-primary-strong transition-colors">
+            {title}
+          </h3>
+        ) : (
+          <h2 className="font-serif text-xl text-foreground/85 group-hover:text-foreground transition-colors">
+            {title}
+          </h2>
+        )}
         {typeof count === "number" && count > 0 && (
-          <span className="text-[10.5px] uppercase tracking-wider text-muted-foreground/55 tabular-nums mt-1">
+          <span
+            className={cn(
+              "uppercase tracking-wider text-muted-foreground/55 tabular-nums",
+              small ? "text-[9px]" : "text-[10.5px] mt-1",
+            )}
+          >
             {count}
           </span>
         )}
         <ChevronDown
           className={cn(
-            "w-4 h-4 shrink-0 text-foreground/30 group-hover:text-foreground/50 transition-transform duration-200 mt-1",
+            "shrink-0 text-foreground/30 group-hover:text-foreground/50 transition-transform duration-200",
+            small ? "w-3 h-3" : "w-4 h-4 mt-1",
             open && "rotate-180",
           )}
         />
@@ -66,7 +86,9 @@ export function DisclosureSection({
             transition={{ duration: 0.22, ease: "easeOut" }}
             className="overflow-hidden"
           >
-            {children}
+            {/* Restores the vertical rhythm the old static <section>'s
+                space-y gave multi-element section bodies. */}
+            <div className={small ? "space-y-3" : "space-y-4"}>{children}</div>
           </motion.div>
         )}
       </AnimatePresence>
