@@ -111,7 +111,7 @@ describe("getUserTier", () => {
       expect(tier.status).toBe("trialing");
       expect(tier.voiceMinutesPerMonth).toBe(120);
       expect(tier.trialEndsAt).not.toBeNull();
-      expect(tier.config.displayName).toBe("Companion");
+      expect(tier.config.displayName).toBe("Essential");
     }
   });
 
