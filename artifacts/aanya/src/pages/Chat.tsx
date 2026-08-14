@@ -2829,9 +2829,9 @@ export default function Chat() {
                   </button>
                 ))}
               </div>
-              {/* Send sound — soft chime on YOUR sends only. Opt-in, default
-                  off: no surprise noise, especially at night. Turning it on
-                  plays the chime once so you hear what you chose. */}
+              {/* Send sound — soft chime on YOUR sends only. ON by default
+                  (it is deliberately very quiet); this switch is the one-tap
+                  off. Turning it on plays the chime once as a preview. */}
               <div className="mt-4">
                 <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
                   Send sound
@@ -2861,7 +2861,7 @@ export default function Chat() {
                     />
                   </button>
                   <p className="text-[12px] text-muted-foreground/70 leading-relaxed">
-                    A soft chime when you send a message. Off by default; never on {companionName}'s replies.
+                    A soft chime when you send a message. On by default; turn it off here anytime. Never plays on {companionName}'s replies.
                   </p>
                 </div>
               </div>
