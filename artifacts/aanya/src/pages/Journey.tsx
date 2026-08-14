@@ -163,7 +163,6 @@ function CommitmentsSection() {
                     >
                       {hasDetail ? (
                         <div className="space-y-1">
-                          <p className="text-[13.5px] text-foreground/80 leading-relaxed">{c.content}</p>
                           {c.cue && <p className="text-[11px] text-muted-foreground/55">{c.cue}</p>}
                           {c.scheduledDate && (
                             <p className="text-[10px] text-secondary/70 uppercase tracking-wide">
@@ -182,9 +181,9 @@ function CommitmentsSection() {
                             </p>
                           )}
                         </div>
-                      ) : (
-                        <p className="text-[13.5px] text-foreground/80 leading-relaxed">{c.content}</p>
-                      )}
+                      ) : // No detail beyond the text itself — Row un-truncates
+                        // the title on tap when it's long, so no panel needed.
+                        null}
                     </Row>
                   );
                 })}
@@ -207,10 +206,9 @@ function CommitmentsSection() {
                       title={c.content}
                       meta={c.state === "done" ? "done" : undefined}
                     >
-                      <p className="text-[13.5px] text-foreground/75 leading-relaxed">{c.content}</p>
-                      {c.qualityNote && (
-                        <p className="text-[11px] text-muted-foreground/55 mt-1 italic">"{c.qualityNote}"</p>
-                      )}
+                      {c.qualityNote ? (
+                        <p className="text-[11px] text-muted-foreground/55 italic">"{c.qualityNote}"</p>
+                      ) : null}
                     </Row>
                   );
                 })}
@@ -832,8 +830,7 @@ export default function Journey() {
                   title={win.content}
                   meta={format(parseISO(win.createdAt), "MMM d")}
                 >
-                  <p className="text-[13.5px] text-foreground/80 leading-relaxed">{win.content}</p>
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50 mt-1.5">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50">
                     {format(parseISO(win.createdAt), "MMMM d, yyyy")}
                   </p>
                 </Row>
