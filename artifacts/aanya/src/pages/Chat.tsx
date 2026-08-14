@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2, Square, Sun, Moon } from "lucide-react";
 import { useTheme } from "@/lib/theme";
+import { playSendSound, sendSoundEnabled, setSendSoundEnabled } from "@/lib/sendSound";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { enablePush, disablePush, sendTestPush, needsInstallFirst } from "@/lib/push";
@@ -234,6 +235,8 @@ export default function Chat() {
   const [showSettings, setShowSettings] = useState(false);
   // Appearance — the one remaining choice: opt-in calm dark mode (default light)
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
+  // Send sound — opt-in, per-device, default off
+  const [sendSoundOn, setSendSoundOn] = useState(sendSoundEnabled);
   // "Forget this" (Phase A privacy) — tap a message to arm, confirm to delete
   const [forgetArmedId, setForgetArmedId] = useState<number | null>(null);
   const [forgetBusyId, setForgetBusyId] = useState<number | null>(null);
@@ -1113,6 +1116,7 @@ export default function Chat() {
   const handleSend = async (data: ChatMessageFormValues) => {
     if (!data.content.trim()) return;
     const content = data.content.trim();
+    playSendSound(); // user sends only — never on Eos's replies (opt-in, default off)
     setStreamError(null);
     setCustomGenderMode(false);
     // Explicit empty values: a bare reset() would restore defaultValues,
@@ -2777,6 +2781,42 @@ export default function Chat() {
                     {label}
                   </button>
                 ))}
+              </div>
+              {/* Send sound — soft chime on YOUR sends only. Opt-in, default
+                  off: no surprise noise, especially at night. Turning it on
+                  plays the chime once so you hear what you chose. */}
+              <div className="mt-4">
+                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                  Send sound
+                </p>
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={sendSoundOn}
+                    aria-label="Send sound"
+                    onClick={() => {
+                      const next = !sendSoundOn;
+                      setSendSoundOn(next);
+                      setSendSoundEnabled(next);
+                      if (next) playSendSound(true); // preview what you enabled
+                    }}
+                    className={cn(
+                      "relative w-11 h-6 rounded-full border transition-all shrink-0",
+                      sendSoundOn ? "bg-primary/40 border-primary/60" : "bg-background/60 border-primary/25",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-transform duration-200",
+                        sendSoundOn ? "translate-x-5 bg-primary" : "translate-x-0 bg-foreground/30",
+                      )}
+                    />
+                  </button>
+                  <p className="text-[12px] text-muted-foreground/70 leading-relaxed">
+                    A soft chime when you send a message. Off by default; never on {companionName}'s replies.
+                  </p>
+                </div>
               </div>
             </div>
 
