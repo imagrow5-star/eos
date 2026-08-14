@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2, Square, Sun, Moon } from "lucide-react";
 import { useTheme } from "@/lib/theme";
+import { playSendSound, sendSoundEnabled, setSendSoundEnabled } from "@/lib/sendSound";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { enablePush, disablePush, sendTestPush, needsInstallFirst } from "@/lib/push";
@@ -133,21 +134,56 @@ const STEP_CHOICES: Record<string, Array<{ label: string; value: string }>> = {
   ],
 };
 
-// ─── Typing indicator ─────────────────────────────────────────────────────────
+// ─── Replying indicator ──────────────────────────────────────────────────────
+// WhatsApp-style status shown while a reply is being generated: the
+// companion's name + "is replying" + three gently bouncing dots, in the calm
+// bubble style. "replying" (not "typing") keeps it honest — Eos is an AI
+// generating a reply — and the always-on AI disclosure under the composer
+// stays visible the whole time.
 
-function TypingIndicator() {
+function ReplyingIndicator({ name }: { name: string }) {
   return (
-    <div className="flex space-x-1.5 items-center bg-card/60 w-fit px-4 py-3 rounded-2xl rounded-tl-sm border border-primary/12 shadow-sm backdrop-blur-sm">
-      {[0, 0.2, 0.4].map((delay, i) => (
-        <motion.div
-          key={i}
-          className="w-1.5 h-1.5 bg-secondary/50 rounded-full"
-          animate={{ y: [0, -3, 0] }}
-          transition={{ duration: 0.65, repeat: Infinity, delay }}
-        />
-      ))}
+    <div className="flex items-center gap-2 bg-card/70 w-fit pl-4 pr-3.5 py-2.5 rounded-2xl rounded-tl-sm border border-primary/12 shadow-sm backdrop-blur-sm">
+      <span className="companion-message italic text-[13.5px] text-muted-foreground/90">
+        {name} is replying
+      </span>
+      <span className="flex items-center gap-1" aria-hidden="true">
+        {[0, 0.2, 0.4].map((delay, i) => (
+          <motion.span
+            key={i}
+            className="inline-block w-[5px] h-[5px] bg-primary/60 rounded-full"
+            animate={{ y: [0, -3, 0], opacity: [0.45, 1, 0.45] }}
+            transition={{ duration: 0.75, repeat: Infinity, delay, ease: "easeInOut" }}
+          />
+        ))}
+      </span>
     </div>
   );
+}
+
+// Keeps the indicator on screen a touch longer than the flag that drove it,
+// so even an instant reply never makes it blink in and out abruptly (UX
+// minimum-display ~400ms). This is the ONLY artificial hold — nothing is
+// delayed beyond it, and it is far under the 3s cap.
+
+function useMinVisible(active: boolean, minMs = 400): boolean {
+  const [visible, setVisible] = useState(active);
+  const shownAtRef = useRef(0);
+  useEffect(() => {
+    if (active) {
+      shownAtRef.current = Date.now();
+      setVisible(true);
+      return;
+    }
+    const left = Math.max(0, minMs - (Date.now() - shownAtRef.current));
+    if (left === 0) {
+      setVisible(false);
+      return;
+    }
+    const t = setTimeout(() => setVisible(false), left);
+    return () => clearTimeout(t);
+  }, [active, minMs]);
+  return visible;
 }
 
 // ─── Speaking waveform indicator ─────────────────────────────────────────────
@@ -234,6 +270,8 @@ export default function Chat() {
   const [showSettings, setShowSettings] = useState(false);
   // Appearance — the one remaining choice: opt-in calm dark mode (default light)
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
+  // Send sound — opt-in, per-device, default off
+  const [sendSoundOn, setSendSoundOn] = useState(sendSoundEnabled);
   // "Forget this" (Phase A privacy) — tap a message to arm, confirm to delete
   const [forgetArmedId, setForgetArmedId] = useState<number | null>(null);
   const [forgetBusyId, setForgetBusyId] = useState<number | null>(null);
@@ -843,6 +881,10 @@ export default function Chat() {
     pendingStreamRef.current = "";
     setStreamingContent("");
     setStreamError(null);
+    // Replying-status minimum display for the streaming bubble.
+    setStreamHoldDone(false);
+    if (streamHoldTimerRef.current) clearTimeout(streamHoldTimerRef.current);
+    streamHoldTimerRef.current = setTimeout(() => setStreamHoldDone(true), 400);
 
     // Optimistically show the user's own message right away. Without this it
     // only appeared after the whole reply finished streaming and the messages
@@ -1113,6 +1155,7 @@ export default function Chat() {
   const handleSend = async (data: ChatMessageFormValues) => {
     if (!data.content.trim()) return;
     const content = data.content.trim();
+    playSendSound(); // user sends only — never on Eos's replies (opt-in, default off)
     setStreamError(null);
     setCustomGenderMode(false);
     // Explicit empty values: a bare reset() would restore defaultValues,
@@ -2362,6 +2405,13 @@ export default function Chat() {
   };
 
   const companionName = profile?.companionName || "Eos";
+  // Replying-status minimum display (never blinks, even on instant replies).
+  const showReplying = useMinVisible(isTyping);
+  // Streaming: hold the status until ~400ms have passed AND the first tokens
+  // exist, then swap to the live streaming text. Replies stream, so short
+  // replies show it briefly and long ones longer — no faked delays.
+  const [streamHoldDone, setStreamHoldDone] = useState(true);
+  const streamHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const companionInitials = companionName.substring(0, 2).toUpperCase();
 
   // Which steps show choice buttons instead of text input
@@ -2567,26 +2617,27 @@ export default function Chat() {
               transition={{ duration: 0.2, ease: "easeOut" }}
               className="flex flex-col w-full max-w-[85%] self-start"
             >
-              <span className="text-[10px] text-muted-foreground/60 tracking-widests uppercase mb-1.5 ml-1">
-                {companionName}
-              </span>
-              <div className="px-[18px] py-3 leading-relaxed companion-bubble rounded-2xl rounded-tl-sm">
-                <p className={cn(
-                  "companion-message text-foreground/90",
-                  isBereavement ? "text-[17px]" : "text-[16px]",
-                )}>
-                  {/* In voice call mode: never show streaming text — the caption
-                      overlay in the call panel is the only live text surface. */}
-                  {(!continuousVoice && streamingContent) || (
-                    /* Pulsing dot while waiting for first token (or always in voice mode) */
-                    <motion.span
-                      animate={{ opacity: [0.2, 0.65, 0.2] }}
-                      transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }}
-                      className="inline-block w-1.5 h-1.5 rounded-full bg-primary/50 align-middle"
-                    />
-                  )}
-                </p>
-              </div>
+              {/* In voice call mode: never show streaming text — the caption
+                  overlay in the call panel is the only live text surface. The
+                  "[name] is replying" status carries the name itself, so the
+                  uppercase label only appears once the text takes over. */}
+              {!continuousVoice && streamingContent && streamHoldDone ? (
+                <>
+                  <span className="text-[10px] text-muted-foreground/60 tracking-widests uppercase mb-1.5 ml-1">
+                    {companionName}
+                  </span>
+                  <div className="px-[18px] py-3 leading-relaxed companion-bubble rounded-2xl rounded-tl-sm">
+                    <p className={cn(
+                      "companion-message text-foreground/90",
+                      isBereavement ? "text-[17px]" : "text-[16px]",
+                    )}>
+                      {streamingContent}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <ReplyingIndicator name={companionName} />
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -2777,6 +2828,42 @@ export default function Chat() {
                     {label}
                   </button>
                 ))}
+              </div>
+              {/* Send sound — soft chime on YOUR sends only. ON by default
+                  (it is deliberately very quiet); this switch is the one-tap
+                  off. Turning it on plays the chime once as a preview. */}
+              <div className="mt-4">
+                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                  Send sound
+                </p>
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={sendSoundOn}
+                    aria-label="Send sound"
+                    onClick={() => {
+                      const next = !sendSoundOn;
+                      setSendSoundOn(next);
+                      setSendSoundEnabled(next);
+                      if (next) playSendSound(true); // preview what you enabled
+                    }}
+                    className={cn(
+                      "relative w-11 h-6 rounded-full border transition-all shrink-0",
+                      sendSoundOn ? "bg-primary/40 border-primary/60" : "bg-background/60 border-primary/25",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-transform duration-200",
+                        sendSoundOn ? "translate-x-5 bg-primary" : "translate-x-0 bg-foreground/30",
+                      )}
+                    />
+                  </button>
+                  <p className="text-[12px] text-muted-foreground/70 leading-relaxed">
+                    A soft chime when you send a message. On by default; turn it off here anytime. Never plays on {companionName}'s replies.
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -3563,14 +3650,14 @@ export default function Chat() {
           {chatContent()}
 
           <AnimatePresence>
-            {isTyping && (
+            {showReplying && (
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 className="mt-6 self-start"
               >
-                <TypingIndicator />
+                <ReplyingIndicator name={companionName} />
               </motion.div>
             )}
           </AnimatePresence>
