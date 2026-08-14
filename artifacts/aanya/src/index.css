@@ -65,170 +65,22 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   THEME TOKENS
-   Three themes × two modes, keyed on html[data-theme] × html[data-mode]
-   (set pre-paint by public/theme-init.js, managed by src/lib/theme.tsx).
-   The RUNTIME default is SAGE LIGHT (calm cream + green, stamped by
-   theme-init.js and theme.tsx); :root keeps Twilight light as the CSS fallback
-   for the no-JS edge, where the app cannot boot anyway. Values are bare
-   HSL triplets consumed through the @theme inline block above; do not
-   change the format.
-
-   Contract (all 6 palettes verified — scratch tool: palette-gen.py — keep
-   it when editing):
-     foreground/background ≥ AAA · muted-foreground/background|card|muted ≥ AA
-     primary-foreground/primary ≥ AA · user-bubble-text/user-bubble ≥ AA
-     primary-strong is the TEXT-safe accent (≥ AA on background/card/muted).
-     --destructive is FIXED in every block; crisis/error text uses the fixed
-     Tailwind red/amber scale with dark: variants — never theme-hued.
+   THEME TOKENS — ONE palette, plus one optional calm dark variant.
+   The multi-theme system (amber/dawn/sage/twilight) was retired: the
+   product uses the calm landing-page palette everywhere — warm cream, soft
+   green, muted terracotta (welcome.html: #FBF7EF bg, #567751 green). The
+   only user choice left is an opt-in calm DARK MODE for night use
+   ([data-mode='dark'] block below); cream light is the default.
+   Values are bare HSL triplets consumed through the @theme inline block
+   above; do not change the format.
+   Contrast contract (verified): foreground/background AAA ·
+   muted-foreground/background|card|muted ≥ AA · primary-foreground/primary
+   ≥ AA · user-bubble-text/user-bubble ≥ AA · primary-strong is the
+   TEXT-safe accent. --destructive is fixed; crisis/error text uses the
+   fixed Tailwind red/amber scale — never theme-hued.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── TWILIGHT · LIGHT (default) ─── tokens from Eos theme spec (#F3F0F7, #9C8FBE) */
 :root {
-  --background: 266 30% 95%;  /* #F3F0F7 */
-  --foreground: 268 15% 20%;  /* #322B3A */
-  --card: 260 60% 99%;  /* #FCFBFE */
-  --card-foreground: 268 15% 20%;
-  --card-border: 265 35% 90%;
-  --popover: 260 60% 99%;
-  --popover-foreground: 268 15% 20%;
-  --popover-border: 265 35% 90%;
-  --primary: 257 27% 65%;  /* #9C8FBE */
-  --primary-foreground: 262 23% 14%;  /* #211B2B */
-  --primary-strong: 255 23% 41%;  /* #5D5182 — text-safe accent */
-  --secondary: 266 12% 40%;  /* #655A73 */
-  --secondary-foreground: 266 30% 95%;
-  --muted: 263 32% 92%;  /* #E9E4F1 */
-  --muted-foreground: 266 12% 40%;
-  --accent: 257 27% 65%;  /* #9C8FBE */
-  --accent-foreground: 262 23% 14%;
-  --destructive: 0 42% 32%;        /* FIXED across all themes/modes */
-  --destructive-foreground: 39 40% 90%;
-  --border: 265 35% 90%;  /* #E5DEEF */
-  --input: 265 35% 90%;
-  --ring: 255 23% 41%;
-  --chart-1: 255 23% 41%;
-  --chart-2: 255 22% 47%;
-  --chart-3: 266 12% 40%;
-  --chart-4: 268 15% 20%;
-  --chart-5: 263 32% 92%;
-  --user-bubble: 257 27% 65%;  /* #9C8FBE */
-  --user-bubble-text: 262 23% 14%;  /* #211B2B */
-  --eos-bubble: 260 60% 99%;
-  --bubble-shadow: 0 2px 12px hsl(266 12% 40% / 0.10), 0 1px 3px hsl(266 12% 40% / 0.08);
-  --radius: 0.75rem;
-}
-
-/* ── TWILIGHT · DARK ─── tokens from Eos theme spec (#1C1922, #B7A6D6) */
-[data-mode='dark'] {
-  --background: 260 15% 12%;  /* #1C1922 */
-  --foreground: 273 30% 93%;  /* #EDE7F2 */
-  --card: 265 15% 16%;  /* #28232F */
-  --card-foreground: 273 30% 93%;
-  --card-border: 267 15% 24%;
-  --popover: 265 15% 16%;
-  --popover-foreground: 273 30% 93%;
-  --popover-border: 267 15% 24%;
-  --primary: 261 37% 75%;  /* #B7A6D6 */
-  --primary-foreground: 270 23% 10%;  /* #1A1420 */
-  --primary-strong: 261 37% 75%;  /* #B7A6D6 — text-safe accent */
-  --secondary: 265 22% 74%;  /* #BBAFCC */
-  --secondary-foreground: 260 15% 12%;
-  --muted: 267 17% 20%;  /* #332B3D */
-  --muted-foreground: 265 22% 74%;
-  --accent: 261 37% 75%;  /* #B7A6D6 */
-  --accent-foreground: 270 23% 10%;
-  --destructive: 0 42% 32%;        /* FIXED across all themes/modes */
-  --destructive-foreground: 39 40% 90%;
-  --border: 267 15% 24%;  /* #3D3547 */
-  --input: 267 15% 24%;
-  --ring: 261 37% 75%;
-  --chart-1: 261 37% 75%;
-  --chart-2: 257 27% 65%;
-  --chart-3: 265 22% 74%;
-  --chart-4: 273 30% 93%;
-  --chart-5: 267 17% 20%;
-  --user-bubble: 257 27% 65%;  /* #9C8FBE */
-  --user-bubble-text: 263 25% 10%;  /* #181320 */
-  --eos-bubble: 265 15% 16%;
-  --bubble-shadow: 0 2px 14px hsl(0 0% 0% / 0.28), 0 0 18px hsl(261 37% 75% / 0.06);
-}
-
-/* ── DAWN · LIGHT ─── tokens from Eos theme spec (#FBF3EE, #E19B85) */
-[data-theme='dawn'] {
-  --background: 23 62% 96%;  /* #FBF3EE */
-  --foreground: 0 16% 20%;  /* #3A2A2A */
-  --card: 30 100% 99%;  /* #FFFCF9 */
-  --card-foreground: 0 16% 20%;
-  --card-border: 19 52% 88%;
-  --popover: 30 100% 99%;
-  --popover-foreground: 0 16% 20%;
-  --popover-border: 19 52% 88%;
-  --primary: 14 61% 70%;  /* #E19B85 — de-golded to the theme's salmon */
-  --primary-foreground: 0 29% 18%;  /* #3A2020 */
-  --primary-strong: 13 42% 37%;  /* #863F37-family — text-safe accent */
-  --secondary: 12 20% 40%;  /* #7A5A52 */
-  --secondary-foreground: 23 62% 96%;
-  --muted: 21 56% 92%;  /* #F6E7DF */
-  --muted-foreground: 12 20% 40%;
-  --accent: 14 61% 70%;  /* #E19B85 */
-  --accent-foreground: 0 29% 18%;
-  --destructive: 0 42% 32%;        /* FIXED across all themes/modes */
-  --destructive-foreground: 39 40% 90%;
-  --border: 19 52% 88%;  /* #F0DAD0 */
-  --input: 19 52% 88%;
-  --ring: 13 42% 37%;
-  --chart-1: 13 42% 37%;
-  --chart-2: 15 42% 50%;
-  --chart-3: 12 20% 40%;
-  --chart-4: 0 16% 20%;
-  --chart-5: 21 56% 92%;
-  --user-bubble: 14 61% 70%;  /* #E19B85 */
-  --user-bubble-text: 0 29% 18%;  /* #3A2020 */
-  --eos-bubble: 30 100% 99%;
-  --bubble-shadow: 0 2px 12px hsl(12 20% 40% / 0.10), 0 1px 3px hsl(12 20% 40% / 0.08);
-}
-
-/* ── DAWN · DARK ─── tokens from Eos theme spec (#241A19, #E19B85) */
-[data-theme='dawn'][data-mode='dark'] {
-  --background: 5 18% 12%;  /* #241A19 */
-  --foreground: 24 45% 91%;  /* #F3E7DF */
-  --card: 8 19% 15%;  /* #2E211F */
-  --card-foreground: 24 45% 91%;
-  --card-border: 14 21% 24%;
-  --popover: 8 19% 15%;
-  --popover-foreground: 24 45% 91%;
-  --popover-border: 14 21% 24%;
-  --primary: 14 61% 70%;  /* #E19B85 — de-golded to the theme's salmon */
-  --primary-foreground: 4 31% 11%;  /* #241413 */
-  --primary-strong: 14 61% 70%;  /* #E19B85 — text-safe accent */
-  --secondary: 16 26% 72%;  /* #C9AEA4 */
-  --secondary-foreground: 5 18% 12%;
-  --muted: 9 20% 19%;  /* #3A2A27 */
-  --muted-foreground: 16 26% 72%;
-  --accent: 14 61% 70%;  /* #E19B85 */
-  --accent-foreground: 4 31% 11%;
-  --destructive: 0 42% 32%;        /* FIXED across all themes/modes */
-  --destructive-foreground: 39 40% 90%;
-  --border: 14 21% 24%;  /* #4A3630 */
-  --input: 14 21% 24%;
-  --ring: 14 61% 70%;
-  --chart-1: 14 61% 70%;
-  --chart-2: 14 61% 70%;
-  --chart-3: 16 26% 72%;
-  --chart-4: 24 45% 91%;
-  --chart-5: 9 20% 19%;
-  --user-bubble: 14 61% 70%;  /* #E19B85 */
-  --user-bubble-text: 4 31% 11%;  /* #241413 */
-  --eos-bubble: 8 19% 15%;
-  --bubble-shadow: 0 2px 14px hsl(0 0% 0% / 0.28), 0 0 18px hsl(14 61% 70% / 0.06);
-}
-
-/* ── SAGE · LIGHT ─── the calm default: warm cream + soft green, matched to
-   the public landing page (welcome.html: #FBF7EF bg, #5F7F5C green family).
-   Contrast contract holds: fg/bg 12.8:1 AAA · muted-fg/bg ≥ 5.4 AA ·
-   primary-fg/primary ≥ 5.0 AA · user-bubble-text/user-bubble ≥ 5.0 AA. */
-[data-theme='sage'] {
   --background: 40 60% 96%;  /* #FBF7EF */
   --foreground: 28 13% 19%;  /* #37302A */
   --card: 40 43% 99%;  /* #FEFDFA */
@@ -246,7 +98,7 @@
   --muted-foreground: 30 14% 37%;  /* #6C6154 */
   --accent: 115 17% 40%;
   --accent-foreground: 40 60% 98%;
-  --destructive: 0 42% 32%;        /* FIXED across all themes/modes */
+  --destructive: 0 42% 32%;
   --destructive-foreground: 39 40% 90%;
   --border: 42 33% 87%;  /* #E9E0CD */
   --input: 42 33% 87%;
@@ -260,10 +112,15 @@
   --user-bubble-text: 40 60% 98%;
   --eos-bubble: 40 43% 99%;
   --bubble-shadow: 0 2px 12px hsl(30 14% 37% / 0.10), 0 1px 3px hsl(30 14% 37% / 0.08);
+  --radius: 0.75rem;
 }
 
-/* ── SAGE · DARK ─── tokens from Eos theme spec (#1A1E18, #8FB08E) */
-[data-theme='sage'][data-mode='dark'] {
+/* ── CALM DARK (optional, opt-in) ─── the one dark variant, for night use.
+   Same calm identity as the light palette: soft green on warm charcoal, no
+   gold. Applied ONLY when the user flips the Settings toggle (html
+   [data-mode='dark']); the default everyone sees first is the cream light
+   palette above. Contrast contract holds (was the verified sage/dark set). */
+[data-mode='dark'] {
   --background: 100 11% 11%;  /* #1A1E18 */
   --foreground: 78 25% 92%;  /* #EDF0E6 */
   --card: 93 12% 15%;  /* #262B22 */
@@ -274,14 +131,14 @@
   --popover-border: 94 12% 23%;
   --primary: 118 18% 62%;  /* #8FB08E */
   --primary-foreground: 95 36% 9%;  /* #16200F */
-  --primary-strong: 118 18% 62%;  /* #8FB08E — text-safe accent */
+  --primary-strong: 118 18% 62%;  /* text-safe accent in dark */
   --secondary: 96 14% 71%;  /* #B4C0AC */
   --secondary-foreground: 100 11% 11%;
   --muted: 93 11% 19%;  /* #30362B */
   --muted-foreground: 96 14% 71%;
-  --accent: 118 18% 62%;  /* #8FB08E */
+  --accent: 118 18% 62%;
   --accent-foreground: 95 36% 9%;
-  --destructive: 0 42% 32%;        /* FIXED across all themes/modes */
+  --destructive: 0 42% 32%;
   --destructive-foreground: 39 40% 90%;
   --border: 94 12% 23%;  /* #3A4234 */
   --input: 94 12% 23%;
@@ -349,7 +206,7 @@
 }
 
 /* ── Companion message bubble ─────────────────────────────────────────────────
-   Her card: eos-bubble surface, theme shadow, 2px gold left border.
+   The companion card: eos-bubble surface, soft shadow, green left border.
 ─────────────────────────────────────────────────────────────────────────────── */
 .companion-bubble {
   background-color: hsl(var(--eos-bubble));
@@ -361,7 +218,7 @@
 }
 
 /* ── User message bubble ──────────────────────────────────────────────────────
-   The user speaks in dawn salmon.
+   The user speaks in the calm green.
 ─────────────────────────────────────────────────────────────────────────────── */
 .user-bubble {
   background-color: hsl(var(--user-bubble));
@@ -381,7 +238,7 @@
   border: none;
 }
 
-/* ── Voice mode pulse — gold variant ────────────────────────────────────────── */
+/* ── Voice mode pulse ───────────────────────────────────────────────────────── */
 @keyframes voice-pulse {
   0%   { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.35); }
   70%  { box-shadow: 0 0 0 14px hsl(var(--primary) / 0); }

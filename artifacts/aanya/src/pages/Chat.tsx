@@ -3,7 +3,7 @@ import { apiFetch } from "@/lib/api";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2, Square, Sun, Moon } from "lucide-react";
-import { useTheme, AVAILABLE_THEMES, THEME_LABELS, THEME_SWATCHES } from "@/lib/theme";
+import { useTheme } from "@/lib/theme";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { enablePush, disablePush, sendTestPush, needsInstallFirst } from "@/lib/push";
@@ -232,8 +232,8 @@ export default function Chat() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [continuousVoice, setContinuousVoice] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  // Appearance — theme picker + light/dark toggle in Settings
-  const { theme, mode, setTheme, setMode } = useTheme();
+  // Appearance — the one remaining choice: opt-in calm dark mode (default light)
+  const { mode: themeMode, setMode: setThemeMode } = useTheme();
   // "Forget this" (Phase A privacy) — tap a message to arm, confirm to delete
   const [forgetArmedId, setForgetArmedId] = useState<number | null>(null);
   const [forgetBusyId, setForgetBusyId] = useState<number | null>(null);
@@ -2746,38 +2746,11 @@ export default function Chat() {
             exit={{ opacity: 0, height: 0 }}
             className="bg-muted/95 border-b border-border px-5 py-5 backdrop-blur-xl z-10 shrink-0 space-y-6 overflow-hidden"
           >
-            {/* ── Appearance — theme swatches + light/dark ─────────────────── */}
+            {/* ── Appearance — light default, opt-in calm dark for night ──── */}
             <div>
               <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
                 Appearance
               </p>
-              {/* Color themes — swatch chips show each theme's accent hue */}
-              <div className="flex gap-1.5 flex-wrap mb-2.5">
-                {AVAILABLE_THEMES.map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setTheme(t)}
-                    aria-pressed={theme === t}
-                    className={cn(
-                      "flex items-center gap-2 pl-2 pr-3.5 py-1.5 rounded-full text-[12px] font-medium tracking-wider transition-all border",
-                      theme === t
-                        ? "bg-primary/15 text-primary-strong border-primary/40"
-                        : "text-muted-foreground border-border hover:text-foreground/70 hover:border-secondary/40",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "w-4 h-4 rounded-full border",
-                        theme === t ? "border-primary-strong/60" : "border-border",
-                      )}
-                      style={{ background: THEME_SWATCHES[t] }}
-                      aria-hidden="true"
-                    />
-                    {THEME_LABELS[t]}
-                    {theme === t && <Check className="w-3 h-3" />}
-                  </button>
-                ))}
-              </div>
               <div className="flex gap-1.5">
                 {([
                   { value: "light", label: "Light", Icon: Sun },
@@ -2785,10 +2758,11 @@ export default function Chat() {
                 ] as const).map(({ value, label, Icon }) => (
                   <button
                     key={value}
-                    onClick={() => setMode(value)}
+                    onClick={() => setThemeMode(value)}
+                    aria-pressed={themeMode === value}
                     className={cn(
                       "flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-medium tracking-wider transition-all border",
-                      mode === value
+                      themeMode === value
                         ? "bg-primary/15 text-primary-strong border-primary/30"
                         : "text-muted-foreground border-border hover:text-foreground/70 hover:border-secondary/40",
                     )}
