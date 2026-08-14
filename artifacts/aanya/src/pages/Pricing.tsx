@@ -28,10 +28,12 @@ import {
   type BillingTier,
 } from "@/lib/paddleCheckout";
 
+// Factual sublines matching the public landing page. Keys are the immutable
+// backend tier ids; only the words shown to the user changed.
 const TIER_SUBTITLES: Record<BillingTier["id"], string> = {
-  companion: "for the quiet evenings",
-  closer: "for the long nights",
-  always: "for every day",
+  companion: "Unlimited text, 120 minutes of voice",
+  closer: "More voice, plus morning notes",
+  always: "The most voice time, everything included",
 };
 
 type CheckoutPhase = "idle" | "opening" | "waiting_webhook" | "confirmed" | "webhook_slow";
@@ -186,7 +188,7 @@ export function Pricing({
         <div className="text-center mb-10">
           <p className="text-[11px] tracking-[0.35em] uppercase text-primary-strong/70 mb-3">Membership</p>
           <h1 className="font-serif text-3xl md:text-4xl text-foreground mb-3">
-            Choose how close you want her to be.
+            Choose the plan that fits.
           </h1>
           <p className="text-muted-foreground text-sm max-w-md mx-auto leading-relaxed">
             Every membership begins with seven days on us. Cancel during the trial and you pay

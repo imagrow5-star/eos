@@ -42,7 +42,7 @@ export interface TierConfig {
 export const TIERS: Record<TierId, TierConfig> = {
   companion: {
     id: "companion",
-    displayName: "Companion",
+    displayName: "Essential",
     monthlyPriceCents: 1999,
     paddlePriceIdEnvVar: "PADDLE_PRICE_COMPANION",
     voiceMinutesPerMonth: 120,
@@ -50,7 +50,7 @@ export const TIERS: Record<TierId, TierConfig> = {
   },
   closer: {
     id: "closer",
-    displayName: "Closer",
+    displayName: "Standard",
     monthlyPriceCents: 3999,
     paddlePriceIdEnvVar: "PADDLE_PRICE_CLOSER",
     voiceMinutesPerMonth: 300,
@@ -58,7 +58,7 @@ export const TIERS: Record<TierId, TierConfig> = {
   },
   always: {
     id: "always",
-    displayName: "Always",
+    displayName: "Full",
     monthlyPriceCents: 5999,
     paddlePriceIdEnvVar: "PADDLE_PRICE_ALWAYS",
     voiceMinutesPerMonth: 500,
