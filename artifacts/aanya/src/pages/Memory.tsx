@@ -279,11 +279,11 @@ export default function Memory() {
                   label, cutting against Sprint 2C's "not a diagnosis"
                   principle). `category` still ships in the API for
                   ranking/grouping; it's just not surfaced here. */}
+              {/* No expanded detail: the sentence IS the row. Long ones tap
+                  open to un-truncate; short ones are static (Row handles it). */}
               <RowList>
                 {feelings.map((f) => (
-                  <Row key={f.id} title={f.feeling}>
-                    <p className="text-[13.5px] text-foreground/80 leading-relaxed">{f.feeling}</p>
-                  </Row>
+                  <Row key={f.id} title={f.feeling} />
                 ))}
               </RowList>
             </section>
