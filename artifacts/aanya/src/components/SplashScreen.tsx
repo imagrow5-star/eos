@@ -69,16 +69,6 @@ export function SplashScreen({ onDone }: SplashScreenProps) {
         transition={{ duration: 0.45, ease: "easeOut", delay: 0.55 }}
       />
 
-      {/* ── Tagline ── */}
-      <motion.p
-        className="font-serif italic text-muted-foreground text-sm tracking-wider"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.5, ease: "easeOut", delay: 0.75 }}
-      >
-        a new dawn
-      </motion.p>
-
       {/* ── Skip hint ── */}
       <motion.p
         className="absolute bottom-10 text-[10px] text-muted-foreground/30 tracking-widest uppercase"

@@ -60,11 +60,11 @@ export function Privacy() {
             <li>
               <span className="text-foreground/80">Profile basics</span> — your name, age band,
               country, timezone, and the choices you made when setting up your companion. This
-              shapes how she speaks to you and which crisis resources she'd point to.
+              shapes how Eos speaks to you and which crisis resources it would point to.
             </li>
             <li>
               <span className="text-foreground/80">Conversations</span> — what you write and say
-              (voice calls become text). Kept so she remembers you; deleted the moment you say so.
+              (voice calls become text). Kept so Eos remembers you; deleted the moment you say so.
             </li>
             <li>
               <span className="text-foreground/80">Memories, chapters, notes, moods, habits</span>{" "}
@@ -87,7 +87,7 @@ export function Privacy() {
               it's gone from their side too.
             </li>
             <li>
-              <span className="text-foreground/80">ElevenLabs</span> — the voice. Turns her words
+              <span className="text-foreground/80">ElevenLabs</span> — the voice. Turns Eos's words
               into speech and yours into text during calls. We've set their retention so
               transcripts and audio are deleted right after processing rather than stored.
             </li>
@@ -125,7 +125,7 @@ export function Privacy() {
             </li>
             <li>
               <span className="text-foreground/80">One memory</span> — on the Memory page, tap the
-              × on anything she's remembered.
+              × on anything Eos has remembered.
             </li>
             <li>
               <span className="text-foreground/80">Everything</span> — Settings → delete account.
@@ -146,7 +146,7 @@ export function Privacy() {
 
         <Section title="What Eos is — and isn't">
           <p>
-            Eos is companionship and gentle structure for hard seasons. She is not a medical
+            Eos is companionship and gentle structure for hard seasons. It is not a medical
             device, a therapist, or a crisis line. If you're ever in danger of hurting yourself,
             please contact local emergency services or a crisis line — Eos will always step out of
             the way and point you to real humans.

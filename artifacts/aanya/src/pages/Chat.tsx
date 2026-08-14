@@ -89,7 +89,7 @@ const DEFAULT_MALE_VOICE   = "pNInz6obpgDQGcFmaJgB"; // Adam
 
 // ─── "How Eos speaks" — voice-call delivery preference ───────────────────────
 const VOICE_TONE_OPTIONS = [
-  { value: "auto",   label: "Let Eos decide",      desc: "She adapts to the moment — softer when it's heavy, brighter when you are" },
+  { value: "auto",   label: "Let Eos decide",      desc: "Eos adapts to the moment, softer when it's heavy, brighter when you are" },
   { value: "gentle", label: "Gentle & empathetic", desc: "Extra-soft and tender — feelings come first" },
   { value: "calm",   label: "Calm & steady",       desc: "Slow, grounded, unhurried" },
   { value: "upbeat", label: "Warm & upbeat",       desc: "Encouraging, with gentle energy" },
@@ -2715,7 +2715,6 @@ export default function Chat() {
         <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center select-none pointer-events-none gap-0">
           <span className="font-serif text-[19px] font-medium tracking-[0.42em] text-foreground/90">E O S</span>
           <div className="h-px w-9 bg-primary/50 my-[3px]" />
-          <p className="font-serif italic text-[10.5px] tracking-[0.16em] text-muted-foreground">a new dawn</p>
         </div>
 
         {/* Right actions */}
@@ -2869,7 +2868,7 @@ export default function Chat() {
                 </div>
               )}
               <p className="text-[10.5px] text-muted-foreground/45 mt-2 leading-relaxed">
-                Optional — so {profile?.companionName || "she"} speaks to you the way you'd want. Tap the selected one again to clear it.
+                Optional — so {profile?.companionName || "Eos"} speaks to you the way you'd want. Tap the selected one again to clear it.
               </p>
 
               {/* ── Language (Sprint 1.5) ─────────────────────────────────── */}
@@ -3939,7 +3938,7 @@ export default function Chat() {
                 {voiceCallPhase === "speaking" && !voiceCallMessage && (
                   <p className="text-center text-[11px] text-muted-foreground/45 px-2">
                     {voiceEngine === "realtime"
-                      ? "Just start talking — or tap the button below to stop her"
+                      ? "Just start talking — or tap the button below to stop Eos"
                       : "Start talking to interrupt — or tap the button below"}
                   </p>
                 )}

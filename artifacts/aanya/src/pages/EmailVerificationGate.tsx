@@ -54,9 +54,6 @@ export function EmailVerificationGate({ email, onVerified }: Props) {
           EOS
         </h1>
         <div className="h-px w-10 bg-primary/55 mx-auto mb-2.5" />
-        <p className="font-serif italic text-muted-foreground text-sm tracking-wider">
-          a new dawn
-        </p>
       </motion.div>
 
       <motion.div

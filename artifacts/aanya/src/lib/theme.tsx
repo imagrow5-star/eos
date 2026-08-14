@@ -32,14 +32,14 @@ export const THEME_LABELS: Record<ThemeName, string> = {
 export const THEME_SWATCHES: Record<ThemeName, string> = {
   amber: "#C79A5B",
   dawn: "#E19B85",
-  sage: "#7E9A80",
+  sage: "#567751",
   twilight: "#9C8FBE",
 };
 
 const THEME_KEY = "eos-theme";
 const MODE_KEY = "eos-mode";
-const DEFAULT_THEME: ThemeName = "amber"; // "Warm Dark" default
-const DEFAULT_MODE: ThemeMode = "dark";
+const DEFAULT_THEME: ThemeName = "sage"; // calm cream + green default, matches the landing page
+const DEFAULT_MODE: ThemeMode = "light";
 
 /** Browser-chrome color per theme+mode — keep in sync with index.css shells. */
 const SHELL_COLORS: Record<string, string> = {
@@ -47,7 +47,7 @@ const SHELL_COLORS: Record<string, string> = {
   "amber/dark": "#1B1512",
   "dawn/light": "#FBF3EE",
   "dawn/dark": "#241A19",
-  "sage/light": "#F1F2EA",
+  "sage/light": "#FBF7EF",
   "sage/dark": "#1A1E18",
   "twilight/light": "#F3F0F7",
   "twilight/dark": "#1C1922",

@@ -37,7 +37,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <div className="flex flex-col items-start px-2 mb-8 select-none">
           <span className="font-serif text-xl font-medium tracking-[0.4em] text-foreground/90">E O S</span>
           <div className="h-px w-8 bg-primary/50 my-1.5" />
-          <p className="font-serif italic text-[11px] tracking-[0.14em] text-muted-foreground">a new dawn</p>
         </div>
         <nav className="flex flex-col gap-1">
           {navItems.map((item) => {

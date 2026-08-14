@@ -47,7 +47,7 @@ export interface VoiceOptionsData {
 
 /** The helper line shown after choosing a not-yet-active language. */
 export function comingSoonNote(lang: LanguageOption): string {
-  return `This arrives next week — we're extending our safety detection to ${lang.nameEnglish} first. She'll speak English with you until then.`;
+  return `This arrives next week — we're extending our safety detection to ${lang.nameEnglish} first. Eos will speak English with you until then.`;
 }
 
 const chipClass = (selected: boolean) =>
@@ -145,7 +145,7 @@ export function VoiceChips({
   if (voices.length === 0) {
     return (
       <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
-        Voices for this accent are being added — she'll keep her current voice meanwhile.
+        Voices for this accent are being added; Eos will keep its current voice meanwhile.
       </p>
     );
   }
