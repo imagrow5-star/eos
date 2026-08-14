@@ -53,7 +53,7 @@
   --color-eos-bubble: hsl(var(--eos-bubble));
 
   --font-sans: 'Inter', sans-serif;
-  --font-serif: 'Playfair Display', serif;
+  --font-serif: 'Fraunces', Georgia, serif;
   --font-mono: 'IBM Plex Mono', monospace;
 
   --radius-sm: calc(var(--radius) - 4px);
@@ -294,39 +294,42 @@
   --bubble-shadow: 0 2px 14px hsl(0 0% 0% / 0.28), 0 0 18px hsl(36 61% 61% / 0.06);
 }
 
-/* ── SAGE · LIGHT ─── tokens from Eos theme spec (#F1F2EA, #7E9A80) */
+/* ── SAGE · LIGHT ─── the calm default: warm cream + soft green, matched to
+   the public landing page (welcome.html: #FBF7EF bg, #5F7F5C green family).
+   Contrast contract holds: fg/bg 12.8:1 AAA · muted-fg/bg ≥ 5.4 AA ·
+   primary-fg/primary ≥ 5.0 AA · user-bubble-text/user-bubble ≥ 5.0 AA. */
 [data-theme='sage'] {
-  --background: 67 24% 93%;  /* #F1F2EA */
-  --foreground: 103 7% 19%;  /* #2E332C */
-  --card: 72 45% 98%;  /* #FBFCF7 */
-  --card-foreground: 103 7% 19%;
-  --card-border: 80 21% 86%;
-  --popover: 72 45% 98%;
-  --popover-foreground: 103 7% 19%;
-  --popover-border: 80 21% 86%;
-  --primary: 124 12% 55%;  /* #7E9A80 */
-  --primary-foreground: 111 11% 12%;  /* #1C221B */
-  --primary-strong: 124 16% 36%;  /* #4E6B50 — text-safe accent */
-  --secondary: 93 12% 35%;  /* #59654F */
-  --secondary-foreground: 67 24% 93%;
-  --muted: 77 26% 89%;  /* #E7EBDD */
-  --muted-foreground: 93 12% 35%;
-  --accent: 124 12% 55%;  /* #7E9A80 */
-  --accent-foreground: 111 11% 12%;
+  --background: 40 60% 96%;  /* #FBF7EF */
+  --foreground: 28 13% 19%;  /* #37302A */
+  --card: 40 43% 99%;  /* #FEFDFA */
+  --card-foreground: 28 13% 19%;
+  --card-border: 42 33% 87%;
+  --popover: 40 43% 99%;
+  --popover-foreground: 28 13% 19%;
+  --popover-border: 42 33% 87%;
+  --primary: 115 17% 40%;  /* #567751-family green */
+  --primary-foreground: 40 60% 98%;  /* near-cream on green, ≥5.0 */
+  --primary-strong: 116 18% 30%;  /* #3F5A3B — text-safe accent */
+  --secondary: 21 38% 40%;  /* #8D5B40 muted terracotta */
+  --secondary-foreground: 40 60% 96%;
+  --muted: 40 45% 91%;  /* #F3EDE0 */
+  --muted-foreground: 30 14% 37%;  /* #6C6154 */
+  --accent: 115 17% 40%;
+  --accent-foreground: 40 60% 98%;
   --destructive: 0 42% 32%;        /* FIXED across all themes/modes */
   --destructive-foreground: 39 40% 90%;
-  --border: 80 21% 86%;  /* #DDE2D3 */
-  --input: 80 21% 86%;
-  --ring: 124 16% 36%;
-  --chart-1: 124 16% 36%;
-  --chart-2: 118 13% 42%;
-  --chart-3: 93 12% 35%;
-  --chart-4: 103 7% 19%;
-  --chart-5: 77 26% 89%;
-  --user-bubble: 124 12% 55%;  /* #7E9A80 */
-  --user-bubble-text: 111 11% 12%;  /* #1C221B */
-  --eos-bubble: 72 45% 98%;
-  --bubble-shadow: 0 2px 12px hsl(93 12% 35% / 0.10), 0 1px 3px hsl(93 12% 35% / 0.08);
+  --border: 42 33% 87%;  /* #E9E0CD */
+  --input: 42 33% 87%;
+  --ring: 116 18% 30%;
+  --chart-1: 116 18% 30%;
+  --chart-2: 115 17% 40%;
+  --chart-3: 21 38% 40%;
+  --chart-4: 28 13% 19%;
+  --chart-5: 40 45% 91%;
+  --user-bubble: 115 17% 40%;
+  --user-bubble-text: 40 60% 98%;
+  --eos-bubble: 40 43% 99%;
+  --bubble-shadow: 0 2px 12px hsl(30 14% 37% / 0.10), 0 1px 3px hsl(30 14% 37% / 0.08);
 }
 
 /* ── SAGE · DARK ─── tokens from Eos theme spec (#1A1E18, #8FB08E) */
@@ -389,13 +392,13 @@
 
   /* Companion messages always render in serif */
   .companion-message {
-    font-family: 'Playfair Display', serif;
+    font-family: 'Fraunces', Georgia, serif;
   }
 
   /* Display serif for big warm headings (Journey page) — Cormorant with
-     Playfair fallback so nothing breaks if the font is slow/blocked. */
+     Fraunces fallback so nothing breaks if the font is slow/blocked. */
   .font-display {
-    font-family: 'Cormorant', 'Playfair Display', serif;
+    font-family: 'Cormorant', 'Fraunces', serif;
   }
 }
 

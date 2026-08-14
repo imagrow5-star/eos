@@ -508,7 +508,7 @@ function NoteInviteCard({ chapterId, prompt }: { chapterId: number; prompt: stri
       <div className="flex gap-1.5">
         {(
           [
-            ["prediction", "Answer her question"],
+            ["prediction", "Answer the question"],
             ["free", "Write anything"],
           ] as const
         ).map(([val, label]) => (
