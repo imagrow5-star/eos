@@ -252,7 +252,7 @@ router.put("/profile", async (req, res): Promise<void> => {
   // stale client can never write garbage the CSS doesn't know.
   if (
     (data as any).theme != null &&
-    ["amber", "dawn", "sage", "twilight"].includes((data as any).theme)
+    ["dawn", "sage", "twilight"].includes((data as any).theme)
   ) {
     updates.theme = (data as any).theme;
   }

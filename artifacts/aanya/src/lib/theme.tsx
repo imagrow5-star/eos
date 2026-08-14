@@ -18,19 +18,19 @@ import { apiFetch } from "@/lib/api";
  *    PUT to /api/profile best-effort (ignored when logged out/offline).
  */
 
-export type ThemeName = "amber" | "dawn" | "sage" | "twilight";
+export type ThemeName = "dawn" | "sage" | "twilight";
 export type ThemeMode = "light" | "dark";
 
-export const AVAILABLE_THEMES: ThemeName[] = ["amber", "dawn", "sage", "twilight"];
+// "amber" (Golden Amber) was retired with the calm redesign; stored "amber"
+// choices fail validation below and fall back to the sage default.
+export const AVAILABLE_THEMES: ThemeName[] = ["dawn", "sage", "twilight"];
 export const THEME_LABELS: Record<ThemeName, string> = {
-  amber: "Golden Amber",
   dawn: "Dawn",
   sage: "Sage",
   twilight: "Twilight",
 };
 /** Swatch chip color per theme (the accent/user-bubble hue). */
 export const THEME_SWATCHES: Record<ThemeName, string> = {
-  amber: "#C79A5B",
   dawn: "#E19B85",
   sage: "#567751",
   twilight: "#9C8FBE",
@@ -43,8 +43,6 @@ const DEFAULT_MODE: ThemeMode = "light";
 
 /** Browser-chrome color per theme+mode — keep in sync with index.css shells. */
 const SHELL_COLORS: Record<string, string> = {
-  "amber/light": "#F5EEE1",
-  "amber/dark": "#1B1512",
   "dawn/light": "#FBF3EE",
   "dawn/dark": "#241A19",
   "sage/light": "#FBF7EF",

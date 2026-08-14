@@ -32,9 +32,8 @@ const ConsentGate = lazy(() =>
 const Privacy = lazy(() =>
   import("@/pages/Privacy").then((m) => ({ default: m.Privacy })),
 );
-// NOTE: pages/LandingPage.tsx is intentionally NOT routed — welcome.html is
-// the marketing front door and unauth arrivals go straight to AuthScreen.
-// The file stays in the repo so the decision is reversible.
+// NOTE: the marketing front door is public/welcome.html (served at "/" by
+// the api-server); unauth arrivals here go straight to AuthScreen.
 
 // Same centered spinner the auth/consent gates already use, so a suspended
 // chunk load is visually indistinguishable from the existing loading states.
@@ -101,11 +100,9 @@ function AppRouter() {
 // ─── Auth gate — sits between QueryClientProvider and the main app ────────────
 
 // Which AuthScreen tab a logged-out visitor lands on. The marketing front
-// door is public/welcome.html (served at "/" by the api-server) — the React
-// LandingPage was retired from this flow so "Enter Eos" reaches sign-up in
-// one click instead of a second landing page (LandingPage.tsx stays in the
-// repo, unrouted, in case it's ever wanted back). The tab decision itself is
-// pure and unit-tested in lib/authEntry.ts.
+// door is public/welcome.html (served at "/" by the api-server), so "Enter
+// Eos" reaches sign-up in one click. The tab decision itself is pure and
+// unit-tested in lib/authEntry.ts.
 type UnauthView = "login" | "signup";
 
 // Outcome of consuming a ?verifyToken link — drives the feedback banner so an

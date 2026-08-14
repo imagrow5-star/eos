@@ -66,15 +66,15 @@
 
 /* ═══════════════════════════════════════════════════════════════════════════
    THEME TOKENS
-   Four themes × two modes, keyed on html[data-theme] × html[data-mode]
+   Three themes × two modes, keyed on html[data-theme] × html[data-mode]
    (set pre-paint by public/theme-init.js, managed by src/lib/theme.tsx).
-   The RUNTIME default is WARM DARK (amber + dark, stamped by theme-init.js
-   and theme.tsx); :root below keeps Twilight light as the pure-CSS fallback
+   The RUNTIME default is SAGE LIGHT (calm cream + green, stamped by
+   theme-init.js and theme.tsx); :root keeps Twilight light as the CSS fallback
    for the no-JS edge, where the app cannot boot anyway. Values are bare
    HSL triplets consumed through the @theme inline block above; do not
    change the format.
 
-   Contract (all 8 palettes verified — scratch tool: palette-gen.py — keep
+   Contract (all 6 palettes verified — scratch tool: palette-gen.py — keep
    it when editing):
      foreground/background ≥ AAA · muted-foreground/background|card|muted ≥ AA
      primary-foreground/primary ≥ AA · user-bubble-text/user-bubble ≥ AA
@@ -164,9 +164,9 @@
   --popover: 30 100% 99%;
   --popover-foreground: 0 16% 20%;
   --popover-border: 19 52% 88%;
-  --primary: 37 66% 65%;  /* #E0B36A */
-  --primary-foreground: 33 45% 16%;  /* #3A2A16 */
-  --primary-strong: 35 56% 33%;  /* #855D25 — text-safe accent */
+  --primary: 14 61% 70%;  /* #E19B85 — de-golded to the theme's salmon */
+  --primary-foreground: 0 29% 18%;  /* #3A2020 */
+  --primary-strong: 13 42% 37%;  /* #863F37-family — text-safe accent */
   --secondary: 12 20% 40%;  /* #7A5A52 */
   --secondary-foreground: 23 62% 96%;
   --muted: 21 56% 92%;  /* #F6E7DF */
@@ -177,8 +177,8 @@
   --destructive-foreground: 39 40% 90%;
   --border: 19 52% 88%;  /* #F0DAD0 */
   --input: 19 52% 88%;
-  --ring: 35 56% 33%;
-  --chart-1: 35 56% 33%;
+  --ring: 13 42% 37%;
+  --chart-1: 13 42% 37%;
   --chart-2: 15 42% 50%;
   --chart-3: 12 20% 40%;
   --chart-4: 0 16% 20%;
@@ -199,9 +199,9 @@
   --popover: 8 19% 15%;
   --popover-foreground: 24 45% 91%;
   --popover-border: 14 21% 24%;
-  --primary: 37 66% 65%;  /* #E0B36A */
-  --primary-foreground: 31 41% 10%;  /* #241A0F */
-  --primary-strong: 37 66% 65%;  /* #E0B36A — text-safe accent */
+  --primary: 14 61% 70%;  /* #E19B85 — de-golded to the theme's salmon */
+  --primary-foreground: 4 31% 11%;  /* #241413 */
+  --primary-strong: 14 61% 70%;  /* #E19B85 — text-safe accent */
   --secondary: 16 26% 72%;  /* #C9AEA4 */
   --secondary-foreground: 5 18% 12%;
   --muted: 9 20% 19%;  /* #3A2A27 */
@@ -212,8 +212,8 @@
   --destructive-foreground: 39 40% 90%;
   --border: 14 21% 24%;  /* #4A3630 */
   --input: 14 21% 24%;
-  --ring: 37 66% 65%;
-  --chart-1: 37 66% 65%;
+  --ring: 14 61% 70%;
+  --chart-1: 14 61% 70%;
   --chart-2: 14 61% 70%;
   --chart-3: 16 26% 72%;
   --chart-4: 24 45% 91%;
@@ -221,77 +221,7 @@
   --user-bubble: 14 61% 70%;  /* #E19B85 */
   --user-bubble-text: 4 31% 11%;  /* #241413 */
   --eos-bubble: 8 19% 15%;
-  --bubble-shadow: 0 2px 14px hsl(0 0% 0% / 0.28), 0 0 18px hsl(37 66% 65% / 0.06);
-}
-
-/* ── GOLDEN AMBER · LIGHT ─── tokens from Eos theme spec (#F5EEE1, #C79A5B) */
-[data-theme='amber'] {
-  --background: 39 50% 92%;  /* #F5EEE1 */
-  --foreground: 24 13% 15%;  /* #2B2521 */
-  --card: 43 100% 99%;  /* #FFFDF8 */
-  --card-foreground: 24 13% 15%;
-  --card-border: 38 42% 84%;
-  --popover: 43 100% 99%;
-  --popover-foreground: 24 13% 15%;
-  --popover-border: 38 42% 84%;
-  --primary: 35 49% 57%;  /* #C79A5B */
-  --primary-foreground: 30 24% 11%;  /* #241D16 */
-  --primary-strong: 39 53% 32%;  /* #7D5F26 — text-safe accent */
-  --secondary: 32 21% 35%;  /* #6B5A46 */
-  --secondary-foreground: 39 50% 92%;
-  --muted: 39 53% 88%;  /* #F1E6D2 */
-  --muted-foreground: 32 21% 35%;
-  --accent: 35 49% 57%;  /* #C79A5B */
-  --accent-foreground: 30 24% 11%;
-  --destructive: 0 42% 32%;        /* FIXED across all themes/modes */
-  --destructive-foreground: 39 40% 90%;
-  --border: 38 42% 84%;  /* #E7DAC4 */
-  --input: 38 42% 84%;
-  --ring: 39 53% 32%;
-  --chart-1: 39 53% 32%;
-  --chart-2: 38 47% 37%;
-  --chart-3: 32 21% 35%;
-  --chart-4: 24 13% 15%;
-  --chart-5: 39 53% 88%;
-  --user-bubble: 35 49% 57%;  /* #C79A5B */
-  --user-bubble-text: 30 24% 11%;  /* #241D16 */
-  --eos-bubble: 43 100% 99%;
-  --bubble-shadow: 0 2px 12px hsl(32 21% 35% / 0.10), 0 1px 3px hsl(32 21% 35% / 0.08);
-}
-
-/* ── GOLDEN AMBER · DARK ─── tokens from Eos theme spec (#1B1512, #D8A860) */
-[data-theme='amber'][data-mode='dark'] {
-  --background: 20 20% 9%;  /* #1B1512 */
-  --foreground: 38 51% 90%;  /* #F3EADA */
-  --card: 23 18% 14%;  /* #2A221D */
-  --card-foreground: 38 51% 90%;
-  --card-border: 26 21% 20%;
-  --popover: 23 18% 14%;
-  --popover-foreground: 38 51% 90%;
-  --popover-border: 26 21% 20%;
-  --primary: 36 61% 61%;  /* #D8A860 */
-  --primary-foreground: 33 59% 7%;  /* #1B1207 */
-  --primary-strong: 36 61% 61%;  /* #D8A860 — text-safe accent */
-  --secondary: 34 25% 71%;  /* #C7B7A2 */
-  --secondary-foreground: 20 20% 9%;
-  --muted: 23 21% 16%;  /* #332821 */
-  --muted-foreground: 34 25% 71%;
-  --accent: 36 61% 61%;  /* #D8A860 */
-  --accent-foreground: 33 59% 7%;
-  --destructive: 0 42% 32%;        /* FIXED across all themes/modes */
-  --destructive-foreground: 39 40% 90%;
-  --border: 26 21% 20%;  /* #3D3128 */
-  --input: 26 21% 20%;
-  --ring: 36 61% 61%;
-  --chart-1: 36 61% 61%;
-  --chart-2: 35 49% 57%;
-  --chart-3: 34 25% 71%;
-  --chart-4: 38 51% 90%;
-  --chart-5: 23 21% 16%;
-  --user-bubble: 35 49% 57%;  /* #C79A5B */
-  --user-bubble-text: 20 20% 9%;  /* #1B1512 */
-  --eos-bubble: 23 18% 14%;
-  --bubble-shadow: 0 2px 14px hsl(0 0% 0% / 0.28), 0 0 18px hsl(36 61% 61% / 0.06);
+  --bubble-shadow: 0 2px 14px hsl(0 0% 0% / 0.28), 0 0 18px hsl(14 61% 70% / 0.06);
 }
 
 /* ── SAGE · LIGHT ─── the calm default: warm cream + soft green, matched to

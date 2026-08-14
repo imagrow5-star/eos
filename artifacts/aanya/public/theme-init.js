@@ -8,11 +8,10 @@
 // cream + green) — index.html pre-paints that cream shell.
 // the page still paints correctly.
 (function () {
-  var THEMES = { amber: 1, dawn: 1, sage: 1, twilight: 1 };
+  var THEMES = { dawn: 1, sage: 1, twilight: 1 }; // amber retired; falls back to sage
   var MODES = { light: 1, dark: 1 };
   // Dark shell color per theme — keep in sync with index.css backgrounds.
   var DARK_SHELL = {
-    amber: '#1B1512',
     dawn: '#241A19',
     sage: '#1A1E18',
     twilight: '#1C1922',
