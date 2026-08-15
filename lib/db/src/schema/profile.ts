@@ -12,7 +12,7 @@ export const profileTable = pgTable("profile", {
   // this default only guards rows created outside the app. The DB column keeps
   // its old default until the next `drizzle-kit push`.
   companionName: text("companion_name").notNull().default("Eos"),
-  relationshipType: text("relationship_type").notNull().default("friend"), // friend | romantic
+  relationshipType: text("relationship_type").notNull().default("friend"), // "friend" only — "romantic" retired 2026-08 (rows migrated at boot)
   energy: text("energy").notNull().default("calm"), // playful | calm | deep
   userPath: text("user_path").notNull().default("breakup"), // lonely | support | breakup | bereavement
   country: text("country").notNull().default(""), // US | UK | AU | other
