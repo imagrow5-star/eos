@@ -10,7 +10,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
 
   const navItems = [
-    { href: "/", icon: MessageSquare, label: "Chat" },
+    { href: "/", icon: MessageSquare, label: "Private room" },
     { href: "/journey", icon: Map, label: "Journey" },
     { href: "/chapters", icon: Feather, label: "Chapters" },
     { href: "/memory", icon: Sparkles, label: "Memory" },
@@ -80,7 +80,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <Link
               key={item.href}
               href={item.href}
-              className="flex flex-col items-center justify-center w-16 h-full gap-1 group"
+              className="flex flex-col items-center justify-center flex-1 min-w-0 h-full gap-1 group"
             >
               <div className={cn(
                 "p-2 rounded-full transition-all duration-300",
@@ -90,8 +90,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
               )}>
                 <item.icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 1.75} />
               </div>
+              {/* 9px/tracking-wide (was 10px/widest) so the longest label,
+                  PRIVATE ROOM, still fits one line in a five-way split at 390px. */}
               <span className={cn(
-                "text-[10px] tracking-widest uppercase transition-colors",
+                "text-[9px] tracking-wide uppercase whitespace-nowrap transition-colors",
                 isActive ? "text-primary-strong font-medium" : "text-muted-foreground"
               )}>
                 {item.label}
