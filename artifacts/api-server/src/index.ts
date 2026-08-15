@@ -10,6 +10,7 @@ import { ensureProfileThemeColumns, ensureReflectionReportsTable, ensureMorningN
 import { backfillMemoryImportance } from "./services/memory/backfill";
 import { runDedupBackfill } from "./services/memory/dedupBackfill";
 import { warnIfAgentEnvIncomplete } from "./services/voiceAgentRouting";
+import { sessionSecretIssue, checkDbTls } from "./services/bootGuards";
 
 // User content is encrypted at rest — without the master key the app can
 // neither read nor write it. Refuse to boot rather than serve a broken app.
@@ -37,6 +38,20 @@ try {
       "Refusing to boot rather than serve without the key.",
   );
   process.exit(1);
+}
+
+// SESSION_SECRET signs login cookies, voice tokens, unsubscribe links, and the
+// internal sweep HMACs. app.ts refuses to boot without one; production also
+// refuses a weak (< 32 char) one — a short secret is brute-forceable offline.
+{
+  const secretIssue = sessionSecretIssue();
+  if (secretIssue) {
+    if (process.env.NODE_ENV === "production") {
+      logger.error(`FATAL: ${secretIssue}. Refusing to boot.`);
+      process.exit(1);
+    }
+    logger.warn(`${secretIssue} — acceptable outside production, but fix before deploying`);
+  }
 }
 
 const rawPort = process.env["PORT"];
@@ -84,6 +99,43 @@ await ensureMorningNoteColumns().catch((e) =>
     "morning-note column guard failed at boot — staleness tracking may be degraded until the columns exist",
   ),
 );
+
+// Verify the database connection is actually TLS-encrypted (pg_stat_ssl is
+// ground truth for the live socket, not the config's intent). Field-level
+// encryption covers stored content, but session rows and query metadata cross
+// this connection — production refuses to run it in cleartext. Escape hatch
+// for deliberately-private networks: DB_TLS_ENFORCE=off (still logs loudly).
+// "unknown" (DB briefly unreachable) warns instead of exiting, matching the
+// tolerance of the schema guards above.
+{
+  const tlsState = await checkDbTls();
+  if (tlsState === "plaintext") {
+    if (process.env.NODE_ENV === "production" && process.env.DB_TLS_ENFORCE !== "off") {
+      logger.error(
+        "FATAL: database connection is NOT TLS-encrypted. Refusing to boot in production. " +
+          "Set DATABASE_SSL=require (or add sslmode=require to DATABASE_URL) so queries and " +
+          "session data are encrypted in transit. If the database is only reachable over a " +
+          "private network and you accept cleartext there, set DB_TLS_ENFORCE=off to override.",
+      );
+      process.exit(1);
+    }
+    if (process.env.NODE_ENV === "production") {
+      logger.warn(
+        "DB_TLS_ENFORCE=off: running PRODUCTION with a NON-TLS database connection — acceptable only if the database is reachable solely over a trusted private network",
+      );
+    } else {
+      logger.warn(
+        "Database connection is NOT TLS-encrypted — fine for local dev/CI; production would refuse to boot",
+      );
+    }
+  } else if (tlsState === "unknown") {
+    logger.warn(
+      "Could not determine database TLS state at boot — check pg_stat_ssl manually if this persists",
+    );
+  } else {
+    logger.info("Database connection is TLS-encrypted");
+  }
+}
 
 app.listen(port, (err) => {
   if (err) {
