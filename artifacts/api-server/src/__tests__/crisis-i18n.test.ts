@@ -13,7 +13,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import request from "supertest";
 import pg from "pg";
 import { eq } from "drizzle-orm";
-import { db, profileTable } from "@workspace/db";
+import { db, profileTable, isEncrypted, decryptText } from "@workspace/db";
 import app from "../app.js";
 import { detectCrisis, isCrisisText } from "../services/crisis/detector.js";
 import { I18N_CRISIS_PATTERNS } from "../services/crisis/i18nPatterns.js";
@@ -436,7 +436,11 @@ describe("end-to-end — German user", () => {
       [userId],
     );
     expect(events.rows).toHaveLength(1);
-    expect(events.rows[0].pattern_matched.startsWith("de_")).toBe(true);
+    // pattern_matched is encrypted at rest — raw SQL returns ciphertext.
+    expect(isEncrypted(events.rows[0].pattern_matched)).toBe(true);
+    expect(
+      decryptText(events.rows[0].pattern_matched, "crisis_events.pattern_matched").startsWith("de_"),
+    ).toBe(true);
     expect(events.rows[0].country_served).toBe("DE");
   });
 

@@ -47,6 +47,19 @@ const LOCK_KEY = "data-encryption-migration";
 export const SPECS: TableSpec[] = [
   { table: "messages", idCol: "id", cols: [{ name: "content", kind: "text", aad: "messages.content" }] },
   { table: "memory_facts", idCol: "id", cols: [{ name: "fact", kind: "text", aad: "memory_facts.fact" }] },
+  // memory_feelings shipped after the encryption rollout, so it has no
+  // plaintext legacy rows — it is listed so the ROTATION script (which
+  // iterates these SPECS) covers it, and as the registry of encrypted columns.
+  { table: "memory_feelings", idCol: "id", cols: [{ name: "feeling", kind: "text", aad: "memory_feelings.feeling" }] },
+  // Crisis floor event log: the pattern NAME alone reveals a user's crisis
+  // state, so it is encrypted like content (audit follow-up). country_served,
+  // source, and the dismissal columns stay plaintext — SQL filters on them
+  // and they don't identify what was said.
+  {
+    table: "crisis_events",
+    idCol: "id",
+    cols: [{ name: "pattern_matched", kind: "text", aad: "crisis_events.pattern_matched" }],
+  },
   { table: "personality_signals", idCol: "id", cols: [{ name: "signal", kind: "text", aad: "personality_signals.signal" }] },
   { table: "wins", idCol: "id", cols: [{ name: "content", kind: "text", aad: "wins.content" }] },
   {

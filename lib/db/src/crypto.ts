@@ -23,13 +23,30 @@
  *   GCM auth failure (wrong key / corrupted row) throws loudly.
  * - null/undefined are never encrypted; column nullability is unchanged.
  *
+ * ─── Key custody: two modes ──────────────────────────────────────────────────
+ * RAW mode (the original): DATA_ENCRYPTION_KEY holds the master key itself
+ * (32 random bytes — 44-char base64 or 64-char hex). Whoever can read the
+ * environment can read the key.
+ *
+ * KMS mode (hardened): DATA_ENCRYPTION_KEY_WRAPPED holds the master key
+ * ENCRYPTED under a KMS key that never leaves the KMS (base64 ciphertext blob
+ * from `aws kms encrypt`). At boot, initDataKey() sends the blob to the KMS,
+ * receives the unwrapped 32 bytes, and keeps them in process memory only.
+ * The environment alone is no longer enough to decrypt the database — an
+ * attacker also needs live KMS credentials, and every unwrap is auditable in
+ * CloudTrail. The unwrapper is injectable so tests (and a future non-AWS KMS)
+ * don't need real cloud credentials.
+ *
+ * Fail closed: in KMS mode, an unreachable KMS or a failed unwrap throws —
+ * the app must refuse to serve rather than run without the key.
+ *
  * ─── KEY LOSS = DATA LOSS ────────────────────────────────────────────────────
- * The master key lives ONLY in the DATA_ENCRYPTION_KEY environment secret
- * (32 random bytes — 44-char base64 or 64-char hex). It is never written to
- * the database or the repo.
- * If this key is lost, every encrypted row becomes permanently unreadable —
- * there is no recovery path. The founder must keep a secure offline backup
- * of the key value for each environment.
+ * The master key exists ONLY as the environment secret (raw or wrapped) plus
+ * whatever offline backup the founder keeps. It is never written to the
+ * database or the repo. If the key is lost (or, in KMS mode, the KMS key is
+ * deleted), every encrypted row becomes permanently unreadable — there is no
+ * recovery path. Keep a secure offline backup of the RAW key value for each
+ * environment, even when running in KMS mode.
  */
 import crypto from "node:crypto";
 
@@ -48,11 +65,30 @@ export class DataEncryptionError extends Error {
 // undefined = not resolved yet; null = resolved, no key present
 let cachedKey: Buffer | null | undefined;
 
+/** Strip copy-paste quotes and whitespace from an env secret. */
+function cleanSecret(raw: string): string {
+  return raw.trim().replace(/^["']|["']$/g, "");
+}
+
+export function hasWrappedDataKey(env: NodeJS.ProcessEnv = process.env): boolean {
+  const wrapped = env.DATA_ENCRYPTION_KEY_WRAPPED;
+  return typeof wrapped === "string" && wrapped.trim() !== "";
+}
+
 /** Resolve and cache the master key. Returns null when the env var is absent. */
 export function loadDataKey(): Buffer | null {
   if (cachedKey !== undefined) return cachedKey;
   const raw = process.env.DATA_ENCRYPTION_KEY;
   if (!raw || raw.trim() === "") {
+    // In KMS mode the key arrives via initDataKey() at boot — a sync read
+    // before that is a wiring bug, and caching null here would turn it into
+    // a confusing "key not set" later. Fail with the real story instead.
+    if (hasWrappedDataKey()) {
+      throw new DataEncryptionError(
+        "DATA_ENCRYPTION_KEY_WRAPPED is set but the key has not been unwrapped yet — " +
+          "await initDataKey() at boot before any encrypt/decrypt call",
+      );
+    }
     cachedKey = null;
     return null;
   }
@@ -60,7 +96,7 @@ export function loadDataKey(): Buffer | null {
   // (openssl rand -hex 32) or standard base64 (openssl rand -base64 32).
   // Hex must be tested FIRST — a hex string also base64-decodes, but to 48
   // (wrong) bytes. Surrounding quotes from copy-paste are tolerated.
-  const t = raw.trim().replace(/^["']|["']$/g, "");
+  const t = cleanSecret(raw);
   const buf = /^[0-9a-fA-F]{64}$/.test(t) ? Buffer.from(t, "hex") : Buffer.from(t, "base64");
   if (buf.length !== 32) {
     throw new DataEncryptionError(
@@ -79,11 +115,106 @@ export function hasValidDataKey(): boolean {
   }
 }
 
+// ─── KMS-mode boot initialization ─────────────────────────────────────────────
+
+/** Turns a KMS ciphertext blob back into the raw 32-byte master key. */
+export type KeyUnwrapper = (wrapped: Buffer) => Promise<Buffer>;
+
+export type DataKeyMode = "kms" | "raw" | "none";
+
+/**
+ * Resolve the master key at boot. Call this (and await it) exactly once,
+ * before any encrypt/decrypt: api-server does it in index.ts, daily-email at
+ * the top of run().
+ *
+ * - DATA_ENCRYPTION_KEY_WRAPPED set → unwrap via the KMS (or the injected
+ *   test unwrapper), cache the result in memory, return "kms". Any failure
+ *   throws — fail closed, never serve without the key.
+ * - Otherwise DATA_ENCRYPTION_KEY set → same as before, return "raw".
+ * - Neither → "none" (callers decide whether that's fatal).
+ *
+ * Transition safety: while migrating an environment to KMS mode, both vars
+ * may briefly coexist. They must decode to the SAME key — a mismatch means
+ * writes would go under one key while the operator believes the other is
+ * canonical, so it throws rather than guessing.
+ */
+export async function initDataKey(
+  opts: { unwrapper?: KeyUnwrapper } = {},
+): Promise<DataKeyMode> {
+  const wrappedRaw = process.env.DATA_ENCRYPTION_KEY_WRAPPED;
+  if (!wrappedRaw || wrappedRaw.trim() === "") {
+    return loadDataKey() !== null ? "raw" : "none";
+  }
+
+  const blob = Buffer.from(cleanSecret(wrappedRaw), "base64");
+  // A KMS ciphertext blob is the wrapped key plus KMS metadata — always well
+  // over 32 bytes. A short decode means the operator pasted the raw key here.
+  if (blob.length <= 32) {
+    throw new DataEncryptionError(
+      "DATA_ENCRYPTION_KEY_WRAPPED does not look like a KMS ciphertext blob — " +
+        "did the RAW key get pasted into the wrapped slot? (raw keys go in DATA_ENCRYPTION_KEY)",
+    );
+  }
+
+  const unwrap = opts.unwrapper ?? (await defaultKmsUnwrapper());
+  let key: Buffer;
+  try {
+    key = await unwrap(blob);
+  } catch (err) {
+    throw new DataEncryptionError(
+      "KMS unwrap of DATA_ENCRYPTION_KEY_WRAPPED failed — refusing to run without the data key. " +
+        `Check KMS reachability/credentials (kms:Decrypt on the wrapping key). Cause: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+    );
+  }
+  if (key.length !== 32) {
+    throw new DataEncryptionError(
+      `KMS unwrap returned ${key.length} bytes — the wrapped secret is not a 32-byte master key`,
+    );
+  }
+
+  // Both slots set during a migration window: they must agree.
+  const rawEnv = process.env.DATA_ENCRYPTION_KEY;
+  if (rawEnv && rawEnv.trim() !== "") {
+    cachedKey = undefined; // make loadDataKey re-read the env, not a stale cache
+    const rawKey = loadDataKey();
+    if (rawKey && !crypto.timingSafeEqual(rawKey, key)) {
+      throw new DataEncryptionError(
+        "DATA_ENCRYPTION_KEY and DATA_ENCRYPTION_KEY_WRAPPED decode to DIFFERENT keys — " +
+          "refusing to guess which one is canonical. Fix the environment so they match, " +
+          "or remove the raw key once KMS mode is verified.",
+      );
+    }
+  }
+
+  cachedKey = key;
+  return "kms";
+}
+
+/**
+ * Default production unwrapper: AWS KMS Decrypt. Loaded lazily so the AWS SDK
+ * never touches memory in raw-key mode or in tests. Region and credentials
+ * come from the standard AWS env vars (AWS_REGION, AWS_ACCESS_KEY_ID,
+ * AWS_SECRET_ACCESS_KEY) — the IAM principal needs kms:Decrypt on the
+ * wrapping key and nothing else.
+ */
+async function defaultKmsUnwrapper(): Promise<KeyUnwrapper> {
+  const { KMSClient, DecryptCommand } = await import("@aws-sdk/client-kms");
+  const client = new KMSClient({});
+  return async (wrapped: Buffer) => {
+    const out = await client.send(new DecryptCommand({ CiphertextBlob: wrapped }));
+    if (!out.Plaintext) throw new Error("KMS Decrypt returned no plaintext");
+    return Buffer.from(out.Plaintext);
+  };
+}
+
 function requireKey(): Buffer {
   const key = loadDataKey();
   if (!key) {
     throw new DataEncryptionError(
-      "DATA_ENCRYPTION_KEY is not set — refusing to read or write encrypted user data. " +
+      "No data encryption key available (DATA_ENCRYPTION_KEY unset and no unwrapped KMS key) — " +
+        "refusing to read or write encrypted user data. " +
         "This key is the ONLY way to decrypt stored content; losing it means losing the data.",
     );
   }

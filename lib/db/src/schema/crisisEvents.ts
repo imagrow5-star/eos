@@ -1,4 +1,5 @@
 import { pgTable, serial, text, boolean, timestamp, integer } from "drizzle-orm/pg-core";
+import { encryptedText } from "../encryptedColumns";
 import { usersTable } from "./users";
 import { messagesTable } from "./messages";
 
@@ -22,7 +23,12 @@ export const crisisEventsTable = pgTable("crisis_events", {
   // a message id (the on-call card keys off the event row instead).
   messageId: integer("message_id").references(() => messagesTable.id),
   detectedAt: timestamp("detected_at").notNull().defaultNow(),
-  patternMatched: text("pattern_matched").notNull(), // detector pattern name, e.g. "explicit_suicidal_ideation"
+  // Detector pattern name, e.g. "explicit_suicidal_ideation". Encrypted at
+  // rest (security audit): the name alone reveals the user's crisis state, so
+  // a database dump must not expose it. NEVER compare this column in SQL —
+  // ciphertexts of the same name differ (random IV); dedup happens in JS
+  // (see api-server services/crisis/events.ts).
+  patternMatched: encryptedText("pattern_matched", "crisis_events.pattern_matched").notNull(),
   countryServed: text("country_served").notNull(), // ISO-2 or "fallback"
   source: text("source").notNull().default("chat"), // chat | voice
   blockDismissed: boolean("block_dismissed").notNull().default(false),

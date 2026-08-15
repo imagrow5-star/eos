@@ -19,7 +19,7 @@
  */
 
 import { createHmac } from "node:crypto";
-import { db } from "@workspace/db";
+import { db, initDataKey } from "@workspace/db";
 import {
   usersTable,
   profileTable,
@@ -902,6 +902,15 @@ async function triggerReflectionSweep(): Promise<void> {
 
 export async function run(): Promise<void> {
   log("Daily email job starting");
+
+  // Resolve the data encryption key up front (KMS mode needs an async unwrap
+  // before any encrypted column is read — see lib/db/src/crypto.ts). Fail
+  // closed on a broken KMS config; "none" keeps the legacy behavior where the
+  // first encrypted read throws per-row.
+  const keyMode = await initDataKey();
+  if (keyMode === "none") {
+    log("WARNING: no data encryption key configured — encrypted content reads will fail");
+  }
 
   // ── Weekly-chapter sweep trigger ────────────────────────────────────────
   // This hourly job is the reliable ticker for the api-server's chapter

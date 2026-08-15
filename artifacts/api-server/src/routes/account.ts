@@ -780,7 +780,10 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
     pushEvents: pushEventsResult.rows,
     subscriptions: subscriptionsResult.rows,
     voiceUsage: voiceUsageResult.rows,
-    crisisEvents: crisisEventsResult.rows,
+    crisisEvents: crisisEventsResult.rows.map((r) => ({
+      ...r,
+      pattern_matched: dText(r.pattern_matched, "crisis_events.pattern_matched"),
+    })),
   };
 }
 

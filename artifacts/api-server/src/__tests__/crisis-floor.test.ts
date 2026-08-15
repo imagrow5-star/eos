@@ -23,6 +23,7 @@ import app from "../app.js";
 import { composeChatSystemExtra } from "../routes/chat.js";
 import { mintVoiceToken } from "../lib/voiceToken.js";
 import { HELPLINE_BLOCK_MARKER } from "../services/crisis/helplines.js";
+import { isEncrypted, decryptText } from "@workspace/db";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const createdEmails: string[] = [];
@@ -82,6 +83,13 @@ async function crisisEventsFor(userId: number) {
     "SELECT * FROM crisis_events WHERE user_id = $1 ORDER BY id ASC",
     [userId],
   );
+  // pattern_matched is encrypted at rest; raw SQL sees ciphertext. Assert
+  // that (the whole point of the column being encrypted), then hand tests
+  // the plaintext they compare against.
+  for (const row of r.rows) {
+    expect(isEncrypted(row.pattern_matched)).toBe(true);
+    row.pattern_matched = decryptText(row.pattern_matched, "crisis_events.pattern_matched");
+  }
   return r.rows as Array<{
     id: number;
     message_id: number | null;
