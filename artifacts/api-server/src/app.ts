@@ -12,7 +12,8 @@ import path from "node:path";
 import fs from "node:fs";
 
 // SESSION_SECRET is required — fail fast rather than silently use a weak fallback
-if (!process.env.SESSION_SECRET) {
+const sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret) {
   throw new Error("SESSION_SECRET environment variable is required but not set.");
 }
 
@@ -423,7 +424,7 @@ app.use(
       tableName: "user_sessions",
     }),
     name: "sid",
-    secret: process.env.SESSION_SECRET ?? "dev-secret-please-set-SESSION_SECRET",
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
