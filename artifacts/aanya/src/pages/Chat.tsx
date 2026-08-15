@@ -2770,14 +2770,18 @@ export default function Chat() {
 
         {/* Right actions */}
         <div className="flex items-center gap-1">
-          {/* Settings — always visible once app loads */}
+          {/* Settings — the one header action, so it carries the accent: soft
+              green fill + green border (same family as active nav pills), not
+              the old 45%-muted outline that vanished into the header. This is
+              where users personalize Eos (name, tone, theme, voice) — it must
+              read as a real button at first glance, still calm. */}
           <button
             onClick={() => setShowSettings((s) => !s)}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium tracking-wider uppercase transition-all duration-200",
+              "flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-medium tracking-wider uppercase transition-all duration-200 shadow-sm",
               showSettings
-                ? "bg-primary/15 text-primary-strong border border-primary/30"
-                : "text-foreground/45 border border-border hover:text-foreground/70 hover:border-secondary/40",
+                ? "bg-primary/20 text-primary-strong border border-primary/45"
+                : "bg-primary/12 text-primary-strong border border-primary/30 hover:bg-primary/20 hover:border-primary/45",
             )}
           >
             {showSettings
