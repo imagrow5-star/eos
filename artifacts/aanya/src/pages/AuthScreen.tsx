@@ -647,7 +647,7 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
         animate={{ opacity: 1 }}
         transition={{ delay: 0.4 }}
       >
-        Your conversations and memories are completely private — visible only to you.{" "}
+        Your conversations are private and encrypted — never sold, never used to train AI.{" "}
         <a
           href={`${import.meta.env.BASE_URL}privacy`}
           className="text-primary-strong/60 hover:text-primary-strong underline underline-offset-2 transition-colors"
