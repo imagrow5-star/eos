@@ -34,19 +34,20 @@ export async function recordVoiceCrisisEvent(args: {
   countryServed: string;
 }): Promise<void> {
   const since = new Date(Date.now() - VOICE_EVENT_DEDUP_MS);
+  // pattern_matched is encrypted with a random IV, so SQL equality can never
+  // match it. Fetch the (tiny) recent window and compare the decrypted values
+  // here — the ORM layer hands them back as plaintext.
   const recent = await db
-    .select({ id: crisisEventsTable.id })
+    .select({ patternMatched: crisisEventsTable.patternMatched })
     .from(crisisEventsTable)
     .where(
       and(
         eq(crisisEventsTable.userId, args.userId),
         eq(crisisEventsTable.source, "voice"),
-        eq(crisisEventsTable.patternMatched, args.patternMatched),
         gte(crisisEventsTable.detectedAt, since),
       ),
-    )
-    .limit(1);
-  if (recent.length > 0) return;
+    );
+  if (recent.some((r) => r.patternMatched === args.patternMatched)) return;
   await db.insert(crisisEventsTable).values({ ...args, source: "voice" });
 }
 
