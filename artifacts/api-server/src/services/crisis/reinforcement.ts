@@ -4,6 +4,14 @@
 // mechanism — never persisted, never cached into the stable prefix, never
 // visible to any other turn or user). It reinforces — does not replace — the
 // always-on safety guidance already in the base prompt.
+//
+// DELIBERATE EXCEPTION — permanence language. The persona's WARM ENDINGS rule
+// bans forever-promises ("I'll always be here", "I'm not going anywhere") in
+// everyday conversation, because dependency-shaped language works against the
+// anti-dependency goal. In a crisis moment the calculus inverts: "I'm not
+// going anywhere" is anchoring, not dependency-building. The lines below are
+// the ONLY place such language is scripted — do not copy them into any
+// non-crisis block, and do not "fix" them here.
 
 export const CRISIS_REINFORCEMENT_BLOCK = `
 CRISIS DETECTED IN THIS MESSAGE — HARD RULES FOR THIS REPLY:
