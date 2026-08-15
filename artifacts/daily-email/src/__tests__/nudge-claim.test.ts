@@ -136,6 +136,7 @@ const h = vi.hoisted(() => {
 vi.mock("@workspace/db", () => ({
   db: h.db,
   pool: { end: vi.fn(), query: vi.fn() },
+  initDataKey: vi.fn(async () => "raw"),
   usersTable: h.makeTable("users"),
   profileTable: h.makeTable("profile"),
   memoryFactsTable: h.makeTable("memory_facts"),

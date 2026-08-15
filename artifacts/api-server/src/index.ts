@@ -1,4 +1,4 @@
-import { hasValidDataKey } from "@workspace/db";
+import { initDataKey } from "@workspace/db";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initVoiceLibrary } from "./services/voiceLibrary";
@@ -13,14 +13,28 @@ import { warnIfAgentEnvIncomplete } from "./services/voiceAgentRouting";
 
 // User content is encrypted at rest — without the master key the app can
 // neither read nor write it. Refuse to boot rather than serve a broken app.
-// KEY LOSS = DATA LOSS: DATA_ENCRYPTION_KEY exists only as an environment
-// secret; keep a secure offline backup of each environment's value.
-if (!hasValidDataKey()) {
+// Two custody modes (see lib/db/src/crypto.ts): DATA_ENCRYPTION_KEY holds the
+// raw key, or DATA_ENCRYPTION_KEY_WRAPPED holds it KMS-encrypted and boot
+// unwraps it into process memory only. Both fail closed here.
+// KEY LOSS = DATA LOSS: keep a secure offline backup of the RAW key value for
+// each environment, even in KMS mode.
+try {
+  const keyMode = await initDataKey();
+  if (keyMode === "none") {
+    logger.error(
+      "FATAL: no data encryption key configured (DATA_ENCRYPTION_KEY missing/invalid and no " +
+        "DATA_ENCRYPTION_KEY_WRAPPED). Refusing to boot — stored user content is encrypted and " +
+        "unreadable without it. Set the secret for this environment. NEVER rotate or delete it " +
+        "without a migration: losing this key permanently destroys all encrypted user data.",
+    );
+    process.exit(1);
+  }
+  logger.info({ keyMode }, "data encryption key ready");
+} catch (err) {
   logger.error(
-    "FATAL: DATA_ENCRYPTION_KEY is missing or invalid (expected 32 bytes, base64). " +
-      "Refusing to boot — stored user content is encrypted and unreadable without it. " +
-      "Set the secret for this environment. NEVER rotate or delete it without a migration: " +
-      "losing this key permanently destroys all encrypted user data.",
+    { err },
+    "FATAL: data encryption key initialization failed (invalid key, or KMS unwrap failed). " +
+      "Refusing to boot rather than serve without the key.",
   );
   process.exit(1);
 }
