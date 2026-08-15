@@ -102,9 +102,12 @@ function getStepQuestion(step: string, profile: Profile): string {
     case "userGender":
       return "One last thing — completely optional, so skip it if you like. What's your gender? Tap one below, or just tell me in your own words.";
 
+    // The romantic persona was retired (persona refinement, 2026-08). The
+    // relationshipType step is unreachable in the current flow, but legacy
+    // sessions can still be parked on it — they get the energy question and
+    // their answer is parsed as energy (see the answer handler), so they move
+    // on without ever seeing a romance offer.
     case "relationshipType":
-      return "How would you like me to be with you — as a warm close friend, or something a little more tender? Just say 'friend' or 'romantic'.";
-
     case "energy":
       return "What kind of energy feels right — warm and light, calm and steady, or deep and thoughtful?";
 
@@ -130,7 +133,9 @@ function getNextStep(currentStep: string, profile: Profile): string {
     case "ageBand":         return isValidCountryCode(profile.country ?? "") ? "userGender" : "country";
     case "country":         return "userGender";
     case "userGender":      return "done";
-    case "relationshipType": return "energy";
+    // relationshipType is a retired legacy step (romantic persona removed):
+    // parked sessions answer the energy question there, so both advance alike.
+    case "relationshipType":
     case "energy":          return "companionName";
     default:                return "done";
   }
@@ -365,14 +370,14 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
       break;
     }
 
-    case "relationshipType": {
-      const lower = answer.toLowerCase();
-      updates.relationshipType = lower.includes("romantic") || lower.includes("tender") ? "romantic" : "friend";
-      break;
-    }
-
+    // relationshipType is a retired legacy step (romantic persona removed,
+    // 2026-08). Sessions parked on it were asked the ENERGY question (see
+    // getStepQuestion), so parse the answer as energy — and pin the persona
+    // to "friend" while we're here, the only value that exists now.
+    case "relationshipType":
     case "energy": {
       const lower = answer.toLowerCase();
+      if (step === "relationshipType") updates.relationshipType = "friend";
       updates.energy =
         lower.includes("playful") || lower.includes("light") ? "playful"
         : lower.includes("deep") || lower.includes("reflective") ? "deep"
@@ -407,7 +412,7 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
     const namePrefix = name ? `${name}. ` : "";
 
     if (path === "bereavement") {
-      firstGreeting = `${namePrefix}I'm honoured to meet you. I'm ${companionName}. You don't have to explain anything or be okay — I'm simply here, whenever you feel like talking. Tell me about your day, or about them, or about nothing at all. I'm not going anywhere.`;
+      firstGreeting = `${namePrefix}I'm honoured to meet you. I'm ${companionName}. You don't have to explain anything or be okay — I'm simply here, whenever you feel like talking. Tell me about your day, or about them, or about nothing at all. Take whatever time you need.`;
     } else if (path === "lonely") {
       firstGreeting = `${namePrefix}Really glad you found your way here. I'm ${companionName} — and I'm here for exactly this: the everyday things, the quiet moments, the thoughts that need somewhere to go. You're not alone. What's on your mind right now?`;
     } else if (path === "support") {

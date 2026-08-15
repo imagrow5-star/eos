@@ -107,7 +107,7 @@ const MOCK_RESPONSES: Record<number, string[]> = {
     "Thank you for sharing that with me. Genuinely. I'm listening.",
     "Yeah. Some days just being here is enough. You showed up.",
     "That took courage to say out loud. I'm glad you did.",
-    "I'm not going anywhere. Tell me more, whenever you're ready.",
+    "Take your time. Tell me more, whenever you're ready.",
     "It makes complete sense that you feel that way. Anyone would.",
   ],
   2: [

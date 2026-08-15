@@ -55,7 +55,7 @@ export const ENGLISH_ACCENTS: AccentOption[] = [
 export const ENGLISH_ACCENT_CODES = new Set(ENGLISH_ACCENTS.map((a) => a.code));
 
 const PREVIEW_DEFAULT = "Hi. I'm here whenever you need me.";
-const PREVIEW_SOFT = "Hey. Take your time — I'm not going anywhere.";
+const PREVIEW_SOFT = "Hey. Take your time — there's no rush at all.";
 const PREVIEW_BRIGHT = "Hi there. I'm really glad you're here.";
 const PREVIEW_STEADY = "Hello. Whenever you're ready, I'm listening.";
 
