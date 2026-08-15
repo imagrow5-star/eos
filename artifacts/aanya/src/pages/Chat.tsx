@@ -396,20 +396,43 @@ export default function Chat() {
     setVoiceSettingsError(message);
   };
 
+  // ── Optimistic chip updates (perceived-lag fix, 2026-08) ──────────────────
+  // A settings tap used to wait for POST + a full voice-options REFETCH before
+  // the chip visually moved — two network round trips, felt as multi-second
+  // lag on real connections. The chip now flips in the local query cache
+  // immediately; the POST runs behind it, the response patches the cache with
+  // the server's reconciled truth, and a failure re-fetches + shows the error
+  // line (same optimistic pattern as the Memory star toggle).
+  const patchVoiceOptions = (patch: Partial<VoiceOptionsData>) => {
+    queryClient.setQueriesData<VoiceOptionsData>(
+      { queryKey: ["settings-voice-options"] },
+      (old) => (old ? { ...old, ...patch } : old),
+    );
+  };
+  const rollbackVoiceOptions = () => {
+    queryClient.invalidateQueries({ queryKey: ["settings-voice-options"] });
+  };
+
   const handleVoiceGenderSelect = async (gender: "female" | "male") => {
     setArmedCatalogVoiceId(null);
     setVoiceSettingsError(null);
+    patchVoiceOptions({ currentVoiceGender: gender, voiceGenderExplicit: true });
     const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/voice-gender`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ gender }),
     }).catch(() => null);
     if (r?.ok) {
+      // The server may have reconciled voice_id (and, on gap accents, the
+      // accent) to match the new gender — patch what it reports, then refresh
+      // in the background for the re-filtered voice lists. The profile drives
+      // what actually PLAYS (TTS + calls), so refresh it too.
+      const body = (await r.json().catch(() => null)) as { voiceId?: string } | null;
+      if (body?.voiceId) patchVoiceOptions({ currentVoiceId: body.voiceId });
       queryClient.invalidateQueries({ queryKey: ["settings-voice-options"] });
-      // The server may have reconciled voice_id to match the new gender — the
-      // profile drives what actually PLAYS (TTS + calls), so refresh it too.
       queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
     } else {
+      rollbackVoiceOptions();
       await voiceSettingsFailed(r, "Couldn't save the voice gender — try again.");
     }
   };
@@ -443,15 +466,19 @@ export default function Chat() {
   const handleLanguageSelect = async (lang: LanguageOption) => {
     setLanguageNote(lang.active ? null : comingSoonNote(lang));
     setVoiceSettingsError(null);
+    patchVoiceOptions({ currentLanguage: lang.code, currentLanguageActive: lang.active });
     const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/language`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ language: lang.code }),
     }).catch(() => null);
     if (r?.ok) {
+      const body = (await r.json().catch(() => null)) as { voiceId?: string } | null;
+      if (body?.voiceId) patchVoiceOptions({ currentVoiceId: body.voiceId });
       queryClient.invalidateQueries({ queryKey: ["settings-voice-options"] });
       queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
     } else {
+      rollbackVoiceOptions();
       await voiceSettingsFailed(r, "Couldn't save the language — try again.");
     }
   };
@@ -459,15 +486,19 @@ export default function Chat() {
   const handleAccentSelect = async (accent: string) => {
     setArmedCatalogVoiceId(null);
     setVoiceSettingsError(null);
+    patchVoiceOptions({ currentAccent: accent });
     const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/accent`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ accent }),
     }).catch(() => null);
     if (r?.ok) {
+      const body = (await r.json().catch(() => null)) as { voiceId?: string } | null;
+      if (body?.voiceId) patchVoiceOptions({ currentVoiceId: body.voiceId });
       queryClient.invalidateQueries({ queryKey: ["settings-voice-options"] });
       queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
     } else {
+      rollbackVoiceOptions();
       await voiceSettingsFailed(r, "Couldn't save the accent — try again.");
     }
   };
@@ -481,16 +512,18 @@ export default function Chat() {
     }
     stopCatalogPreview();
     setVoiceSettingsError(null);
+    setArmedCatalogVoiceId(null);
+    patchVoiceOptions({ currentVoiceId: voiceId });
     const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/voice`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ voice_id: voiceId }),
     }).catch(() => null);
     if (r?.ok) {
-      setArmedCatalogVoiceId(null);
       queryClient.invalidateQueries({ queryKey: ["settings-voice-options"] });
       queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
     } else {
+      rollbackVoiceOptions();
       await voiceSettingsFailed(r, "Couldn't save that voice — try again.");
     }
   };
