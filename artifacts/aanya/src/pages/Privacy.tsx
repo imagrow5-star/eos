@@ -112,7 +112,7 @@ export function Privacy() {
             <li>· Sell or rent your data — to anyone, for any reason.</li>
             <li>· Use your conversations to train AI models.</li>
             <li>· Show you ads or share data with advertisers.</li>
-            <li>· Read your conversations. There is no admin screen for that.</li>
+            <li>· Read your conversations for our own purposes. There's no admin screen for it, and it isn't part of how we run Eos. (The AI does process your messages to write each reply — see "Who helps run Eos" above.)</li>
           </ul>
         </Section>
 
