@@ -9,6 +9,7 @@ import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { resolveHelplines, buildHelplineBlockText } from "../services/crisis/helplines.js";
 import { pendingVoiceCrisisEvent, dismissVoiceCrisisEvent } from "../services/crisis/events.js";
 import { resolveAgentRouting } from "../services/voiceAgentRouting.js";
+import { prewarmFrozenSystem } from "./voice-llm.js";
 
 const router: IRouter = Router();
 
@@ -52,6 +53,13 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
     tone = (profile as { voiceTone?: string }).voiceTone ?? "auto";
     preferredLanguage = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
     firstMessage = buildVoiceFirstMessage(profile);
+    // Latency: build the call's frozen system prompt NOW, in the background,
+    // keyed by the issuedAt inside the token we just minted (format
+    // "<userId>.<issuedAt>...."). The first LLM turn — the greeting the user
+    // is waiting on — then hits the in-memory cache instead of paying the
+    // full memory/habits/commitments prompt build inline.
+    const issuedAt = Number(userToken.split(".")[1]);
+    if (Number.isFinite(issuedAt)) prewarmFrozenSystem(req.userId, issuedAt, profile);
   } catch (err) {
     logger.warn({ err }, "voice-agent: couldn't load profile — using defaults");
     firstMessage = buildVoiceFirstMessage(null);
