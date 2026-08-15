@@ -5,6 +5,7 @@ import { initVoiceLibrary } from "./services/voiceLibrary";
 import { reconcileAgentConfig } from "./services/agentConfigGuard";
 import { runDataEncryptionMigration } from "./services/dataEncryptionMigration";
 import { backfillVoiceGender } from "./services/settings/voiceGenderBackfill";
+import { migrateRomanticPersona } from "./services/settings/romanticPersonaMigration";
 import { ensureProfileThemeColumns, ensureReflectionReportsTable, ensureMorningNoteColumns } from "./services/schemaGuard";
 import { backfillMemoryImportance } from "./services/memory/backfill";
 import { runDedupBackfill } from "./services/memory/dedupBackfill";
@@ -90,6 +91,13 @@ app.listen(port, (err) => {
   // never changes what anyone hears).
   backfillVoiceGender().catch((e) =>
     logger.error({ err: e }, "voice_gender backfill failed — reads fall back to companion gender"),
+  );
+
+  // Move any remaining relationship_type='romantic' rows to 'friend' (the
+  // romantic persona was retired). Idempotent single UPDATE; a failed run
+  // changes nothing user-visible because the prompt no longer branches on it.
+  migrateRomanticPersona().catch((e) =>
+    logger.error({ err: e }, "romantic persona migration failed — rows behave as friend regardless; retry next boot"),
   );
 
   // Seed memory-fact importance columns (times_referenced, last_referenced_at,

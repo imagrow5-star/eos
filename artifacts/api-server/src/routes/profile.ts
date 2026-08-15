@@ -174,7 +174,11 @@ router.put("/profile", async (req, res): Promise<void> => {
 
   if (data.userName != null) updates.userName = data.userName;
   if (data.companionName != null) updates.companionName = data.companionName;
-  if (data.relationshipType != null) updates.relationshipType = data.relationshipType;
+  // "romantic" was retired (persona refinement, 2026-08) — normalize any
+  // straggler client still sending it to the one persona that exists.
+  if (data.relationshipType != null) {
+    updates.relationshipType = data.relationshipType === "romantic" ? "friend" : data.relationshipType;
+  }
   if (data.energy != null) updates.energy = data.energy;
   if (data.userPath != null) updates.userPath = data.userPath;
   // country: an ISO-3166 alpha-2 code ("UK" stored for GB), the literal
