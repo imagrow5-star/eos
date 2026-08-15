@@ -25,6 +25,7 @@ import { useContextualGreeting } from "@/api/contextualGreeting";
 import { ChangeEmailForm } from "@/components/ChangeEmailForm";
 import { chatMessageSchema, type ChatMessageFormValues } from "@/lib/schemas";
 import { CHAT_DRAFT_KEY, ONBOARDING_DRAFT_KEY } from "@/lib/sessionDrafts";
+import { consumeOpenSettingsRequest, OPEN_SETTINGS_EVENT } from "@/lib/settingsBus";
 import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -268,6 +269,18 @@ export default function Chat() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [continuousVoice, setContinuousVoice] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // The Shell's nav Settings entry (present on every page) requests the panel
+  // via the settings bus: consume a pending request on mount (arriving from
+  // another page), and listen for the live event (already on this page).
+  useEffect(() => {
+    if (consumeOpenSettingsRequest()) setShowSettings(true);
+    const onOpenRequest = () => {
+      consumeOpenSettingsRequest(); // clear the flag so it can't re-fire on a later mount
+      setShowSettings(true);
+    };
+    window.addEventListener(OPEN_SETTINGS_EVENT, onOpenRequest);
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, onOpenRequest);
+  }, []);
   // Appearance — the one remaining choice: opt-in calm dark mode (default light)
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
   // Send sound — opt-in, per-device, default off
