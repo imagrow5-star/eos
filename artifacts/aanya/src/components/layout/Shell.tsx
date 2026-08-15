@@ -1,12 +1,13 @@
 import { Link, useLocation } from "wouter";
 import { apiFetch } from "@/lib/api";
 import { clearSessionDrafts } from "@/lib/sessionDrafts";
-import { MessageSquare, Sparkles, Map, Feather, LogOut } from "lucide-react";
+import { requestOpenSettings } from "@/lib/settingsBus";
+import { MessageSquare, Sparkles, Map, Feather, LogOut, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 
 export function Shell({ children }: { children: React.ReactNode }) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const queryClient = useQueryClient();
 
   const navItems = [
@@ -15,6 +16,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
     { href: "/chapters", icon: Feather, label: "Chapters" },
     { href: "/memory", icon: Sparkles, label: "Memory" },
   ];
+
+  // Settings lives inside the Private-room page (the panel under its header),
+  // but must be reachable from EVERY page. The nav entry navigates there and
+  // asks the page to open the panel (see lib/settingsBus.ts).
+  const openSettings = () => {
+    requestOpenSettings();
+    if (location !== "/") navigate("/");
+  };
 
   const handleLogout = async () => {
     try {
@@ -57,6 +66,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
               </Link>
             );
           })}
+
+          {/* Settings — an action, not a page, so it sits below a hairline and
+              carries the soft green accent (same family as the header button):
+              always visible, clearly a button, still calm. */}
+          <div className="h-px bg-border/70 my-2 mx-1" />
+          <button
+            onClick={openSettings}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-primary/10 border border-primary/25 text-primary-strong hover:bg-primary/20 hover:border-primary/40 transition-all duration-200"
+          >
+            <Settings className="w-[18px] h-[18px]" strokeWidth={2} />
+            <span className="text-[13px] tracking-wide font-medium">Settings</span>
+          </button>
         </nav>
         <button
           onClick={handleLogout}
@@ -72,15 +93,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
         {children}
       </main>
 
-      {/* Bottom Navigation — gold hairline top border, deep navy base */}
-      <nav className="md:hidden absolute bottom-0 left-0 right-0 h-[72px] bg-card/90 backdrop-blur-xl border-t border-primary/20 z-20 px-4 flex items-center justify-around pb-safe">
+      {/* Bottom Navigation */}
+      {/* Items size to their content (shrink-0, justify-around) rather than
+          equal flex shares: six entries at 390px can't split evenly without
+          clipping PRIVATE ROOM, but the natural widths fit down to ~360px. */}
+      <nav className="md:hidden absolute bottom-0 left-0 right-0 h-[72px] bg-card/90 backdrop-blur-xl border-t border-primary/20 z-20 px-2 flex items-center justify-around pb-safe">
         {navItems.map((item) => {
           const isActive = location === item.href;
           return (
             <Link
               key={item.href}
               href={item.href}
-              className="flex flex-col items-center justify-center flex-1 min-w-0 h-full gap-1 group"
+              className="flex flex-col items-center justify-center shrink-0 h-full gap-1 group"
             >
               <div className={cn(
                 "p-2 rounded-full transition-all duration-300",
@@ -90,8 +114,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
               )}>
                 <item.icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 1.75} />
               </div>
-              {/* 9px/tracking-wide (was 10px/widest) so the longest label,
-                  PRIVATE ROOM, still fits one line in a five-way split at 390px. */}
               <span className={cn(
                 "text-[9px] tracking-wide uppercase whitespace-nowrap transition-colors",
                 isActive ? "text-primary-strong font-medium" : "text-muted-foreground"
@@ -102,19 +124,32 @@ export function Shell({ children }: { children: React.ReactNode }) {
           );
         })}
 
-        {/* Log out — subtle, far right */}
+        {/* Settings — accented like the desktop rail entry so it reads as the
+            one action among the tabs. */}
+        <button
+          onClick={openSettings}
+          className="flex flex-col items-center justify-center shrink-0 h-full gap-1 group"
+          aria-label="Settings"
+        >
+          <div className="p-2 rounded-full bg-primary/12 border border-primary/25 text-primary-strong transition-all duration-300 group-hover:bg-primary/20">
+            <Settings className="w-5 h-5" strokeWidth={2} />
+          </div>
+          <span className="text-[9px] tracking-wide uppercase whitespace-nowrap text-primary-strong font-medium">
+            Settings
+          </span>
+        </button>
+
+        {/* Log out — subtle, far right, icon-only to give the six labelled
+            entries their room. */}
         <button
           onClick={handleLogout}
-          className="flex flex-col items-center justify-center w-16 h-full gap-1 group"
+          className="flex flex-col items-center justify-center shrink-0 w-10 h-full gap-1 group"
           title="Sign out"
           aria-label="Sign out"
         >
           <div className="p-2 rounded-full transition-all duration-300 text-muted-foreground/50 group-hover:text-muted-foreground">
             <LogOut className="w-4 h-4" strokeWidth={1.5} />
           </div>
-          <span className="text-[9px] tracking-widest uppercase text-muted-foreground/40 group-hover:text-muted-foreground/70 transition-colors">
-            Out
-          </span>
         </button>
       </nav>
     </div>
