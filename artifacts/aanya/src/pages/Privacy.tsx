@@ -96,8 +96,13 @@ export function Privacy() {
               for (like the morning note). They see your email address and the email content.
             </li>
             <li>
-              <span className="text-foreground/80">Replit &amp; Neon</span> — the secure hosting
-              and database where everything lives, encrypted on disk and in transit.
+              <span className="text-foreground/80">Render</span> — the secure hosting and
+              database where everything lives. Your conversations, memories, and the other
+              personal things on this page are encrypted inside the database itself, so a stolen
+              copy of the database can't reveal your words. Eos holds the key so it can read your
+              history back to you and reply — meaning our systems can access your content to run
+              Eos, and for nothing else. What stays visible in the database even encrypted:
+              counts and timestamps (that you wrote, not what you wrote).
             </li>
           </ul>
           <p className="text-[13px] text-muted-foreground/60">
