@@ -25,7 +25,6 @@ import { useContextualGreeting } from "@/api/contextualGreeting";
 import { ChangeEmailForm } from "@/components/ChangeEmailForm";
 import { chatMessageSchema, type ChatMessageFormValues } from "@/lib/schemas";
 import { CHAT_DRAFT_KEY, ONBOARDING_DRAFT_KEY } from "@/lib/sessionDrafts";
-import { consumeOpenSettingsRequest, OPEN_SETTINGS_EVENT } from "@/lib/settingsBus";
 import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -269,18 +268,6 @@ export default function Chat() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [continuousVoice, setContinuousVoice] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  // The Shell's nav Settings entry (present on every page) requests the panel
-  // via the settings bus: consume a pending request on mount (arriving from
-  // another page), and listen for the live event (already on this page).
-  useEffect(() => {
-    if (consumeOpenSettingsRequest()) setShowSettings(true);
-    const onOpenRequest = () => {
-      consumeOpenSettingsRequest(); // clear the flag so it can't re-fire on a later mount
-      setShowSettings(true);
-    };
-    window.addEventListener(OPEN_SETTINGS_EVENT, onOpenRequest);
-    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, onOpenRequest);
-  }, []);
   // Appearance — the one remaining choice: opt-in calm dark mode (default light)
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
   // Send sound — opt-in, per-device, default off
@@ -3729,6 +3716,9 @@ export default function Chat() {
       </AnimatePresence>
 
       {/* ── Messages area ──────────────────────────────────────────────────── */}
+      {/* hidden (not unmounted — keeps thread state/scroll) while Settings is
+          open: the panel doesn't span the full column, so the tail of the
+          conversation used to show through beneath it. */}
       <div
         ref={scrollRef}
         className={cn(
@@ -3737,6 +3727,7 @@ export default function Chat() {
           // an animated scroll that fights the next one — instant while
           // streaming, smooth the rest of the time.
           !isStreaming && "scroll-smooth",
+          showSettings && "hidden",
         )}
       >
         <div className="flex flex-col justify-end min-h-full pb-4 max-w-3xl mx-auto w-full">
@@ -4019,6 +4010,8 @@ export default function Chat() {
       </AnimatePresence>
 
       {/* ── Input area ─────────────────────────────────────────────────────── */}
+      {/* Hidden with the messages area while Settings is open — same bleed fix. */}
+      <div className={cn("shrink-0", showSettings && "hidden")}>
       <AnimatePresence mode="wait">
         {continuousVoice && voiceCallEnabled ? (
           /* ── Voice call overlay (replaces input bar while in talk mode) ── */
@@ -4486,6 +4479,7 @@ export default function Chat() {
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 }
