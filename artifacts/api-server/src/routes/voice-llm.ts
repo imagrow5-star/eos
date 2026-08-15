@@ -184,6 +184,27 @@ async function getFrozenSystem(
   return { parts, toneExtra };
 }
 
+/**
+ * Prewarm the frozen system prompt at CALL-BOOTSTRAP time (voice-call latency
+ * family, 2026-08). The first LLM turn of a call used to pay the full prompt
+ * build — a dozen memory/habit/commitment queries — serialized into the
+ * user's wait for the greeting. POST /voice-agent/session now fires this in
+ * the background with the issuedAt of the token it just minted, so by the
+ * time ElevenLabs connects and asks for the greeting, the frozen entry is a
+ * cache hit. Fire-and-forget: any failure just means the first turn builds
+ * the prompt the old way.
+ */
+export function prewarmFrozenSystem(userId: number, issuedAt: number, profile: Profile): void {
+  void (async () => {
+    try {
+      const stage = await calculateStage(profile);
+      await getFrozenSystem(userId, issuedAt, profile, stage);
+    } catch (err) {
+      logger.warn({ err }, "voice prompt prewarm failed — first turn will build it inline");
+    }
+  })();
+}
+
 // ─── Voice-turn persistence with in-call dedup ────────────────────────────────
 // ElevenLabs fires MULTIPLE completion requests per spoken turn: rolling ASR
 // finals revise the user's sentence, interruptions regenerate replies, and
