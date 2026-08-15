@@ -273,6 +273,52 @@ export function isVoiceAllowed(
   return voicesFor(language, accent, companionGender).some((v) => v.voiceId === voiceId);
 }
 
+/**
+ * Reconcile the ACTIVE voice with a (possibly just-changed) context.
+ *
+ * Root cause of the "I picked Female but Eos still speaks male" family: the
+ * gender/accent/language endpoints each saved their own column and left
+ * profile.voice_id untouched — and voice_id is what every speech path (TTS
+ * "Listen", the voice-call tts override) actually plays. This helper closes
+ * that gap: given the new context, it answers "which voice should now play?"
+ *
+ *  - Current voice already valid for (language, accent, gender) → keep it.
+ *  - Otherwise → the first catalog voice for that exact combo.
+ *  - Combo empty (honest catalog gaps: e.g. Australian female) → fall back to
+ *    the language's default accent ("us" for English, "std" otherwise) and
+ *    ALSO report the accent that made the voice possible, so the caller can
+ *    store it — the user's picked GENDER wins over a gap-ridden accent.
+ *  - Nothing anywhere (shouldn't happen — every language+gender has voices) →
+ *    keep the current voice unchanged.
+ */
+export function reconcileVoiceForContext(args: {
+  currentVoiceId: string | null | undefined;
+  language: string;
+  accent: string;
+  gender: "female" | "male";
+}): { voiceId: string; changed: boolean; accent: string } {
+  const { currentVoiceId, language, gender } = args;
+  const accent = language === "en" ? args.accent : NON_ENGLISH_ACCENT;
+  const current = currentVoiceId ?? "";
+
+  if (current && isVoiceAllowed(current, language, accent, gender)) {
+    return { voiceId: current, changed: false, accent };
+  }
+
+  const sameAccent = voicesFor(language, accent, gender);
+  if (sameAccent.length > 0) {
+    return { voiceId: sameAccent[0]!.voiceId, changed: true, accent };
+  }
+
+  const fallbackAccent = language === "en" ? "us" : NON_ENGLISH_ACCENT;
+  const fallback = voicesFor(language, fallbackAccent, gender);
+  if (fallback.length > 0) {
+    return { voiceId: fallback[0]!.voiceId, changed: true, accent: fallbackAccent };
+  }
+
+  return { voiceId: current, changed: false, accent };
+}
+
 /** Every voice id in the catalog — merged into the TTS allowlist. */
 export function allCatalogVoiceIds(): Set<string> {
   const ids = new Set<string>();

@@ -2,6 +2,9 @@ import { Conversation, type DisconnectionDetails } from "@elevenlabs/client";
 import type { AlignmentChunk } from "./captionSync";
 import {
   buildSessionOverrides,
+  cascadeLevels,
+  recallConnectedLevel,
+  rememberConnectedLevel,
   type OverrideLevel,
   type VoiceTone,
 } from "./voiceOverrides";
@@ -166,7 +169,10 @@ export async function startRealtimeCall(
   };
 
   // Cascade: full → voice → none. Each failed level is a FULL paid
-  // reconnection, so two rules keep it cheap and visible:
+  // reconnection, so three rules keep it cheap and visible:
+  //  - the level that connected LAST TIME is remembered (24h) and the cascade
+  //    starts there — an agent whose dashboard disallows overrides no longer
+  //    pays 1–2 doomed reconnect attempts on every single call;
   //  - a level whose override payload is byte-identical to one that already
   //    failed is skipped (no-op retries never dial);
   //  - every attempt (ok or not, with its duration) is reported via onAttempt
@@ -175,7 +181,7 @@ export async function startRealtimeCall(
   //    dashboard, and the server logs exactly that.
   const seenPayloads = new Set<string>();
   let lastErr: unknown = null;
-  for (const level of ["full", "voice", "none"] as const) {
+  for (const level of cascadeLevels(recallConnectedLevel())) {
     const payloadKey = JSON.stringify(
       buildSessionOverrides(level, { tone: session.tone, voiceId }),
     );
@@ -186,6 +192,7 @@ export async function startRealtimeCall(
     try {
       const convo = await attempt(level);
       onAttempt?.({ level, ok: true, ms: Math.round(nowMs() - t0) });
+      rememberConnectedLevel(level);
       return convo;
     } catch (err) {
       lastErr = err;
