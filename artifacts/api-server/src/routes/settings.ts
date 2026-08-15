@@ -21,6 +21,7 @@ import {
   findCatalogVoice,
   isVoiceAllowed,
   resolveVoiceGender,
+  reconcileVoiceForContext,
 } from "../services/settings/voiceCatalog.js";
 import { ttsUsageLimits } from "../middleware/usageLimits.js";
 
@@ -92,8 +93,16 @@ router.get("/settings/voice-options", async (req, res): Promise<void> => {
 
 // ─── POST /settings/voice-gender ─────────────────────────────────────────────
 // The voice's gender — a separate preference from companion gender (who she
-// IS), defaulting from it but free to diverge. The current voice keeps
-// playing until the user actually picks a new voice.
+// IS), defaulting from it but free to diverge.
+//
+// RECONCILES THE ACTIVE VOICE: picking "Female" while a male voice_id is
+// stored now also switches voice_id to a matching catalog voice — the old
+// "current voice keeps playing until they pick a new one" behavior was the
+// root cause of "I selected Female but Eos still speaks male" (every speech
+// path plays voice_id, and nothing on screen said the old voice survived).
+// The user's gender pick wins over an accent whose catalog has no voices of
+// that gender: in that gap case the accent falls back too (returned so the
+// UI can show the truth).
 
 router.post("/settings/voice-gender", async (req, res): Promise<void> => {
   const raw = (req.body as { gender?: unknown } | undefined)?.gender;
@@ -103,18 +112,37 @@ router.post("/settings/voice-gender", async (req, res): Promise<void> => {
     return;
   }
   const profile = await getOrCreateProfileForUser(req.userId);
+  const language = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
+  const accent = (profile as { voiceAccent?: string | null }).voiceAccent ?? "us";
+  const reconciled = reconcileVoiceForContext({
+    currentVoiceId: profile.voiceId,
+    language,
+    accent,
+    gender,
+  });
+
   await db
     .update(profileTable)
-    .set({ voiceGender: gender })
+    .set({
+      voiceGender: gender,
+      ...(reconciled.changed ? { voiceId: reconciled.voiceId } : {}),
+      // English only — non-English "std" must never overwrite a stored English accent.
+      ...(language === "en" && reconciled.accent !== accent ? { voiceAccent: reconciled.accent } : {}),
+    })
     .where(and(eq(profileTable.id, profile.id), eq(profileTable.userId, req.userId)));
   // Privacy (Tier 2): drop the gender trait; hash the userId to `uh`.
   try {
     const uh = hashUserIdForLog(req.userId);
-    if (uh !== undefined) logger.info({ uh }, "settings: voice gender saved");
+    if (uh !== undefined) logger.info({ uh, voiceReconciled: reconciled.changed }, "settings: voice gender saved");
   } catch {
     /* logging must never break the settings write */
   }
-  res.json({ ok: true, gender });
+  res.json({
+    ok: true,
+    gender,
+    voiceId: reconciled.voiceId || profile.voiceId,
+    voiceChanged: reconciled.changed,
+  });
 });
 
 // ─── POST /settings/language ─────────────────────────────────────────────────
@@ -127,12 +155,28 @@ router.post("/settings/language", async (req, res): Promise<void> => {
     return;
   }
   const profile = await getOrCreateProfileForUser(req.userId);
+  const info = languageByCode(language)!;
+
+  // Reconcile the active voice with the new language (same family fix as
+  // voice-gender): an ACTIVE language whose catalog doesn't carry the current
+  // voice switches voice_id to that language's first voice of the user's
+  // gender, so speech immediately matches the selection. Inactive languages
+  // change nothing — Eos keeps speaking English until they activate.
+  const gender = resolveVoiceGender(
+    profile as { voiceGender?: string | null; companionGender?: string | null },
+  ).gender;
+  const accent = (profile as { voiceAccent?: string | null }).voiceAccent ?? "us";
+  const reconciled = info.active
+    ? reconcileVoiceForContext({ currentVoiceId: profile.voiceId, language, accent, gender })
+    : { voiceId: profile.voiceId, changed: false, accent };
+
   await db
     .update(profileTable)
-    .set({ preferredLanguage: language })
+    .set({
+      preferredLanguage: language,
+      ...(reconciled.changed ? { voiceId: reconciled.voiceId } : {}),
+    })
     .where(and(eq(profileTable.id, profile.id), eq(profileTable.userId, req.userId)));
-
-  const info = languageByCode(language)!;
   // Privacy (Tier 2): drop the language trait; hash the userId to `uh`. If
   // per-language debugging is needed, log supported languages at boot — never
   // per-user.
@@ -142,7 +186,13 @@ router.post("/settings/language", async (req, res): Promise<void> => {
   } catch {
     /* logging must never break the settings write */
   }
-  res.json({ ok: true, language, active: info.active });
+  res.json({
+    ok: true,
+    language,
+    active: info.active,
+    voiceId: reconciled.voiceId || profile.voiceId,
+    voiceChanged: reconciled.changed,
+  });
 });
 
 // ─── POST /settings/accent ───────────────────────────────────────────────────
@@ -155,18 +205,37 @@ router.post("/settings/accent", async (req, res): Promise<void> => {
     return;
   }
   const profile = await getOrCreateProfileForUser(req.userId);
+
+  // Reconcile the active voice with the new accent (same family fix as
+  // voice-gender): a British pick switches a stored American voice_id to the
+  // first British voice of the user's gender. When the chosen accent has NO
+  // voices of that gender yet (honest catalog gaps — e.g. Australian female),
+  // the current voice keeps playing and the UI's "voices for this accent are
+  // being added" note tells the truth; the accent choice itself still saves.
+  const gender = resolveVoiceGender(
+    profile as { voiceGender?: string | null; companionGender?: string | null },
+  ).gender;
+  const language = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
+  const currentVoiceId = profile.voiceId ?? "";
+  let nextVoiceId = currentVoiceId;
+  if (language === "en" && !isVoiceAllowed(currentVoiceId, "en", accent, gender)) {
+    const candidates = voicesFor("en", accent, gender);
+    if (candidates.length > 0) nextVoiceId = candidates[0]!.voiceId;
+  }
+  const voiceChanged = nextVoiceId !== currentVoiceId;
+
   await db
     .update(profileTable)
-    .set({ voiceAccent: accent })
+    .set({ voiceAccent: accent, ...(voiceChanged ? { voiceId: nextVoiceId } : {}) })
     .where(and(eq(profileTable.id, profile.id), eq(profileTable.userId, req.userId)));
   // Privacy (Tier 2): drop the accent trait; hash the userId to `uh`.
   try {
     const uh = hashUserIdForLog(req.userId);
-    if (uh !== undefined) logger.info({ uh }, "settings: accent preference saved");
+    if (uh !== undefined) logger.info({ uh, voiceReconciled: voiceChanged }, "settings: accent preference saved");
   } catch {
     /* logging must never break the settings write */
   }
-  res.json({ ok: true, accent });
+  res.json({ ok: true, accent, voiceId: nextVoiceId, voiceChanged });
 });
 
 // ─── POST /settings/voice ────────────────────────────────────────────────────

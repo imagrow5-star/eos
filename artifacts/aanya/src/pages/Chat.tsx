@@ -394,14 +394,37 @@ export default function Chat() {
     }
   }, [onboardingVoiceStep, voiceOptions, obGenderTouched]);
 
+  // One quiet error line for the whole voice-settings section — a failed save
+  // used to be swallowed silently (`if (r.ok)` with no else), which read as
+  // "saving does nothing". Every handler below clears it on success.
+  const [voiceSettingsError, setVoiceSettingsError] = useState<string | null>(null);
+  const voiceSettingsFailed = async (r: Response | null, fallback: string) => {
+    let message = fallback;
+    try {
+      const body = (await r?.json()) as { error?: string } | undefined;
+      if (body?.error) message = body.error;
+    } catch {
+      /* non-JSON error body — keep the fallback line */
+    }
+    setVoiceSettingsError(message);
+  };
+
   const handleVoiceGenderSelect = async (gender: "female" | "male") => {
     setArmedCatalogVoiceId(null);
+    setVoiceSettingsError(null);
     const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/voice-gender`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ gender }),
-    });
-    if (r.ok) queryClient.invalidateQueries({ queryKey: ["settings-voice-options"] });
+    }).catch(() => null);
+    if (r?.ok) {
+      queryClient.invalidateQueries({ queryKey: ["settings-voice-options"] });
+      // The server may have reconciled voice_id to match the new gender — the
+      // profile drives what actually PLAYS (TTS + calls), so refresh it too.
+      queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
+    } else {
+      await voiceSettingsFailed(r, "Couldn't save the voice gender — try again.");
+    }
   };
 
   const stopCatalogPreview = () => {
@@ -432,22 +455,34 @@ export default function Chat() {
 
   const handleLanguageSelect = async (lang: LanguageOption) => {
     setLanguageNote(lang.active ? null : comingSoonNote(lang));
+    setVoiceSettingsError(null);
     const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/language`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ language: lang.code }),
-    });
-    if (r.ok) queryClient.invalidateQueries({ queryKey: ["settings-voice-options"] });
+    }).catch(() => null);
+    if (r?.ok) {
+      queryClient.invalidateQueries({ queryKey: ["settings-voice-options"] });
+      queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
+    } else {
+      await voiceSettingsFailed(r, "Couldn't save the language — try again.");
+    }
   };
 
   const handleAccentSelect = async (accent: string) => {
     setArmedCatalogVoiceId(null);
+    setVoiceSettingsError(null);
     const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/accent`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ accent }),
-    });
-    if (r.ok) queryClient.invalidateQueries({ queryKey: ["settings-voice-options"] });
+    }).catch(() => null);
+    if (r?.ok) {
+      queryClient.invalidateQueries({ queryKey: ["settings-voice-options"] });
+      queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
+    } else {
+      await voiceSettingsFailed(r, "Couldn't save the accent — try again.");
+    }
   };
 
   // Settings voice tap: first tap previews + arms, second tap keeps.
@@ -458,15 +493,18 @@ export default function Chat() {
       return;
     }
     stopCatalogPreview();
+    setVoiceSettingsError(null);
     const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/voice`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ voice_id: voiceId }),
-    });
-    if (r.ok) {
+    }).catch(() => null);
+    if (r?.ok) {
       setArmedCatalogVoiceId(null);
       queryClient.invalidateQueries({ queryKey: ["settings-voice-options"] });
       queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
+    } else {
+      await voiceSettingsFailed(r, "Couldn't save that voice — try again.");
     }
   };
 
@@ -3057,6 +3095,11 @@ export default function Chat() {
                   )
                 ) : (
                   <p className="text-[11px] text-muted-foreground/40">Loading…</p>
+                )}
+                {voiceSettingsError && (
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400/90 mt-2 leading-relaxed">
+                    {voiceSettingsError}
+                  </p>
                 )}
               </div>
 
