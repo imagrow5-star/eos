@@ -2476,6 +2476,171 @@ export default function Chat() {
   const showTextInput =
     onboarding?.isComplete || (!stepChoices && !basicsStep && !voicePickStep && !onboarding?.isComplete);
 
+  // ─── Memoized message thread (performance family, 2026-08) ────────────────
+  // Chat.tsx is one large stateful component: before this, EVERY state change
+  // — each composer keystroke, each Settings chip — re-rendered every bubble
+  // in the thread (measured: ~250ms of main-thread blocking per keystroke on
+  // a 4x-throttled mobile profile with a 60-message thread). The bubbles now
+  // rebuild only when something they actually show changes. Handlers reach
+  // the current closure through latest-refs so they never widen the deps.
+  const handleSpeakRef = useRef(handleSpeak);
+  handleSpeakRef.current = handleSpeak;
+  const handleForgetMessageRef = useRef(handleForgetMessage);
+  handleForgetMessageRef.current = handleForgetMessage;
+  const handleDismissCrisisBlockRef = useRef(handleDismissCrisisBlock);
+  handleDismissCrisisBlockRef.current = handleDismissCrisisBlock;
+
+  const messageBubbles = useMemo(
+    () =>
+      messages.map((msg, idx) => {
+        const isCompanion = msg.role === "assistant";
+        const showLabel =
+          isCompanion && (idx === 0 || messages[idx - 1]?.role !== "assistant");
+        // Crisis floor: split the appended helpline block out of the
+        // content so it renders as a distinct, dismissible card and never
+        // enters TTS. Non-crisis messages pass through untouched.
+        const { body: msgBody, block: crisisBlock } = isCompanion
+          ? splitCrisisBlock(msg.content)
+          : { body: msg.content, block: null };
+        const crisisBlockVisible =
+          crisisBlock !== null &&
+          !msg.crisisBlockDismissed &&
+          !dismissedCrisisIds.has(msg.id);
+
+        return (
+          <motion.div
+            key={msg.id}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, ease: "easeOut" }}
+            className={cn(
+              "flex flex-col w-full max-w-[85%]",
+              isCompanion ? "self-start" : "self-end items-end",
+            )}
+          >
+            {showLabel && (
+              <span className="text-[10px] text-muted-foreground/60 tracking-widests uppercase mb-1.5 ml-1">
+                {companionName}
+              </span>
+            )}
+            <div
+              onClick={() =>
+                setForgetArmedId((cur) => (cur === msg.id ? null : msg.id))
+              }
+              className={cn(
+                "px-[18px] py-3 leading-relaxed relative",
+                isCompanion
+                  ? "companion-bubble rounded-2xl rounded-tl-sm"
+                  : "user-bubble rounded-2xl rounded-tr-sm",
+              )}
+            >
+              {isCompanion && speakingMessageId === String(msg.id) ? (
+                /* ── Live caption mode: reveal words in sync with audio ── */
+                <p className={cn(
+                  "companion-message text-foreground/90",
+                  isBereavement ? "text-[17px]" : "text-[16px]",
+                )}>
+                  <LiveCaption
+                    text={msgBody}
+                    revealedWords={revealedWords}
+                  />
+                </p>
+              ) : (
+                <p className={cn(
+                  isCompanion
+                    ? cn("companion-message text-foreground/90", isBereavement ? "text-[17px]" : "text-[16px]")
+                    : "font-sans text-[14.5px] text-user-bubble-text",
+                )}>
+                  {msgBody}
+                </p>
+              )}
+              {msg.isMorningNote && (
+                <span className="absolute -top-3 left-4 text-[9px] text-primary-strong/70 tracking-[0.2em] uppercase bg-background px-2 font-medium">
+                  Morning Note
+                </span>
+              )}
+            </div>
+
+            {/* ── Crisis helpline card (crisis floor) — distinct + dismissible ── */}
+            {crisisBlockVisible && crisisBlock && (
+              <CrisisHelplineCard
+                blockText={crisisBlock}
+                onDismiss={() => handleDismissCrisisBlockRef.current(msg.id)}
+                dismissing={crisisDismissBusyId === msg.id}
+              />
+            )}
+
+            {/* ── Honest degraded-reply indicator (provider outage) ── */}
+            {isCompanion && degradedMessageIds.has(msg.id) && (
+              <span className="text-[10.5px] text-muted-foreground/55 italic mt-1 ml-1.5">
+                A connection hiccup on our side — Eos will be back to its full self shortly.
+              </span>
+            )}
+
+            {/* ── Forget this (Phase A privacy) — tap bubble to arm ── */}
+            {forgetArmedId === msg.id && (
+              <motion.div
+                initial={{ opacity: 0, y: -2 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={cn(
+                  "flex items-center gap-3 mt-1.5",
+                  isCompanion ? "ml-1" : "mr-1",
+                )}
+              >
+                <span className="text-[10px] text-muted-foreground/50">
+                  Forget this message — permanently?
+                </span>
+                <button
+                  onClick={() => handleForgetMessageRef.current(msg.id)}
+                  disabled={forgetBusyId === msg.id}
+                  className="text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400/90 hover:text-amber-300 transition-colors disabled:opacity-50"
+                >
+                  {forgetBusyId === msg.id ? "Forgetting…" : "Forget"}
+                </button>
+                <button
+                  onClick={() => setForgetArmedId(null)}
+                  className="text-[10px] uppercase tracking-wider text-muted-foreground/50 hover:text-muted-foreground/80 transition-colors"
+                >
+                  Keep
+                </button>
+              </motion.div>
+            )}
+
+            {/* ── Per-message speaker button ── */}
+            {isCompanion && (
+              <button
+                onClick={() => handleSpeakRef.current(msgBody, String(msg.id))}
+                title={speakingMessageId === String(msg.id) ? "Playing…" : "Hear this message"}
+                className={cn(
+                  "mt-1 ml-1 flex items-center gap-1 px-2.5 py-1 rounded-full text-[10.5px] font-medium transition-all",
+                  speakingMessageId === String(msg.id)
+                    ? "bg-primary/20 text-primary-strong border border-primary/35"
+                    : "text-muted-foreground/45 hover:text-primary-strong/80 hover:bg-primary/10 border border-transparent hover:border-primary/20",
+                )}
+              >
+                <Volume2 className="w-3 h-3 shrink-0" />
+                {speakingMessageId === String(msg.id) ? "Playing…" : "Listen"}
+              </button>
+            )}
+          </motion.div>
+        );
+      }),
+    // Everything the bubbles visually depend on — and nothing else. setForgetArmedId
+    // is a state setter (stable); the three handlers arrive via latest-refs.
+    [
+      messages,
+      companionName,
+      isBereavement,
+      speakingMessageId,
+      revealedWords,
+      forgetArmedId,
+      forgetBusyId,
+      dismissedCrisisIds,
+      crisisDismissBusyId,
+      degradedMessageIds,
+    ],
+  );
+
   // ─── Chat content ─────────────────────────────────────────────────────────
 
   const chatContent = () => {
@@ -2505,139 +2670,7 @@ export default function Chat() {
     return (
       <div className="flex flex-col gap-6 w-full">
         <AnimatePresence initial={false}>
-          {messages.map((msg, idx) => {
-            const isCompanion = msg.role === "assistant";
-            const showLabel =
-              isCompanion && (idx === 0 || messages[idx - 1]?.role !== "assistant");
-            // Crisis floor: split the appended helpline block out of the
-            // content so it renders as a distinct, dismissible card and never
-            // enters TTS. Non-crisis messages pass through untouched.
-            const { body: msgBody, block: crisisBlock } = isCompanion
-              ? splitCrisisBlock(msg.content)
-              : { body: msg.content, block: null };
-            const crisisBlockVisible =
-              crisisBlock !== null &&
-              !msg.crisisBlockDismissed &&
-              !dismissedCrisisIds.has(msg.id);
-
-            return (
-              <motion.div
-                key={msg.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.35, ease: "easeOut" }}
-                className={cn(
-                  "flex flex-col w-full max-w-[85%]",
-                  isCompanion ? "self-start" : "self-end items-end",
-                )}
-              >
-                {showLabel && (
-                  <span className="text-[10px] text-muted-foreground/60 tracking-widests uppercase mb-1.5 ml-1">
-                    {companionName}
-                  </span>
-                )}
-                <div
-                  onClick={() =>
-                    setForgetArmedId((cur) => (cur === msg.id ? null : msg.id))
-                  }
-                  className={cn(
-                    "px-[18px] py-3 leading-relaxed relative",
-                    isCompanion
-                      ? "companion-bubble rounded-2xl rounded-tl-sm"
-                      : "user-bubble rounded-2xl rounded-tr-sm",
-                  )}
-                >
-                  {isCompanion && speakingMessageId === String(msg.id) ? (
-                    /* ── Live caption mode: reveal words in sync with audio ── */
-                    <p className={cn(
-                      "companion-message text-foreground/90",
-                      isBereavement ? "text-[17px]" : "text-[16px]",
-                    )}>
-                      <LiveCaption
-                        text={msgBody}
-                        revealedWords={revealedWords}
-                      />
-                    </p>
-                  ) : (
-                    <p className={cn(
-                      isCompanion
-                        ? cn("companion-message text-foreground/90", isBereavement ? "text-[17px]" : "text-[16px]")
-                        : "font-sans text-[14.5px] text-user-bubble-text",
-                    )}>
-                      {msgBody}
-                    </p>
-                  )}
-                  {msg.isMorningNote && (
-                    <span className="absolute -top-3 left-4 text-[9px] text-primary-strong/70 tracking-[0.2em] uppercase bg-background px-2 font-medium">
-                      Morning Note
-                    </span>
-                  )}
-                </div>
-
-                {/* ── Crisis helpline card (crisis floor) — distinct + dismissible ── */}
-                {crisisBlockVisible && crisisBlock && (
-                  <CrisisHelplineCard
-                    blockText={crisisBlock}
-                    onDismiss={() => handleDismissCrisisBlock(msg.id)}
-                    dismissing={crisisDismissBusyId === msg.id}
-                  />
-                )}
-
-                {/* ── Honest degraded-reply indicator (provider outage) ── */}
-                {isCompanion && degradedMessageIds.has(msg.id) && (
-                  <span className="text-[10.5px] text-muted-foreground/55 italic mt-1 ml-1.5">
-                    A connection hiccup on our side — Eos will be back to its full self shortly.
-                  </span>
-                )}
-
-                {/* ── Forget this (Phase A privacy) — tap bubble to arm ── */}
-                {forgetArmedId === msg.id && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -2 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={cn(
-                      "flex items-center gap-3 mt-1.5",
-                      isCompanion ? "ml-1" : "mr-1",
-                    )}
-                  >
-                    <span className="text-[10px] text-muted-foreground/50">
-                      Forget this message — permanently?
-                    </span>
-                    <button
-                      onClick={() => handleForgetMessage(msg.id)}
-                      disabled={forgetBusyId === msg.id}
-                      className="text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400/90 hover:text-amber-300 transition-colors disabled:opacity-50"
-                    >
-                      {forgetBusyId === msg.id ? "Forgetting…" : "Forget"}
-                    </button>
-                    <button
-                      onClick={() => setForgetArmedId(null)}
-                      className="text-[10px] uppercase tracking-wider text-muted-foreground/50 hover:text-muted-foreground/80 transition-colors"
-                    >
-                      Keep
-                    </button>
-                  </motion.div>
-                )}
-
-                {/* ── Per-message speaker button ── */}
-                {isCompanion && (
-                  <button
-                    onClick={() => handleSpeak(msgBody, String(msg.id))}
-                    title={speakingMessageId === String(msg.id) ? "Playing…" : "Hear this message"}
-                    className={cn(
-                      "mt-1 ml-1 flex items-center gap-1 px-2.5 py-1 rounded-full text-[10.5px] font-medium transition-all",
-                      speakingMessageId === String(msg.id)
-                        ? "bg-primary/20 text-primary-strong border border-primary/35"
-                        : "text-muted-foreground/45 hover:text-primary-strong/80 hover:bg-primary/10 border border-transparent hover:border-primary/20",
-                    )}
-                  >
-                    <Volume2 className="w-3 h-3 shrink-0" />
-                    {speakingMessageId === String(msg.id) ? "Playing…" : "Listen"}
-                  </button>
-                )}
-              </motion.div>
-            );
-          })}
+          {messageBubbles}
         </AnimatePresence>
 
         {/* ── Stream error bubble ───────────────────────────────────────────── */}

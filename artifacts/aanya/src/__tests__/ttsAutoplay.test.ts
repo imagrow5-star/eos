@@ -47,7 +47,7 @@ describe("Chat.tsx wiring", () => {
   it("keeps the per-message Listen button as unconditional user-initiated TTS", () => {
     // The Listen button calls handleSpeak on click, never behind the auto-play
     // policy — it must stay a plain onClick handler.
-    expect(chatSrc).toContain('onClick={() => handleSpeak(msgBody, String(msg.id))}');
+    expect(chatSrc).toContain('onClick={() => handleSpeakRef.current(msgBody, String(msg.id))}');
     expect(chatSrc).not.toContain("shouldAutoplayChatReply({ onboardingComplete: !!onboarding?.isComplete }) && handleSpeak(msgBody");
   });
 });
