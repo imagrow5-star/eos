@@ -49,6 +49,51 @@ export interface OverrideInputs {
 }
 
 /**
+ * The cascade order, optionally starting below "full" (voice-call latency
+ * family, 2026-08). Every failed level is a FULL paid reconnection adding
+ * seconds before the call is live, and an agent whose dashboard Security
+ * settings disallow overrides fails "full" and "voice" on EVERY call. The
+ * caller remembers the level that last connected (localStorage, with an
+ * expiry so a fixed dashboard is rediscovered) and starts there.
+ */
+export function cascadeLevels(startAt?: OverrideLevel | null): OverrideLevel[] {
+  const all: OverrideLevel[] = ["full", "voice", "none"];
+  const from = startAt ? all.indexOf(startAt) : 0;
+  return all.slice(from === -1 ? 0 : from);
+}
+
+const CONNECT_LEVEL_KEY = "eos-voice-connect-level";
+/** After this long, forget the remembered level and retry "full" — a fixed
+ *  dashboard toggle should be picked up without anyone clearing storage. */
+const CONNECT_LEVEL_TTL_MS = 24 * 60 * 60 * 1000;
+
+export function rememberConnectedLevel(level: OverrideLevel): void {
+  try {
+    // "full" is the default starting point — no need to store it.
+    if (level === "full") localStorage.removeItem(CONNECT_LEVEL_KEY);
+    else localStorage.setItem(CONNECT_LEVEL_KEY, JSON.stringify({ level, at: Date.now() }));
+  } catch {
+    /* blocked storage — every call just runs the full cascade */
+  }
+}
+
+export function recallConnectedLevel(): OverrideLevel | null {
+  try {
+    const raw = localStorage.getItem(CONNECT_LEVEL_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { level?: string; at?: number };
+    if (parsed.level !== "voice" && parsed.level !== "none") return null;
+    if (typeof parsed.at !== "number" || Date.now() - parsed.at > CONNECT_LEVEL_TTL_MS) {
+      localStorage.removeItem(CONNECT_LEVEL_KEY);
+      return null;
+    }
+    return parsed.level;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Returns the `{ overrides: ... }` fragment to spread into
  * Conversation.startSession's config — or {} when the level sends nothing.
  * Never emits an `agent` block of any kind — ElevenLabs rejects agent-field
