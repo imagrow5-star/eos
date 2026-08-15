@@ -256,7 +256,16 @@ router.post("/voice-agent/client-error", (req, res): void => {
   const stage = clip(b.stage, 100) ?? "unknown";
   const message = clip(b.message, 1000) ?? "";
   const detail = clip(b.detail, 2000);
-  logger.error({ userId: req.userId, stage, message, detail }, "voice-call failed in browser");
+  // Privacy (Tier 2): this was the ONE log line still carrying a raw userId —
+  // hash it like every other line (and skip the line entirely when no salt is
+  // configured, same fail-safe as elsewhere). message/detail are ElevenLabs
+  // SDK/WebSocket error strings from the browser, never transcript content.
+  try {
+    const uh = hashUserIdForLog(req.userId);
+    if (uh !== undefined) logger.error({ uh, stage, message, detail }, "voice-call failed in browser");
+  } catch {
+    /* logging must never break the beacon */
+  }
   res.status(204).end();
 });
 
