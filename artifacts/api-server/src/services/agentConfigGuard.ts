@@ -130,10 +130,18 @@ export async function reconcileAgentConfig(): Promise<
     const headers = { "xi-api-key": apiKey };
     const before = await fetch(url, { headers });
     if (!before.ok) throw new Error(`GET agent ${before.status}`);
-    const current = readAgentState(await before.json());
+    const beforeJson = await before.json();
+    const current = readAgentState(beforeJson);
+    // Informational, never patched: which TTS model the agent's voice runs on.
+    // Latency triage reads this straight from the boot log — flash/turbo v2.5
+    // speak in ~100-300ms, multilingual_v2 adds ~1s+ to every reply. Change it
+    // in the ElevenLabs dashboard: Agent → Voice → Model.
+    const ttsModelId =
+      (beforeJson as { conversation_config?: { tts?: { model_id?: string } } })
+        ?.conversation_config?.tts?.model_id ?? "unknown";
     const patch = computeAgentPatch(current);
     if (!patch) {
-      logger.info({ current }, "Agent config guard: in sync");
+      logger.info({ current, ttsModelId }, "Agent config guard: in sync");
       return "in_sync";
     }
     logger.warn(

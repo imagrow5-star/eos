@@ -1659,6 +1659,19 @@ export default function Chat() {
     [],
   );
 
+  // Call INTENT warmup: the session bootstrap AND the lazy-loaded voice SDK
+  // module. The realtimeVoice chunk (~130KB gzipped) used to download at tap
+  // time inside the connect path — the first call on a device after each
+  // deploy paid it mid-connect. Warming it on hover/touch moves it off the
+  // critical path; the browser's module cache makes the call-path import at
+  // call start resolve instantly, and repeats are free.
+  const warmVoiceCallPath = () => {
+    voiceSessionPrefetcher.prefetch();
+    void import("@/lib/realtimeVoice").catch(() => {
+      /* offline hover — the call-path import will surface any real error */
+    });
+  };
+
   const toggleContinuousVoice = async () => {
     if (continuousVoice) {
       // ── End the call ──
@@ -4364,13 +4377,13 @@ export default function Chat() {
                           type="button"
                           onClick={toggleContinuousVoice}
                           // Call INTENT: quietly prefetch the session bootstrap
-                          // (voice token + signed URL) so pressing the button
-                          // skips that round trip. Deduped + 60s freshness in
-                          // lib/voiceSessionPrefetch.ts; touchstart covers
-                          // mobile, hover/focus cover desktop.
-                          onPointerEnter={() => voiceSessionPrefetcher.prefetch()}
-                          onFocus={() => voiceSessionPrefetcher.prefetch()}
-                          onTouchStart={() => voiceSessionPrefetcher.prefetch()}
+                          // (voice token + signed URL) AND the lazy voice SDK
+                          // chunk so pressing the button skips both. Deduped +
+                          // 60s freshness in lib/voiceSessionPrefetch.ts;
+                          // touchstart covers mobile, hover/focus cover desktop.
+                          onPointerEnter={warmVoiceCallPath}
+                          onFocus={warmVoiceCallPath}
+                          onTouchStart={warmVoiceCallPath}
                           title="Start voice call"
                           className="flex items-center gap-1.5 pl-3 pr-3.5 py-2 rounded-full bg-primary/12 text-primary-strong/80 border border-primary/20 text-[11.5px] font-medium tracking-widest uppercase shrink-0 hover:bg-primary/18 hover:text-primary-strong active:scale-95 transition-all"
                         >

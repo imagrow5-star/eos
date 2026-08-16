@@ -6,10 +6,12 @@ import { buildSystemPrompt, REMEMBER_ACK_GUIDANCE, type SystemPromptParts } from
 import { detectRememberIntent } from "../services/memory/rememberTriggers.js";
 import {
   streamCompanionReply,
+  warmCompanionPrefix,
   appendRecentPhrase,
   runConversationExtractions,
   buildVoiceCallAddendum,
 } from "../services/ai.js";
+import { buildVoiceFirstMessage } from "../services/voiceGreeting.js";
 import { calculateStage } from "../services/stage.js";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { verifyVoiceToken } from "../lib/voiceToken.js";
@@ -182,6 +184,86 @@ async function getFrozenSystem(
   const toneExtra = TONE_DELIVERY[profile.voiceTone ?? "auto"] ?? "";
   frozenSystems.set(key, { parts, toneExtra, at: now });
   return { parts, toneExtra };
+}
+
+// ─── Fast first response (greeting) ──────────────────────────────────────────
+// The first LLM request of a call (empty transcript → synthetic greeting) used
+// to run the FULL pipeline: stage + history queries + the complete frozen
+// persona/memory prompt through Claude — thousands of tokens of one-off
+// ingestion, serialized into the user's wait for the first word. A greeting
+// needs none of that: it's one warm sentence that must never claim memory.
+//
+// English calls now speak a curated line from voiceGreeting.ts instantly (no
+// LLM round trip at all — those pools were written for exactly this and
+// vetted: name-aware, time-of-day-aware, never reference specifics).
+// Non-English calls still ask Claude, but with a ~tiny greeting-only prompt
+// so the first tokens arrive fast in the right language.
+//
+// The full persona/memory prompt is UNTOUCHED for every real turn. To keep
+// turn 2 from inheriting the ingestion cost the greeting no longer pays,
+// warmSecondTurnPrefix() primes Anthropic's prompt cache in the background
+// while the greeting is being spoken.
+
+const GREETING_LANGUAGE_NAMES: Record<string, string> = {
+  nl: "Dutch",
+  de: "German",
+  fr: "French",
+  es: "Spanish",
+  it: "Italian",
+};
+
+/** Tiny greeting-only prompt for non-English calls (exported for tests). */
+export function buildGreetingPrompt(profile: Profile): {
+  stable: string;
+  instruction: string;
+} {
+  const companion = profile.companionName?.trim() || "Eos";
+  const firstName = (profile.userName?.trim().split(/\s+/)[0] ?? "").slice(0, 30);
+  const langName =
+    GREETING_LANGUAGE_NAMES[profile.preferredLanguage ?? "en"] ?? "the user's language";
+  const toneExtra = TONE_DELIVERY[profile.voiceTone ?? "auto"] ?? "";
+  return {
+    stable:
+      `You are ${companion}, the user's warm, caring voice companion.` +
+      (firstName ? ` The user's name is ${firstName}.` : "") +
+      ` Speak ${langName} only.\n` +
+      `Rules for this greeting: exactly one short, warm sentence (under 12 words); ` +
+      `natural spoken language; never claim to remember specifics; ` +
+      `no clinical or therapy phrasing.` +
+      toneExtra,
+    instruction:
+      `(The user just joined the voice call and hasn't spoken yet. ` +
+      `Greet them briefly and warmly in ${langName} — one short sentence.)`,
+  };
+}
+
+/**
+ * Prime Anthropic's prompt cache with this call's REAL frozen prefix while
+ * the greeting is being spoken, so the first real turn reads its big system
+ * prompt from cache instead of paying full ingestion inline. Fire-and-forget;
+ * a failure just means turn 2 pays what it always used to.
+ */
+export function warmSecondTurnPrefix(userId: number, issuedAt: number, profile: Profile): void {
+  void (async () => {
+    try {
+      const stage = await calculateStage(profile);
+      const { parts, toneExtra } = await getFrozenSystem(userId, issuedAt, profile, stage);
+      // Must mirror the real turn's systemExtra byte-for-byte (minus the
+      // per-turn crisis/remember additions, which are deliberate cache
+      // exceptions). Real turns pass buildVoiceCallAddendum(tools.length > 0);
+      // the agent sends no tools today (skip_turn disabled — see
+      // agentConfigGuard), so false matches.
+      await warmCompanionPrefix(parts, {
+        systemExtra: buildVoiceCallAddendum(false) + toneExtra,
+        model: resolveVoiceLlmModel(),
+      });
+    } catch (err) {
+      logger.warn(
+        { err },
+        "voice: turn-2 prefix warm failed — first real turn pays full prompt ingestion",
+      );
+    }
+  })();
 }
 
 /**
@@ -357,6 +439,102 @@ router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (re
 
     // ── Same brain as text chat: persona + this user's real memory ──
     const profile = await getOrCreateProfileForUser(userId);
+
+    // ── Fast greeting path (see the section comment above the route) ──
+    if (synthetic) {
+      const completionId = `chatcmpl-${crypto.randomUUID()}`;
+      const created = Math.floor(Date.now() / 1000);
+      const chunkPayload = (delta: Record<string, unknown>, finish: string | null) =>
+        JSON.stringify({
+          id: completionId,
+          object: "chat.completion.chunk",
+          created,
+          model,
+          choices: [{ index: 0, delta, finish_reason: finish }],
+        });
+      if (wantStream) {
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache, no-transform");
+        res.setHeader("Connection", "keep-alive");
+        res.setHeader("X-Accel-Buffering", "no");
+        res.flushHeaders();
+        res.write(`data: ${chunkPayload({ role: "assistant" }, null)}\n\n`);
+      }
+      const flushRes = () => {
+        if (typeof (res as { flush?: () => void }).flush === "function") {
+          (res as unknown as { flush: () => void }).flush();
+        }
+      };
+
+      // Prime the REAL prompt's Anthropic cache while the greeting is spoken —
+      // turn 2 must not inherit the ingestion cost the greeting no longer pays.
+      warmSecondTurnPrefix(userId, issuedAt, profile);
+
+      const language = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
+      let greetingText: string;
+      let greetingDegraded = false;
+      if (language === "en") {
+        // Curated instant line — no LLM round trip at all.
+        greetingText = buildVoiceFirstMessage(profile);
+        if (wantStream) {
+          res.write(`data: ${chunkPayload({ content: greetingText }, null)}\n\n`);
+          flushRes();
+        }
+      } else {
+        // Non-English: tiny greeting-only prompt so the first tokens arrive
+        // fast AND in the user's language (the curated pools are English).
+        const tiny = buildGreetingPrompt(profile);
+        const reply = await streamCompanionReply(
+          { stable: tiny.stable, context: "" },
+          [],
+          tiny.instruction,
+          1, // stage only shapes the keyless dev-mock reply
+          (chunk) => {
+            if (wantStream) {
+              res.write(`data: ${chunkPayload({ content: chunk }, null)}\n\n`);
+              flushRes();
+            }
+          },
+          { callType: "voice", model: resolveVoiceLlmModel() },
+        );
+        greetingText = reply.text;
+        greetingDegraded = reply.degraded;
+      }
+
+      if (wantStream) {
+        res.write(`data: ${chunkPayload({}, "stop")}\n\n`);
+        res.write("data: [DONE]\n\n");
+        res.end();
+      } else {
+        res.json({
+          id: completionId,
+          object: "chat.completion",
+          created,
+          model,
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: greetingText },
+              finish_reason: "stop",
+            },
+          ],
+          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        });
+      }
+
+      // Same persistence contract as before: the greeting lands in chat
+      // history (assistant row only; dedup + serialization in persistVoiceTurn).
+      void persistVoiceTurn({
+        userId,
+        issuedAt,
+        synthetic: true,
+        userContent: freshUserContent,
+        fullText: greetingText,
+        profile,
+        degraded: greetingDegraded,
+      }).catch((err) => logger.error({ err }, "voice-llm: persisting greeting failed"));
+      return;
+    }
 
     // ── Crisis floor (voice) ──
     // Deterministic detection on the freshly spoken turn. The spoken reply
