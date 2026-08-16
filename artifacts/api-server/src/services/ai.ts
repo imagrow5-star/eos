@@ -244,6 +244,63 @@ export interface CompanionCallOptions {
   model?: string;
 }
 
+// Shared by streamCompanionReply and warmCompanionPrefix: the prompt-cache
+// prefix is keyed on these blocks byte-for-byte, so both callers MUST build
+// them through this one function or the warm silently stops matching.
+function buildSystemBlocks(
+  system: SystemPromptParts,
+  opts?: { systemExtra?: string; cacheConversation?: boolean },
+): any[] {
+  const systemBlocks: any[] = [
+    {
+      type: "text",
+      text: opts?.systemExtra ? `${system.stable}\n\n${opts.systemExtra}` : system.stable,
+      cache_control: { type: "ephemeral" }, // breakpoint 1 — the big stable prefix
+    },
+  ];
+  if (system.context) {
+    systemBlocks.push({
+      type: "text",
+      text: system.context,
+      // Breakpoint 2 (voice only): context is frozen per call, so it caches too.
+      ...(opts?.cacheConversation ? { cache_control: { type: "ephemeral" } } : {}),
+    });
+  }
+  return systemBlocks;
+}
+
+/**
+ * Prime Anthropic's prompt cache with a call's frozen system prefix, without
+ * generating anything (max_tokens 1, throwaway user turn). Fired in the
+ * background during the voice greeting so the FIRST REAL turn of a call reads
+ * its big system prompt from cache instead of paying full ingestion inline.
+ * The messages differ from real turns — that's fine: the cache breakpoints
+ * sit at the end of the system blocks, and matching stops there.
+ *
+ * NOTE: assumes the real turns carry no tools (tools precede system in the
+ * cache prefix). Today the agent sends none (skip_turn disabled in the agent
+ * config guard); if that changes, this warm quietly stops matching — harmless
+ * but useless — and should learn the tool list.
+ *
+ * Returns false in keyless dev/test mode. Failures are the caller's to log.
+ */
+export async function warmCompanionPrefix(
+  system: SystemPromptParts,
+  opts: { systemExtra?: string; model?: string },
+): Promise<boolean> {
+  const anthropic = getAnthropic();
+  if (!anthropic) return false;
+  const model = opts.model ?? DEFAULT_COMPANION_MODEL;
+  const res = await (anthropic.messages.create as any)({
+    model,
+    max_tokens: 1,
+    system: buildSystemBlocks(system, { systemExtra: opts.systemExtra, cacheConversation: true }),
+    messages: [{ role: "user", content: "hi" }],
+  });
+  logAiUsage("voice_prefix_warm", model, (res as { usage?: unknown }).usage ?? {});
+  return true;
+}
+
 export async function streamCompanionReply(
   system: SystemPromptParts,
   contextMessages: { role: string; content: string }[],
@@ -284,21 +341,7 @@ export async function streamCompanionReply(
       ];
     }
 
-    const systemBlocks: any[] = [
-      {
-        type: "text",
-        text: opts?.systemExtra ? `${system.stable}\n\n${opts.systemExtra}` : system.stable,
-        cache_control: { type: "ephemeral" }, // breakpoint 1 — the big stable prefix
-      },
-    ];
-    if (system.context) {
-      systemBlocks.push({
-        type: "text",
-        text: system.context,
-        // Breakpoint 2 (voice only): context is frozen per call, so it caches too.
-        ...(opts?.cacheConversation ? { cache_control: { type: "ephemeral" } } : {}),
-      });
-    }
+    const systemBlocks = buildSystemBlocks(system, opts);
 
     let fullText = "";
     const usage: Record<string, number> = {};
