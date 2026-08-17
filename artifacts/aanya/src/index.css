@@ -177,6 +177,25 @@
     @apply font-sans antialiased text-foreground bg-background;
   }
 
+  /* Typed text must never depend on color-mix(): every Tailwind /opacity
+     color compiles to color-mix, and some Chromium builds resolve it against
+     STALE custom-property values when [data-mode] flips — which left typed
+     input text dark-on-dark in dark mode (tester report, Aug 2026) while
+     plain hsl(var()) colors themed correctly. Inputs are where legibility is
+     non-negotiable: solid var-based colors here, and the input/textarea
+     utility classes in the pages were moved to full-opacity tokens too.
+     This base rule is the safety net for future inputs (utilities on a
+     specific element still win the cascade, as they should). */
+  input,
+  textarea,
+  select {
+    color: hsl(var(--foreground));
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: hsl(var(--muted-foreground) / 0.75);
+  }
+
   /* Companion messages always render in serif */
   .companion-message {
     font-family: 'Fraunces', Georgia, serif;

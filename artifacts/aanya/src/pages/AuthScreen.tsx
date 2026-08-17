@@ -481,7 +481,7 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
                     placeholder="you@example.com"
                     autoComplete="email"
                     required
-                    className="w-full bg-background/50 border border-primary/20 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
+                    className="w-full bg-background/50 border border-primary/20 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
                   />
                 </div>
               )}
@@ -498,7 +498,7 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
                     placeholder={tab === "login" ? "Your password" : "Minimum 8 characters"}
                     autoComplete={tab === "login" ? "current-password" : "new-password"}
                     required
-                    className="w-full bg-background/50 border border-primary/20 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
+                    className="w-full bg-background/50 border border-primary/20 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
                   />
                 </div>
               )}
@@ -515,7 +515,7 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
                     placeholder="Repeat your new password"
                     autoComplete="new-password"
                     required
-                    className="w-full bg-background/50 border border-primary/20 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
+                    className="w-full bg-background/50 border border-primary/20 rounded-xl px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
                   />
                 </div>
               )}

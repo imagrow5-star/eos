@@ -2998,7 +2998,7 @@ export default function Chat() {
                   value={renameValue}
                   onChange={(e) => setRenameValue(e.target.value)}
                   placeholder="Enter a name..."
-                  className="bg-background/60 border-primary/20 text-sm text-foreground/85 placeholder:text-muted-foreground/40 h-9 flex-1"
+                  className="bg-background/60 border-primary/20 text-sm text-foreground placeholder:text-muted-foreground h-9 flex-1"
                   onKeyDown={(e) => e.key === "Enter" && handleRename()}
                   maxLength={30}
                 />
@@ -3041,7 +3041,7 @@ export default function Chat() {
                     value={genderCustomValue}
                     onChange={(e) => setGenderCustomValue(e.target.value)}
                     placeholder="in your own words — e.g. non-binary"
-                    className="bg-background/60 border-primary/20 text-sm text-foreground/85 placeholder:text-muted-foreground/40 h-9 flex-1"
+                    className="bg-background/60 border-primary/20 text-sm text-foreground placeholder:text-muted-foreground h-9 flex-1"
                     onKeyDown={(e) => e.key === "Enter" && handleSaveCustomGender()}
                     maxLength={120}
                   />
@@ -3185,7 +3185,7 @@ export default function Chat() {
                     placeholder="—"
                     inputMode="numeric"
                     autoComplete="off"
-                    className="bg-background/60 border-primary/20 text-sm text-foreground/85 placeholder:text-muted-foreground/40 h-9 w-24"
+                    className="bg-background/60 border-primary/20 text-sm text-foreground placeholder:text-muted-foreground h-9 w-24"
                   />
                   <Button
                     size="sm"
@@ -3226,7 +3226,7 @@ export default function Chat() {
                       onChange={(e) => setSettingsCountryQuery(e.target.value)}
                       placeholder="Start typing — e.g. India"
                       autoComplete="off"
-                      className="bg-background/60 border-primary/20 text-sm text-foreground/85 placeholder:text-muted-foreground/40 h-9"
+                      className="bg-background/60 border-primary/20 text-sm text-foreground placeholder:text-muted-foreground h-9"
                     />
                     {settingsCountryQuery.trim() && (
                       <div className="flex flex-wrap gap-1.5 mt-2">
@@ -3558,7 +3558,7 @@ export default function Chat() {
                       value={exportFrom}
                       max={exportTo || undefined}
                       onChange={(e) => setExportFrom(e.target.value)}
-                      className="w-full bg-background/60 border border-primary/20 rounded-lg text-[12px] text-foreground/80 px-2.5 py-1.5 focus:outline-none focus:border-primary/45 transition-colors [color-scheme:dark]"
+                      className="w-full bg-background/60 border border-primary/20 rounded-lg text-[12px] text-foreground px-2.5 py-1.5 focus:outline-none focus:border-primary/45 transition-colors [color-scheme:dark]"
                     />
                   </div>
                   <div className="flex-1 space-y-1">
@@ -3568,7 +3568,7 @@ export default function Chat() {
                       value={exportTo}
                       min={exportFrom || undefined}
                       onChange={(e) => setExportTo(e.target.value)}
-                      className="w-full bg-background/60 border border-primary/20 rounded-lg text-[12px] text-foreground/80 px-2.5 py-1.5 focus:outline-none focus:border-primary/45 transition-colors [color-scheme:dark]"
+                      className="w-full bg-background/60 border border-primary/20 rounded-lg text-[12px] text-foreground px-2.5 py-1.5 focus:outline-none focus:border-primary/45 transition-colors [color-scheme:dark]"
                     />
                   </div>
                 </div>
@@ -3723,7 +3723,7 @@ export default function Chat() {
                       value={deleteConfirmText}
                       onChange={(e) => { setDeleteConfirmText(e.target.value); setDeleteError(null); }}
                       placeholder="DELETE"
-                      className="bg-background/60 border-destructive/20 text-sm h-9 flex-1 text-foreground/85 placeholder:text-muted-foreground/30"
+                      className="bg-background/60 border-destructive/20 text-sm h-9 flex-1 text-foreground placeholder:text-muted-foreground"
                       disabled={isDeletingAccount}
                       autoFocus
                     />
@@ -3853,7 +3853,7 @@ export default function Chat() {
                     placeholder="e.g. 27"
                     inputMode="numeric"
                     autoComplete="off"
-                    className="bg-background/60 border-primary/20 text-sm text-foreground/85 placeholder:text-muted-foreground/40 h-10 w-36"
+                    className="bg-background/60 border-primary/20 text-sm text-foreground placeholder:text-muted-foreground h-10 w-36"
                   />
                   {basicsError && (
                     <p className="text-[12px] text-amber-700 dark:text-amber-400/75 mt-2 leading-relaxed">{basicsError}</p>
@@ -3888,7 +3888,7 @@ export default function Chat() {
                       onChange={(e) => setBasicsCountryQuery(e.target.value)}
                       placeholder="Start typing — e.g. India"
                       autoComplete="off"
-                      className="bg-background/60 border-primary/20 text-sm text-foreground/85 placeholder:text-muted-foreground/40 h-10"
+                      className="bg-background/60 border-primary/20 text-sm text-foreground placeholder:text-muted-foreground h-10"
                     />
                     {basicsCountryQuery.trim() ? (
                       (() => {
@@ -4357,7 +4357,7 @@ export default function Chat() {
                                   ? "Listening — speak now…"
                                   : "Tell me what's on your mind…"
                               }
-                              className="w-full resize-none border-0 bg-transparent outline-none placeholder:text-muted-foreground/40 text-base sm:text-[14.5px] leading-relaxed py-1.5 text-foreground/85 max-h-[132px] overflow-y-auto disabled:opacity-50"
+                              className="w-full resize-none border-0 bg-transparent outline-none placeholder:text-muted-foreground text-base sm:text-[14.5px] leading-relaxed py-1.5 text-foreground max-h-[132px] overflow-y-auto disabled:opacity-50"
                               disabled={isTyping || isStreaming}
                               autoComplete="off"
                               maxLength={4000}
@@ -4493,7 +4493,7 @@ export default function Chat() {
                             key={customGenderMode ? "gender-custom" : "std"}
                             autoFocus={customGenderMode}
                             placeholder={customGenderMode ? "In your own words…" : "Or type your own answer..."}
-                            className="bg-card border-primary/20 text-sm text-foreground/80 placeholder:text-muted-foreground/40 h-9"
+                            className="bg-card border-primary/20 text-sm text-foreground placeholder:text-muted-foreground h-9"
                             disabled={isTyping}
                             autoComplete="off"
                             maxLength={4000}
