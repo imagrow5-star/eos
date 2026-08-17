@@ -204,6 +204,31 @@ async function getFrozenSystem(
 // warmSecondTurnPrefix() primes Anthropic's prompt cache in the background
 // while the greeting is being spoken.
 
+// ─── Per-call primed profile ─────────────────────────────────────────────────
+// The session mint (POST /voice-agent/session) already loads the user's
+// profile moments before ElevenLabs connects and asks for the greeting.
+// Priming it here keyed by the call token's issuedAt makes the greeting turn
+// completely database-free — fast, and immune to a slow or briefly-unhappy
+// DB at the exact moment the user is waiting to hear a voice. ONLY the
+// greeting uses it: real turns keep their fresh per-turn profile read so
+// mid-call changes keep applying to crisis language, persistence, and
+// extraction. Same sliding-sweep pattern as frozenSystems above.
+const callProfiles = new Map<string, { profile: Profile; at: number }>();
+const CALL_PROFILE_TTL_MS = 15 * 60 * 1000;
+
+export function primeCallProfile(userId: number, issuedAt: number, profile: Profile): void {
+  const now = Date.now();
+  for (const [k, v] of callProfiles) {
+    if (now - v.at > CALL_PROFILE_TTL_MS) callProfiles.delete(k);
+  }
+  callProfiles.set(`${userId}:${issuedAt}`, { profile, at: now });
+}
+
+function primedCallProfile(userId: number, issuedAt: number): Profile | null {
+  const hit = callProfiles.get(`${userId}:${issuedAt}`);
+  return hit && Date.now() - hit.at <= CALL_PROFILE_TTL_MS ? hit.profile : null;
+}
+
 const GREETING_LANGUAGE_NAMES: Record<string, string> = {
   nl: "Dutch",
   de: "German",
@@ -438,7 +463,10 @@ router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (re
     const callContext = synthetic ? [...turns] : turns.slice(0, lastUserIdx);
 
     // ── Same brain as text chat: persona + this user's real memory ──
-    const profile = await getOrCreateProfileForUser(userId);
+    // Greeting turn: use the profile the session mint primed seconds ago
+    // (DB-free). Real turns always re-read — see primeCallProfile's note.
+    const primed = synthetic ? primedCallProfile(userId, issuedAt) : null;
+    const profile = primed ?? (await getOrCreateProfileForUser(userId));
 
     // ── Fast greeting path (see the section comment above the route) ──
     if (synthetic) {
