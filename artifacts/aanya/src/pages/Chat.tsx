@@ -1665,12 +1665,28 @@ export default function Chat() {
   // deploy paid it mid-connect. Warming it on hover/touch moves it off the
   // critical path; the browser's module cache makes the call-path import at
   // call start resolve instantly, and repeats are free.
-  const warmVoiceCallPath = () => {
+  const warmVoiceCallPath = useCallback(() => {
     voiceSessionPrefetcher.prefetch();
     void import("@/lib/realtimeVoice").catch(() => {
       /* offline hover — the call-path import will surface any real error */
     });
-  };
+  }, [voiceSessionPrefetcher]);
+
+  // Warm the call path as soon as the chat screen is on screen, and again
+  // when the tab returns to the foreground. Mobile taps land ~100ms after
+  // touchstart — far less than the signed-URL round trip — so intent-time
+  // warming alone leaves phones paying that fetch inline; screen-time warming
+  // means a quick "open app → call" flow finds everything ready. Dedup and
+  // 60s freshness live in the prefetcher, so this never spams the endpoint.
+  useEffect(() => {
+    if (!voiceCallEnabled) return;
+    warmVoiceCallPath();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") warmVoiceCallPath();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [voiceCallEnabled, warmVoiceCallPath]);
 
   const toggleContinuousVoice = async () => {
     if (continuousVoice) {
