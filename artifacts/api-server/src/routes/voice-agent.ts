@@ -9,9 +9,26 @@ import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { resolveHelplines, buildHelplineBlockText } from "../services/crisis/helplines.js";
 import { pendingVoiceCrisisEvent, dismissVoiceCrisisEvent } from "../services/crisis/events.js";
 import { resolveAgentRouting } from "../services/voiceAgentRouting.js";
-import { prewarmFrozenSystem } from "./voice-llm.js";
+import { prewarmFrozenSystem, primeCallProfile } from "./voice-llm.js";
 
 const router: IRouter = Router();
+
+// Overridable for tests/local measurement only — production always talks to
+// the real host (the env var is simply unset there).
+function elevenLabsBase(): string {
+  return process.env.ELEVENLABS_API_BASE?.trim() || "https://api.elevenlabs.io";
+}
+
+// Last preferredLanguage seen per user (in-process, reset on deploy — same
+// acceptable-loss profile as the usage counters). Powers the speculative
+// signed-URL fetch below: agent ROUTING needs the language, the language
+// needs a profile read, and serializing DB → ElevenLabs puts our read in
+// front of a ~hundreds-of-ms external round trip. With the last language
+// remembered, the fetch for that agent starts immediately and the profile
+// read runs concurrently; if the language changed since the last call (rare)
+// the speculative fetch is discarded and we pay exactly the old sequential
+// cost for the correct agent.
+const lastLanguageByUser = new Map<number, string>();
 
 // ─── Voice-agent session bootstrap (session-authenticated) ───────────────────
 // Called by the web client when the user starts a voice call. Returns what the
@@ -40,11 +57,31 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
   const userToken = mintVoiceToken(req.userId);
   const apiKey = process.env.ELEVENLABS_API_KEY;
 
-  // The profile now loads BEFORE the signed-URL fetch: agent routing needs the
-  // user's language (English → Flash agent; active non-English → Multilingual
-  // agent). This trades the old profile/fetch concurrency for one local DB
-  // read (~ms) ahead of the ElevenLabs round trip (~hundreds of ms) — cheap,
-  // and the tone/greeting inputs come from the same read.
+  const startSignedUrlFetch = (forAgentId: string): Promise<{ r: Response } | { err: unknown }> =>
+    fetch(
+      `${elevenLabsBase()}/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(forAgentId)}`,
+      { headers: { "xi-api-key": apiKey! }, signal: AbortSignal.timeout(8000) },
+    ).then(
+      (r) => ({ r }),
+      (err: unknown) => ({ err }),
+    );
+
+  // Speculative signed-URL fetch, in parallel with the profile read (see the
+  // lastLanguageByUser note above). First call after a deploy has no cached
+  // language and stays sequential — identical to the old behavior.
+  const cachedLanguage = lastLanguageByUser.get(req.userId);
+  let speculative: { agentId: string; promise: Promise<{ r: Response } | { err: unknown }> } | null =
+    null;
+  if (apiKey && cachedLanguage !== undefined) {
+    const specRouting = resolveAgentRouting({ preferredLanguage: cachedLanguage });
+    const specAgentId = specRouting.agentId ?? baseAgentId;
+    speculative = { agentId: specAgentId, promise: startSignedUrlFetch(specAgentId) };
+  }
+
+  // Agent routing needs the user's language (English → Flash agent; active
+  // non-English → Multilingual agent); tone/greeting inputs come from the
+  // same read. The speculative fetch above keeps the ElevenLabs round trip
+  // out of this read's shadow on every call but the first.
   let tone = "auto";
   let firstMessage: string;
   let preferredLanguage = "en";
@@ -52,14 +89,19 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
     const profile = await getOrCreateProfileForUser(req.userId);
     tone = (profile as { voiceTone?: string }).voiceTone ?? "auto";
     preferredLanguage = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
+    lastLanguageByUser.set(req.userId, preferredLanguage);
     firstMessage = buildVoiceFirstMessage(profile);
     // Latency: build the call's frozen system prompt NOW, in the background,
     // keyed by the issuedAt inside the token we just minted (format
     // "<userId>.<issuedAt>...."). The first LLM turn — the greeting the user
     // is waiting on — then hits the in-memory cache instead of paying the
-    // full memory/habits/commitments prompt build inline.
+    // full memory/habits/commitments prompt build inline. The profile itself
+    // is primed too, so the greeting turn runs database-free.
     const issuedAt = Number(userToken.split(".")[1]);
-    if (Number.isFinite(issuedAt)) prewarmFrozenSystem(req.userId, issuedAt, profile);
+    if (Number.isFinite(issuedAt)) {
+      prewarmFrozenSystem(req.userId, issuedAt, profile);
+      primeCallProfile(req.userId, issuedAt, profile);
+    }
   } catch (err) {
     logger.warn({ err }, "voice-agent: couldn't load profile — using defaults");
     firstMessage = buildVoiceFirstMessage(null);
@@ -87,14 +129,12 @@ router.post("/voice-agent/session", ...voiceSessionUsageLimits, async (req, res)
   // config; Multilingual v2 TTS speaks whatever language the reply text is in.
   const language = routing.agentUsed === "multilingual" ? preferredLanguage : undefined;
 
+  // Use the speculative fetch when it targeted the right agent; otherwise
+  // (language changed, or first call after deploy) fetch for the real one.
   const signedUrlPromise: Promise<{ r: Response } | { err: unknown }> | null = apiKey
-    ? fetch(
-        `https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(agentId)}`,
-        { headers: { "xi-api-key": apiKey }, signal: AbortSignal.timeout(8000) },
-      ).then(
-        (r) => ({ r }),
-        (err: unknown) => ({ err }),
-      )
+    ? speculative && speculative.agentId === agentId
+      ? speculative.promise
+      : startSignedUrlFetch(agentId)
     : null;
 
   // "How Eos speaks" preference rides along so the client can set matching
