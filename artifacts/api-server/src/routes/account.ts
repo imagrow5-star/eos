@@ -78,7 +78,7 @@ function buildHtmlReport(data: {
   // When a date range is applied, spell it out on the cover so the reader knows
   // this is a filtered slice of their history rather than the whole thing.
   const rangeLabel = range && (range.from || range.to)
-    ? `Range: ${range.from ? fmtDate(range.from) : "the beginning"} – ${range.to ? fmtDate(range.to) : "today"}`
+    ? `Range: ${range.from ? fmtDate(range.from) : "the beginning"} to ${range.to ? fmtDate(range.to) : "today"}`
     : null;
 
   // ── Conversation thread ──────────────────────────────────────────────────────
@@ -395,7 +395,7 @@ function buildHtmlReport(data: {
 
   <div class="cover">
     <div class="wordmark">E O <span>S</span></div>
-    <h1>Your personal report — with ${companionName}</h1>
+    <h1>Your personal report, with ${companionName}</h1>
     <p class="meta">Journey: ${esc(userPath)} &nbsp;·&nbsp; Exported ${fmtDate(exportedAt)}</p>
     ${rangeLabel ? `<p class="meta">${esc(rangeLabel)}</p>` : ""}
   </div>

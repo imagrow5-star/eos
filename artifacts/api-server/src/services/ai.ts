@@ -154,7 +154,7 @@ function getMockResponse(stage: number): string {
 
 /** Spoken and written honest fallback — warm, no technical jargon. */
 export const DEGRADED_REPLY =
-  "I'm having a little trouble gathering my thoughts right now — it's me, not you. " +
+  "I'm having a little trouble gathering my thoughts right now. It's me, not you. " +
   "Give me a few minutes and try again; I'm still right here.";
 
 export interface CompanionReplyResult {

@@ -40,7 +40,7 @@ export function ConsentGate({
       // gate (or shows its own error UI) once the refetch settles.
       await onDone();
     } catch {
-      setError("That didn't save — please try again.");
+      setError("That didn't save. Please try again.");
       setBusy(false);
     }
   };
@@ -48,15 +48,15 @@ export function ConsentGate({
   const points: Array<{ title: string; body: string }> = [
     {
       title: "What you share stays yours",
-      body: "Your conversations, memories, and notes are stored securely so Eos can remember you between visits. They exist for you — there is no dashboard where anyone browses them.",
+      body: "Your conversations, memories, and notes are stored securely so Eos can remember you between visits. They exist for you. There is no dashboard where anyone browses them.",
     },
     {
       title: "Two helpers make Eos work",
-      body: "Anthropic provides the thinking and ElevenLabs provides the voice. Your words pass through them to generate each reply — that's the only reason, and they don't use your words to train their models.",
+      body: "Anthropic provides the thinking and ElevenLabs provides the voice. Your words pass through them to generate each reply. That's the only reason, and they don't use your words to train their models.",
     },
     {
       title: "You can always take it back",
-      body: "Export everything, delete a single message or memory, or delete your whole account — anytime, in Settings. Deleting is real deletion, not hiding.",
+      body: "Export everything, delete a single message or memory, or delete your whole account, anytime, in Settings. Deleting is real deletion, not hiding.",
     },
     {
       title: "Eos is an AI, not a person",
@@ -80,8 +80,8 @@ export function ConsentGate({
             <div className="h-px bg-primary/20" />
             <p className="text-[13.5px] text-muted-foreground/80 leading-relaxed">
               {isReturningUser
-                ? "We've written down, in plain words, how Eos treats what you share. It takes a minute to read — and then we'll pick up right where you left off."
-                : "Eos is a private space. Here is exactly how your words are treated — in plain language, before you share anything."}
+                ? "We've written down, in plain words, how Eos treats what you share. It takes a minute to read, and then we'll pick up right where you left off."
+                : "Eos is a private space. Here is exactly how your words are treated, in plain language, before you share anything."}
             </p>
           </div>
 
@@ -115,7 +115,7 @@ export function ConsentGate({
                 Share anonymized insights in the future
               </p>
               <p className="text-[11px] text-muted-foreground/50 mt-0.5 leading-relaxed">
-                Nothing is shared today. If that ever changes, it will only apply if this is on —
+                Nothing is shared today. If that ever changes, it will only apply if this is on,
                 and you can flip it anytime.
               </p>
             </div>
@@ -148,7 +148,7 @@ export function ConsentGate({
             disabled={busy}
             className="w-full py-3.5 rounded-2xl bg-primary/20 border border-primary/50 text-primary-strong font-medium text-[14px] tracking-wide hover:bg-primary/30 transition-all disabled:opacity-50"
           >
-            {busy ? "Saving…" : "I understand — continue"}
+            {busy ? "Saving…" : "I understand, continue"}
           </button>
 
           <p className="text-[10.5px] text-muted-foreground/40 text-center leading-relaxed">

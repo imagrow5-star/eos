@@ -117,7 +117,7 @@ function weekLabel(weekStart: string, weekEnd: string): string {
   const s = parseISO(weekStart);
   const e = parseISO(weekEnd);
   const sameMonth = s.getMonth() === e.getMonth();
-  return `${format(s, "MMMM d")} – ${format(e, sameMonth ? "d" : "MMMM d")}`;
+  return `${format(s, "MMMM d")} to ${format(e, sameMonth ? "d" : "MMMM d")}`;
 }
 
 /** One-tap 1–10 scale rendered as a row of dots. */
@@ -265,7 +265,7 @@ function OfferCard({ offer, chapterId }: { offer: MicroOffer; chapterId: number 
     return (
       <div className="rounded-2xl border border-primary/30 bg-primary/8 p-5">
         <p className="font-serif text-[14px] leading-relaxed text-foreground/80">
-          Added to your goals — I'll walk with you on it.
+          Added to your goals. I'll walk with you on it.
         </p>
       </div>
     );
@@ -274,7 +274,7 @@ function OfferCard({ offer, chapterId }: { offer: MicroOffer; chapterId: number 
     return (
       <div className="rounded-2xl border border-primary/15 bg-card p-5">
         <p className="font-serif text-[14px] leading-relaxed text-foreground/60">
-          Okay — not this week. That's a fine answer too.
+          Okay, not this week. That's a fine answer too.
         </p>
       </div>
     );
@@ -381,7 +381,7 @@ function SealResolutionCard({ chapterId, seal }: { chapterId: number; seal: Seal
     return (
       <div className="rounded-2xl border border-primary/15 bg-card p-5">
         <p className="font-serif text-[14px] leading-relaxed text-foreground/60">
-          Kept sealed. It'll be waiting in next week's chapter — there's no hurry at all.
+          Kept sealed. It'll be waiting in next week's chapter. There's no hurry at all.
         </p>
       </div>
     );
@@ -420,7 +420,7 @@ function SealResolutionCard({ chapterId, seal }: { chapterId: number; seal: Seal
                 onClick={() => defer.mutate()}
                 className="rounded-full px-4 text-foreground/50"
               >
-                Not yet — keep it sealed
+                Not yet, keep it sealed
               </Button>
             </div>
           </motion.div>
@@ -467,7 +467,7 @@ function NoteInviteCard({ chapterId, prompt }: { chapterId: number; prompt: stri
         body: JSON.stringify({ kind: mode, text: text.trim() }),
       }).then(async (r) => {
         const body = (await r.json().catch(() => ({}))) as { error?: string; care?: { message: string } | null };
-        if (!r.ok) throw new Error(body?.error || "Could not seal your note — try again.");
+        if (!r.ok) throw new Error(body?.error || "Could not seal your note. Try again.");
         return body;
       }),
     onSuccess: (body) => {
@@ -504,7 +504,7 @@ function NoteInviteCard({ chapterId, prompt }: { chapterId: number; prompt: stri
   return (
     <div className="rounded-2xl border border-primary/25 bg-card p-6 space-y-4">
       <div className="text-[10px] uppercase tracking-[0.22em] text-secondary/75">
-        Before you go — a note to a future you
+        Before you go, a note to a future you
       </div>
       <div className="flex gap-1.5">
         {(
@@ -529,7 +529,7 @@ function NoteInviteCard({ chapterId, prompt }: { chapterId: number; prompt: stri
         ))}
       </div>
       <p className="font-serif text-[15px] leading-relaxed italic text-foreground/75">
-        {mode === "prediction" ? prompt : "Anything you'd like a future you to open — one sentence is plenty."}
+        {mode === "prediction" ? prompt : "Anything you'd like a future you to open. One sentence is plenty."}
       </p>
       <textarea
         value={text}
@@ -555,7 +555,7 @@ function NoteInviteCard({ chapterId, prompt }: { chapterId: number; prompt: stri
       </div>
       {error && <p className="text-[11px] text-amber-700 dark:text-amber-400/80 leading-relaxed">{error}</p>}
       <p className="text-[10px] text-muted-foreground/45 leading-relaxed">
-        It stays sealed — even from me — until I hand it back inside a future chapter.
+        It stays sealed, even from me, until I hand it back inside a future chapter.
       </p>
     </div>
   );
@@ -639,7 +639,7 @@ function SealedChapter({ chapter }: { chapter: Chapter }) {
         </Button>
       </div>
       <p className="text-[10px] text-muted-foreground/50 tracking-wide">
-        No rush — this letter keeps. Your answer appears inside the chapter.
+        No rush. This letter keeps. Your answer appears inside the chapter.
       </p>
     </div>
   );
@@ -791,7 +791,7 @@ export function WeeklyChapterSection() {
           </div>
           <p className="font-serif text-[16px] text-foreground/85">Your letters aren't ready yet.</p>
           <p className="text-[12px] leading-relaxed text-muted-foreground max-w-[300px] mx-auto">
-            Once we've talked for a few weeks, I'll start writing you a chapter each Sunday — built from your own
+            Once we've talked for a few weeks, I'll start writing you a chapter each Sunday, built from your own
             words, so you can watch yourself change.
           </p>
         </div>
@@ -801,7 +801,7 @@ export function WeeklyChapterSection() {
         <div className="bg-card border border-primary/15 rounded-2xl px-5 py-4 flex items-center gap-3">
           <Feather className="w-3.5 h-3.5 text-primary-strong/60 flex-shrink-0" />
           <p className="text-[12px] leading-relaxed text-muted-foreground">
-            Your next chapter arrives Sunday evening — a letter I write you from your own words.
+            Your next chapter arrives Sunday evening: a letter I write you from your own words.
           </p>
         </div>
       )}

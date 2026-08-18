@@ -173,7 +173,7 @@ function CommitmentsSection() {
                           )}
                           {c.missCount > 0 && (
                             <p className="text-[10px] text-foreground/35">
-                              {c.missCount === 1 ? "Missed once" : `Missed ${c.missCount}×`} — your companion will suggest something smaller
+                              {c.missCount === 1 ? "Missed once" : `Missed ${c.missCount}×`}. Your companion will suggest something smaller
                             </p>
                           )}
                         </div>
@@ -409,7 +409,7 @@ function HabitsSection() {
       <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-primary/5 border border-primary/12">
         <Zap className="w-3.5 h-3.5 text-primary-strong/50 shrink-0 mt-0.5" />
         <p className="text-[11px] text-muted-foreground/60 leading-relaxed">
-          Habits become automatic after <span className="text-secondary/70 font-medium">~66 days</span>, not 21. Missing one day costs nothing — just pick it back up tomorrow. Your companion will never push you to do more than one new thing at a time.
+          Habits become automatic after <span className="text-secondary/70 font-medium">~66 days</span>, not 21. Missing one day costs nothing. Just pick it back up tomorrow. Your companion will never push you to do more than one new thing at a time.
         </p>
       </div>
 
@@ -422,7 +422,7 @@ function HabitsSection() {
           {habits.length === 0 && !addOpen && (
             <div className="bg-card/40 border border-primary/10 rounded-2xl p-5 text-center">
               <p className="text-sm text-muted-foreground/60 font-serif italic">
-                No routines yet. Start with something tiny — one minute, once a day, attached to something you already do.
+                No routines yet. Start with something tiny: one minute, once a day, attached to something you already do.
               </p>
               <p className="text-[11px] text-muted-foreground/40 mt-2">
                 Your companion can also suggest habits based on your conversations.
@@ -653,7 +653,7 @@ function GrowthIndicatorCard({ score }: { score: number }) {
         </div>
 
         <p className="text-[11px] text-muted-foreground mt-2.5 leading-relaxed">
-          Grows with every routine, win, and check-in. Never goes down — rest days just pause the clock.
+          Grows with every routine, win, and check-in. Never goes down. Rest days just pause the clock.
         </p>
       </div>
     </div>
@@ -675,7 +675,7 @@ function KindStreakCard({ days }: { days: number }) {
           {days === 0 ? "Day one starts whenever you do" : `${days} ${days === 1 ? "day" : "days"}, gently`}
         </p>
         <p className="text-[12px] text-muted-foreground mt-0.5 leading-relaxed">
-          Miss one? It just pauses — never resets.
+          Miss one? It just pauses, never resets.
         </p>
       </div>
     </div>
@@ -736,7 +736,7 @@ export default function Journey() {
         <div>
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-primary/25 bg-primary/8 text-[10px] font-medium tracking-[0.2em] uppercase text-secondary mb-4">
             <Map className="w-3 h-3 text-primary-strong/70" />
-            Chapter {journey.stage} — {journey.stageLabel}
+            Chapter {journey.stage}: {journey.stageLabel}
           </div>
           <h1 className="font-display text-[34px] font-medium text-foreground tracking-wide leading-tight">
             Your journey
@@ -786,7 +786,7 @@ export default function Journey() {
 
         {/* Validating caption — dips are data, not verdicts */}
         <p className="text-[12px] text-muted-foreground leading-relaxed px-1">
-          The dips are part of it. Feeling low on a day isn't going backwards — it's a day, and you kept going.
+          The dips are part of it. Feeling low on a day isn't going backwards. It's a day, and you kept going.
         </p>
 
         {/* Habit-mood insight — server-computed correlation or client fallback */}
@@ -807,7 +807,7 @@ export default function Journey() {
         <div className="space-y-3">
           {wins.length === 0 && (
             <p className="text-sm text-muted-foreground font-serif italic px-1">
-              The small stuff counts here — a shower on a heavy day, a text you finally sent.
+              The small stuff counts here: a shower on a heavy day, a text you finally sent.
             </p>
           )}
           {wins.length > 0 && (
