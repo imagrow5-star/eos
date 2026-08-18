@@ -3457,7 +3457,7 @@ export default function Chat() {
                 How Eos speaks
               </p>
               <p className="text-[11px] text-muted-foreground/45 mb-3">
-                Her delivery on voice calls — the voice itself stays the one you chose.
+                Delivery on voice calls — the voice itself stays the one you chose.
               </p>
               <div className="space-y-1.5">
                 {VOICE_TONE_OPTIONS.map((t) => {
@@ -4034,7 +4034,7 @@ export default function Chat() {
 
                   <div>
                     <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
-                      Her voice
+                      Its voice
                     </p>
                     <VoiceChips
                       voices={
