@@ -129,7 +129,7 @@ export const chatUsageLimits: RequestHandler[] = limiterPair({
   dayEnv: "CHAT_LIMIT_PER_DAY",
   dayDefault: 500,
   hourMessage:
-    "That's a lot of messages in a short time. Take a breather — you can keep talking in a little while, and nothing you've shared is lost.",
+    "That's a lot of messages in a short time. Take a breather. You can keep talking in a little while, and nothing you've shared is lost.",
   dayMessage:
     "You've reached today's message limit. Everything you've shared is safe, and the conversation picks right back up tomorrow.",
 });
@@ -139,8 +139,8 @@ export const ttsUsageLimits: RequestHandler[] = limiterPair({
   hourDefault: 120,
   dayEnv: "TTS_LIMIT_PER_DAY",
   dayDefault: 600,
-  hourMessage: "Voice playback needs a short break — please try again in a little while.",
-  dayMessage: "Voice playback has reached today's limit — it'll be back tomorrow.",
+  hourMessage: "Voice playback needs a short break. Please try again in a little while.",
+  dayMessage: "Voice playback has reached today's limit. It'll be back tomorrow.",
 });
 
 export const voiceSessionUsageLimits: RequestHandler[] = limiterPair({
@@ -149,9 +149,9 @@ export const voiceSessionUsageLimits: RequestHandler[] = limiterPair({
   dayEnv: "VOICE_SESSION_LIMIT_PER_DAY",
   dayDefault: 120,
   hourMessage:
-    "Voice calls need a short break — please try again in a little while, or keep chatting by text.",
+    "Voice calls need a short break. Please try again in a little while, or keep chatting by text.",
   dayMessage:
-    "Voice calls have reached today's limit — they'll be back tomorrow. Text chat is always open.",
+    "Voice calls have reached today's limit. They'll be back tomorrow. Text chat is always open.",
 });
 
 // Memory export ("download your journal", Sprint E). Unlike the paid-API
@@ -167,7 +167,7 @@ export const memoryExportUsageLimits: RequestHandler[] = [
     windowMs: HOUR_MS,
     limit: envLimit("MEMORY_EXPORT_LIMIT_PER_HOUR", 1),
     message:
-      "You just downloaded your data — you can grab a fresh copy again in a little while. Everything's safe in the meantime.",
+      "You just downloaded your data. You can grab a fresh copy again in a little while. Everything's safe in the meantime.",
     keyGenerator: sessionUserKey,
   }),
 ];
@@ -182,7 +182,7 @@ export const reflectionGenerateUsageLimits: RequestHandler[] = [
     windowMs: HOUR_MS,
     limit: envLimit("REFLECTION_GENERATE_LIMIT_PER_HOUR", 3),
     message:
-      "You just created a reflection — give it a little while before generating another. Your past reflections are all still here.",
+      "You just created a reflection. Give it a little while before generating another. Your past reflections are all still here.",
     keyGenerator: sessionUserKey,
   }),
 ];
@@ -194,7 +194,7 @@ export const memoryResetUsageLimits: RequestHandler[] = [
   makeLimiter({
     windowMs: HOUR_MS,
     limit: envLimit("MEMORY_RESET_LIMIT_PER_HOUR", 1),
-    message: "You just reset your memory — give it a moment before doing it again.",
+    message: "You just reset your memory. Give it a moment before doing it again.",
     keyGenerator: sessionUserKey,
   }),
 ];
@@ -204,8 +204,8 @@ export const voiceTurnUsageLimits: RequestHandler[] = limiterPair({
   hourDefault: 600,
   dayEnv: "VOICE_TURN_LIMIT_PER_DAY",
   dayDefault: 2400,
-  hourMessage: "This call has been going fast — give it a moment and try again.",
-  dayMessage: "Voice calling has reached today's limit — it resets tomorrow.",
+  hourMessage: "This call has been going fast. Give it a moment and try again.",
+  dayMessage: "Voice calling has reached today's limit. It resets tomorrow.",
   keyGenerator: voiceTokenKey,
   shape: "openai",
 });

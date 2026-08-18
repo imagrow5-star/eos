@@ -28,7 +28,7 @@ function fmtRange(startISO: string, endISO: string): string {
   const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
   const s = new Date(startISO).toLocaleDateString(undefined, opts);
   const e = new Date(endISO).toLocaleDateString(undefined, { ...opts, year: "numeric" });
-  return `${s} – ${e}`;
+  return `${s} to ${e}`;
 }
 
 /** Strip inline Markdown emphasis so the rendered report reads clean. */
@@ -102,23 +102,23 @@ export default function ReflectionsSection() {
     try {
       const r = await apiFetch(`${base()}/generate`, { method: "POST" });
       if (r.status === 503) {
-        setError("Reflections are taking a short break — please try again in a little while.");
+        setError("Reflections are taking a short break. Please try again in a little while.");
         return;
       }
       if (r.status === 429) {
-        setError("You just created a reflection — give it a little while before the next one.");
+        setError("You just created a reflection. Give it a little while before the next one.");
         return;
       }
       if (!r.ok) {
-        setError("Couldn't create your reflection just now — try again in a minute.");
+        setError("Couldn't create your reflection just now. Try again in a minute.");
         return;
       }
       const data = (await r.json()) as { report?: ReflectionFull; status?: string };
       await load();
       if (data.report) setOpen(data.report);
-      else if (data.status === "skipped") setError("There isn't quite enough here to reflect on yet — keep talking and try again soon.");
+      else if (data.status === "skipped") setError("There isn't quite enough here to reflect on yet. Keep talking and try again soon.");
     } catch {
-      setError("Couldn't create your reflection just now — try again in a minute.");
+      setError("Couldn't create your reflection just now. Try again in a minute.");
     } finally {
       setGenerating(false);
     }
@@ -149,7 +149,7 @@ export default function ReflectionsSection() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch {
-      setError("Couldn't prepare that download — try again in a minute.");
+      setError("Couldn't prepare that download. Try again in a minute.");
     }
   };
 
@@ -190,7 +190,7 @@ export default function ReflectionsSection() {
       </div>
 
       <p className="text-[12.5px] text-muted-foreground/70 font-serif italic leading-relaxed max-w-md">
-        A gentle look back at what you've talked about — in your own words, never a diagnosis.
+        A gentle look back at what you've talked about, in your own words, never a diagnosis.
       </p>
 
       {error && (

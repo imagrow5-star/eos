@@ -139,7 +139,7 @@ function AuthGate() {
       .then(async (r) => {
         const body = (await r.json().catch(() => null)) as { error?: string } | null;
         if (r.ok) {
-          setVerifyNotice({ kind: "ok", message: "Email verified — you can sign in." });
+          setVerifyNotice({ kind: "ok", message: "Email verified. You can sign in." });
           await qc.invalidateQueries({ queryKey: ["/api/auth/me"] });
         } else {
           setVerifyNotice({

@@ -47,7 +47,7 @@ export interface VoiceOptionsData {
 
 /** The helper line shown after choosing a not-yet-active language. */
 export function comingSoonNote(lang: LanguageOption): string {
-  return `This arrives next week — we're extending our safety detection to ${lang.nameEnglish} first. Eos will speak English with you until then.`;
+  return `This arrives next week. We're extending our safety detection to ${lang.nameEnglish} first. Eos will speak English with you until then.`;
 }
 
 const chipClass = (selected: boolean) =>

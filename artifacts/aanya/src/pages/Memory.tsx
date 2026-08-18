@@ -91,8 +91,8 @@ export default function Memory() {
       if (!r.ok) {
         setResetError(
           r.status === 429
-            ? "You just reset — give it a moment before trying again."
-            : "Couldn't reset your memory — please try again.",
+            ? "You just reset. Give it a moment before trying again."
+            : "Couldn't reset your memory. Please try again.",
         );
         setResetBusy(false);
         return;
@@ -100,7 +100,7 @@ export default function Memory() {
       // Wiped — reload so every memory view reflects the empty state.
       window.location.reload();
     } catch {
-      setResetError("Couldn't reset your memory — please try again.");
+      setResetError("Couldn't reset your memory. Please try again.");
       setResetBusy(false);
     }
   };

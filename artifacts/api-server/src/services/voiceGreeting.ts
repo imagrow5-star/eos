@@ -31,7 +31,7 @@ import { getTimeContext } from "./stage.js";
 type GreetingTemplate = (name: string | null) => string;
 
 const MORNING_POOL: GreetingTemplate[] = [
-  (n) => (n ? `Morning, ${n}. I'm here — how are you?` : "Morning. I'm here — how are you?"),
+  (n) => (n ? `Morning, ${n}. I'm here. How are you?` : "Morning. I'm here. How are you?"),
   (n) =>
     n
       ? `Good morning, ${n}. It's really good to hear you.`
@@ -42,13 +42,13 @@ const MORNING_POOL: GreetingTemplate[] = [
 const EVENING_POOL: GreetingTemplate[] = [
   (n) => (n ? `Evening, ${n}. I'm here. How was today?` : "Evening. I'm here. How was today?"),
   (n) => (n ? `Hey, ${n}. It's good to hear you. How's tonight?` : "Hey, it's me. How's your evening going?"),
-  (n) => (n ? `Hi, ${n}. I'm listening — how are you tonight?` : "Hi. I'm listening — how are you tonight?"),
+  (n) => (n ? `Hi, ${n}. I'm listening. How are you tonight?` : "Hi. I'm listening. How are you tonight?"),
 ];
 
 const ANYTIME_POOL: GreetingTemplate[] = [
-  (n) => (n ? `Hey, ${n}. It's me — I'm right here.` : "Hey, it's me — I'm right here."),
+  (n) => (n ? `Hey, ${n}. It's me. I'm right here.` : "Hey, it's me. I'm right here."),
   (n) => (n ? `Hi, ${n}. I'm glad you called. How are you?` : "Hi. I'm glad you called. How are you?"),
-  (n) => (n ? `I'm here, ${n}. Take your time — I'm listening.` : "I'm here. Take your time — I'm listening."),
+  (n) => (n ? `I'm here, ${n}. Take your time. I'm listening.` : "I'm here. Take your time. I'm listening."),
   (n) => (n ? `Hey, ${n}. Good to hear your voice. What's going on?` : "Hey. Good to hear your voice. What's going on?"),
 ];
 

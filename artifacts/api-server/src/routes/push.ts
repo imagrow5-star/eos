@@ -104,7 +104,7 @@ router.post("/push/test", async (req, res): Promise<void> => {
   const userId = req.userId;
   const outcome = await sendPushToUser(userId, "test", {
     title: "Eos",
-    body: "Notifications are on. I'll keep them rare and kind — a chapter, a morning note, nothing more.",
+    body: "Notifications are on. I'll keep them rare and kind: a chapter, a morning note, nothing more.",
     url: "/",
   });
   res.json({ outcome });

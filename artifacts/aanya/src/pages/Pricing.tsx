@@ -129,7 +129,7 @@ export function Pricing({
     } catch {
       setPhase("idle");
       setCheckoutError(
-        "The checkout couldn't open just now — give it a moment and try again.",
+        "The checkout couldn't open just now. Give it a moment and try again.",
       );
     }
   };
@@ -151,14 +151,14 @@ export function Pricing({
               <p className="text-3xl mb-4">✨</p>
               <h1 className="font-serif text-2xl text-foreground mb-3">You're in.</h1>
               <p className="text-muted-foreground text-sm leading-relaxed">
-                Your membership is active — seven days on us first. Taking you back to Eos…
+                Your membership is active. Seven days on us first. Taking you back to Eos…
               </p>
             </>
           ) : phase === "webhook_slow" ? (
             <>
               <h1 className="font-serif text-2xl text-foreground mb-3">Payment received.</h1>
               <p className="text-muted-foreground text-sm leading-relaxed mb-6">
-                Your membership is being switched on — it can take a minute or two to appear.
+                Your membership is being switched on. It can take a minute or two to appear.
                 You can head back in; everything keeps working meanwhile.
               </p>
               <button
@@ -262,7 +262,7 @@ export function Pricing({
 
         {!signedOut && config && !checkoutReady && (
           <p className="text-center text-[12px] text-muted-foreground/70 mt-6">
-            Checkout isn't switched on yet — memberships are coming very soon.
+            Checkout isn't switched on yet. Memberships are coming very soon.
           </p>
         )}
 

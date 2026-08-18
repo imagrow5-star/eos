@@ -25,7 +25,7 @@ export const MEMORY_EXPORT_FORMAT_VERSION = "1.0";
 
 export const MEMORY_EXPORT_USER_NOTE =
   "This is everything Eos remembers about you. Your data is yours. Keep this " +
-  "file somewhere safe — it works with any tool that reads JSON.";
+  "file somewhere safe. It works with any tool that reads JSON.";
 
 // ─── Input shape ──────────────────────────────────────────────────────────────
 // A structural subset of what fetchExportPayload (routes/account.ts) returns.
@@ -294,7 +294,7 @@ export function renderMemoryMarkdown(
   lines.push(`# Everything ${name} remembers about you`);
   lines.push("");
   lines.push(
-    `This is your journal — everything ${name} holds about you, gathered in one ` +
+    `This is your journal: everything ${name} holds about you, gathered in one ` +
       `place. It's yours to keep. There's no need to do anything with it; it's ` +
       `here simply because your words belong to you.`,
   );
@@ -321,7 +321,7 @@ export function renderMemoryMarkdown(
   lines.push(`## What ${name} remembers`);
   lines.push("");
   if (payload.memoryFacts.length === 0) {
-    lines.push(`Nothing has been written down yet — the page is still open.`);
+    lines.push(`Nothing has been written down yet. The page is still open.`);
     lines.push("");
   } else {
     // Group by category, each group ranked most-important first.
@@ -368,7 +368,7 @@ export function renderMemoryMarkdown(
     }
     for (const c of payload.commitments) {
       const cue = str(c.cue).trim();
-      lines.push(`- ${str(c.content)}${cue ? ` — *${cue}*` : ""}`);
+      lines.push(`- ${str(c.content)}${cue ? ` (*${cue}*)` : ""}`);
     }
     lines.push("");
   }
@@ -383,7 +383,7 @@ export function renderMemoryMarkdown(
       ).length;
       const when = str(h.when_then).trim();
       lines.push(
-        `- **${str(h.name)}**${when ? ` — ${when}` : ""} ` +
+        `- **${str(h.name)}**${when ? ` (${when})` : ""} ` +
           `_(${completions} completion${completions === 1 ? "" : "s"})_`,
       );
     }
@@ -410,7 +410,7 @@ export function renderMemoryMarkdown(
   lines.push("## Your conversations");
   lines.push("");
   if (payload.messages.length === 0) {
-    lines.push(`No conversations yet — whenever you're ready, ${name} is here.`);
+    lines.push(`No conversations yet. Whenever you're ready, ${name} is here.`);
     lines.push("");
   } else {
     for (const m of payload.messages) {

@@ -468,8 +468,8 @@ async function generateNoteText(ctx: UserContext): Promise<string> {
   if (!ANTHROPIC_KEY) {
     // Dev / no-key fallback — still passes QA check without clichés
     const fb = [
-      `${ctx.name} — day ${ctx.daysSinceStart}. ${ctx.wins[0] ? `"${ctx.wins[0]}" was real. Not small, real.` : "You've kept showing up. That means something."}`,
-      `${ctx.facts[0] ? `The thing about ${ctx.facts[0].toLowerCase()} — it keeps coming back. Worth paying attention to.` : `${ctx.name}, you've been at this a while now. The quiet work counts.`}`,
+      `${ctx.name}, day ${ctx.daysSinceStart}. ${ctx.wins[0] ? `"${ctx.wins[0]}" was real. Not small, real.` : "You've kept showing up. That means something."}`,
+      `${ctx.facts[0] ? `The thing about ${ctx.facts[0].toLowerCase()}: it keeps coming back. Worth paying attention to.` : `${ctx.name}, you've been at this a while now. The quiet work counts.`}`,
     ];
     return fb[ctx.daysSinceStart % fb.length]!;
   }
@@ -573,13 +573,13 @@ Write only the note text itself — nothing else.`;
     });
     logAiUsage("daily_note", "claude-sonnet-4-5-20250929", response.usage);
     const textBlock = response.content.find((b) => b.type === "text");
-    return textBlock?.text?.trim() ?? `${ctx.name} — thinking of you today.`;
+    return textBlock?.text?.trim() ?? `${ctx.name}, thinking of you today.`;
   } catch (err) {
     try {
       const uh = hashUserIdForLog(ctx.userId);
       if (uh) logErr("Claude generation failed", err, { uh });
     } catch { /* logging must never crash the caller */ }
-    return `${ctx.name} — day ${ctx.daysSinceStart}. You're still here. That's not nothing.`;
+    return `${ctx.name}, day ${ctx.daysSinceStart}. You're still here. That's not nothing.`;
   }
 }
 

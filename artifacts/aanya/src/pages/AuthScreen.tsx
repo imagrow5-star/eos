@@ -105,8 +105,8 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
       url.searchParams.delete("googleError");
       window.history.replaceState({}, "", url.toString());
       const messages: Record<string, string> = {
-        cancelled: "Google sign-in was cancelled — nothing was changed.",
-        unavailable: "Google sign-in isn't available right now — please use your email instead.",
+        cancelled: "Google sign-in was cancelled. Nothing was changed.",
+        unavailable: "Google sign-in isn't available right now. Please use your email instead.",
         failed: "Google sign-in didn't go through. Please try again, or sign in with your email.",
       };
       setError(messages[googleError] ?? messages.failed!);
@@ -381,7 +381,7 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
               <h2 className="text-xl font-serif text-foreground">Link not available</h2>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 This reset link isn't available on this device anymore. Request a fresh
-                one below — it only takes a moment.
+                one below. It only takes a moment.
               </p>
               <button
                 type="button"
@@ -647,7 +647,7 @@ export function AuthScreen({ initialTab = "login" }: { initialTab?: "login" | "s
         animate={{ opacity: 1 }}
         transition={{ delay: 0.4 }}
       >
-        Your conversations are private and encrypted — never sold, never used to train AI.{" "}
+        Your conversations are private and encrypted, never sold, never used to train AI.{" "}
         <a
           href={`${import.meta.env.BASE_URL}privacy`}
           className="text-primary-strong/60 hover:text-primary-strong underline underline-offset-2 transition-colors"

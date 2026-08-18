@@ -411,7 +411,7 @@ describe("renderMemoryMarkdown — memoir structure", () => {
     expect(md).toContain("## What Eos remembers");
     expect(md).toContain("## Your conversations");
     // Empty-state prose rather than a stack trace.
-    expect(md).toContain("the page is still open");
+    expect(md).toContain("The page is still open");
     // Sections with no data (goals/habits/chapters) are simply omitted.
     expect(md).not.toContain("## Your habits");
   });

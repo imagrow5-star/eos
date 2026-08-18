@@ -43,7 +43,7 @@ export function SplashScreen({ onDone }: SplashScreenProps) {
   return (
     <div
       onClick={dismiss}
-      aria-label="Eos intro — tap to skip"
+      aria-label="Eos intro, tap to skip"
       style={{
         opacity: fading ? 0 : 1,
         pointerEvents: fading ? "none" : "auto",

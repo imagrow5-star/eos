@@ -48,27 +48,27 @@ export function Privacy() {
 
         <p className="text-[15px] text-foreground/80 leading-relaxed font-serif italic">
           Eos exists so you have somewhere private to put things down. That only works if you can
-          trust what happens to your words — so here it is, without legal fog.
+          trust what happens to your words, so here it is, without legal fog.
         </p>
 
         <Section title="What Eos keeps, and why">
           <ul className="space-y-2.5 list-none">
             <li>
-              <span className="text-foreground/80">Your account</span> — email and a scrambled
+              <span className="text-foreground/80">Your account</span>: email and a scrambled
               (hashed) password. We can't see the password itself.
             </li>
             <li>
-              <span className="text-foreground/80">Profile basics</span> — your name, age band,
+              <span className="text-foreground/80">Profile basics</span>: your name, age band,
               country, timezone, and the choices you made when setting up your companion. This
               shapes how Eos speaks to you and which crisis resources it would point to.
             </li>
             <li>
-              <span className="text-foreground/80">Conversations</span> — what you write and say
+              <span className="text-foreground/80">Conversations</span>: what you write and say
               (voice calls become text). Kept so Eos remembers you; deleted the moment you say so.
             </li>
             <li>
               <span className="text-foreground/80">Memories, chapters, notes, moods, habits</span>{" "}
-              — the things Eos writes about your journey, always built from what you shared.
+              : the things Eos writes about your journey, always built from what you shared.
             </li>
           </ul>
           <p>
@@ -81,26 +81,26 @@ export function Privacy() {
           <p>Four services touch your data, each for exactly one job:</p>
           <ul className="space-y-2.5 list-none">
             <li>
-              <span className="text-foreground/80">Anthropic</span> — the "thinking." Your messages
+              <span className="text-foreground/80">Anthropic</span>: the "thinking." Your messages
               pass through their AI to generate each reply. They don't train their models on your
-              words. For abuse prevention they may hold data briefly — up to about 30 days — then
+              words. For abuse prevention they may hold data briefly, up to about 30 days, then
               it's gone from their side too.
             </li>
             <li>
-              <span className="text-foreground/80">ElevenLabs</span> — the voice. Turns Eos's words
+              <span className="text-foreground/80">ElevenLabs</span>: the voice. Turns Eos's words
               into speech and yours into text during calls. We've set their retention so
               transcripts and audio are deleted right after processing rather than stored.
             </li>
             <li>
-              <span className="text-foreground/80">Resend</span> — delivers the emails you asked
+              <span className="text-foreground/80">Resend</span>: delivers the emails you asked
               for (like the morning note). They see your email address and the email content.
             </li>
             <li>
-              <span className="text-foreground/80">Render</span> — the secure hosting and
+              <span className="text-foreground/80">Render</span>: the secure hosting and
               database where everything lives. Your conversations, memories, and the other
               personal things on this page are encrypted inside the database itself, so a stolen
               copy of the database can't reveal your words. Eos holds the key so it can read your
-              history back to you and reply — meaning our systems can access your content to run
+              history back to you and reply. That means our systems can access your content to run
               Eos, and for nothing else. What stays visible in the database even encrypted:
               counts and timestamps (that you wrote, not what you wrote).
             </li>
@@ -114,7 +114,7 @@ export function Privacy() {
 
         <Section title="What we never do">
           <ul className="space-y-2 list-none">
-            <li>· Sell or rent your data — to anyone, for any reason.</li>
+            <li>· Sell or rent your data, to anyone, for any reason.</li>
             <li>· Use your conversations to train AI models.</li>
             <li>· Show you ads or share data with advertisers.</li>
             <li>· Read your conversations for our own purposes. There's no admin screen for it, and it isn't part of how we run Eos. (The AI does process your messages to write each reply — see "Who helps run Eos" above.)</li>
@@ -124,16 +124,16 @@ export function Privacy() {
         <Section title="Making Eos forget">
           <ul className="space-y-2.5 list-none">
             <li>
-              <span className="text-foreground/80">One message</span> — tap any message in your
+              <span className="text-foreground/80">One message</span>: tap any message in your
               conversation and choose <em>forget</em>. It's permanently deleted and can never
               appear in a future chapter or reflection.
             </li>
             <li>
-              <span className="text-foreground/80">One memory</span> — on the Memory page, tap the
+              <span className="text-foreground/80">One memory</span>: on the Memory page, tap the
               × on anything Eos has remembered.
             </li>
             <li>
-              <span className="text-foreground/80">Everything</span> — Settings → delete account.
+              <span className="text-foreground/80">Everything</span>: Settings → delete account.
               Every message, memory, chapter, note, and your account itself are erased immediately.
               There's no recycle bin and no "30-day grace period."
             </li>
@@ -144,16 +144,16 @@ export function Privacy() {
             already written keeps its wording until you delete it or your account.
           </p>
           <p>
-            You can also download everything Eos knows about you — Settings → export — as a file
+            You can also download everything Eos knows about you (Settings → export) as a file
             that's yours to keep and works without the internet.
           </p>
         </Section>
 
-        <Section title="What Eos is — and isn't">
+        <Section title="What Eos is, and isn't">
           <p>
             Eos is companionship and gentle structure for hard seasons. It is not a medical
             device, a therapist, or a crisis line. If you're ever in danger of hurting yourself,
-            please contact local emergency services or a crisis line — Eos will always step out of
+            please contact local emergency services or a crisis line. Eos will always step out of
             the way and point you to real humans.
           </p>
         </Section>
@@ -164,7 +164,7 @@ export function Privacy() {
             <a href="mailto:hello@eoscompanion.com" className="text-primary-strong/80 hover:text-primary-strong">
               hello@eoscompanion.com
             </a>{" "}
-            — a person reads it. If anything on this page ever changes in a way that matters,
+            . A person reads it. If anything on this page ever changes in a way that matters,
             you'll be asked to look again before continuing, not silently opted in.
           </p>
         </Section>
