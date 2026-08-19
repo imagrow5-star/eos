@@ -52,6 +52,24 @@ async function verifiedAt(userId: number): Promise<Date | null> {
   return r.rows[0]?.email_verified_at ?? null;
 }
 
+import { hashAuthToken } from "../lib/authTokenHash.js";
+
+/**
+ * Tokens are hashed at rest, so the DB can no longer yield a USABLE token.
+ * For tests that must confirm/cancel a staged change, swap the stored hash
+ * for the hash of a known raw value and use the raw value like a user would.
+ */
+async function stampKnownChangeToken(userId: number): Promise<string> {
+  const raw = `known-change-${userId}-${Date.now()}`;
+  const r = await pool.query(
+    `UPDATE email_verification_tokens SET token = $1
+     WHERE user_id = $2 AND new_email IS NOT NULL`,
+    [hashAuthToken(raw), userId],
+  );
+  if (!r.rowCount) throw new Error("no staged change token to stamp");
+  return raw;
+}
+
 /** Reads the pending email-change token staged for a user (new_email set). */
 async function pendingChangeToken(userId: number): Promise<string | null> {
   const r = await pool.query<{ token: string }>(
@@ -202,8 +220,8 @@ describe("change-email cannot hijack an address or bypass the password check", (
 
     // BEFORE confirmation: the account still uses the OLD address.
     expect(await emailOf(userId)).toBe(EMAIL_A);
-    const token = await pendingChangeToken(userId);
-    expect(token).not.toBeNull();
+    expect(await pendingChangeToken(userId)).not.toBeNull();
+    const token = await stampKnownChangeToken(userId);
 
     // The old address is still a valid login while the change is pending.
     const stillOldLogin = await request(app)
@@ -241,8 +259,8 @@ describe("change-email cannot hijack an address or bypass the password check", (
       .post("/api/auth/change-email")
       .send({ newEmail: EMAIL_C, password: PASSWORD });
     expect(req.status).toBe(200);
-    const token = await pendingChangeToken(userAId);
-    expect(token).not.toBeNull();
+    expect(await pendingChangeToken(userAId)).not.toBeNull();
+    const token = await stampKnownChangeToken(userAId);
 
     // Between request and confirmation, someone else claims EMAIL_C.
     const { userId: userCId } = await signup(EMAIL_C);

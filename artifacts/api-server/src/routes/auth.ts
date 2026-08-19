@@ -6,6 +6,7 @@ import { db, pool } from "@workspace/db";
 import { usersTable, passwordResetTokensTable, emailVerificationTokensTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
+import { hashAuthToken, tokenHashMatches } from "../lib/authTokenHash.js";
 
 const router: IRouter = Router();
 
@@ -290,7 +291,8 @@ async function issueAndSendVerification(userId: number, email: string): Promise<
     const token = randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS);
 
-    await db.insert(emailVerificationTokensTable).values({ token, userId, expiresAt });
+    // Store only the hash — the raw token exists solely in the email we send.
+    await db.insert(emailVerificationTokensTable).values({ token: hashAuthToken(token), userId, expiresAt });
 
     const verifyUrl = `${getAppBaseUrl()}/?verifyToken=${token}`;
 
@@ -348,7 +350,7 @@ async function replaceVerificationTokenAtomic(userId: number): Promise<string | 
 
     const token = randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS);
-    await tx.insert(emailVerificationTokensTable).values({ token, userId, expiresAt });
+    await tx.insert(emailVerificationTokensTable).values({ token: hashAuthToken(token), userId, expiresAt });
     return token;
   });
 }
@@ -525,13 +527,13 @@ router.get("/auth/verify-email", async (req, res): Promise<void> => {
       .from(emailVerificationTokensTable)
       .where(
         and(
-          eq(emailVerificationTokensTable.token, token),
+          eq(emailVerificationTokensTable.token, hashAuthToken(token)),
           gt(emailVerificationTokensTable.expiresAt, now),
         ),
       )
       .limit(1);
 
-    if (!row) {
+    if (!row || !tokenHashMatches(row.token, token)) {
       res.status(400).json({ error: "This verification link is invalid or has expired." });
       return;
     }
@@ -553,7 +555,7 @@ router.get("/auth/verify-email", async (req, res): Promise<void> => {
           // Drop the stale token so the user can start over.
           await db
             .delete(emailVerificationTokensTable)
-            .where(eq(emailVerificationTokensTable.token, token));
+            .where(eq(emailVerificationTokensTable.token, hashAuthToken(token)));
           res.status(409).json({
             error: "That email address is now in use by another account.",
           });
@@ -770,7 +772,7 @@ router.post("/auth/change-email", async (req, res): Promise<void> => {
 
     await db
       .insert(emailVerificationTokensTable)
-      .values({ token, userId, newEmail: cleanEmail, expiresAt });
+      .values({ token: hashAuthToken(token), userId, newEmail: cleanEmail, expiresAt });
 
     const domain = getAppBaseUrl();
     const verifyUrl = `${domain}/?verifyToken=${token}`;
@@ -865,17 +867,17 @@ router.post("/auth/cancel-reset", async (req, res): Promise<void> => {
   try {
     // Look up the user from the token (expired or not — we still want to cancel)
     const [row] = await db
-      .select({ userId: passwordResetTokensTable.userId })
+      .select({ userId: passwordResetTokensTable.userId, token: passwordResetTokensTable.token })
       .from(passwordResetTokensTable)
       .where(
         and(
-          eq(passwordResetTokensTable.token, token),
+          eq(passwordResetTokensTable.token, hashAuthToken(token)),
           isNull(passwordResetTokensTable.usedAt),
         ),
       )
       .limit(1);
 
-    if (!row) {
+    if (!row || !tokenHashMatches(row.token, token)) {
       // Token doesn't exist or was already used — treat as success to avoid enumeration
       res.json({ ok: true });
       return;
@@ -919,12 +921,12 @@ router.post("/auth/cancel-email-change", async (req, res): Promise<void> => {
     // Only match change tokens (newEmail set); expiry doesn't matter — we still
     // want to be able to cancel.
     const [row] = await db
-      .select({ userId: emailVerificationTokensTable.userId })
+      .select({ userId: emailVerificationTokensTable.userId, token: emailVerificationTokensTable.token })
       .from(emailVerificationTokensTable)
-      .where(eq(emailVerificationTokensTable.token, token))
+      .where(eq(emailVerificationTokensTable.token, hashAuthToken(token)))
       .limit(1);
 
-    if (!row) {
+    if (!row || !tokenHashMatches(row.token, token)) {
       // Token doesn't exist (or was already confirmed/cleared) — treat as success.
       res.json({ ok: true });
       return;
@@ -996,7 +998,7 @@ router.post("/auth/forgot-password", async (req, res): Promise<void> => {
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
     await db.insert(passwordResetTokensTable).values({
-      token,
+      token: hashAuthToken(token), // raw token exists only in the reset email
       userId: user.id,
       expiresAt,
     });
@@ -1017,7 +1019,7 @@ router.post("/auth/forgot-password", async (req, res): Promise<void> => {
     if (resetSend.status === "rejected") {
       await db
         .delete(passwordResetTokensTable)
-        .where(eq(passwordResetTokensTable.token, token));
+        .where(eq(passwordResetTokensTable.token, hashAuthToken(token)));
       logger.error(
         { err: resetSend.reason },
         "Password-reset email FAILED — token discarded so the next attempt is not cooldown-blocked. If this repeats, check RESEND_API_KEY / sender domain.",
@@ -1058,10 +1060,10 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
     const [anyRow] = await db
       .select()
       .from(passwordResetTokensTable)
-      .where(eq(passwordResetTokensTable.token, token))
+      .where(eq(passwordResetTokensTable.token, hashAuthToken(token)))
       .limit(1);
 
-    if (!anyRow) {
+    if (!anyRow || !tokenHashMatches(anyRow.token, token)) {
       res.status(400).json({
         error: "This reset link is invalid.",
         code: "TOKEN_INVALID",
@@ -1095,7 +1097,7 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
           AND used_at IS NULL
           AND expires_at > NOW()
         RETURNING user_id`,
-      [token],
+      [hashAuthToken(token)],
     );
 
     if (consumed.rowCount === 0) {
