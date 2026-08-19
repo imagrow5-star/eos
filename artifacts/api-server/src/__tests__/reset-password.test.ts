@@ -13,6 +13,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
 import pg from "pg";
 import app from "../app.js";
+import { hashAuthToken } from "../lib/authTokenHash.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -44,10 +45,12 @@ async function insertToken(
     ? "NOW() - INTERVAL '1 second'"
     : "NOW() + INTERVAL '1 hour'";
   const usedAt = opts.used ? "NOW()" : "NULL";
+  // Stored HASHED (tokens are hashed at rest); the raw value stays with the
+  // test, which presents it to the endpoint exactly like a user's email link.
   await pool.query(
     `INSERT INTO password_reset_tokens (token, user_id, expires_at, used_at)
      VALUES ($1, $2, ${expiresAt}, ${usedAt})`,
-    [token, userId],
+    [hashAuthToken(token), userId],
   );
 }
 

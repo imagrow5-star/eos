@@ -18,6 +18,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import request from "supertest";
 import pg from "pg";
 import app from "../app.js";
+import { hashAuthToken } from "../lib/authTokenHash.js";
 
 // ─── DB connection (same DATABASE_URL the app uses) ─────────────────────────
 
@@ -34,7 +35,9 @@ async function verifiedAt(userId: number): Promise<Date | null> {
   return r.rows[0]?.email_verified_at ?? null;
 }
 
-/** Inserts a verification token for a user with an explicit expiry. */
+/** Inserts a verification token for a user with an explicit expiry.
+ *  Stored HASHED (tokens are hashed at rest); the raw value stays with the
+ *  test, which presents it to the endpoint exactly like a user's email link. */
 async function insertToken(
   token: string,
   userId: number,
@@ -43,7 +46,7 @@ async function insertToken(
   await pool.query(
     `INSERT INTO email_verification_tokens (token, user_id, expires_at)
      VALUES ($1, $2, $3)`,
-    [token, userId, expiresAt],
+    [hashAuthToken(token), userId, expiresAt],
   );
 }
 

@@ -44,6 +44,20 @@ async function emailOf(userId: number): Promise<string | null> {
   return r.rows[0]?.email ?? null;
 }
 
+import { hashAuthToken } from "../lib/authTokenHash.js";
+
+/** Swap the stored (hashed) staged token for a known raw one — see change-email.test.ts. */
+async function stampKnownChangeToken(userId: number): Promise<string> {
+  const raw = `known-alert-${userId}-${Date.now()}`;
+  const r = await pool.query(
+    `UPDATE email_verification_tokens SET token = $1
+     WHERE user_id = $2 AND new_email IS NOT NULL`,
+    [hashAuthToken(raw), userId],
+  );
+  if (!r.rowCount) throw new Error("no staged change token to stamp");
+  return raw;
+}
+
 /** Reads the pending email-change token staged for a user (new_email set). */
 async function pendingChangeToken(userId: number): Promise<string | null> {
   const r = await pool.query<{ token: string }>(
@@ -154,8 +168,8 @@ describe("change-email warns the old address and its cancel link works", () => {
         ) && fetchCalls.some((c) => c.to.includes(EMAIL_C)),
     );
 
-    const token = await pendingChangeToken(userId);
-    expect(token).not.toBeNull();
+    const storedHash = await pendingChangeToken(userId);
+    expect(storedHash).not.toBeNull();
 
     // Find the notice that went to the OLD (current) address. Select by subject
     // too: under load, signup's fire-and-forget verification email to EMAIL_A can
@@ -171,8 +185,12 @@ describe("change-email warns the old address and its cancel link works", () => {
     expect(alert!.body).not.toContain(EMAIL_C);
     expect(alert!.body).toContain("a***@e***.invalid"); // maskEmail(EMAIL_C)
 
-    // The cancel link must carry the staged token so the owner can act.
-    expect(alert!.body).toContain(`cancelEmailChange=${token}`);
+    // The cancel link must carry the RAW staged token so the owner can act —
+    // and the database must hold only its hash (hashed-at-rest contract).
+    const rawInLink = /cancelEmailChange=([0-9a-f]{64})/.exec(alert!.body)?.[1];
+    expect(rawInLink, "cancel link must carry the raw token").toBeTruthy();
+    expect(hashAuthToken(rawInLink!)).toBe(storedHash);
+    expect(alert!.body).not.toContain(storedHash!); // the hash never leaves the DB
 
     // Sanity: the confirmation email went to the NEW address, not the old one.
     const confirm = fetchCalls.find((c) => c.to.includes(EMAIL_C));
@@ -188,8 +206,8 @@ describe("change-email warns the old address and its cancel link works", () => {
       .send({ newEmail: EMAIL_C, password: PASSWORD });
     expect(req.status).toBe(200);
 
-    const token = await pendingChangeToken(userId);
-    expect(token).not.toBeNull();
+    expect(await pendingChangeToken(userId)).not.toBeNull();
+    const token = await stampKnownChangeToken(userId);
 
     // Cancel it via the notice's cancel endpoint (no session needed).
     const cancel = await request(app)

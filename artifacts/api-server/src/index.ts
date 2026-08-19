@@ -11,6 +11,7 @@ import { backfillMemoryImportance } from "./services/memory/backfill";
 import { runDedupBackfill } from "./services/memory/dedupBackfill";
 import { warnIfAgentEnvIncomplete } from "./services/voiceAgentRouting";
 import { sessionSecretIssue, checkDbTls } from "./services/bootGuards";
+import { runAuthTokenHashSweep } from "./services/authTokenHashSweep";
 
 // User content is encrypted at rest — without the master key the app can
 // neither read nor write it. Refuse to boot rather than serve a broken app.
@@ -97,6 +98,18 @@ await ensureMorningNoteColumns().catch((e) =>
   logger.error(
     { err: e },
     "morning-note column guard failed at boot — staleness tracking may be degraded until the columns exist",
+  ),
+);
+
+// Hash any auth tokens still stored raw (one-time, idempotent, advisory-locked;
+// see services/authTokenHashSweep.ts). Runs BEFORE serving so a pending reset
+// link issued under the old raw-storage scheme works from the first request —
+// lookups now compare hashes only. On failure we still boot: new tokens are
+// written hashed regardless, and the sweep retries next boot.
+await runAuthTokenHashSweep().catch((e) =>
+  logger.error(
+    { err: e },
+    "auth-token hash sweep failed at boot — pre-deploy pending reset/verification links may not work until the next boot",
   ),
 );
 
