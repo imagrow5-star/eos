@@ -50,8 +50,8 @@ export function EmailVerificationGate({ email, onVerified }: Props) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6, ease: "easeOut" }}
       >
-        <h1 className="font-serif text-5xl text-foreground tracking-[0.3em] uppercase mb-3">
-          EOS
+        <h1 className="font-serif font-[520] text-5xl text-foreground mb-3">
+          eos<span className="text-primary">.</span>
         </h1>
         <div className="h-px w-10 bg-primary/55 mx-auto mb-2.5" />
       </motion.div>
