@@ -53,12 +53,12 @@ export function SplashScreen({ onDone }: SplashScreenProps) {
     >
       {/* ── Wordmark ── */}
       <motion.h1
-        className="font-serif text-6xl text-foreground tracking-[0.35em] uppercase"
+        className="font-serif font-[520] text-6xl text-foreground"
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.65, ease: "easeOut" }}
       >
-        EOS
+        eos<span className="text-primary">.</span>
       </motion.h1>
 
       {/* ── Gold divider ── */}
