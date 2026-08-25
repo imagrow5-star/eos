@@ -169,6 +169,10 @@ export function Privacy() {
           </p>
         </Section>
 
+        <p className="text-[13px] text-muted-foreground/60">
+          Eos is operated by Itslexa, Vizianagaram, Andhra Pradesh, India.
+        </p>
+
         <div className="pt-4">
           <a
             href={appHome}
