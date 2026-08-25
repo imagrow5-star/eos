@@ -42,12 +42,15 @@ describe("legal pages", () => {
     // The commitments that must never silently vanish from this page:
     expect(html).toMatch(/not therapy, not medical care, and not a crisis service/i);
     expect(html).toMatch(/18 years or older/i);
-    expect(html).toContain("Paddle");
+    expect(html).toContain("secure payment partner"); // processor deliberately unnamed
     expect(html).toMatch(/7-day free trial/i);
     expect(html).toMatch(/30 days'? notice/i);
     expect(html).toMatch(/text never stops/i);
     expect(html).toMatch(/don'?t roll over/i);
-    expect(html).toContain("[GOVERNING LAW — FOUNDER TO CONFIRM");
+    expect(html).toContain("governed by the laws of India");
+    // No bracketed placeholder may ever be visible on the live page — the
+    // "[GOVERNING LAW — FOUNDER TO CONFIRM …]" block shipped exactly once.
+    expect(html).not.toMatch(/\[[A-Z]{2,}/);
     expect(html).toContain("/privacy");
     // Privacy pointer must reuse only APPROVED claims — the overreaching
     // marketing phrase must not appear here.
@@ -61,8 +64,8 @@ describe("legal pages", () => {
     expect(html).toContain("Refund Policy");
     expect(html).toMatch(/14 days/i);
     expect(html).toContain("hello@eoscompanion.com");
-    expect(html).toContain("Paddle");
+    expect(html).toMatch(/no questions asked/i);
     expect(html).toMatch(/never charged/i);
-    expect(html).toMatch(/unused/i); // top-up packs clause
+    expect(html).toMatch(/stops all future billing/i);
   });
 });
