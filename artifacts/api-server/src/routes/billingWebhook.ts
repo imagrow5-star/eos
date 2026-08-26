@@ -1,13 +1,13 @@
 /**
- * POST /api/billing/webhook — Paddle Billing webhook receiver (phase 2).
+ * POST /api/billing/webhook — billing webhook receiver (Dodo Payments).
  *
  * MOUNTING (see app.ts): this router is mounted with express.raw() BEFORE the
- * global express.json() parser, because Paddle's signature is an HMAC over
- * the RAW body bytes — a parsed-and-reserialized body would never verify.
- * (The exact trap flagged in the payment-readiness review.)
+ * global express.json() parser, because the Standard Webhooks signature is an
+ * HMAC over the RAW body bytes — a parsed-and-reserialized body would never
+ * verify. (The exact trap flagged in the payment-readiness review.)
  *
  * Processing contract:
- *  - invalid/missing/stale Paddle-Signature → 401, logged loudly;
+ *  - invalid/missing/stale webhook-id/-timestamp/-signature → 401, logged loudly;
  *  - idempotency: the event_id is inserted into billing_events INSIDE the
  *    same transaction as the processing. A duplicate delivery hits the
  *    unique index, skips processing, and returns 200. A processing FAILURE
@@ -16,7 +16,7 @@
  *  - payload_summary stores a short label (type + subscription id + status),
  *    never the payload itself (it contains personal data);
  *  - user matching: checkout sends custom_data.user_id (see the /pricing
- *    page); fallback is the Paddle customer's email matched against users.
+ *    page); fallback is the provider customer's email matched against users.
  *    No match → loud warning, nothing stored, 200 (retrying won't help);
  *  - always answers fast; our volume is tiny so the trivial DB writes happen
  *    synchronously.
@@ -31,12 +31,12 @@ import {
   billingEventsTable,
 } from "@workspace/db";
 import {
-  verifyPaddleSignature,
-  isPaddleWebhookConfigured,
-  getPaddleCustomerEmail,
-} from "../services/paddle.js";
+  verifyDodoWebhookSignature,
+  isDodoWebhookConfigured,
+  getDodoCustomerEmail,
+} from "../services/dodo.js";
 import {
-  getPaddlePriceId,
+  getDodoProductId,
   isSubscriptionStatus,
   isTierId,
   TIERS,
@@ -74,7 +74,7 @@ interface PaddleWebhookPayload {
 
 function resolveTierFromPriceIds(priceIds: string[]): TierId | null {
   for (const tierId of Object.keys(TIERS) as TierId[]) {
-    const configured = getPaddlePriceId(tierId);
+    const configured = getDodoProductId(tierId);
     if (configured && priceIds.includes(configured)) return tierId;
   }
   return null;
@@ -106,7 +106,7 @@ async function matchUser(data: PaddleSubscriptionData): Promise<number | null> {
     logger.warn({ customId }, "billing-webhook: custom_data.user_id matches no user — trying email");
   }
   if (data.customer_id) {
-    const email = await getPaddleCustomerEmail(data.customer_id).catch(() => null);
+    const email = await getDodoCustomerEmail(data.customer_id).catch(() => null);
     if (email) {
       const [u] = await db
         .select({ id: usersTable.id })
@@ -152,7 +152,7 @@ async function applySubscriptionEvent(
           logger.error(
             { eventType, uh, priceIds, status: data.status },
             "billing-webhook: cannot create subscription row — unknown price id or status. " +
-              "Check PADDLE_PRICE_* env vars match the live Paddle prices.",
+              "Check DODO_PRODUCT_* env vars match the live Dodo products.",
           );
       } catch { /* logging must never crash the caller */ }
       return;
@@ -199,19 +199,23 @@ async function applySubscriptionEvent(
 }
 
 router.post("/billing/webhook", async (req, res): Promise<void> => {
-  if (!isPaddleWebhookConfigured()) {
-    logger.error("billing-webhook: PADDLE_WEBHOOK_SECRET not set — rejecting delivery");
+  if (!isDodoWebhookConfigured()) {
+    logger.error("billing-webhook: DODO_WEBHOOK_SECRET not set — rejecting delivery");
     res.status(503).json({ error: "webhook not configured" });
     return;
   }
 
   const rawBody: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(String(req.body ?? ""), "utf8");
-  const signature = req.header("paddle-signature");
-  if (!verifyPaddleSignature(rawBody, signature, process.env.PADDLE_WEBHOOK_SECRET!.trim())) {
+  const sigHeaders = {
+    id: req.header("webhook-id"),
+    timestamp: req.header("webhook-timestamp"),
+    signature: req.header("webhook-signature"),
+  };
+  if (!verifyDodoWebhookSignature(rawBody, sigHeaders, process.env.DODO_WEBHOOK_SECRET!.trim())) {
     logger.error(
-      { hasSignature: Boolean(signature), bodyBytes: rawBody.length },
+      { hasSignature: Boolean(sigHeaders.signature), bodyBytes: rawBody.length },
       "billing-webhook: INVALID SIGNATURE — delivery rejected. If this repeats, verify " +
-        "PADDLE_WEBHOOK_SECRET matches the webhook destination's secret in the Paddle dashboard.",
+        "DODO_WEBHOOK_SECRET matches the webhook's secret in the Dodo Payments dashboard.",
     );
     res.status(401).json({ error: "invalid signature" });
     return;

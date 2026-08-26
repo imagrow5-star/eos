@@ -1,7 +1,7 @@
 /**
  * Central tier configuration — THE single source of truth for plans.
  *
- * Everything that describes a tier (display name, price, Paddle price-id env
+ * Everything that describes a tier (display name, price, Dodo product-id env
  * var, voice-minute allowance, trial length) lives HERE and nowhere else in
  * code, so pricing can never drift between three files. The marketing copy in
  * welcome.html mirrors these numbers; if either side changes, change both
@@ -29,10 +29,10 @@ export interface TierConfig {
   /** Monthly price in US cents (source of truth: $19.99/$39.99/$59.99). */
   monthlyPriceCents: number;
   /**
-   * NAME of the env var that will hold this tier's Paddle price id in
-   * phase 2 (values are set in the Paddle dashboard, never in code).
+   * NAME of the env var that holds this tier's Dodo product id (values are
+   * set in the Dodo Payments dashboard, never in code).
    */
-  paddlePriceIdEnvVar: string;
+  dodoProductIdEnvVar: string;
   /** Voice-call allowance per billing month, in minutes. */
   voiceMinutesPerMonth: number;
   /** Card-upfront free-trial length, in days. */
@@ -44,7 +44,7 @@ export const TIERS: Record<TierId, TierConfig> = {
     id: "companion",
     displayName: "Essential",
     monthlyPriceCents: 1999,
-    paddlePriceIdEnvVar: "PADDLE_PRICE_COMPANION",
+    dodoProductIdEnvVar: "DODO_PRODUCT_ESSENTIAL",
     voiceMinutesPerMonth: 120,
     trialDays: 7,
   },
@@ -52,7 +52,7 @@ export const TIERS: Record<TierId, TierConfig> = {
     id: "closer",
     displayName: "Standard",
     monthlyPriceCents: 3999,
-    paddlePriceIdEnvVar: "PADDLE_PRICE_CLOSER",
+    dodoProductIdEnvVar: "DODO_PRODUCT_STANDARD",
     voiceMinutesPerMonth: 300,
     trialDays: 7,
   },
@@ -60,7 +60,7 @@ export const TIERS: Record<TierId, TierConfig> = {
     id: "always",
     displayName: "Full",
     monthlyPriceCents: 5999,
-    paddlePriceIdEnvVar: "PADDLE_PRICE_ALWAYS",
+    dodoProductIdEnvVar: "DODO_PRODUCT_FULL",
     voiceMinutesPerMonth: 500,
     trialDays: 7,
   },
@@ -82,9 +82,9 @@ export function isSubscriptionStatus(v: unknown): v is SubscriptionStatus {
   return SUBSCRIPTION_STATUSES.includes(v as SubscriptionStatus);
 }
 
-/** Phase 2: resolve a tier's Paddle price id from its env var (null until set). */
-export function getPaddlePriceId(tier: TierId): string | null {
-  return process.env[TIERS[tier].paddlePriceIdEnvVar]?.trim() || null;
+/** Resolve a tier's Dodo product id from its env var (null until set). */
+export function getDodoProductId(tier: TierId): string | null {
+  return process.env[TIERS[tier].dodoProductIdEnvVar]?.trim() || null;
 }
 
 export type UserTierResult =

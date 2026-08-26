@@ -1167,11 +1167,11 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
     //      rows ON DELETE CASCADE when the parent `goals` row is deleted, so we
     //      do NOT delete it explicitly; deleting `goals` clears it. (Registered
     //      with strategy "cascade".)
-    // ── Paddle first (phase 2): a deleted account must never keep billing.
-    // Cancellation is scheduled via Paddle's API BEFORE the wipe; if Paddle
+    // ── Billing first: a deleted account must never keep billing.
+    // Cancellation is scheduled via Dodo's API BEFORE the wipe; if Dodo
     // is unreachable the deletion still proceeds (the user's right to erase
     // beats our bookkeeping) — the error is logged loudly so the founder can
-    // cancel manually in the Paddle dashboard.
+    // cancel manually in the Dodo Payments dashboard.
     try {
       const subRow = await client.query<{ dodo_subscription_id: string | null; status: string }>(
         `SELECT dodo_subscription_id, status FROM subscriptions WHERE user_id = $1`,
@@ -1180,11 +1180,11 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
       const dodoSubId = subRow.rows[0]?.dodo_subscription_id;
       const subStatus = subRow.rows[0]?.status;
       if (dodoSubId && subStatus !== "canceled") {
-        const { cancelPaddleSubscription } = await import("../services/paddle.js");
-        await cancelPaddleSubscription(dodoSubId);
+        const { cancelDodoSubscription } = await import("../services/dodo.js");
+        await cancelDodoSubscription(dodoSubId);
         try {
           const uh = hashUserIdForLog(userId);
-          if (uh) logger.info({ uh }, "Account deletion: Paddle subscription cancellation scheduled");
+          if (uh) logger.info({ uh }, "Account deletion: Dodo subscription cancellation scheduled");
         } catch { /* logging must never crash the caller */ }
       }
     } catch (err) {
@@ -1193,8 +1193,8 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
         if (uh)
           logger.error(
             { err, uh },
-            "Account deletion: PADDLE CANCEL FAILED — deletion proceeds; cancel this subscription " +
-              "manually in the Paddle dashboard to stop future charges.",
+            "Account deletion: DODO CANCEL FAILED — deletion proceeds; cancel this subscription " +
+              "manually in the Dodo Payments dashboard to stop future charges.",
           );
       } catch { /* logging must never crash the caller */ }
     }
@@ -1225,7 +1225,7 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
     await client.query(`DELETE FROM push_events       WHERE user_id = $1`, [userId]);
     // billing_events is intentionally NOT deleted here: it holds provider
     // event ids only (no personal data) and is the processed-webhook audit
-    // trail. The Paddle cancel call happened BEFORE this transaction (see
+    // trail. The Dodo cancel call happened BEFORE this transaction (see
     // above) so a deleted account can never keep billing.
     await client.query(`DELETE FROM voice_usage       WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM subscriptions     WHERE user_id = $1`, [userId]);

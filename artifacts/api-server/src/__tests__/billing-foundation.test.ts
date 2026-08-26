@@ -19,7 +19,7 @@ import request from "supertest";
 import pg from "pg";
 import app from "../app.js";
 import { db, subscriptionsTable } from "@workspace/db";
-import { TIERS, getUserTier, getPaddlePriceId } from "../services/tiers.js";
+import { TIERS, getUserTier, getDodoProductId } from "../services/tiers.js";
 import { attachEntitlements } from "../middleware/entitlements.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -71,19 +71,19 @@ describe("central tier config", () => {
     expect(TIERS.closer.voiceMinutesPerMonth).toBe(300);
     expect(TIERS.always.voiceMinutesPerMonth).toBe(500);
     for (const t of Object.values(TIERS)) expect(t.trialDays).toBe(7);
-    expect(TIERS.companion.paddlePriceIdEnvVar).toBe("PADDLE_PRICE_COMPANION");
-    expect(TIERS.closer.paddlePriceIdEnvVar).toBe("PADDLE_PRICE_CLOSER");
-    expect(TIERS.always.paddlePriceIdEnvVar).toBe("PADDLE_PRICE_ALWAYS");
+    expect(TIERS.companion.dodoProductIdEnvVar).toBe("DODO_PRODUCT_ESSENTIAL");
+    expect(TIERS.closer.dodoProductIdEnvVar).toBe("DODO_PRODUCT_STANDARD");
+    expect(TIERS.always.dodoProductIdEnvVar).toBe("DODO_PRODUCT_FULL");
   });
 
-  it("resolves Paddle price ids from env (null until phase 2 sets them)", () => {
-    delete process.env.PADDLE_PRICE_COMPANION;
-    expect(getPaddlePriceId("companion")).toBeNull();
-    process.env.PADDLE_PRICE_COMPANION = "pri_test_123";
+  it("resolves Dodo product ids from env (null until set)", () => {
+    delete process.env.DODO_PRODUCT_ESSENTIAL;
+    expect(getDodoProductId("companion")).toBeNull();
+    process.env.DODO_PRODUCT_ESSENTIAL = "prod_test_123";
     try {
-      expect(getPaddlePriceId("companion")).toBe("pri_test_123");
+      expect(getDodoProductId("companion")).toBe("prod_test_123");
     } finally {
-      delete process.env.PADDLE_PRICE_COMPANION;
+      delete process.env.DODO_PRODUCT_ESSENTIAL;
     }
   });
 });
