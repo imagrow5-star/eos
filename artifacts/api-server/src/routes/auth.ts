@@ -1173,15 +1173,15 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
     // beats our bookkeeping) — the error is logged loudly so the founder can
     // cancel manually in the Paddle dashboard.
     try {
-      const subRow = await client.query<{ paddle_subscription_id: string | null; status: string }>(
-        `SELECT paddle_subscription_id, status FROM subscriptions WHERE user_id = $1`,
+      const subRow = await client.query<{ dodo_subscription_id: string | null; status: string }>(
+        `SELECT dodo_subscription_id, status FROM subscriptions WHERE user_id = $1`,
         [userId],
       );
-      const paddleSubId = subRow.rows[0]?.paddle_subscription_id;
+      const dodoSubId = subRow.rows[0]?.dodo_subscription_id;
       const subStatus = subRow.rows[0]?.status;
-      if (paddleSubId && subStatus !== "canceled") {
+      if (dodoSubId && subStatus !== "canceled") {
         const { cancelPaddleSubscription } = await import("../services/paddle.js");
-        await cancelPaddleSubscription(paddleSubId);
+        await cancelPaddleSubscription(dodoSubId);
         try {
           const uh = hashUserIdForLog(userId);
           if (uh) logger.info({ uh }, "Account deletion: Paddle subscription cancellation scheduled");

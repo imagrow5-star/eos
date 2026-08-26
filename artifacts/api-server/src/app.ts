@@ -149,8 +149,8 @@ pool
     CREATE TABLE IF NOT EXISTS subscriptions (
       id serial PRIMARY KEY,
       user_id integer NOT NULL REFERENCES users(id),
-      paddle_customer_id text,
-      paddle_subscription_id text,
+      dodo_customer_id text,
+      dodo_subscription_id text,
       tier text NOT NULL,
       status text NOT NULL,
       trial_ends_at timestamp,

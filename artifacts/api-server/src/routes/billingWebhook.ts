@@ -159,8 +159,8 @@ async function applySubscriptionEvent(
     }
     await tx.insert(subscriptionsTable).values({
       userId,
-      paddleCustomerId: data.customer_id ?? null,
-      paddleSubscriptionId: data.id ?? null,
+      dodoCustomerId: data.customer_id ?? null,
+      dodoSubscriptionId: data.id ?? null,
       tier,
       status,
       trialEndsAt,
@@ -179,8 +179,8 @@ async function applySubscriptionEvent(
   await tx
     .update(subscriptionsTable)
     .set({
-      paddleCustomerId: data.customer_id ?? existing.paddleCustomerId,
-      paddleSubscriptionId: data.id ?? existing.paddleSubscriptionId,
+      dodoCustomerId: data.customer_id ?? existing.dodoCustomerId,
+      dodoSubscriptionId: data.id ?? existing.dodoSubscriptionId,
       ...(nextTier ? { tier: nextTier } : {}),
       ...(status ? { status } : {}),
       trialEndsAt: trialEndsAt ?? existing.trialEndsAt,
@@ -274,7 +274,7 @@ router.post("/billing/webhook", async (req, res): Promise<void> => {
           await tx
             .update(subscriptionsTable)
             .set({ status: "past_due", updatedAt: new Date() })
-            .where(eq(subscriptionsTable.paddleSubscriptionId, data.subscription_id));
+            .where(eq(subscriptionsTable.dodoSubscriptionId, data.subscription_id));
         }
         return "processed" as const;
       }

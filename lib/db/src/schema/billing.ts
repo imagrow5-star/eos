@@ -20,8 +20,8 @@ import { usersTable } from "./users";
 // timestamps) — no conversation content, so nothing here needs the
 // field-level encryption used for user content elsewhere.
 
-// One row per user. Paddle ids are nullable so a row can exist before a
-// checkout completes (e.g. a picked-but-unpaid tier, or an admin comp).
+// One row per user. Provider (Dodo) ids are nullable so a row can exist before
+// a checkout completes (e.g. a picked-but-unpaid tier, or an admin comp).
 export const subscriptionsTable = pgTable(
   "subscriptions",
   {
@@ -29,8 +29,8 @@ export const subscriptionsTable = pgTable(
     userId: integer("user_id")
       .notNull()
       .references(() => usersTable.id),
-    paddleCustomerId: text("paddle_customer_id"),
-    paddleSubscriptionId: text("paddle_subscription_id"),
+    dodoCustomerId: text("dodo_customer_id"),
+    dodoSubscriptionId: text("dodo_subscription_id"),
     tier: text("tier").notNull(), // companion | closer | always (services/tiers.ts)
     status: text("status").notNull(), // trialing | active | past_due | canceled | paused
     trialEndsAt: timestamp("trial_ends_at"),

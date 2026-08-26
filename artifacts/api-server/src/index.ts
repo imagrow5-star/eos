@@ -6,7 +6,7 @@ import { reconcileAgentConfig } from "./services/agentConfigGuard";
 import { runDataEncryptionMigration } from "./services/dataEncryptionMigration";
 import { backfillVoiceGender } from "./services/settings/voiceGenderBackfill";
 import { migrateRomanticPersona } from "./services/settings/romanticPersonaMigration";
-import { ensureProfileThemeColumns, ensureReflectionReportsTable, ensureMorningNoteColumns } from "./services/schemaGuard";
+import { ensureProfileThemeColumns, ensureReflectionReportsTable, ensureMorningNoteColumns, ensureDodoBillingColumns } from "./services/schemaGuard";
 import { backfillMemoryImportance } from "./services/memory/backfill";
 import { runDedupBackfill } from "./services/memory/dedupBackfill";
 import { warnIfAgentEnvIncomplete } from "./services/voiceAgentRouting";
@@ -98,6 +98,17 @@ await ensureMorningNoteColumns().catch((e) =>
   logger.error(
     { err: e },
     "morning-note column guard failed at boot — staleness tracking may be degraded until the columns exist",
+  ),
+);
+
+// Rename the subscriptions provider-id columns (paddle_* → dodo_*) if a deploy
+// predates the Dodo Payments migration (deploys don't run drizzle-kit push).
+// Idempotent; instant no-op once applied. On failure we still boot — billing
+// reads would throw 42703 until the rename applies on a later boot.
+await ensureDodoBillingColumns().catch((e) =>
+  logger.error(
+    { err: e },
+    "dodo billing column guard failed at boot — subscriptions reads may fail until the rename applies",
   ),
 );
 

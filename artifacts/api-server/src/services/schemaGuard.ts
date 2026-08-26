@@ -81,3 +81,39 @@ export function isMissingThemeColumnError(e: unknown): boolean {
   const undefinedColumn = err.code === "42703" || /does not exist/i.test(msg);
   return undefinedColumn && /theme(_mode)?/i.test(msg);
 }
+
+/**
+ * Idempotent schema guard for the Dodo provider-id column rename.
+ *
+ * Stage 1 of the Paddle → Dodo Payments migration renamed
+ * subscriptions.paddle_customer_id / paddle_subscription_id to dodo_*
+ * (lib/db/src/schema/billing.ts). Deploys don't run `drizzle-kit push`, so a
+ * production database created before the rename still has the paddle_* names —
+ * which would make every subscriptions read throw 42703. RENAME COLUMN has no
+ * IF EXISTS, so the guard checks information_schema first; both billing tables
+ * were confirmed empty before the rename, and a rename is instant metadata-only
+ * regardless. No-op forever once applied, and on fresh databases (safety-net
+ * DDL and drizzle push both create the dodo_* names directly).
+ */
+export async function ensureDodoBillingColumns(): Promise<void> {
+  await db.execute(sql`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'subscriptions' AND column_name = 'paddle_customer_id'
+      ) THEN
+        ALTER TABLE subscriptions RENAME COLUMN paddle_customer_id TO dodo_customer_id;
+      END IF;
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'subscriptions' AND column_name = 'paddle_subscription_id'
+      ) THEN
+        ALTER TABLE subscriptions RENAME COLUMN paddle_subscription_id TO dodo_subscription_id;
+      END IF;
+    END $$;
+  `);
+  logger.info("schema guard: subscriptions.dodo_customer_id / dodo_subscription_id present");
+}
