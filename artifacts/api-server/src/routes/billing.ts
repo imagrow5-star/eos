@@ -79,7 +79,7 @@ router.post("/billing/cancel", async (req, res): Promise<void> => {
     .where(eq(subscriptionsTable.userId, userId))
     .limit(1);
 
-  if (!sub || !sub.paddleSubscriptionId) {
+  if (!sub || !sub.dodoSubscriptionId) {
     res.status(404).json({ error: "You don't have an active subscription to cancel." });
     return;
   }
@@ -89,7 +89,7 @@ router.post("/billing/cancel", async (req, res): Promise<void> => {
   }
 
   try {
-    await cancelPaddleSubscription(sub.paddleSubscriptionId);
+    await cancelPaddleSubscription(sub.dodoSubscriptionId);
   } catch (err) {
     try {
       const uh = hashUserIdForLog(userId);

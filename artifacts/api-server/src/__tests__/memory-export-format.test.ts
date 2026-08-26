@@ -153,7 +153,7 @@ function samplePayload(overrides: Partial<ExportSourcePayload> = {}): ExportSour
         current_period_ends_at: "2026-09-01T00:00:00.000Z",
         created_at: "2026-01-15T09:05:00.000Z",
         // Fields the shaper must NOT surface:
-        paddle_customer_id: "ctm_secret",
+        dodo_customer_id: "ctm_secret",
       },
     ],
     ...overrides,

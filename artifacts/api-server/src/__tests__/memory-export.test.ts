@@ -218,6 +218,7 @@ describe.skipIf(!HAS_DB)("GET /api/memory/export", () => {
     // Subscription metadata only
     expect(body.subscription).toMatchObject({ tier: "closer", status: "active" });
     expect(JSON.stringify(body.subscription)).not.toContain("paddle");
+    expect(JSON.stringify(body.subscription)).not.toContain("dodo");
   });
 
   // ── Markdown export ──────────────────────────────────────────────────────────

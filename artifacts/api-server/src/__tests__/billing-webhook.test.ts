@@ -137,7 +137,7 @@ const sign = (raw: string, ts?: number) =>
 
 async function subRow(userId: number) {
   const r = await pool.query(
-    `SELECT tier, status, paddle_customer_id, paddle_subscription_id, trial_ends_at, current_period_ends_at
+    `SELECT tier, status, dodo_customer_id, dodo_subscription_id, trial_ends_at, current_period_ends_at
      FROM subscriptions WHERE user_id = $1`,
     [userId],
   );
@@ -197,8 +197,8 @@ describe("subscription lifecycle events", () => {
     expect(row).not.toBeNull();
     expect(row.tier).toBe("companion");
     expect(row.status).toBe("trialing");
-    expect(row.paddle_subscription_id).toBe("sub_created_1");
-    expect(row.paddle_customer_id).toBe("ctm_test_1");
+    expect(row.dodo_subscription_id).toBe("sub_created_1");
+    expect(row.dodo_customer_id).toBe("ctm_test_1");
     expect(row.trial_ends_at).not.toBeNull();
     expect(row.current_period_ends_at).not.toBeNull();
 
@@ -274,7 +274,7 @@ describe("subscription lifecycle events", () => {
       expect((await postWebhook(raw, sign(raw))).status).toBe(200);
       const row = await subRow(userId);
       expect(row).not.toBeNull();
-      expect(row.paddle_subscription_id).toBe("sub_email_1");
+      expect(row.dodo_subscription_id).toBe("sub_email_1");
       expect(paddleCalls.some((c) => c.url.includes("/customers/ctm_email_1"))).toBe(true);
     } finally {
       customerEmailByThisTest = null;
