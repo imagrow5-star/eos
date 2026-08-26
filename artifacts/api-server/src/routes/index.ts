@@ -43,8 +43,8 @@ router.use(pushInternalRouter);
 // Weekly reflection sweep — same hourly caller, same HMAC scheme; idempotent
 // per (user, week) so calling every hour is safe.
 router.use(reflectionInternalRouter);
-// Paddle webhook — called by Paddle's servers; authenticated per-delivery by
-// the Paddle-Signature HMAC over the raw body (raw-body mount in app.ts).
+// Billing webhook — called by Dodo's servers; authenticated per-delivery by
+// the Standard Webhooks HMAC over the raw body (raw-body mount in app.ts).
 router.use(billingWebhookRouter);
 // Checkout configuration (tier metadata + public price ids) — the /pricing
 // page renders from this for signed-out visitors too.

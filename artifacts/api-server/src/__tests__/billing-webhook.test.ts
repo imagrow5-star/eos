@@ -1,49 +1,59 @@
 /**
- * Phase 2 — Paddle webhook + billing routes.
+ * Billing webhook (Dodo Payments) + billing routes.
  *
- * No real Paddle traffic: webhook deliveries are signed locally with the
- * test secret (the same HMAC scheme Paddle uses over the RAW body — which
- * also proves the raw-body mount works end-to-end through the real app), and
- * Paddle REST calls (customer lookup, cancel) are intercepted at the fetch
- * layer.
+ * No real Dodo traffic: webhook deliveries are signed locally with the test
+ * secret (the same Standard Webhooks HMAC scheme Dodo uses over the RAW body
+ * — which also proves the raw-body mount works end-to-end through the real
+ * app), and Dodo REST calls (customer lookup, cancel) are intercepted at the
+ * fetch layer.
  *
- * Covers the required list: signature rejection (bad/missing/stale),
- * idempotent double-delivery, each subscription event mutating the row,
- * tier resolution from price ids, config never leaking secrets, cancel
- * endpoint auth, plus the deletion-cancels-Paddle path (including Paddle
- * being down — deletion must still succeed).
+ * Covers the required list: signature rejection (bad/missing/stale, and the
+ * retired Paddle scheme), idempotent double-delivery, each subscription event
+ * mutating the row, tier resolution from product ids, config never leaking
+ * secrets, cancel endpoint auth, plus the deletion-cancels-Dodo path
+ * (including Dodo being down — deletion must still succeed).
  */
 
+import crypto from "node:crypto";
 import { describe, it, expect, afterAll, beforeAll } from "vitest";
 import request from "supertest";
 import pg from "pg";
 
-process.env.PADDLE_WEBHOOK_SECRET = "test-webhook-secret";
-process.env.PADDLE_API_KEY = "test-paddle-api-key-sk-abc123";
-process.env.PADDLE_PRICE_COMPANION = "pri_companion_test";
-process.env.PADDLE_PRICE_CLOSER = "pri_closer_test";
-process.env.PADDLE_PRICE_ALWAYS = "pri_always_test";
+// Standard Webhooks secrets are base64 with a whsec_ prefix. Computed at load
+// so no key-shaped base64 literal lives in the file (secret-scan.test.ts).
+const RAW_WEBHOOK_KEY = "dodo-test-webhook-secret-not-real";
+process.env.DODO_WEBHOOK_SECRET = "whsec_" + Buffer.from(RAW_WEBHOOK_KEY).toString("base64");
+process.env.DODO_API_KEY = "test-dodo-api-key-sk-abc123";
+process.env.DODO_PRODUCT_ESSENTIAL = "prod_essential_test";
+process.env.DODO_PRODUCT_STANDARD = "prod_standard_test";
+process.env.DODO_PRODUCT_FULL = "prod_full_test";
 
-// ── Paddle REST interception (customer lookup + cancel) ─────────────────────
-const paddleCalls: Array<{ url: string; method: string }> = [];
+// ── Dodo REST interception (customer lookup + cancel) ───────────────────────
+const dodoCalls: Array<{ url: string; method: string }> = [];
 let customerEmailByThisTest: string | null = null;
-let paddleCancelFails = false;
+let dodoCancelFails = false;
 
 const priorFetch = globalThis.fetch;
 globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-  if (url.startsWith("https://api.paddle.com/")) {
-    paddleCalls.push({ url, method: init?.method ?? "GET" });
-    if (url.includes("/subscriptions/") && url.endsWith("/cancel")) {
+  if (url.startsWith("https://live.dodopayments.com/")) {
+    dodoCalls.push({ url, method: init?.method ?? "GET" });
+    if (url.includes("/subscriptions/") && init?.method === "PATCH") {
       return Promise.resolve(
-        paddleCancelFails
-          ? new Response("simulated paddle outage", { status: 500 })
-          : new Response(JSON.stringify({ data: { status: "canceled" } }), { status: 200 }),
+        dodoCancelFails
+          ? new Response("simulated dodo outage", { status: 500 })
+          : new Response(JSON.stringify({ status: "cancelled", cancel_at_next_billing_date: true }), {
+              status: 200,
+            }),
       );
     }
     if (url.includes("/customers/")) {
+      // Dodo returns the Customer object directly, with a top-level email.
       return Promise.resolve(
-        new Response(JSON.stringify({ data: { email: customerEmailByThisTest } }), { status: 200 }),
+        new Response(
+          JSON.stringify({ customer_id: "ctm_x", name: "x", email: customerEmailByThisTest }),
+          { status: 200 },
+        ),
       );
     }
     return Promise.resolve(new Response("{}", { status: 200 }));
@@ -52,7 +62,7 @@ globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: Parameters<typeo
 }) as typeof fetch;
 
 import app from "../app.js";
-import { signPaddlePayloadForTests } from "../services/paddle.js";
+import { signDodoPayloadForTests } from "../services/dodo.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const emails: string[] = [];
@@ -114,7 +124,7 @@ function subscriptionPayload(opts: {
       custom_data: opts.userId === null ? null : { user_id: opts.userId },
       items: [
         {
-          price: { id: opts.priceId ?? "pri_companion_test" },
+          price: { id: opts.priceId ?? "prod_essential_test" },
           trial_dates: { ends_at: opts.trialEnd ?? "2026-08-06T00:00:00Z" },
         },
       ],
@@ -124,16 +134,36 @@ function subscriptionPayload(opts: {
   return { raw, eventId };
 }
 
-function postWebhook(raw: string, signature?: string) {
+/** Standard Webhooks header triple for one delivery. */
+interface SigHeaders {
+  id: string;
+  timestamp: number;
+  signature: string;
+}
+
+function postWebhook(raw: string, sig?: SigHeaders) {
   const req2 = request(app)
     .post("/api/billing/webhook")
     .set("Content-Type", "application/json");
-  if (signature !== undefined) req2.set("Paddle-Signature", signature);
+  if (sig !== undefined) {
+    req2
+      .set("webhook-id", sig.id)
+      .set("webhook-timestamp", String(sig.timestamp))
+      .set("webhook-signature", sig.signature);
+  }
   return req2.send(raw);
 }
 
-const sign = (raw: string, ts?: number) =>
-  signPaddlePayloadForTests(raw, process.env.PADDLE_WEBHOOK_SECRET!, ts);
+let msgSeq = 0;
+function sign(raw: string, ts?: number): SigHeaders {
+  const id = `msg_test_${Date.now()}_${msgSeq++}`;
+  const timestamp = ts ?? Math.floor(Date.now() / 1000);
+  return {
+    id,
+    timestamp,
+    signature: signDodoPayloadForTests(raw, process.env.DODO_WEBHOOK_SECRET!, id, timestamp),
+  };
+}
 
 async function subRow(userId: number) {
   const r = await pool.query(
@@ -145,7 +175,7 @@ async function subRow(userId: number) {
 }
 
 beforeAll(() => {
-  paddleCalls.length = 0;
+  dodoCalls.length = 0;
 });
 
 afterAll(async () => {
@@ -168,8 +198,27 @@ describe("webhook signature verification", () => {
 
   it("rejects a forged signature with 401", async () => {
     const { raw } = subscriptionPayload({});
-    const res = await postWebhook(raw, "ts=" + Math.floor(Date.now() / 1000) + ";h1=" + "0".repeat(64));
+    const forged = sign(raw);
+    forged.signature = "v1," + Buffer.from("0".repeat(32)).toString("base64");
+    const res = await postWebhook(raw, forged);
     expect(res.status).toBe(401);
+  });
+
+  it("rejects a Paddle-style signature (retired scheme) with 401", async () => {
+    const { raw, eventId } = subscriptionPayload({});
+    // A correctly-computed signature in Paddle's OLD format (ts=..;h1=<hex
+    // hmac over `${ts}:${body}`), sent under Paddle's old header, with no
+    // Standard Webhooks headers. The old scheme must no longer authenticate.
+    const ts = Math.floor(Date.now() / 1000);
+    const h1 = crypto.createHmac("sha256", RAW_WEBHOOK_KEY).update(`${ts}:${raw}`).digest("hex");
+    const res = await request(app)
+      .post("/api/billing/webhook")
+      .set("Content-Type", "application/json")
+      .set("Paddle-Signature", `ts=${ts};h1=${h1}`)
+      .send(raw);
+    expect(res.status).toBe(401);
+    const led = await pool.query(`SELECT 1 FROM billing_events WHERE event_id = $1`, [eventId]);
+    expect(led.rowCount).toBe(0);
   });
 
   it("rejects a tampered body (valid signature over different bytes)", async () => {
@@ -231,7 +280,7 @@ describe("subscription lifecycle events", () => {
       type: "subscription.updated",
       userId,
       subId: "sub_upd_1",
-      priceId: "pri_closer_test",
+      priceId: "prod_standard_test",
       status: "active",
       trialEnd: null,
       periodEnd: "2026-08-30T00:00:00Z",
@@ -266,7 +315,7 @@ describe("subscription lifecycle events", () => {
     expect(await subRow(userId)).toBeNull();
   });
 
-  it("falls back to Paddle customer email when custom_data is missing", async () => {
+  it("falls back to Dodo customer email when custom_data is missing", async () => {
     const { userId, email } = await signupUser("emailmatch");
     customerEmailByThisTest = email;
     try {
@@ -275,7 +324,7 @@ describe("subscription lifecycle events", () => {
       const row = await subRow(userId);
       expect(row).not.toBeNull();
       expect(row.dodo_subscription_id).toBe("sub_email_1");
-      expect(paddleCalls.some((c) => c.url.includes("/customers/ctm_email_1"))).toBe(true);
+      expect(dodoCalls.some((c) => c.url.includes("/customers/ctm_email_1"))).toBe(true);
     } finally {
       customerEmailByThisTest = null;
     }
@@ -299,31 +348,31 @@ describe("subscription lifecycle events", () => {
 });
 
 describe("billing routes", () => {
-  it("GET /billing/config exposes tier metadata + price ids and NO secrets", async () => {
+  it("GET /billing/config exposes tier metadata + product ids and NO secrets", async () => {
     const res = await request(app).get("/api/billing/config");
     expect(res.status).toBe(200);
     expect(res.body.checkoutAvailable).toBe(true);
     expect(res.body.tiers).toHaveLength(3);
     const companion = res.body.tiers.find((t: { id: string }) => t.id === "companion");
-    expect(companion.priceId).toBe("pri_companion_test");
+    expect(companion.priceId).toBe("prod_essential_test");
     expect(companion.monthlyPriceCents).toBe(1999);
     // Never leak secrets — check the raw response text for both secret values.
-    expect(res.text).not.toContain(process.env.PADDLE_API_KEY!);
-    expect(res.text).not.toContain(process.env.PADDLE_WEBHOOK_SECRET!);
+    expect(res.text).not.toContain(process.env.DODO_API_KEY!);
+    expect(res.text).not.toContain(process.env.DODO_WEBHOOK_SECRET!);
   });
 
-  it("POST /billing/cancel cancels the CALLER's subscription via Paddle", async () => {
+  it("POST /billing/cancel cancels the CALLER's subscription via Dodo", async () => {
     const { agent, userId } = await signupUser("cancel");
     const created = subscriptionPayload({ userId, subId: "sub_cancel_me", status: "active", trialEnd: null });
     await postWebhook(created.raw, sign(created.raw));
 
-    const before = paddleCalls.length;
+    const before = dodoCalls.length;
     const res = await agent.post("/api/billing/cancel");
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
-    const cancelCalls = paddleCalls.slice(before).filter((c) => c.method === "POST");
+    const cancelCalls = dodoCalls.slice(before).filter((c) => c.method === "PATCH");
     expect(cancelCalls).toHaveLength(1);
-    expect(cancelCalls[0]!.url).toContain("/subscriptions/sub_cancel_me/cancel");
+    expect(cancelCalls[0]!.url).toContain("/subscriptions/sub_cancel_me");
   });
 
   it("POST /billing/cancel without a subscription → 404; unauthenticated → 401", async () => {
@@ -333,35 +382,37 @@ describe("billing routes", () => {
   });
 });
 
-describe("account deletion cancels Paddle billing", () => {
-  it("schedules a Paddle cancel during deletion", async () => {
+describe("account deletion cancels Dodo billing", () => {
+  it("schedules a Dodo cancel during deletion", async () => {
     const { agent, userId } = await signupUser("delete");
     const created = subscriptionPayload({ userId, subId: "sub_delete_me", status: "active", trialEnd: null });
     await postWebhook(created.raw, sign(created.raw));
 
-    const before = paddleCalls.length;
+    const before = dodoCalls.length;
     const res = await agent.delete("/api/auth/account");
     expect(res.status).toBe(200);
     expect(
-      paddleCalls.slice(before).some((c) => c.url.includes("/subscriptions/sub_delete_me/cancel")),
+      dodoCalls
+        .slice(before)
+        .some((c) => c.method === "PATCH" && c.url.includes("/subscriptions/sub_delete_me")),
     ).toBe(true);
     const gone = await pool.query(`SELECT 1 FROM users WHERE id = $1`, [userId]);
     expect(gone.rowCount).toBe(0);
   });
 
-  it("deletion still succeeds when the Paddle API is down (logged, not blocking)", async () => {
+  it("deletion still succeeds when the Dodo API is down (logged, not blocking)", async () => {
     const { agent, userId } = await signupUser("delete-outage");
     const created = subscriptionPayload({ userId, subId: "sub_delete_outage", status: "active", trialEnd: null });
     await postWebhook(created.raw, sign(created.raw));
 
-    paddleCancelFails = true;
+    dodoCancelFails = true;
     try {
       const res = await agent.delete("/api/auth/account");
       expect(res.status).toBe(200); // the user's right to erase beats bookkeeping
       const gone = await pool.query(`SELECT 1 FROM users WHERE id = $1`, [userId]);
       expect(gone.rowCount).toBe(0);
     } finally {
-      paddleCancelFails = false;
+      dodoCancelFails = false;
     }
   });
 });

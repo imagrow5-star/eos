@@ -440,8 +440,9 @@ app.use(
   }),
 );
 
-// ─── Paddle webhook — RAW body, ahead of the global JSON parser ──────────────
-// Paddle signs the exact body bytes (HMAC over `${ts}:${rawBody}`); once
+// ─── Billing webhook — RAW body, ahead of the global JSON parser ─────────────
+// Dodo signs the exact body bytes (Standard Webhooks: HMAC over
+// `${webhook-id}.${webhook-timestamp}.${rawBody}`); once
 // express.json() has parsed the body the original bytes are gone and the
 // signature can never verify. This was flagged as the classic integration
 // trap in the payment-readiness review. The raw reader is scoped to exactly

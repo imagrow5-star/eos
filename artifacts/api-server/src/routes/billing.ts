@@ -2,20 +2,20 @@
  * Billing routes (phase 2) — everything except the webhook, which lives in
  * billingWebhook.ts because it needs a raw-body mount.
  *
- *   GET  /billing/config  (public)   — tier metadata + Paddle price ids for
+ *   GET  /billing/config  (public)   — tier metadata + Dodo product ids for
  *                                      the /pricing page. NEVER secrets: the
  *                                      response is built ONLY from the tier
- *                                      config + PADDLE_PRICE_* values, which
+ *                                      config + DODO_PRODUCT_* values, which
  *                                      are public identifiers by design
- *                                      (they ship inside Paddle.js checkout
- *                                      calls anyway).
+ *                                      (they ship inside checkout calls
+ *                                      anyway).
  *   GET  /billing/me      (protected) — the caller's tier/status/dates, read
  *                                      fresh from the subscriptions table
  *                                      (the /pricing success screen polls
  *                                      this until the webhook lands).
  *   POST /billing/cancel  (protected) — schedules the caller's OWN
  *                                      subscription to cancel at period end
- *                                      via Paddle's API.
+ *                                      via Dodo's API.
  *
  * Phase 2 gates nothing: these routes read and manage billing state, but no
  * feature checks it yet (voice caps are phase 3).
@@ -24,8 +24,8 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, subscriptionsTable } from "@workspace/db";
-import { TIERS, getPaddlePriceId, getUserTier, type TierId } from "../services/tiers.js";
-import { cancelPaddleSubscription } from "../services/paddle.js";
+import { TIERS, getDodoProductId, getUserTier, type TierId } from "../services/tiers.js";
+import { cancelDodoSubscription } from "../services/dodo.js";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
@@ -42,7 +42,7 @@ billingPublicRouter.get("/billing/config", (_req, res): void => {
       monthlyPriceCents: t.monthlyPriceCents,
       voiceMinutesPerMonth: t.voiceMinutesPerMonth,
       trialDays: t.trialDays,
-      priceId: getPaddlePriceId(id), // null until the env var is set
+      priceId: getDodoProductId(id), // null until the env var is set
     };
   });
   // Checkout is only offered when every tier has a live price id.
@@ -89,11 +89,11 @@ router.post("/billing/cancel", async (req, res): Promise<void> => {
   }
 
   try {
-    await cancelPaddleSubscription(sub.dodoSubscriptionId);
+    await cancelDodoSubscription(sub.dodoSubscriptionId);
   } catch (err) {
     try {
       const uh = hashUserIdForLog(userId);
-      if (uh) logger.error({ err, uh }, "billing: Paddle cancel API call failed");
+      if (uh) logger.error({ err, uh }, "billing: Dodo cancel API call failed");
     } catch { /* logging must never crash the caller */ }
     res.status(502).json({
       error:
@@ -102,8 +102,8 @@ router.post("/billing/cancel", async (req, res): Promise<void> => {
     return;
   }
 
-  // Paddle's subscription.updated/canceled webhooks are the source of truth
-  // for the row; the response tells the user what to expect meanwhile.
+  // Dodo's subscription webhooks are the source of truth for the row; the
+  // response tells the user what to expect meanwhile.
   try {
     const uh = hashUserIdForLog(userId);
     if (uh) logger.info({ uh }, "billing: user scheduled cancellation at period end");
