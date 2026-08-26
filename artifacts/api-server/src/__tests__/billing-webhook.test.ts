@@ -5,13 +5,18 @@
  * secret (the same Standard Webhooks HMAC scheme Dodo uses over the RAW body
  * — which also proves the raw-body mount works end-to-end through the real
  * app), and Dodo REST calls (customer lookup, cancel) are intercepted at the
- * fetch layer.
+ * fetch layer. Fixtures mirror the REAL sandbox payload shape captured from
+ * a test-mode trial checkout: envelope {business_id, data, timestamp, type}
+ * with NO event id (idempotency keys on the webhook-id header), flat data
+ * with top-level product_id/subscription_id, embedded customer, metadata.
  *
  * Covers the required list: signature rejection (bad/missing/stale, and the
- * retired Paddle scheme), idempotent double-delivery, each subscription event
- * mutating the row, tier resolution from product ids, config never leaking
- * secrets, cancel endpoint auth, plus the deletion-cancels-Dodo path
- * (including Dodo being down — deletion must still succeed).
+ * retired Paddle scheme), header-keyed idempotent double-delivery, the full
+ * approved status mapping (pending/active-trial/active/on_hold/cancelled/
+ * expired), tier resolution from product ids, user matching via metadata →
+ * embedded email → API lookup, config never leaking secrets, cancel endpoint
+ * auth, plus the deletion-cancels-Dodo path (including Dodo being down —
+ * deletion must still succeed).
  */
 
 import crypto from "node:crypto";
@@ -66,10 +71,10 @@ import { signDodoPayloadForTests } from "../services/dodo.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const emails: string[] = [];
-const eventIds: string[] = [];
+const eventIds: string[] = []; // webhook-id header values — the ledger keys
 
 function nextEmail(tag: string): string {
-  const e = `paddle-${tag}-${Date.now()}-${emails.length}@example.invalid`;
+  const e = `dodo-${tag}-${Date.now()}-${emails.length}@example.invalid`;
   emails.push(e);
   return e;
 }
@@ -101,37 +106,51 @@ async function signupUser(tag: string) {
   return { agent, userId, email };
 }
 
-let eventSeq = 0;
+// ── Fixtures — mirror the captured sandbox delivery ─────────────────────────
+
+const DAY_MS = 86_400_000;
+
 function subscriptionPayload(opts: {
   type?: string;
+  /** Sets metadata.user_id; null → empty metadata (email-matching paths). */
   userId?: number | null;
-  priceId?: string;
+  productId?: string;
   status?: string;
   subId?: string;
   customerId?: string;
-  trialEnd?: string | null;
-  periodEnd?: string | null;
-}): { raw: string; eventId: string } {
-  const eventId = `evt_test_${Date.now()}_${eventSeq++}`;
-  eventIds.push(eventId);
-  const raw = JSON.stringify({
-    event_id: eventId,
-    event_type: opts.type ?? "subscription.created",
+  customerEmail?: string;
+  /** Days of trial on the product (0 = none). Default 7, like the capture. */
+  trialDays?: number;
+  createdAt?: string;
+  nextBillingDate?: string;
+}): string {
+  const now = Date.now();
+  const trialDays = opts.trialDays ?? 7;
+  const createdAt = opts.createdAt ?? new Date(now).toISOString();
+  const nextBillingDate =
+    opts.nextBillingDate ??
+    new Date(now + (trialDays > 0 ? trialDays : 30) * DAY_MS).toISOString();
+  return JSON.stringify({
+    business_id: "bus_test_1",
+    type: opts.type ?? "subscription.active",
+    timestamp: new Date(now).toISOString(),
     data: {
-      id: opts.subId ?? "sub_test_1",
-      customer_id: opts.customerId ?? "ctm_test_1",
-      status: opts.status ?? "trialing",
-      custom_data: opts.userId === null ? null : { user_id: opts.userId },
-      items: [
-        {
-          price: { id: opts.priceId ?? "prod_essential_test" },
-          trial_dates: { ends_at: opts.trialEnd ?? "2026-08-06T00:00:00Z" },
-        },
-      ],
-      current_billing_period: { ends_at: opts.periodEnd ?? "2026-08-06T00:00:00Z" },
+      payload_type: "Subscription",
+      subscription_id: opts.subId ?? "sub_test_1",
+      customer: {
+        customer_id: opts.customerId ?? "ctm_test_1",
+        email: opts.customerEmail ?? "nobody@example.invalid",
+        name: "Test Customer",
+      },
+      metadata: opts.userId === null || opts.userId === undefined ? {} : { user_id: String(opts.userId) },
+      product_id: opts.productId ?? "prod_essential_test",
+      status: opts.status ?? "active",
+      created_at: createdAt,
+      next_billing_date: nextBillingDate,
+      previous_billing_date: createdAt,
+      trial_period_days: trialDays,
     },
   });
-  return { raw, eventId };
 }
 
 /** Standard Webhooks header triple for one delivery. */
@@ -157,6 +176,7 @@ function postWebhook(raw: string, sig?: SigHeaders) {
 let msgSeq = 0;
 function sign(raw: string, ts?: number): SigHeaders {
   const id = `msg_test_${Date.now()}_${msgSeq++}`;
+  eventIds.push(id); // ledger cleanup — webhook-id is the idempotency key
   const timestamp = ts ?? Math.floor(Date.now() / 1000);
   return {
     id,
@@ -188,16 +208,14 @@ afterAll(async () => {
 });
 
 describe("webhook signature verification", () => {
-  it("rejects a missing signature with 401 and records nothing", async () => {
-    const { raw, eventId } = subscriptionPayload({});
+  it("rejects a missing signature with 401", async () => {
+    const raw = subscriptionPayload({});
     const res = await postWebhook(raw);
     expect(res.status).toBe(401);
-    const led = await pool.query(`SELECT 1 FROM billing_events WHERE event_id = $1`, [eventId]);
-    expect(led.rowCount).toBe(0);
   });
 
   it("rejects a forged signature with 401", async () => {
-    const { raw } = subscriptionPayload({});
+    const raw = subscriptionPayload({});
     const forged = sign(raw);
     forged.signature = "v1," + Buffer.from("0".repeat(32)).toString("base64");
     const res = await postWebhook(raw, forged);
@@ -205,7 +223,7 @@ describe("webhook signature verification", () => {
   });
 
   it("rejects a Paddle-style signature (retired scheme) with 401", async () => {
-    const { raw, eventId } = subscriptionPayload({});
+    const raw = subscriptionPayload({});
     // A correctly-computed signature in Paddle's OLD format (ts=..;h1=<hex
     // hmac over `${ts}:${body}`), sent under Paddle's old header, with no
     // Standard Webhooks headers. The old scheme must no longer authenticate.
@@ -217,18 +235,16 @@ describe("webhook signature verification", () => {
       .set("Paddle-Signature", `ts=${ts};h1=${h1}`)
       .send(raw);
     expect(res.status).toBe(401);
-    const led = await pool.query(`SELECT 1 FROM billing_events WHERE event_id = $1`, [eventId]);
-    expect(led.rowCount).toBe(0);
   });
 
   it("rejects a tampered body (valid signature over different bytes)", async () => {
-    const { raw } = subscriptionPayload({});
-    const res = await postWebhook(raw.replace("trialing", "active__"), sign(raw));
+    const raw = subscriptionPayload({});
+    const res = await postWebhook(raw.replace("active", "paused"), sign(raw));
     expect(res.status).toBe(401);
   });
 
   it("rejects a stale timestamp (replay defense)", async () => {
-    const { raw } = subscriptionPayload({});
+    const raw = subscriptionPayload({});
     const staleTs = Math.floor(Date.now() / 1000) - 60 * 60; // an hour old
     const res = await postWebhook(raw, sign(raw, staleTs));
     expect(res.status).toBe(401);
@@ -236,19 +252,19 @@ describe("webhook signature verification", () => {
 });
 
 describe("subscription lifecycle events", () => {
-  it("creates a row on subscription.created (custom_data match) and /billing/me reflects it", async () => {
+  it("subscription.active during trial creates a trialing row (metadata match) and /billing/me reflects it", async () => {
     const { agent, userId } = await signupUser("created");
-    const { raw } = subscriptionPayload({ userId, subId: "sub_created_1" });
+    const raw = subscriptionPayload({ userId, subId: "sub_created_1" }); // 7-day trial default
     const res = await postWebhook(raw, sign(raw));
     expect(res.status).toBe(200);
 
     const row = await subRow(userId);
     expect(row).not.toBeNull();
     expect(row.tier).toBe("companion");
-    expect(row.status).toBe("trialing");
+    expect(row.status).toBe("trialing"); // active + inside trial window → trialing
     expect(row.dodo_subscription_id).toBe("sub_created_1");
     expect(row.dodo_customer_id).toBe("ctm_test_1");
-    expect(row.trial_ends_at).not.toBeNull();
+    expect(row.trial_ends_at).not.toBeNull(); // = next_billing_date during trial
     expect(row.current_period_ends_at).not.toBeNull();
 
     const me = await agent.get("/api/billing/me");
@@ -258,92 +274,137 @@ describe("subscription lifecycle events", () => {
     expect(me.body.voiceMinutesPerMonth).toBe(120);
   });
 
-  it("is idempotent: the same event_id delivered twice processes once", async () => {
+  it("is idempotent: the same webhook-id delivered twice processes once", async () => {
     const { userId } = await signupUser("dupe");
-    const { raw, eventId } = subscriptionPayload({ userId, subId: "sub_dupe_1" });
+    const raw = subscriptionPayload({ userId, subId: "sub_dupe_1" });
+    const sig = sign(raw); // SAME headers both times — a real retry re-sends them
 
-    expect((await postWebhook(raw, sign(raw))).status).toBe(200);
-    expect((await postWebhook(raw, sign(raw))).status).toBe(200); // retry delivery
+    expect((await postWebhook(raw, sig)).status).toBe(200);
+    expect((await postWebhook(raw, sig)).status).toBe(200); // retry delivery
 
-    const led = await pool.query(`SELECT COUNT(*)::int AS n FROM billing_events WHERE event_id = $1`, [eventId]);
+    const led = await pool.query(`SELECT COUNT(*)::int AS n FROM billing_events WHERE event_id = $1`, [sig.id]);
     expect(led.rows[0]!.n).toBe(1);
     const rows = await pool.query(`SELECT COUNT(*)::int AS n FROM subscriptions WHERE user_id = $1`, [userId]);
     expect(rows.rows[0]!.n).toBe(1);
   });
 
-  it("subscription.updated re-resolves the tier from the price id and updates status", async () => {
-    const { userId } = await signupUser("updated");
+  it("subscription.plan_changed re-resolves the tier from the product id; active without trial maps to active", async () => {
+    const { userId } = await signupUser("planchange");
     const created = subscriptionPayload({ userId, subId: "sub_upd_1" });
-    await postWebhook(created.raw, sign(created.raw));
+    await postWebhook(created, sign(created));
 
-    const updated = subscriptionPayload({
-      type: "subscription.updated",
+    const changed = subscriptionPayload({
+      type: "subscription.plan_changed",
       userId,
       subId: "sub_upd_1",
-      priceId: "prod_standard_test",
+      productId: "prod_standard_test",
       status: "active",
-      trialEnd: null,
-      periodEnd: "2026-08-30T00:00:00Z",
+      trialDays: 0,
     });
-    expect((await postWebhook(updated.raw, sign(updated.raw))).status).toBe(200);
+    expect((await postWebhook(changed, sign(changed))).status).toBe(200);
 
     const row = await subRow(userId);
     expect(row.tier).toBe("closer");
     expect(row.status).toBe("active");
   });
 
-  it("subscription.canceled marks the row canceled", async () => {
-    const { userId } = await signupUser("canceled");
-    const created = subscriptionPayload({ userId, subId: "sub_can_1", status: "active", trialEnd: null });
-    await postWebhook(created.raw, sign(created.raw));
+  it("subscription.on_hold marks the row past_due (failed renewal)", async () => {
+    const { userId } = await signupUser("onhold");
+    const created = subscriptionPayload({ userId, subId: "sub_hold_1", trialDays: 0 });
+    await postWebhook(created, sign(created));
 
-    const canceled = subscriptionPayload({
-      type: "subscription.canceled",
+    const onHold = subscriptionPayload({
+      type: "subscription.on_hold",
+      userId,
+      subId: "sub_hold_1",
+      status: "on_hold",
+      trialDays: 0,
+    });
+    expect((await postWebhook(onHold, sign(onHold))).status).toBe(200);
+    expect((await subRow(userId)).status).toBe("past_due");
+  });
+
+  it("subscription.cancelled marks the row canceled", async () => {
+    const { userId } = await signupUser("cancelled");
+    const created = subscriptionPayload({ userId, subId: "sub_can_1", trialDays: 0 });
+    await postWebhook(created, sign(created));
+
+    const cancelled = subscriptionPayload({
+      type: "subscription.cancelled",
       userId,
       subId: "sub_can_1",
-      status: "canceled",
-      trialEnd: null,
+      status: "cancelled",
+      trialDays: 0,
     });
-    expect((await postWebhook(canceled.raw, sign(canceled.raw))).status).toBe(200);
+    expect((await postWebhook(cancelled, sign(cancelled))).status).toBe(200);
     expect((await subRow(userId)).status).toBe("canceled");
   });
 
-  it("an unknown price id on a new subscription stores nothing (loud log, 200)", async () => {
-    const { userId } = await signupUser("unknownprice");
-    const { raw } = subscriptionPayload({ userId, priceId: "pri_someone_elses_product" });
+  it("subscription.expired marks the row canceled (terminal bucket)", async () => {
+    const { userId } = await signupUser("expired");
+    const created = subscriptionPayload({ userId, subId: "sub_exp_1", trialDays: 0 });
+    await postWebhook(created, sign(created));
+
+    const expired = subscriptionPayload({
+      type: "subscription.expired",
+      userId,
+      subId: "sub_exp_1",
+      status: "expired",
+      trialDays: 0,
+    });
+    expect((await postWebhook(expired, sign(expired))).status).toBe(200);
+    expect((await subRow(userId)).status).toBe("canceled");
+  });
+
+  it("a pending subscription stores nothing (not yet entitled)", async () => {
+    const { userId } = await signupUser("pending");
+    const raw = subscriptionPayload({ userId, subId: "sub_pending_1", status: "pending" });
     expect((await postWebhook(raw, sign(raw))).status).toBe(200);
     expect(await subRow(userId)).toBeNull();
   });
 
-  it("falls back to Dodo customer email when custom_data is missing", async () => {
-    const { userId, email } = await signupUser("emailmatch");
+  it("an unknown product id on a new subscription stores nothing (loud log, 200)", async () => {
+    const { userId } = await signupUser("unknownproduct");
+    const raw = subscriptionPayload({ userId, productId: "prod_someone_elses" });
+    expect((await postWebhook(raw, sign(raw))).status).toBe(200);
+    expect(await subRow(userId)).toBeNull();
+  });
+
+  it("matches via the embedded customer email when metadata is empty — no API call", async () => {
+    const { userId, email } = await signupUser("embeddedemail");
+    const before = dodoCalls.length;
+    const raw = subscriptionPayload({
+      userId: null, // metadata: {} — like the captured sandbox delivery
+      subId: "sub_email_1",
+      customerId: "ctm_email_1",
+      customerEmail: email,
+    });
+    expect((await postWebhook(raw, sign(raw))).status).toBe(200);
+    const row = await subRow(userId);
+    expect(row).not.toBeNull();
+    expect(row.dodo_subscription_id).toBe("sub_email_1");
+    // Embedded email sufficed — the customer-lookup API must NOT be called.
+    expect(dodoCalls.slice(before).some((c) => c.url.includes("/customers/"))).toBe(false);
+  });
+
+  it("falls back to the Dodo customer API when the embedded email matches no user", async () => {
+    const { userId, email } = await signupUser("apifallback");
     customerEmailByThisTest = email;
     try {
-      const { raw } = subscriptionPayload({ userId: null, subId: "sub_email_1", customerId: "ctm_email_1" });
+      const raw = subscriptionPayload({
+        userId: null,
+        subId: "sub_email_2",
+        customerId: "ctm_email_2",
+        customerEmail: "stale-checkout-email@example.invalid",
+      });
       expect((await postWebhook(raw, sign(raw))).status).toBe(200);
       const row = await subRow(userId);
       expect(row).not.toBeNull();
-      expect(row.dodo_subscription_id).toBe("sub_email_1");
-      expect(dodoCalls.some((c) => c.url.includes("/customers/ctm_email_1"))).toBe(true);
+      expect(row.dodo_subscription_id).toBe("sub_email_2");
+      expect(dodoCalls.some((c) => c.url.includes("/customers/ctm_email_2"))).toBe(true);
     } finally {
       customerEmailByThisTest = null;
     }
-  });
-
-  it("transaction.payment_failed with past_due flips the matching row", async () => {
-    const { userId } = await signupUser("pastdue");
-    const created = subscriptionPayload({ userId, subId: "sub_pd_1", status: "active", trialEnd: null });
-    await postWebhook(created.raw, sign(created.raw));
-
-    const eventId = `evt_test_${Date.now()}_${eventSeq++}`;
-    eventIds.push(eventId);
-    const raw = JSON.stringify({
-      event_id: eventId,
-      event_type: "transaction.payment_failed",
-      data: { subscription_id: "sub_pd_1", status: "past_due" },
-    });
-    expect((await postWebhook(raw, sign(raw))).status).toBe(200);
-    expect((await subRow(userId)).status).toBe("past_due");
   });
 });
 
@@ -363,8 +424,8 @@ describe("billing routes", () => {
 
   it("POST /billing/cancel cancels the CALLER's subscription via Dodo", async () => {
     const { agent, userId } = await signupUser("cancel");
-    const created = subscriptionPayload({ userId, subId: "sub_cancel_me", status: "active", trialEnd: null });
-    await postWebhook(created.raw, sign(created.raw));
+    const created = subscriptionPayload({ userId, subId: "sub_cancel_me", trialDays: 0 });
+    await postWebhook(created, sign(created));
 
     const before = dodoCalls.length;
     const res = await agent.post("/api/billing/cancel");
@@ -385,8 +446,8 @@ describe("billing routes", () => {
 describe("account deletion cancels Dodo billing", () => {
   it("schedules a Dodo cancel during deletion", async () => {
     const { agent, userId } = await signupUser("delete");
-    const created = subscriptionPayload({ userId, subId: "sub_delete_me", status: "active", trialEnd: null });
-    await postWebhook(created.raw, sign(created.raw));
+    const created = subscriptionPayload({ userId, subId: "sub_delete_me", trialDays: 0 });
+    await postWebhook(created, sign(created));
 
     const before = dodoCalls.length;
     const res = await agent.delete("/api/auth/account");
@@ -402,8 +463,8 @@ describe("account deletion cancels Dodo billing", () => {
 
   it("deletion still succeeds when the Dodo API is down (logged, not blocking)", async () => {
     const { agent, userId } = await signupUser("delete-outage");
-    const created = subscriptionPayload({ userId, subId: "sub_delete_outage", status: "active", trialEnd: null });
-    await postWebhook(created.raw, sign(created.raw));
+    const created = subscriptionPayload({ userId, subId: "sub_delete_outage", trialDays: 0 });
+    await postWebhook(created, sign(created));
 
     dodoCancelFails = true;
     try {
