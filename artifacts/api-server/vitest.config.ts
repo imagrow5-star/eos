@@ -14,6 +14,7 @@ export default defineConfig({
       "src/__tests__/setup/vapid-env.ts",
       "src/__tests__/setup/encryption-env.ts",
       "src/__tests__/setup/rate-limit-env.ts",
+      "src/__tests__/setup/subscription-gate-env.ts",
     ],
   },
 });

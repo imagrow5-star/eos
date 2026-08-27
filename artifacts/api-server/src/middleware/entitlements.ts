@@ -15,7 +15,7 @@
  */
 
 import type { Request, Response, NextFunction } from "express";
-import { getUserTier, LEGACY_FULL_ACCESS, type UserTierResult } from "../services/tiers.js";
+import { getUserTier, needsSubscription, LEGACY_FULL_ACCESS, type UserTierResult } from "../services/tiers.js";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
@@ -41,6 +41,37 @@ export async function attachEntitlements(
       if (uh) logger.error({ err, uh }, "entitlements: tier lookup failed — granting full access");
     } catch { /* logging must never crash the caller */ }
     req.entitlements = LEGACY_FULL_ACCESS;
+  }
+  next();
+}
+
+/**
+ * Subscription gate for the endpoints where the actual money burns
+ * (/chat/stream, /chat/send, /voice-agent/session). The UI gate in AuthGate
+ * routes gated accounts to /pricing; this is the server-side backstop so a
+ * devtools user can't call the LLM/voice APIs around it.
+ *
+ * Same decision as the auth/me flag (services/tiers.ts needsSubscription):
+ * post-cutoff account with no live subscription row → 402. And the same one
+ * unbendable rule — any lookup failure lets the request through: a database
+ * hiccup must never lock a paying customer out.
+ */
+export async function requireSubscription(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    if (await needsSubscription(req.userId)) {
+      res.status(402).json({
+        error: "An active membership is required. Choose a plan to continue.",
+        code: "subscription_required",
+      });
+      return;
+    }
+  } catch {
+    // needsSubscription already fails open internally; this belt-and-braces
+    // catch keeps the rule absolute even if that ever changes.
   }
   next();
 }
