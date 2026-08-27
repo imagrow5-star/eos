@@ -138,6 +138,48 @@ export async function cancelDodoSubscription(dodoSubscriptionId: string): Promis
 }
 
 /**
+ * Creates a hosted checkout session (stage 4) and returns the URL to send
+ * the customer to. POST /checkouts with:
+ *  - product_cart: the one tier product;
+ *  - metadata.user_id: what lets the billing webhook attach the resulting
+ *    subscription to this account (keep in sync with routes/billingWebhook.ts);
+ *  - customer.email: binds the session to the signed-in email (Dodo attaches
+ *    to an existing customer by email by default);
+ *  - subscription_data.trial_period_days: the tier's trial, passed explicitly
+ *    so the trial length stays code-configured (overrides the product price);
+ *  - return_url: where Dodo redirects after success OR failure.
+ */
+export async function createDodoCheckoutSession(opts: {
+  productId: string;
+  userId: number;
+  email: string;
+  trialPeriodDays: number;
+  returnUrl: string;
+}): Promise<string> {
+  const res = await dodoFetch("/checkouts", {
+    method: "POST",
+    body: JSON.stringify({
+      product_cart: [{ product_id: opts.productId, quantity: 1 }],
+      customer: { email: opts.email },
+      metadata: { user_id: String(opts.userId) },
+      subscription_data: { trial_period_days: opts.trialPeriodDays },
+      return_url: opts.returnUrl,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Dodo checkout session failed (${res.status}): ${body.slice(0, 300)}`);
+  }
+  const body = (await res.json().catch(() => null)) as
+    | { session_id?: string; checkout_url?: string | null }
+    | null;
+  if (!body?.checkout_url) {
+    throw new Error("Dodo checkout session response has no checkout_url");
+  }
+  return body.checkout_url;
+}
+
+/**
  * Fetches a Dodo customer's email — the webhook's fallback for matching a
  * subscription to a user when checkout metadata is missing. GET
  * /customers/{id} returns the Customer object with a top-level `email`.

@@ -2284,7 +2284,7 @@ export default function Chat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showSettings]);
 
-  // ── Membership (phase 2 — Paddle billing) ─────────────────────────────────
+  // ── Membership (Dodo billing) ──────────────────────────────────────────────
   type BillingMe =
     | { kind: "legacy_full_access" }
     | {
@@ -3296,7 +3296,7 @@ export default function Chat() {
               )}
             </div>
 
-            {/* ── Membership (phase 2 — Paddle billing) ──────────────────── */}
+            {/* ── Membership (Dodo billing) ───────────────────────────────── */}
             {billingMe && (
               <div>
                 <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">

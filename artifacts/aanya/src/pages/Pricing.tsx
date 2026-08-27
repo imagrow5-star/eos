@@ -1,17 +1,19 @@
 /**
- * /pricing — in-app plan selection + Paddle overlay checkout (phase 2).
+ * /pricing — in-app plan selection + Dodo Payments hosted checkout (stage 4).
  *
  * Every number on this page comes from GET /api/billing/config, whose source
  * of truth is the server tier config — prices are never hardcoded here.
  *
- * Signed-in + verified users open Paddle's overlay checkout directly; the
- * signed-out variant (rendered by App.tsx for /pricing visitors without a
- * session) shows the same cards with a "create your account first" path into
- * the existing signup flow.
+ * Signed-in + verified users are redirected to Dodo's hosted checkout (the
+ * server creates the session with metadata.user_id — see
+ * /api/billing/checkout-session); the signed-out variant (rendered by
+ * App.tsx for /pricing visitors without a session) shows the same cards with
+ * a "create your account first" path into the existing signup flow.
  *
- * After Paddle reports checkout.completed we poll GET /api/billing/me every
- * 2s (up to 30s) until the webhook lands, then celebrate and route into the
- * app — so the user never sees a paid-but-nothing-changed limbo.
+ * Dodo redirects back to /pricing?checkout=return; we then poll GET
+ * /api/billing/me every 2s (up to 30s) until the webhook lands, then
+ * celebrate and route into the app — so the user never sees a
+ * paid-but-nothing-changed limbo.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -21,12 +23,11 @@ import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
-  openCheckout,
-  paddleClientToken,
+  startCheckout,
   formatPrice,
   type BillingConfig,
   type BillingTier,
-} from "@/lib/paddleCheckout";
+} from "@/lib/dodoCheckout";
 
 // Factual sublines matching the public landing page. Keys are the immutable
 // backend tier ids; only the words shown to the user changed.
@@ -79,7 +80,8 @@ export function Pricing({
     };
   }, []);
 
-  // checkout.completed → poll /billing/me until the webhook writes the row.
+  // Back from Dodo's hosted checkout → poll /billing/me until the webhook
+  // writes the row.
   const startWebhookPoll = () => {
     setPhase("waiting_webhook");
     const startedAt = Date.now();
@@ -106,9 +108,25 @@ export function Pricing({
     }, 2000);
   };
 
-  const handlePaddleEvent = (name: string) => {
-    if (name === "checkout.completed") startWebhookPoll();
-  };
+  // Returning from the hosted checkout: /billing/checkout-session set
+  // return_url to /pricing?checkout=return, and Dodo appends its own status
+  // params. Consume the marker (so a refresh doesn't re-enter the waiting
+  // state), then poll — unless Dodo explicitly reported a failure.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("checkout") !== "return") return;
+    const dodoStatus = params.get("status");
+    const url = new URL(window.location.href);
+    url.search = "";
+    window.history.replaceState({}, "", url.toString());
+    if (signedOut) return;
+    if (dodoStatus && !["succeeded", "active", "processing"].includes(dodoStatus)) {
+      setCheckoutError("The payment didn't complete. You can try again whenever you're ready.");
+      return;
+    }
+    startWebhookPoll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const choose = async (tier: BillingTier) => {
     setCheckoutError(null);
@@ -119,13 +137,9 @@ export function Pricing({
     if (!tier.priceId || !me?.user) return;
     setPhase("opening");
     try {
-      await openCheckout({
-        priceId: tier.priceId,
-        email: me.user.email,
-        userId: me.user.id,
-        onEvent: handlePaddleEvent,
-      });
-      setPhase("idle"); // overlay is up; completion arrives via the event
+      await startCheckout(tier.id);
+      // On success the browser navigates to Dodo's hosted checkout — this
+      // code only continues on failure, which throws.
     } catch {
       setPhase("idle");
       setCheckoutError(
@@ -134,8 +148,7 @@ export function Pricing({
     }
   };
 
-  const checkoutReady =
-    !signedOut && Boolean(config?.checkoutAvailable) && Boolean(paddleClientToken());
+  const checkoutReady = !signedOut && Boolean(config?.checkoutAvailable);
 
   // ── Success states replace the cards entirely ──────────────────────────────
   if (phase === "waiting_webhook" || phase === "confirmed" || phase === "webhook_slow") {
