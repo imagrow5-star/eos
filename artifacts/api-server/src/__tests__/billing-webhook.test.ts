@@ -33,8 +33,9 @@ process.env.DODO_PRODUCT_ESSENTIAL = "prod_essential_test";
 process.env.DODO_PRODUCT_STANDARD = "prod_standard_test";
 process.env.DODO_PRODUCT_FULL = "prod_full_test";
 
-// ── Dodo REST interception (customer lookup + cancel) ───────────────────────
+// ── Dodo REST interception (checkout session + customer lookup + cancel) ────
 const dodoCalls: Array<{ url: string; method: string }> = [];
+const checkoutSessionBodies: Array<Record<string, unknown>> = [];
 let customerEmailByThisTest: string | null = null;
 let dodoCancelFails = false;
 
@@ -43,6 +44,15 @@ globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: Parameters<typeo
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
   if (url.startsWith("https://live.dodopayments.com/")) {
     dodoCalls.push({ url, method: init?.method ?? "GET" });
+    if (url.endsWith("/checkouts") && init?.method === "POST") {
+      checkoutSessionBodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ session_id: "cks_test_1", checkout_url: "https://test.checkout.dodopayments.com/cks_test_1" }),
+          { status: 200 },
+        ),
+      );
+    }
     if (url.includes("/subscriptions/") && init?.method === "PATCH") {
       return Promise.resolve(
         dodoCancelFails
@@ -420,6 +430,28 @@ describe("billing routes", () => {
     // Never leak secrets — check the raw response text for both secret values.
     expect(res.text).not.toContain(process.env.DODO_API_KEY!);
     expect(res.text).not.toContain(process.env.DODO_WEBHOOK_SECRET!);
+  });
+
+  it("POST /billing/checkout-session creates a Dodo session with metadata.user_id from the SESSION", async () => {
+    const { agent, userId, email } = await signupUser("checkout");
+    const res = await agent.post("/api/billing/checkout-session").send({ tier: "closer" });
+    expect(res.status).toBe(200);
+    expect(res.body.url).toBe("https://test.checkout.dodopayments.com/cks_test_1");
+
+    const body = checkoutSessionBodies.at(-1)!;
+    // The webhook's primary user matcher — must come from the session, and
+    // stringified (metadata values are strings).
+    expect(body.metadata).toEqual({ user_id: String(userId) });
+    expect(body.product_cart).toEqual([{ product_id: "prod_standard_test", quantity: 1 }]);
+    expect((body.customer as { email: string }).email).toBe(email);
+    expect((body.subscription_data as { trial_period_days: number }).trial_period_days).toBe(7);
+    expect(String(body.return_url)).toContain("/pricing?checkout=return");
+  });
+
+  it("POST /billing/checkout-session rejects unknown tiers and unauthenticated callers", async () => {
+    const { agent } = await signupUser("checkout-bad");
+    expect((await agent.post("/api/billing/checkout-session").send({ tier: "platinum" })).status).toBe(400);
+    expect((await request(app).post("/api/billing/checkout-session").send({ tier: "closer" })).status).toBe(401);
   });
 
   it("POST /billing/cancel cancels the CALLER's subscription via Dodo", async () => {

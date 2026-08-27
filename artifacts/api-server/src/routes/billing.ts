@@ -23,9 +23,10 @@
 
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
-import { db, subscriptionsTable } from "@workspace/db";
-import { TIERS, getDodoProductId, getUserTier, type TierId } from "../services/tiers.js";
-import { cancelDodoSubscription } from "../services/dodo.js";
+import { db, subscriptionsTable, usersTable } from "@workspace/db";
+import { TIERS, getDodoProductId, getUserTier, isTierId, type TierId } from "../services/tiers.js";
+import { cancelDodoSubscription, createDodoCheckoutSession } from "../services/dodo.js";
+import { getAppBaseUrl } from "./auth.js";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
@@ -53,6 +54,55 @@ billingPublicRouter.get("/billing/config", (_req, res): void => {
 // ─── Protected: own-subscription state + cancel ──────────────────────────────
 
 const router: IRouter = Router();
+
+// Stage 4: the server creates the Dodo checkout session so metadata.user_id
+// is ALWAYS set from the authenticated session — the webhook's primary user
+// matcher — and the API key never touches the client. The body names only
+// the tier; everything else comes from the session and the tier config.
+router.post("/billing/checkout-session", async (req, res): Promise<void> => {
+  const tierId = (req.body as { tier?: unknown } | undefined)?.tier;
+  if (!isTierId(tierId)) {
+    res.status(400).json({ error: "Unknown plan." });
+    return;
+  }
+  const productId = getDodoProductId(tierId);
+  if (!productId) {
+    res.status(503).json({ error: "Checkout isn't switched on yet." });
+    return;
+  }
+
+  const [u] = await db
+    .select({ email: usersTable.email })
+    .from(usersTable)
+    .where(eq(usersTable.id, req.userId))
+    .limit(1);
+  if (!u) {
+    res.status(401).json({ error: "Not authenticated." });
+    return;
+  }
+
+  try {
+    const url = await createDodoCheckoutSession({
+      productId,
+      userId: req.userId,
+      email: u.email,
+      trialPeriodDays: TIERS[tierId].trialDays,
+      // The ?checkout=return marker is what /pricing watches for to start
+      // polling /billing/me after the redirect back (Dodo appends its own
+      // status params alongside).
+      returnUrl: `${getAppBaseUrl()}/pricing?checkout=return`,
+    });
+    res.json({ url });
+  } catch (err) {
+    try {
+      const uh = hashUserIdForLog(req.userId);
+      if (uh) logger.error({ err, uh, tierId }, "billing: Dodo checkout-session create failed");
+    } catch { /* logging must never crash the caller */ }
+    res.status(502).json({
+      error: "We couldn't reach our payment partner just now. Please try again in a moment.",
+    });
+  }
+});
 
 router.get("/billing/me", async (req, res): Promise<void> => {
   const tier = await getUserTier(req.userId);
