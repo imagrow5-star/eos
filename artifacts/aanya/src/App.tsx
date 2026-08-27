@@ -1,11 +1,12 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Route, Switch, Router as WouterRouter } from "wouter";
+import { Route, Switch, Router as WouterRouter, useLocation } from "wouter";
 import { Shell } from "@/components/layout/Shell";
 import { SplashScreen } from "@/components/SplashScreen";
 import { CONSENT_VERSION } from "@/lib/consent";
 import { resolveUnauthView } from "@/lib/authEntry";
+import { consumePendingPlan, stashPendingPlan, stashPendingPlanFromSearch } from "@/lib/pendingPlan";
 
 // Every page is code-split so first paint only ships the shell + the one
 // screen the visitor actually lands on. Chat alone drags in the ElevenLabs/
@@ -61,6 +62,18 @@ const queryClient = new QueryClient({
 // ─── Main app (shown when authenticated + verified) ───────────────────────────
 
 function AppRouter() {
+  const [, navigate] = useLocation();
+
+  // A plan chosen before signup (landing-page CTA or the signed-out pricing
+  // cards) was stashed across the auth flow; AppRouter mounting means the
+  // user is fully in (verified + consented), so consume it exactly once and
+  // route into checkout instead of chat. Pricing auto-starts from ?plan=.
+  useEffect(() => {
+    const plan = consumePendingPlan();
+    if (plan) navigate(`/pricing?plan=${plan}`, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Sync browser timezone to profile once after login
   useEffect(() => {
     try {
@@ -122,6 +135,14 @@ function AuthGate() {
   const [unauthView, setUnauthView] = useState<UnauthView>(() =>
     resolveUnauthView(window.location.search),
   );
+
+  // A landing-page plan CTA arrives as /?enter=1&plan=<tier id>. Stash it
+  // before the auth flow starts — Google OAuth and the email-verification
+  // detour both lose the URL, so sessionStorage carries the choice until
+  // AppRouter consumes it after verification + consent.
+  useEffect(() => {
+    stashPendingPlanFromSearch(window.location.search);
+  }, []);
 
   // Handle ?verifyToken= in the URL — consume it immediately on mount
   useEffect(() => {
@@ -249,7 +270,10 @@ function AuthGate() {
           {verifyBanner}
           <Pricing
             signedOut
-            onCreateAccount={() => {
+            onCreateAccount={(tierId) => {
+              // Keep the chosen tier across signup — same stash the landing
+              // CTAs use; AppRouter routes into checkout once they're in.
+              if (tierId) stashPendingPlan(tierId);
               const url = new URL(window.location.href);
               url.pathname = url.pathname.replace(/\/pricing$/, "/") || "/";
               window.history.replaceState({}, "", url.toString());
