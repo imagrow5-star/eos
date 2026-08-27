@@ -194,7 +194,11 @@ function AuthGate() {
     queryFn: async () => {
       const r = await apiFetch(`${import.meta.env.BASE_URL}api/auth/me`);
       if (!r.ok) throw new Error("Not authenticated");
-      return r.json() as Promise<{ user: { id: number; email: string }; emailVerified: boolean }>;
+      return r.json() as Promise<{
+        user: { id: number; email: string };
+        emailVerified: boolean;
+        needsSubscription?: boolean;
+      }>;
     },
     retry: false,
     staleTime: 5 * 60 * 1000,
@@ -339,6 +343,19 @@ function AuthGate() {
           await qc.invalidateQueries({ queryKey: ["/api/profile", "consent-gate"] });
         }}
       />
+    );
+  }
+
+  // Subscription gate (server-decided; fails open on lookup errors): a
+  // post-cutoff account with no live subscription row picks a plan before
+  // entering the app. Pricing invalidates /api/auth/me when the webhook
+  // lands, which re-renders this gate open.
+  if (data.needsSubscription) {
+    return (
+      <>
+        {verifyBanner}
+        <Pricing gated />
+      </>
     );
   }
 

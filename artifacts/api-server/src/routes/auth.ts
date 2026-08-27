@@ -6,6 +6,7 @@ import { db, pool } from "@workspace/db";
 import { usersTable, passwordResetTokensTable, emailVerificationTokensTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
+import { needsSubscription } from "../services/tiers.js";
 import { hashAuthToken, tokenHashMatches } from "../lib/authTokenHash.js";
 
 const router: IRouter = Router();
@@ -506,7 +507,16 @@ router.get("/auth/me", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json({ user: { id: user.id, email: user.email }, emailVerified: user.emailVerifiedAt !== null });
+  // Subscription gate flag (entitlement stage): tells AuthGate whether to
+  // route this account to /pricing instead of the app. Computed server-side
+  // (the client can't know created_at vs the cutoff); needsSubscription
+  // itself fails OPEN on any lookup error — it can only ever say "gate"
+  // from positively established facts.
+  res.json({
+    user: { id: user.id, email: user.email },
+    emailVerified: user.emailVerifiedAt !== null,
+    needsSubscription: await needsSubscription(user.id),
+  });
 });
 
 // ─── GET /auth/verify-email ───────────────────────────────────────────────────

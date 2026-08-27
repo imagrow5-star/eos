@@ -19,7 +19,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
@@ -41,12 +41,17 @@ type CheckoutPhase = "idle" | "opening" | "waiting_webhook" | "confirmed" | "web
 
 export function Pricing({
   signedOut = false,
+  gated = false,
   onCreateAccount,
 }: {
   signedOut?: boolean;
+  /** Rendered as the subscription gate (AuthGate): no way "back" into the
+   *  app exists, so the back link becomes a sign-out. */
+  gated?: boolean;
   /** Receives the tier the visitor clicked, so the choice survives signup. */
   onCreateAccount?: (tierId?: BillingTier["id"]) => void;
 }) {
+  const qc = useQueryClient();
   const [, navigate] = useLocation();
   const [phase, setPhase] = useState<CheckoutPhase>("idle");
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -95,6 +100,9 @@ export function Pricing({
         if (body?.kind === "subscribed") {
           if (pollTimerRef.current) clearInterval(pollTimerRef.current);
           setPhase("confirmed");
+          // Refresh the gate flag — when Pricing is rendered AS the
+          // subscription gate, this is what re-opens the app.
+          void qc.invalidateQueries({ queryKey: ["/api/auth/me"] });
           setTimeout(() => navigate("/"), 2600);
           return;
         }
@@ -313,12 +321,26 @@ export function Pricing({
           <a href="/refunds" className="text-[11.5px] text-muted-foreground/70 underline underline-offset-2 hover:text-primary-strong">
             Refunds
           </a>
-          {!signedOut && (
+          {!signedOut && !gated && (
             <button
               onClick={() => navigate("/")}
               className="text-[11.5px] text-muted-foreground/70 underline underline-offset-2 hover:text-primary-strong"
             >
               Back to Eos
+            </button>
+          )}
+          {gated && (
+            <button
+              onClick={() => {
+                // Gated accounts have no app to go "back" to — offer the way
+                // out instead (e.g. signed into the wrong account).
+                void apiFetch(`${import.meta.env.BASE_URL}api/auth/logout`, { method: "POST" }).finally(
+                  () => window.location.assign(import.meta.env.BASE_URL || "/"),
+                );
+              }}
+              className="text-[11.5px] text-muted-foreground/70 underline underline-offset-2 hover:text-primary-strong"
+            >
+              Sign out
             </button>
           )}
         </div>
