@@ -161,9 +161,20 @@ export async function getUserTier(userId: number): Promise<UserTierResult> {
  * to /pricing instead of chat.
  *
  * Set 2026-08-27: every account existing then is a known tester; everyone
- * from that point on subscribes. Moving it is this one line.
+ * from that point on subscribes. Moving it is this one line. The env var of
+ * the same name overrides it (tests push it far-future so suite-created
+ * users aren't gated; ops can move it without a deploy) — an UNPARSEABLE
+ * override falls back to the literal rather than gating everyone: the gate
+ * must never fail closed on a typo.
  */
-export const SUBSCRIPTION_REQUIRED_AFTER = new Date("2026-08-27T00:00:00Z");
+function resolveCutoff(): Date {
+  const fallback = new Date("2026-08-27T00:00:00Z");
+  const env = process.env.SUBSCRIPTION_REQUIRED_AFTER?.trim();
+  if (!env) return fallback;
+  const parsed = new Date(env);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+}
+export const SUBSCRIPTION_REQUIRED_AFTER = resolveCutoff();
 
 /** Row statuses that keep access for a gated (post-cutoff) account.
  *  past_due is deliberate grace: Dodo's on_hold means the card is being
