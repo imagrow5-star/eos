@@ -44,11 +44,13 @@ export function Pricing({
   onCreateAccount,
 }: {
   signedOut?: boolean;
-  onCreateAccount?: () => void;
+  /** Receives the tier the visitor clicked, so the choice survives signup. */
+  onCreateAccount?: (tierId?: BillingTier["id"]) => void;
 }) {
   const [, navigate] = useLocation();
   const [phase, setPhase] = useState<CheckoutPhase>("idle");
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [autoPlan, setAutoPlan] = useState<BillingTier["id"] | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { data: config } = useQuery({
@@ -128,10 +130,35 @@ export function Pricing({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A plan carried across signup arrives as ?plan=<tier id> (see AppRouter's
+  // pending-plan consumption). Capture it once, clean the URL so refreshes
+  // and back-navigation can't re-fire checkout, and validate the id.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const plan = params.get("plan");
+    if (!plan) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("plan");
+    window.history.replaceState({}, "", url.toString());
+    if (plan === "companion" || plan === "closer" || plan === "always") setAutoPlan(plan);
+  }, []);
+
+  // Auto-start checkout for that plan as soon as config + session are ready.
+  // One shot: on any miss (unknown tier, checkout not configured) the normal
+  // cards render and the user picks manually.
+  useEffect(() => {
+    if (!autoPlan || signedOut) return;
+    if (!config || !me?.user) return;
+    const tier = config.tiers.find((t) => t.id === autoPlan);
+    setAutoPlan(null);
+    if (tier?.priceId) void choose(tier);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPlan, config, me, signedOut]);
+
   const choose = async (tier: BillingTier) => {
     setCheckoutError(null);
     if (signedOut) {
-      onCreateAccount?.();
+      onCreateAccount?.(tier.id);
       return;
     }
     if (!tier.priceId || !me?.user) return;
