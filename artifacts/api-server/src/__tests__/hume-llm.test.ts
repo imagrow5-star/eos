@@ -1,21 +1,22 @@
 /**
- * Hume EVI custom-LLM endpoint (capture stage) — B + A auth.
+ * Hume EVI custom-LLM endpoint (capture stage) — voice-token auth.
  *
- * Covers the two locks (static Bearer key = Hume's infrastructure; voice
- * token in the custom_session_id query = which user), the anonymous-probe
- * path (Bearer only — Hume's config validation), the canned SSE reply
- * shape, unconfigured-key 503, and THE non-negotiable: neither the voice
- * token nor the Bearer key ever reaches a log line emitted by the route
- * (pinned by spying the shared logger during real requests — the global
- * pino-http request line is separately safe because its serializer strips
- * the query string, app.ts `url.split("?")[0]`).
+ * The route accepts the per-user HMAC voice token from either carrier Hume
+ * offers: the Authorization Bearer (the client sends the token as
+ * session_settings' language_model_api_key) or the custom_session_id query
+ * parameter. No static key exists — Hume's dashboard has no key field, and
+ * a browser-shipped static secret is no secret.
+ *
+ * Covers: both carriers, tokenless/garbage/expired 401s, the canned SSE
+ * reply shape, and THE non-negotiable: the voice token never reaches a log
+ * line emitted by the route (pinned by spying the shared logger during real
+ * requests — the global pino-http request line is separately safe because
+ * its serializer strips the query string, app.ts `url.split("?")[0]`).
  */
 
 import { describe, it, expect, afterAll, beforeEach, vi } from "vitest";
 import request from "supertest";
 import pg from "pg";
-
-process.env.HUME_CLM_API_KEY = "hume-test-clm-key-not-real";
 
 import app from "../app.js";
 import { logger } from "../lib/logger.js";
@@ -52,13 +53,14 @@ async function signupUser(tag: string) {
   return { userId: res.body.user.id as number, email };
 }
 
-const KEY = process.env.HUME_CLM_API_KEY!;
 const TURN_BODY = { messages: [{ role: "user", content: "Hello." }], model: "eos" };
 
-function postTurn(opts: { bearer?: string; token?: string; body?: unknown }) {
+function postTurn(opts: { bearer?: string; queryToken?: string; body?: unknown }) {
   const url =
     "/api/hume-llm/v1/chat/completions" +
-    (opts.token !== undefined ? `?custom_session_id=${encodeURIComponent(opts.token)}` : "");
+    (opts.queryToken !== undefined
+      ? `?custom_session_id=${encodeURIComponent(opts.queryToken)}`
+      : "");
   const r = request(app).post(url).set("Content-Type", "application/json");
   if (opts.bearer !== undefined) r.set("Authorization", `Bearer ${opts.bearer}`);
   return r.send(JSON.stringify(opts.body ?? TURN_BODY));
@@ -73,32 +75,28 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("auth locks", () => {
-  it("503 when HUME_CLM_API_KEY is not configured", async () => {
-    const saved = process.env.HUME_CLM_API_KEY;
-    delete process.env.HUME_CLM_API_KEY;
-    try {
-      const res = await postTurn({ bearer: KEY });
-      expect(res.status).toBe(503);
-    } finally {
-      process.env.HUME_CLM_API_KEY = saved;
-    }
-  });
-
-  it("401 with no Authorization header", async () => {
+describe("voice-token auth", () => {
+  it("401 with no token in either carrier (e.g. a Hume playground session)", async () => {
     const res = await postTurn({});
     expect(res.status).toBe(401);
     expect(res.body.error.type).toBe("invalid_request_error");
   });
 
-  it("401 with a wrong Bearer key", async () => {
-    const res = await postTurn({ bearer: "wrong-key-entirely" });
+  it("401 with a garbage Bearer value", async () => {
+    const res = await postTurn({ bearer: "not-a-voice-token" });
     expect(res.status).toBe(401);
   });
 
-  it("Bearer + valid voice token → canned SSE stream", async () => {
-    const { userId, email } = await signupUser("turn");
-    const res = await postTurn({ bearer: KEY, token: mintVoiceToken(userId) });
+  it("401 with an EXPIRED token — this is a live request path, unlike the post-call webhook", async () => {
+    const { userId, email } = await signupUser("expired");
+    const res = await postTurn({ bearer: mintVoiceToken(userId, -1000) });
+    expect(res.status).toBe(401);
+    await cleanupUser(email);
+  });
+
+  it("valid token as Bearer (session_settings.language_model_api_key path) → canned SSE", async () => {
+    const { userId, email } = await signupUser("bearer");
+    const res = await postTurn({ bearer: mintVoiceToken(userId) });
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("text/event-stream");
     expect(res.text).toContain('"object":"chat.completion.chunk"');
@@ -106,15 +104,17 @@ describe("auth locks", () => {
     await cleanupUser(email);
   });
 
-  it("Bearer with NO token (Hume's config probe) still gets the canned SSE", async () => {
-    const res = await postTurn({ bearer: KEY });
+  it("valid token via custom_session_id alone (redundant carrier) → canned SSE", async () => {
+    const { userId, email } = await signupUser("query");
+    const res = await postTurn({ queryToken: mintVoiceToken(userId) });
     expect(res.status).toBe(200);
     expect(res.text).toContain("data: [DONE]");
+    await cleanupUser(email);
   });
 });
 
 describe("token-in-logs rule", () => {
-  it("neither the voice token nor the Bearer key appears in any route log line", async () => {
+  it("the voice token appears in no route log line, from either carrier", async () => {
     const { userId, email } = await signupUser("logs");
     const token = mintVoiceToken(userId);
 
@@ -127,13 +127,10 @@ describe("token-in-logs rule", () => {
       vi.spyOn(logger, lvl).mockImplementation(capture as never),
     );
 
-    const res = await postTurn({ bearer: KEY, token });
+    const res = await postTurn({ bearer: token, queryToken: token });
     expect(res.status).toBe(200);
     expect(lines.length).toBeGreaterThan(0); // the capture lines fired
-    for (const line of lines) {
-      expect(line).not.toContain(token);
-      expect(line).not.toContain(KEY);
-    }
+    for (const line of lines) expect(line).not.toContain(token);
     spies.forEach((s) => s.mockRestore());
     await cleanupUser(email);
   });
@@ -164,7 +161,7 @@ describe("capture", () => {
       }) as never);
 
     const body = { messages: [{ role: "user", content: "capture me" }] };
-    await postTurn({ bearer: KEY, token: mintVoiceToken(userId), body });
+    await postTurn({ bearer: mintVoiceToken(userId), body });
 
     const bodyLines = lines.filter((l) => l.msg === "hume-clm-capture body");
     expect(bodyLines.length).toBeGreaterThan(0);

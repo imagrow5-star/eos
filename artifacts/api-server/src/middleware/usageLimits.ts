@@ -210,13 +210,18 @@ export const voiceTurnUsageLimits: RequestHandler[] = limiterPair({
   shape: "openai",
 });
 
-/** Hume CLM callback (routes/humeLlm.ts): the same HMAC voice token rides in
- *  the custom_session_id QUERY parameter (Hume echoes what our client sets at
- *  session start — there is no request-body slot like ElevenLabs' extra
- *  body). Falls back to per-IP for tokenless requests (Hume's config probe). */
+/** Hume CLM callback (routes/humeLlm.ts): the same HMAC voice token arrives
+ *  as the Bearer (the client sends it as session_settings'
+ *  language_model_api_key) and/or in the custom_session_id QUERY parameter —
+ *  there is no request-body slot like ElevenLabs' extra body. Falls back to
+ *  per-IP for tokenless requests, which get their 401 from the handler. */
 function humeSessionTokenKey(req: Request): string {
-  const raw = req.query?.custom_session_id;
-  const auth = typeof raw === "string" ? verifyVoiceToken(raw) : null;
+  const header = req.header("authorization");
+  const bearer = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : undefined;
+  const query = req.query?.custom_session_id;
+  const auth =
+    (bearer ? verifyVoiceToken(bearer) : null) ??
+    (typeof query === "string" ? verifyVoiceToken(query) : null);
   return auth ? `u:${auth.userId}` : ipKeyGenerator(req.ip ?? "");
 }
 
