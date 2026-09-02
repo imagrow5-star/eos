@@ -61,7 +61,11 @@
   .wordmark{font-family:'Fraunces',Georgia,serif;font-weight:520;font-size:22px;color:var(--ink)}
   .wordmark span{color:var(--green)}
   .nav-links{display:flex;gap:26px;align-items:center}
-  .nav-links a{font-size:15px;color:var(--ink-soft);position:relative;transition:color .2s}
+  /* color scoped :not(.btn) like the rules below — .nav-links a beats .btn on
+     specificity, which was painting the nav button's text --ink-soft on green
+     (1.2:1) instead of .btn's own #FFFDF8 (6.29:1). */
+  .nav-links a{font-size:15px;position:relative;transition:color .2s}
+  .nav-links a:not(.btn){color:var(--ink-soft)}
   .nav-links a:not(.btn)::after{content:"";position:absolute;left:0;bottom:-4px;width:100%;height:1.5px;background:var(--green);border-radius:1px;transform:scaleX(0);transform-origin:right;transition:transform .35s var(--ease)}
   .nav-links a:not(.btn):hover{color:var(--ink)}
   .nav-links a:not(.btn):hover::after{transform:scaleX(1);transform-origin:left}
