@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import { Router, type IRouter } from "express";
 import { verifyVoiceToken } from "../lib/voiceToken.js";
 import { humeTurnUsageLimits } from "../middleware/usageLimits.js";
@@ -10,17 +9,20 @@ const router: IRouter = Router();
 // ─── Hume EVI custom-LLM endpoint (CAPTURE STAGE) ────────────────────────────
 //
 // Hume EVI's custom language model POSTs OpenAI-style chat-completions
-// requests here and expects an SSE stream back. Auth is B + A (two locks,
-// the ElevenLabs route untouched):
-//   B — Authorization: Bearer <HUME_CLM_API_KEY>: a static secret configured
-//       in the Hume dashboard. Proves the request came through Hume's
-//       infrastructure and satisfies Hume's config-time validation probe.
-//   A — custom_session_id QUERY parameter carrying the same per-user HMAC
-//       voice token ElevenLabs uses (Hume echoes what our client sets at
-//       session start). Proves WHICH user the call belongs to, with the
-//       exact verifyVoiceToken checks the ElevenLabs path runs.
-// A Bearer-only request (no/invalid token) is treated as Hume's anonymous
-// config probe: it gets the canned reply below and loads NO user data.
+// requests here and expects an SSE stream back. Auth is the same per-user
+// HMAC voice token the ElevenLabs path uses (that route is untouched),
+// accepted from either place Hume can carry it:
+//   - the Authorization header: the client sends the token as
+//     session_settings.language_model_api_key at session start, and Hume
+//     forwards it as `Authorization: Bearer <token>` on every request;
+//   - the custom_session_id query parameter (redundant second carrier —
+//     Hume appends what the client sets to every request URL).
+// There is deliberately NO static API key: Hume's dashboard has no key
+// field (the key only exists as a per-session client setting), and a
+// static secret shipped to browsers is no secret. The voice token is the
+// stronger credential anyway — per-user, short-lived, signed by us. A
+// request with no valid token (e.g. a Hume playground session, which
+// sends no session_settings) gets a 401 and loads nothing.
 //
 // TOKEN-IN-LOGS RULE (non-negotiable): the voice token must never reach the
 // Render logs. Three layers:
@@ -38,10 +40,12 @@ const router: IRouter = Router();
 // parser will be written against a REAL captured request, not inferred
 // (same discipline as the Dodo and ElevenLabs captures). Until then this
 // route logs each request body base64-chunked (marker "hume-clm-capture")
-// and answers a canned spoken line so the Hume probe and a test call
-// succeed. DELETE the capture block and canned reply when the real
-// handler lands. Capturing the founder's own test-call content into our
-// logs is the same deliberate one-off exception as the earlier captures.
+// and answers a canned spoken line so a test session succeeds. DELETE the
+// capture block and canned reply when the real handler lands. Capturing
+// the founder's own test-call content into our logs is the same
+// deliberate one-off exception as the earlier captures. The capture is
+// produced by scripts/src/hume-clm-capture-test.ts (the Hume playground
+// cannot send session_settings, so it cannot authenticate).
 
 const CHUNK_CHARS = 4000;
 
@@ -54,13 +58,6 @@ export function captureSafeHeaders(req: {
     if (req.headers[name] !== undefined) out[name] = req.headers[name];
   }
   return out;
-}
-
-function bearerMatches(header: string | undefined, key: string): boolean {
-  if (!header?.startsWith("Bearer ")) return false;
-  const presented = Buffer.from(header.slice("Bearer ".length));
-  const expected = Buffer.from(key);
-  return presented.length === expected.length && crypto.timingSafeEqual(presented, expected);
 }
 
 /** One canned OpenAI-style SSE completion — spoken by EVI on test calls. */
@@ -91,28 +88,25 @@ router.post(
   "/hume-llm/v1/chat/completions",
   ...humeTurnUsageLimits,
   (req, res): void => {
-    const key = process.env.HUME_CLM_API_KEY?.trim();
-    if (!key) {
-      logger.error("hume-llm: HUME_CLM_API_KEY not set — rejecting request");
-      res.status(503).json({
-        error: { message: "Hume integration not configured", type: "invalid_request_error" },
-      });
-      return;
-    }
-
-    // Lock B: static Bearer key — proves the request came through Hume.
-    if (!bearerMatches(req.header("authorization"), key)) {
-      logger.warn("hume-llm: missing or invalid Bearer key");
+    // The voice token, from either carrier (header wins; both verify the
+    // same way). Full verifyVoiceToken — this is a live request path, so
+    // expiry is enforced, unlike the post-call webhook's parser.
+    const authHeader = req.header("authorization");
+    const bearer = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : undefined;
+    const queryToken = req.query?.custom_session_id;
+    const auth =
+      (bearer ? verifyVoiceToken(bearer) : null) ??
+      (typeof queryToken === "string" ? verifyVoiceToken(queryToken) : null);
+    if (!auth) {
+      logger.warn(
+        { hadBearer: Boolean(bearer), hadQueryToken: typeof queryToken === "string" },
+        "hume-llm: no valid voice token in Authorization or custom_session_id",
+      );
       res.status(401).json({
-        error: { message: "Invalid or missing API key", type: "invalid_request_error" },
+        error: { message: "Invalid or missing user token", type: "invalid_request_error" },
       });
       return;
     }
-
-    // Lock A: per-user voice token via custom_session_id. Absent/invalid →
-    // anonymous probe: canned reply only, no user data loaded, ever.
-    const rawToken = req.query?.custom_session_id;
-    const auth = typeof rawToken === "string" ? verifyVoiceToken(rawToken) : null;
 
     // ── CAPTURE (temporary — see the file header) ───────────────────────────
     try {
@@ -121,9 +115,15 @@ router.post(
         : Buffer.from(JSON.stringify(req.body ?? null), "utf8");
       const b64 = raw.toString("base64");
       const totalChunks = Math.max(1, Math.ceil(b64.length / CHUNK_CHARS));
-      const uh = auth ? hashUserIdForLog(auth.userId) : undefined;
+      const uh = hashUserIdForLog(auth.userId);
       logger.info(
-        { headers: captureSafeHeaders(req), bodyBytes: raw.length, totalChunks, uh, probe: !auth },
+        {
+          headers: captureSafeHeaders(req),
+          bodyBytes: raw.length,
+          totalChunks,
+          uh,
+          tokenCarrier: bearer ? "bearer" : "query",
+        },
         "hume-clm-capture headers",
       );
       for (let i = 0; i < totalChunks; i++) {
