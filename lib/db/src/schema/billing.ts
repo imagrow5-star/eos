@@ -64,10 +64,14 @@ export const billingEventsTable = pgTable(
   (t) => [uniqueIndex("billing_events_event_idx").on(t.eventId)],
 );
 
-// Durable per-call voice usage — phase 3's metering writes one row per call
-// and monthly caps are enforced by summing duration_seconds for the current
-// period. `source` records where the duration came from ('client_report'
-// first; a server-verified source can be added later without a migration).
+// Durable per-call voice usage — one row per call, written by the ElevenLabs
+// post-call webhook (routes/elevenLabsWebhook.ts). Monthly caps will be
+// enforced by summing duration_seconds over the billing period; today the
+// table is measurement only. `source` records where the duration came from
+// ('elevenlabs_webhook' = the provider's own post-call report — the same
+// clock they bill us by; 'client_report' remains reserved for a browser
+// fallback). provider_conversation_id is ElevenLabs' conversation_id — the
+// idempotency key, since post-call deliveries can be retried.
 export const voiceUsageTable = pgTable(
   "voice_usage",
   {
@@ -79,9 +83,15 @@ export const voiceUsageTable = pgTable(
     callEndedAt: timestamp("call_ended_at"),
     durationSeconds: integer("duration_seconds"),
     source: text("source").notNull().default("client_report"),
+    providerConversationId: text("provider_conversation_id"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (t) => [index("voice_usage_user_started_idx").on(t.userId, t.callStartedAt)],
+  (t) => [
+    index("voice_usage_user_started_idx").on(t.userId, t.callStartedAt),
+    // Unique on the provider's call id (NULLs exempt, so rows from other
+    // sources are unaffected) — a retried webhook delivery inserts nothing.
+    uniqueIndex("voice_usage_conversation_idx").on(t.providerConversationId),
+  ],
 );
 
 export type Subscription = typeof subscriptionsTable.$inferSelect;

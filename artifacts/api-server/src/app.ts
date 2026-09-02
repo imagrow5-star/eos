@@ -176,9 +176,12 @@ pool
       call_ended_at timestamp,
       duration_seconds integer,
       source text NOT NULL DEFAULT 'client_report',
+      provider_conversation_id text,
       created_at timestamp NOT NULL DEFAULT now()
     );
+    ALTER TABLE voice_usage ADD COLUMN IF NOT EXISTS provider_conversation_id text;
     CREATE INDEX IF NOT EXISTS voice_usage_user_started_idx ON voice_usage (user_id, call_started_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS voice_usage_conversation_idx ON voice_usage (provider_conversation_id);
   `)
   .catch((err) => logger.error({ err }, "Failed to ensure billing foundation tables"));
 
@@ -453,10 +456,11 @@ app.use(
 // other route parses JSON exactly as before.
 app.use("/api/billing/webhook", express.raw({ type: "*/*", limit: "1mb" }));
 
-// TEMPORARY (delete with routes/elevenLabsCapture.ts): the ElevenLabs
-// post-call capture needs the raw bytes too — its signature is an HMAC over
-// the exact byte layout, so the capture must preserve them.
-app.use("/api/elevenlabs/capture-e9723ffc8e1e5e50", express.raw({ type: "*/*", limit: "2mb" }));
+// ElevenLabs post-call webhook (voice-minute metering) — same raw-bytes
+// requirement: its HMAC covers the exact byte layout. 10mb because the
+// payload carries the call's full transcript with per-turn metrics; a
+// multi-hour call runs well past 1mb.
+app.use("/api/elevenlabs/post-call", express.raw({ type: "*/*", limit: "10mb" }));
 
 // 1mb: ElevenLabs custom-LLM requests carry the full call transcript, which can
 // exceed the 100kb default on long voice calls.

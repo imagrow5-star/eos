@@ -23,7 +23,7 @@ import { reflectionInternalRouter } from "./reflection-internal";
 import pushRouter, { pushInternalRouter } from "./push";
 import billingRouter, { billingPublicRouter } from "./billing";
 import billingWebhookRouter from "./billingWebhook";
-import elevenLabsCaptureRouter from "./elevenLabsCapture";
+import elevenLabsWebhookRouter from "./elevenLabsWebhook";
 import settingsRouter from "./settings";
 
 const router: IRouter = Router();
@@ -47,9 +47,10 @@ router.use(reflectionInternalRouter);
 // Billing webhook — called by Dodo's servers; authenticated per-delivery by
 // the Standard Webhooks HMAC over the raw body (raw-body mount in app.ts).
 router.use(billingWebhookRouter);
-// TEMPORARY capture for one ElevenLabs post-call delivery (see the file's
-// header) — unauthenticated by design, gated by its unguessable path.
-router.use(elevenLabsCaptureRouter);
+// ElevenLabs post-call webhook (voice-minute metering) — called by
+// ElevenLabs' servers; authenticated per-delivery by their HMAC over the
+// raw body (raw-body mount in app.ts).
+router.use(elevenLabsWebhookRouter);
 // Checkout configuration (tier metadata + public price ids) — the /pricing
 // page renders from this for signed-out visitors too.
 router.use(billingPublicRouter);
