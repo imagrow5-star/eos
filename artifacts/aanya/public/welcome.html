@@ -17,7 +17,7 @@
     --card:#FFFFFF;
     --ink:#37302A;
     --ink-soft:#5B5248;
-    --muted:#8A7E6F;
+    --muted:#71675B; /* darkened from #8A7E6F — 4.75:1 on --bg-soft (was 3.40) */
     --hair:#E9E0CD;
     --green:#5F7F5C;
     --green-deep:#4A6648;
@@ -69,11 +69,13 @@
 
   /* ── Buttons ── */
   .btn{
-    display:inline-block;background:var(--green);color:#FFFDF8;font-weight:600;font-size:16px;
+    /* --green-deep, not --green: white-ish text on --green is 4.42:1 (fails
+       AA); on --green-deep it's 6.29:1. --green stays for decorative uses. */
+    display:inline-block;background:var(--green-deep);color:#FFFDF8;font-weight:600;font-size:16px;
     padding:14px 32px;border-radius:12px;box-shadow:var(--shadow-sm);
     transition:background .25s,transform .25s var(--ease),box-shadow .25s var(--ease);
   }
-  .btn:hover{background:var(--green-deep);transform:translateY(-2px);box-shadow:var(--shadow-md)}
+  .btn:hover{background:#435C41;transform:translateY(-2px);box-shadow:var(--shadow-md)}
   .btn:active{transform:translateY(0) scale(.98);box-shadow:var(--shadow-sm)}
   .btn:focus-visible{outline:3px solid rgba(95,127,92,.4);outline-offset:2px}
   .btn.small{padding:9px 20px;font-size:14.5px;border-radius:10px}
@@ -143,7 +145,7 @@
   @media(min-width:841px){.plan.mid{transform:scale(1.03)}.plan.mid:hover{transform:scale(1.03) translateY(-6px)}}
   .plan .badge{
     position:absolute;top:-13px;left:50%;transform:translateX(-50%);
-    font-size:12px;font-weight:600;letter-spacing:.05em;color:#FFFDF8;background:var(--green);
+    font-size:12px;font-weight:600;letter-spacing:.05em;color:#FFFDF8;background:var(--green-deep);
     border-radius:999px;padding:5px 16px;white-space:nowrap;box-shadow:var(--shadow-sm);
   }
   .plan .pname{font-family:'Fraunces',Georgia,serif;font-weight:520;font-size:22px}
@@ -315,7 +317,7 @@
           <li>Full memory and weekly chapters</li>
           <li>Encrypted, always</li>
         </ul>
-        <a class="btn quiet" href="/?enter=1&amp;plan=companion">Start free trial</a>
+        <a class="btn quiet" href="/?enter=1&amp;plan=companion" aria-label="Start free trial — Essential plan">Start free trial</a>
       </div>
       <div class="plan mid rv" style="--d:.14s">
         <div class="badge">Most popular</div>
@@ -328,7 +330,7 @@
           <li>A short personal note each morning</li>
           <li>Priority voice quality</li>
         </ul>
-        <a class="btn" href="/?enter=1&amp;plan=closer">Start free trial</a>
+        <a class="btn" href="/?enter=1&amp;plan=closer" aria-label="Start free trial — Standard plan">Start free trial</a>
       </div>
       <div class="plan rv" style="--d:.23s">
         <div class="pname">Full</div>
@@ -340,7 +342,7 @@
           <li>For daily, longer conversations</li>
           <li>First access to new features</li>
         </ul>
-        <a class="btn quiet" href="/?enter=1&amp;plan=always">Start free trial</a>
+        <a class="btn quiet" href="/?enter=1&amp;plan=always" aria-label="Start free trial — Full plan">Start free trial</a>
       </div>
     </div>
     <p class="trial-note rv">7-day free trial · Card required · Cancel in one tap · Secure checkout</p>
