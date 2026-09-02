@@ -22,6 +22,6 @@ required to start. There is no permanent free tier.
 
 ## About
 
-Eos is built by Naveen Eppili  and operated by Itslexa,
+Eos is built by Eppili Naveen and operated by Itslexa,
 Vizianagaram, Andhra Pradesh, India.
 Contact: hello@eoscompanion.com
