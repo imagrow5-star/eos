@@ -197,6 +197,10 @@ async function applySubscriptionEvent(
   // During the trial, next_billing_date IS the trial end (confirmed from the
   // sandbox payload: created_at + trial_period_days, and the first charge).
   const currentPeriodEndsAt = parseDate(data.next_billing_date);
+  // previous_billing_date is the current period's START (during the trial it
+  // equals created_at — confirmed from the same capture). Voice-minute
+  // metering sums voice_usage between these two boundaries.
+  const currentPeriodStartedAt = parseDate(data.previous_billing_date);
   const trialEndsAt = status === "trialing" ? currentPeriodEndsAt : null;
 
   const [existing] = await tx
@@ -228,6 +232,7 @@ async function applySubscriptionEvent(
       tier,
       status,
       trialEndsAt,
+      currentPeriodStartedAt,
       currentPeriodEndsAt,
     });
     try {
@@ -248,6 +253,7 @@ async function applySubscriptionEvent(
       ...(tier ? { tier } : {}),
       ...(status ? { status } : {}),
       trialEndsAt: trialEndsAt ?? existing.trialEndsAt,
+      currentPeriodStartedAt: currentPeriodStartedAt ?? existing.currentPeriodStartedAt,
       currentPeriodEndsAt: currentPeriodEndsAt ?? existing.currentPeriodEndsAt,
       updatedAt: new Date(),
     })

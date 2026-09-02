@@ -154,10 +154,12 @@ pool
       tier text NOT NULL,
       status text NOT NULL,
       trial_ends_at timestamp,
+      current_period_started_at timestamp,
       current_period_ends_at timestamp,
       created_at timestamp NOT NULL DEFAULT now(),
       updated_at timestamp NOT NULL DEFAULT now()
     );
+    ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS current_period_started_at timestamp;
     CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_user_idx ON subscriptions (user_id);
     CREATE TABLE IF NOT EXISTS billing_events (
       id serial PRIMARY KEY,
@@ -450,6 +452,11 @@ app.use(
 // body as consumed, so the global express.json() below skips it — every
 // other route parses JSON exactly as before.
 app.use("/api/billing/webhook", express.raw({ type: "*/*", limit: "1mb" }));
+
+// TEMPORARY (delete with routes/elevenLabsCapture.ts): the ElevenLabs
+// post-call capture needs the raw bytes too — its signature is an HMAC over
+// the exact byte layout, so the capture must preserve them.
+app.use("/api/elevenlabs/capture-e9723ffc8e1e5e50", express.raw({ type: "*/*", limit: "2mb" }));
 
 // 1mb: ElevenLabs custom-LLM requests carry the full call transcript, which can
 // exceed the 100kb default on long voice calls.
