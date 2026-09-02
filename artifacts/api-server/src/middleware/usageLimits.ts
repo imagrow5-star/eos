@@ -209,3 +209,24 @@ export const voiceTurnUsageLimits: RequestHandler[] = limiterPair({
   keyGenerator: voiceTokenKey,
   shape: "openai",
 });
+
+/** Hume CLM callback (routes/humeLlm.ts): the same HMAC voice token rides in
+ *  the custom_session_id QUERY parameter (Hume echoes what our client sets at
+ *  session start — there is no request-body slot like ElevenLabs' extra
+ *  body). Falls back to per-IP for tokenless requests (Hume's config probe). */
+function humeSessionTokenKey(req: Request): string {
+  const raw = req.query?.custom_session_id;
+  const auth = typeof raw === "string" ? verifyVoiceToken(raw) : null;
+  return auth ? `u:${auth.userId}` : ipKeyGenerator(req.ip ?? "");
+}
+
+export const humeTurnUsageLimits: RequestHandler[] = limiterPair({
+  hourEnv: "HUME_TURN_LIMIT_PER_HOUR",
+  hourDefault: 600,
+  dayEnv: "HUME_TURN_LIMIT_PER_DAY",
+  dayDefault: 2400,
+  hourMessage: "This call has been going fast. Give it a moment and try again.",
+  dayMessage: "Voice calling has reached today's limit. It resets tomorrow.",
+  keyGenerator: humeSessionTokenKey,
+  shape: "openai",
+});
