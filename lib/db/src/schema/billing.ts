@@ -34,6 +34,11 @@ export const subscriptionsTable = pgTable(
     tier: text("tier").notNull(), // companion | closer | always (services/tiers.ts)
     status: text("status").notNull(), // trialing | active | past_due | canceled | paused
     trialEndsAt: timestamp("trial_ends_at"),
+    // Period boundaries from Dodo's webhook: previous_billing_date /
+    // next_billing_date. Both stored so voice-minute metering can sum
+    // usage over the user's REAL billing period instead of guessing
+    // "end minus one month".
+    currentPeriodStartedAt: timestamp("current_period_started_at"),
     currentPeriodEndsAt: timestamp("current_period_ends_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
