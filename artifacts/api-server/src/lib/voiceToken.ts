@@ -41,6 +41,27 @@ export function mintVoiceToken(userId: number, ttlMs = 2 * 60 * 60 * 1000): stri
 export function verifyVoiceToken(
   token: string,
 ): { userId: number; issuedAt: number } | null {
+  const result = checkVoiceToken(token);
+  if (!result || Date.now() > result.expiresAt) return null;
+  return { userId: result.userId, issuedAt: result.issuedAt };
+}
+
+/**
+ * Like verifyVoiceToken but WITHOUT the expiry check — for the ElevenLabs
+ * post-call webhook only. That delivery arrives after the call ends (and
+ * retries can arrive hours later, past the token's 2h TTL), and it is
+ * already authenticated by the webhook's own HMAC signature — the token
+ * inside it is used purely to identify WHICH user the call belonged to,
+ * not as a credential. Signature and environment are still enforced.
+ * Never use this on a live request path.
+ */
+export function parseVoiceTokenUserId(token: string): number | null {
+  return checkVoiceToken(token)?.userId ?? null;
+}
+
+function checkVoiceToken(
+  token: string,
+): { userId: number; issuedAt: number; expiresAt: number } | null {
   const parts = token.split(".");
   if (parts.length !== 5) return null;
   const [userIdStr, iatStr, expStr, env, sig] = parts;
@@ -51,10 +72,9 @@ export function verifyVoiceToken(
     return null;
   }
   if (env !== envTag()) return null;
-  if (Date.now() > expiresAt) return null;
   const expected = sign(`${userIdStr}.${iatStr}.${expStr}.${env}`);
   const a = Buffer.from(sig ?? "");
   const b = Buffer.from(expected);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  return { userId, issuedAt };
+  return { userId, issuedAt, expiresAt };
 }
