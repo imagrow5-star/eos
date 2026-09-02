@@ -1,0 +1,27 @@
+# Eos
+
+> Eos is a private AI companion you talk to by voice or text.
+> It remembers you across conversations. Everything is
+> encrypted, never sold, and never used to train AI. Eos is
+> built for everyday companionship — a friend to talk to, not
+> a therapist and not a romantic partner.
+
+## Pricing
+
+Eos is a paid subscription: $19.99, $39.99, or $59.99 per
+month. Every plan begins with a 7-day free trial. A card is
+required to start. There is no permanent free tier.
+
+## Pages
+
+- [Home](https://eoscompanion.com/): What Eos is and who it's for
+- [Pricing](https://eoscompanion.com/pricing): Plans and voice minute allowances
+- [Privacy](https://eoscompanion.com/privacy): How conversations are stored and protected
+- [Terms](https://eoscompanion.com/terms): Terms of service
+- [Refunds](https://eoscompanion.com/refunds): Refund policy
+
+## About
+
+Eos is built by Naveen Eppili  and operated by Itslexa,
+Vizianagaram, Andhra Pradesh, India.
+Contact: hello@eoscompanion.com
