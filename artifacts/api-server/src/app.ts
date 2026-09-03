@@ -462,13 +462,6 @@ app.use("/api/billing/webhook", express.raw({ type: "*/*", limit: "1mb" }));
 // multi-hour call runs well past 1mb.
 app.use("/api/elevenlabs/post-call", express.raw({ type: "*/*", limit: "10mb" }));
 
-// Hume CLM (capture stage — routes/humeLlm.ts): raw body so the capture
-// preserves Hume's exact request layout for writing the real parser. 1mb,
-// same sizing rationale as voice-llm (full conversation history per turn).
-// When the real handler replaces the capture, this mount goes back to the
-// global express.json().
-app.use("/api/hume-llm/v1/chat/completions", express.raw({ type: "*/*", limit: "1mb" }));
-
 // 1mb: ElevenLabs custom-LLM requests carry the full call transcript, which can
 // exceed the 100kb default on long voice calls.
 app.use(express.json({ limit: "1mb" }));

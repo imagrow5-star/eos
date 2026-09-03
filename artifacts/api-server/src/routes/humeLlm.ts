@@ -1,103 +1,118 @@
 import { Router, type IRouter } from "express";
 import { verifyVoiceToken } from "../lib/voiceToken.js";
 import { humeTurnUsageLimits } from "../middleware/usageLimits.js";
+import { voiceCompletionHandler } from "./voice-llm.js";
 import { logger } from "../lib/logger.js";
-import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
 const router: IRouter = Router();
 
-// ─── Hume EVI custom-LLM endpoint (CAPTURE STAGE) ────────────────────────────
+// ─── Hume EVI custom-LLM endpoint ────────────────────────────────────────────
 //
-// Hume EVI's custom language model POSTs OpenAI-style chat-completions
-// requests here and expects an SSE stream back. Auth is the same per-user
-// HMAC voice token the ElevenLabs path uses (that route is untouched),
+// Hume EVI POSTs OpenAI-style chat-completions requests here and expects an
+// SSE stream back. This route authenticates, NORMALIZES Hume's request into
+// the shape the shared voice handler reads ({messages, model, stream,
+// user_token}), and delegates to voiceCompletionHandler (routes/voice-llm.ts)
+// — the same brain as ElevenLabs calls: persona, real memory, frozen
+// per-call prompts, crisis floor, persistence, extraction.
+//
+// AUTH: the same per-user HMAC voice token the ElevenLabs path uses,
 // accepted from either place Hume can carry it:
-//   - the Authorization header: the client sends the token as
-//     session_settings.language_model_api_key at session start, and Hume
-//     forwards it as `Authorization: Bearer <token>` on every request;
-//   - the custom_session_id query parameter (redundant second carrier —
-//     Hume appends what the client sets to every request URL).
-// There is deliberately NO static API key: Hume's dashboard has no key
-// field (the key only exists as a per-session client setting), and a
-// static secret shipped to browsers is no secret. The voice token is the
-// stronger credential anyway — per-user, short-lived, signed by us. A
-// request with no valid token (e.g. a Hume playground session, which
-// sends no session_settings) gets a 401 and loads nothing.
+//   - the Authorization header (the client sends the token as
+//     session_settings.language_model_api_key; Hume forwards it as
+//     `Authorization: Bearer <token>`);
+//   - the custom_session_id query parameter (redundant second carrier).
+// No static key exists: Hume's dashboard has no key field and a
+// browser-shipped static secret is no secret. Tokenless requests (the Hume
+// playground cannot send session_settings) get a 401 and load nothing.
 //
-// TOKEN-IN-LOGS RULE (non-negotiable): the voice token must never reach the
-// Render logs. Three layers:
-//   1. the global pino-http req serializer strips the query string from
-//      every request-completed line (app.ts — url.split("?")[0]);
-//   2. the pino redact config covers req.headers.authorization/cookie on
-//      any line that ever logs a raw req object;
-//   3. THIS FILE never logs req.url, req.originalUrl, req.query, the token,
-//      or the Authorization value — the capture line below logs a
-//      hand-picked header subset with authorization/cookie removed.
-// hume-llm.test.ts pins layer 3 by spying the logger during a real request.
+// REQUEST SHAPE — from two real captured deliveries (2026-09-02), not
+// inferred: {messages: [{role, content, models: {prosody}, time: {begin,
+// end}}], model, stream}. No system message; content is a plain string.
+// Two observed quirks the normalizer handles:
+//   1. GREETING INSTRUCTION AS USER TEXT: the first request's only user
+//      message was "Speak your greeting to the user." (Hume's greeting
+//      trigger arrives as user content, unlike ElevenLabs' empty
+//      transcript), and the next request PREPENDED that same instruction
+//      to the user's actual words in one content string. The normalizer
+//      strips it as a prefix; a message that was only the instruction
+//      drops out entirely, which routes a greeting-only request into the
+//      shared handler's synthetic-greeting fast path (curated instant
+//      line), and keeps the instruction out of persisted chat history.
+//      The literal must match the EVI config; update HUME_GREETING_PREFIX
+//      if the config's greeting instruction ever changes.
+//   2. DUPLICATED MESSAGES: the second capture carried the SAME user
+//      message twice, byte-identical (role, content, time all equal).
+//      Without dedup, downstream turn-merging would double the text into
+//      the prompt and the persisted transcript. An adjacent message is
+//      dropped only when role, content AND time are ALL identical —
+//      genuinely repeated speech ("yes" … "yes") arrives with differing
+//      time fields and survives.
 //
-// CAPTURE STAGE (temporary): the real message parsing is NOT built yet —
-// Hume embeds prosody/emotion annotations into user messages, and the
-// parser will be written against a REAL captured request, not inferred
-// (same discipline as the Dodo and ElevenLabs captures). Until then this
-// route logs each request body base64-chunked (marker "hume-clm-capture")
-// and answers a canned spoken line so a test session succeeds. DELETE the
-// capture block and canned reply when the real handler lands. Capturing
-// the founder's own test-call content into our logs is the same
-// deliberate one-off exception as the earlier captures. The capture is
-// produced by scripts/src/hume-clm-capture-test.ts (the Hume playground
-// cannot send session_settings, so it cannot authenticate).
+// models.prosody was null in both captures (text input carries no voice).
+// It is deliberately NOT consumed yet: per the capture-first rule, code
+// that reads prosody scores waits for a real SPOKEN capture to pin the
+// shape. normalizeHumeMessages keeps the field visible for that next step.
+//
+// TOKEN-IN-LOGS RULE (non-negotiable, unchanged): the pino-http serializer
+// strips query strings from request lines, pino redact covers the
+// authorization header, and this file never logs the token, req.url,
+// req.query, or the Authorization value. Pinned by hume-llm.test.ts.
 
-const CHUNK_CHARS = 4000;
+/** The greeting-trigger instruction observed verbatim in both captures. */
+export const HUME_GREETING_PREFIX = "Speak your greeting to the user.";
 
-/** Headers safe to log: allowlist only — never authorization/cookie. */
-export function captureSafeHeaders(req: {
-  headers: Record<string, string | string[] | undefined>;
-}): Record<string, string | string[] | undefined> {
-  const out: Record<string, string | string[] | undefined> = {};
-  for (const name of ["user-agent", "content-type", "content-length", "accept", "accept-encoding"]) {
-    if (req.headers[name] !== undefined) out[name] = req.headers[name];
-  }
-  return out;
+export interface HumeChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  /** 48-dimension emotion scores when the user SPOKE — null for text input.
+   *  Kept opaque until a real spoken capture pins the shape. */
+  prosody: unknown;
 }
 
-/** One canned OpenAI-style SSE completion — spoken by EVI on test calls. */
-function writeCannedSse(res: import("express").Response): void {
-  res.status(200);
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  const id = `chatcmpl-eos-${Date.now()}`;
-  const created = Math.floor(Date.now() / 1000);
-  const chunk = (delta: Record<string, unknown>, finish: string | null) =>
-    `data: ${JSON.stringify({
-      id,
-      object: "chat.completion.chunk",
-      created,
-      model: "eos-hume-capture",
-      choices: [{ index: 0, delta, finish_reason: finish }],
-    })}\n\n`;
-  res.write(chunk({ role: "assistant" }, null));
-  res.write(
-    chunk({ content: "Hi, it's Eos. I'm still being connected to this voice — hang tight." }, null),
-  );
-  res.write(chunk({}, "stop"));
-  res.write("data: [DONE]\n\n");
-  res.end();
+/**
+ * Normalize Hume's messages array per the observed quirks above:
+ * role-filter → string contents → drop exact-adjacent duplicates → strip the
+ * greeting instruction prefix → drop messages left empty. Exported for tests.
+ */
+export function normalizeHumeMessages(raw: unknown): HumeChatMessage[] {
+  if (!Array.isArray(raw)) return [];
+  const out: HumeChatMessage[] = [];
+  let prevKey: string | null = null;
+  for (const m of raw) {
+    const msg = m as {
+      role?: unknown;
+      content?: unknown;
+      models?: { prosody?: unknown };
+      time?: unknown;
+    };
+    if (msg?.role !== "user" && msg?.role !== "assistant") continue;
+    if (typeof msg.content !== "string") continue;
+    // Quirk 2: drop only BYTE-IDENTICAL adjacent repeats (role+content+time).
+    const key = JSON.stringify([msg.role, msg.content, msg.time ?? null]);
+    if (key === prevKey) continue;
+    prevKey = key;
+
+    let content = msg.content;
+    if (msg.role === "user" && content.startsWith(HUME_GREETING_PREFIX)) {
+      content = content.slice(HUME_GREETING_PREFIX.length).trim(); // quirk 1
+    }
+    if (!content.trim()) continue;
+    out.push({ role: msg.role, content, prosody: msg.models?.prosody ?? null });
+  }
+  return out;
 }
 
 router.post(
   "/hume-llm/v1/chat/completions",
   ...humeTurnUsageLimits,
-  (req, res): void => {
-    // The voice token, from either carrier (header wins; both verify the
-    // same way). Full verifyVoiceToken — this is a live request path, so
-    // expiry is enforced, unlike the post-call webhook's parser.
+  async (req, res): Promise<void> => {
     const authHeader = req.header("authorization");
     const bearer = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : undefined;
     const queryToken = req.query?.custom_session_id;
-    const auth =
-      (bearer ? verifyVoiceToken(bearer) : null) ??
-      (typeof queryToken === "string" ? verifyVoiceToken(queryToken) : null);
-    if (!auth) {
+    const token =
+      (bearer && verifyVoiceToken(bearer) ? bearer : undefined) ??
+      (typeof queryToken === "string" && verifyVoiceToken(queryToken) ? queryToken : undefined);
+    if (!token) {
       logger.warn(
         { hadBearer: Boolean(bearer), hadQueryToken: typeof queryToken === "string" },
         "hume-llm: no valid voice token in Authorization or custom_session_id",
@@ -108,35 +123,20 @@ router.post(
       return;
     }
 
-    // ── CAPTURE (temporary — see the file header) ───────────────────────────
-    try {
-      const raw: Buffer = Buffer.isBuffer(req.body)
-        ? req.body
-        : Buffer.from(JSON.stringify(req.body ?? null), "utf8");
-      const b64 = raw.toString("base64");
-      const totalChunks = Math.max(1, Math.ceil(b64.length / CHUNK_CHARS));
-      const uh = hashUserIdForLog(auth.userId);
-      logger.info(
-        {
-          headers: captureSafeHeaders(req),
-          bodyBytes: raw.length,
-          totalChunks,
-          uh,
-          tokenCarrier: bearer ? "bearer" : "query",
-        },
-        "hume-clm-capture headers",
-      );
-      for (let i = 0; i < totalChunks; i++) {
-        logger.info(
-          { part: `${i + 1}/${totalChunks}`, b64: b64.slice(i * CHUNK_CHARS, (i + 1) * CHUNK_CHARS) },
-          "hume-clm-capture body",
-        );
-      }
-    } catch (err) {
-      logger.error({ err }, "hume-clm-capture failed to log request");
-    }
-
-    writeCannedSse(res);
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const messages = normalizeHumeMessages(body.messages);
+    // Hand the shared handler exactly what it reads. The token rides as
+    // user_token (its existing non-ElevenLabs slot); issuedAt inside it keys
+    // the frozen per-call prompt and the pre-call history cutoff, same as an
+    // ElevenLabs call. prosody is dropped at this boundary for now — see the
+    // file header.
+    req.body = {
+      messages: messages.map(({ role, content }) => ({ role, content })),
+      model: typeof body.model === "string" && body.model ? body.model : "eos-hume",
+      stream: body.stream !== false,
+      user_token: token,
+    };
+    await voiceCompletionHandler(req, res);
   },
 );
 

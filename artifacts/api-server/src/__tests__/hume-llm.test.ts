@@ -1,27 +1,30 @@
 /**
- * Hume EVI custom-LLM endpoint (capture stage) — voice-token auth.
+ * Hume EVI custom-LLM endpoint — real handler (delegates to the shared
+ * voiceCompletionHandler after normalizing Hume's request shape).
  *
- * The route accepts the per-user HMAC voice token from either carrier Hume
- * offers: the Authorization Bearer (the client sends the token as
- * session_settings' language_model_api_key) or the custom_session_id query
- * parameter. No static key exists — Hume's dashboard has no key field, and
- * a browser-shipped static secret is no secret.
+ * The normalization is pinned against the two REAL captured deliveries
+ * (2026-09-02) verbatim: the greeting instruction arriving as user content
+ * (alone, and prepended to the user's words) and the byte-identical
+ * duplicated message. End-to-end tests run the full pipeline — with no
+ * ANTHROPIC key in tests, streamCompanionReply serves its dev-mock reply,
+ * so real turns stream deterministic SSE.
  *
- * Covers: both carriers, tokenless/garbage/expired 401s, the canned SSE
- * reply shape, and THE non-negotiable: the voice token never reaches a log
- * line emitted by the route (pinned by spying the shared logger during real
- * requests — the global pino-http request line is separately safe because
- * its serializer strips the query string, app.ts `url.split("?")[0]`).
+ * Also pinned: both token carriers, tokenless/garbage/expired 401s, the
+ * greeting fast path (curated instant line, nothing persisted as a user
+ * turn), persistence of the stripped/deduped user turn, and THE
+ * non-negotiable — the voice token never reaches a log line.
  */
 
 import { describe, it, expect, afterAll, beforeEach, vi } from "vitest";
 import request from "supertest";
 import pg from "pg";
 
+import { eq } from "drizzle-orm";
+import { db, messagesTable } from "@workspace/db";
 import app from "../app.js";
 import { logger } from "../lib/logger.js";
 import { mintVoiceToken } from "../lib/voiceToken.js";
-import { captureSafeHeaders } from "../routes/humeLlm.js";
+import { normalizeHumeMessages, HUME_GREETING_PREFIX } from "../routes/humeLlm.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const emails: string[] = [];
@@ -40,8 +43,9 @@ async function cleanupUser(email: string): Promise<void> {
     BEGIN;
     DELETE FROM user_sessions WHERE sess::jsonb->>'userId' = '${uid}';
     DELETE FROM email_verification_tokens WHERE user_id = ${uid};
-    DELETE FROM profile WHERE user_id = ${uid};
-    DELETE FROM users   WHERE id      = ${uid};
+    DELETE FROM messages WHERE user_id = ${uid};
+    DELETE FROM profile  WHERE user_id = ${uid};
+    DELETE FROM users    WHERE id      = ${uid};
     COMMIT;
   `);
 }
@@ -53,9 +57,17 @@ async function signupUser(tag: string) {
   return { userId: res.body.user.id as number, email };
 }
 
-const TURN_BODY = { messages: [{ role: "user", content: "Hello." }], model: "eos" };
+/** A Hume-shaped message exactly as captured (prosody null, time zeros). */
+function humeMsg(role: string, content: string) {
+  return { role, content, models: { prosody: null }, time: { begin: 0, end: 0 } };
+}
 
-function postTurn(opts: { bearer?: string; queryToken?: string; body?: unknown }) {
+function postTurn(opts: {
+  bearer?: string;
+  queryToken?: string;
+  messages?: unknown[];
+  body?: unknown;
+}) {
   const url =
     "/api/hume-llm/v1/chat/completions" +
     (opts.queryToken !== undefined
@@ -63,7 +75,32 @@ function postTurn(opts: { bearer?: string; queryToken?: string; body?: unknown }
       : "");
   const r = request(app).post(url).set("Content-Type", "application/json");
   if (opts.bearer !== undefined) r.set("Authorization", `Bearer ${opts.bearer}`);
-  return r.send(JSON.stringify(opts.body ?? TURN_BODY));
+  return r.send(
+    JSON.stringify(
+      opts.body ?? { messages: opts.messages ?? [humeMsg("user", "Hello.")], model: "eos", stream: true },
+    ),
+  );
+}
+
+async function userMessages(userId: number): Promise<string[]> {
+  // Via drizzle, not raw SQL: content is encrypted at rest and drizzle
+  // decrypts on read.
+  const rows = await db
+    .select({ role: messagesTable.role, content: messagesTable.content })
+    .from(messagesTable)
+    .where(eq(messagesTable.userId, userId))
+    .orderBy(messagesTable.id);
+  return rows.map((row) => `${row.role}:${row.content}`);
+}
+
+/** Poll briefly for fire-and-forget persistence to land. */
+async function waitForRows(userId: number, pred: (rows: string[]) => boolean): Promise<string[]> {
+  for (let i = 0; i < 40; i++) {
+    const rows = await userMessages(userId);
+    if (pred(rows)) return rows;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return userMessages(userId);
 }
 
 afterAll(async () => {
@@ -73,6 +110,55 @@ afterAll(async () => {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("normalizeHumeMessages — pinned to the captured payloads", () => {
+  it("capture 1: greeting instruction alone → no user turns (synthetic greeting path)", () => {
+    expect(normalizeHumeMessages([humeMsg("user", HUME_GREETING_PREFIX)])).toEqual([]);
+  });
+
+  it("capture 2: duplicated instruction+text message → ONE turn, instruction stripped", () => {
+    const captured = [
+      humeMsg("user", `${HUME_GREETING_PREFIX} Hello, this is a capture test.`),
+      humeMsg("user", `${HUME_GREETING_PREFIX} Hello, this is a capture test.`),
+    ];
+    expect(normalizeHumeMessages(captured)).toEqual([
+      { role: "user", content: "Hello, this is a capture test.", prosody: null },
+    ]);
+  });
+
+  it("keeps genuinely different consecutive user messages (only exact duplicates drop)", () => {
+    const msgs = [humeMsg("user", "yes"), humeMsg("user", "yes please")];
+    expect(normalizeHumeMessages(msgs).map((m) => m.content)).toEqual(["yes", "yes please"]);
+  });
+
+  it("keeps a genuine repeat — same words, different time — as two turns", () => {
+    const msgs = [
+      { ...humeMsg("user", "yes"), time: { begin: 1000, end: 1400 } },
+      { ...humeMsg("user", "yes"), time: { begin: 2100, end: 2500 } },
+    ];
+    expect(normalizeHumeMessages(msgs).map((m) => m.content)).toEqual(["yes", "yes"]);
+  });
+
+  it("keeps assistant turns and non-prefix instruction text untouched", () => {
+    const msgs = [
+      humeMsg("user", "hi"),
+      humeMsg("assistant", "Hey, I'm here."),
+      humeMsg("user", `I said: ${HUME_GREETING_PREFIX}`), // not a prefix — untouched
+    ];
+    expect(normalizeHumeMessages(msgs)).toEqual([
+      { role: "user", content: "hi", prosody: null },
+      { role: "assistant", content: "Hey, I'm here.", prosody: null },
+      { role: "user", content: `I said: ${HUME_GREETING_PREFIX}`, prosody: null },
+    ]);
+  });
+
+  it("carries prosody through opaquely and tolerates garbage", () => {
+    const withScores = { role: "user", content: "hi", models: { prosody: { anything: 1 } } };
+    expect(normalizeHumeMessages([withScores])[0]!.prosody).toEqual({ anything: 1 });
+    expect(normalizeHumeMessages(null)).toEqual([]);
+    expect(normalizeHumeMessages([{ role: "system", content: "x" }, { role: "user" }])).toEqual([]);
+  });
 });
 
 describe("voice-token auth", () => {
@@ -87,34 +173,68 @@ describe("voice-token auth", () => {
     expect(res.status).toBe(401);
   });
 
-  it("401 with an EXPIRED token — this is a live request path, unlike the post-call webhook", async () => {
+  it("401 with an EXPIRED token — live request path", async () => {
     const { userId, email } = await signupUser("expired");
     const res = await postTurn({ bearer: mintVoiceToken(userId, -1000) });
     expect(res.status).toBe(401);
     await cleanupUser(email);
   });
+});
 
-  it("valid token as Bearer (session_settings.language_model_api_key path) → canned SSE", async () => {
-    const { userId, email } = await signupUser("bearer");
-    const res = await postTurn({ bearer: mintVoiceToken(userId) });
+describe("delegation to the shared voice brain", () => {
+  it("greeting-only request (capture 1 shape) → instant curated greeting, no user row persisted", async () => {
+    const { userId, email } = await signupUser("greet");
+    const res = await postTurn({
+      bearer: mintVoiceToken(userId),
+      messages: [humeMsg("user", HUME_GREETING_PREFIX)],
+    });
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("text/event-stream");
     expect(res.text).toContain('"object":"chat.completion.chunk"');
     expect(res.text).toContain("data: [DONE]");
+
+    // The greeting persists as an assistant row only — the instruction must
+    // never pollute the user's chat history.
+    const rows = await waitForRows(userId, (r) => r.some((x) => x.startsWith("assistant:")));
+    expect(rows.some((x) => x.startsWith("user:"))).toBe(false);
     await cleanupUser(email);
   });
 
-  it("valid token via custom_session_id alone (redundant carrier) → canned SSE", async () => {
-    const { userId, email } = await signupUser("query");
-    const res = await postTurn({ queryToken: mintVoiceToken(userId) });
+  it("real turn (capture 2 shape) → streams a reply and persists the STRIPPED, DEDUPED user turn", async () => {
+    const { userId, email } = await signupUser("turn");
+    const res = await postTurn({
+      bearer: mintVoiceToken(userId),
+      messages: [
+        humeMsg("user", `${HUME_GREETING_PREFIX} Hello, this is a capture test.`),
+        humeMsg("user", `${HUME_GREETING_PREFIX} Hello, this is a capture test.`),
+      ],
+    });
     expect(res.status).toBe(200);
     expect(res.text).toContain("data: [DONE]");
+
+    const rows = await waitForRows(userId, (r) => r.some((x) => x.startsWith("user:")));
+    const userRows = rows.filter((x) => x.startsWith("user:"));
+    expect(userRows).toEqual(["user:Hello, this is a capture test."]);
+    await cleanupUser(email);
+  });
+
+  it("token via custom_session_id alone (redundant carrier) → works end to end", async () => {
+    const { userId, email } = await signupUser("query");
+    const res = await postTurn({
+      queryToken: mintVoiceToken(userId),
+      messages: [humeMsg("user", "How are you?")],
+    });
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("data: [DONE]");
+    // Persistence is fire-and-forget — wait for it so cleanup doesn't race
+    // an in-flight insert into an FK violation.
+    await waitForRows(userId, (r) => r.some((x) => x.startsWith("user:")));
     await cleanupUser(email);
   });
 });
 
 describe("token-in-logs rule", () => {
-  it("the voice token appears in no route log line, from either carrier", async () => {
+  it("the voice token appears in no log line, from either carrier", async () => {
     const { userId, email } = await signupUser("logs");
     const token = mintVoiceToken(userId);
 
@@ -127,47 +247,16 @@ describe("token-in-logs rule", () => {
       vi.spyOn(logger, lvl).mockImplementation(capture as never),
     );
 
-    const res = await postTurn({ bearer: token, queryToken: token });
+    const res = await postTurn({
+      bearer: token,
+      queryToken: token,
+      messages: [humeMsg("user", "Hello there.")],
+    });
     expect(res.status).toBe(200);
-    expect(lines.length).toBeGreaterThan(0); // the capture lines fired
     for (const line of lines) expect(line).not.toContain(token);
     spies.forEach((s) => s.mockRestore());
-    await cleanupUser(email);
-  });
-
-  it("captureSafeHeaders is an allowlist — authorization and cookie never pass", () => {
-    const out = captureSafeHeaders({
-      headers: {
-        authorization: "Bearer super-secret",
-        cookie: "sid=abc",
-        "user-agent": "Hume/1.0",
-        "content-type": "application/json",
-        "x-anything-else": "dropped",
-      },
-    });
-    expect(out).toEqual({ "user-agent": "Hume/1.0", "content-type": "application/json" });
-  });
-});
-
-describe("capture", () => {
-  it("logs the request body base64-chunked with the hume-clm-capture marker", async () => {
-    const { userId, email } = await signupUser("capture");
-    const lines: Array<{ obj: unknown; msg: unknown }> = [];
-    const spy = vi
-      .spyOn(logger, "info")
-      .mockImplementation(((obj: unknown, msg: unknown) => {
-        lines.push({ obj, msg });
-        return logger;
-      }) as never);
-
-    const body = { messages: [{ role: "user", content: "capture me" }] };
-    await postTurn({ bearer: mintVoiceToken(userId), body });
-
-    const bodyLines = lines.filter((l) => l.msg === "hume-clm-capture body");
-    expect(bodyLines.length).toBeGreaterThan(0);
-    const b64 = bodyLines.map((l) => (l.obj as { b64: string }).b64).join("");
-    expect(JSON.parse(Buffer.from(b64, "base64").toString("utf8"))).toEqual(body);
-    spy.mockRestore();
+    // Same persistence-vs-cleanup race guard as above.
+    await waitForRows(userId, (r) => r.some((x) => x.startsWith("user:")));
     await cleanupUser(email);
   });
 });
