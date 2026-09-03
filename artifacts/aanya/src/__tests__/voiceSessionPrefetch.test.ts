@@ -54,6 +54,45 @@ describe("VoiceSessionPrefetcher", () => {
     expect(fetcher.callCount()).toBe(1);
   });
 
+  it("invalidate() drops a fresh cached prefetch — the next take() fetches live", async () => {
+    // A prefetched session bakes in the settings at mint time (frozen prompt,
+    // voice id, tone). Changing a setting must throw the stale session away.
+    const clock = makeClock();
+    const fetcher = makeFetcher([OK, OK]);
+    const p = new VoiceSessionPrefetcher(fetcher.fn, clock.now);
+
+    p.prefetch();
+    await Promise.resolve();
+    p.invalidate();
+
+    const taken = await p.take();
+    expect(taken.source).toBe("fresh");
+    expect(fetcher.callCount()).toBe(2);
+  });
+
+  it("invalidate() during an in-flight prefetch — the stale result is never cached or handed out", async () => {
+    const clock = makeClock();
+    let release!: (r: SessionFetchResult) => void;
+    const slow = new Promise<SessionFetchResult>((res) => (release = res));
+    let calls = 0;
+    const p = new VoiceSessionPrefetcher(
+      () => {
+        calls++;
+        return calls === 1 ? slow : Promise.resolve(OK);
+      },
+      clock.now,
+    );
+
+    p.prefetch(); // starts the slow pre-change fetch
+    p.invalidate(); // setting changed while it was in flight
+    release(OK); // the pre-change fetch settles AFTER the invalidate
+    await Promise.resolve();
+
+    const taken = await p.take();
+    expect(taken.source).toBe("fresh"); // not the orphaned in-flight result
+    expect(calls).toBe(2);
+  });
+
   it("consumes the cache — a second take() fetches fresh", async () => {
     const clock = makeClock();
     const fetcher = makeFetcher([OK, OK]);

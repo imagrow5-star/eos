@@ -41,12 +41,31 @@ interface CacheEntry {
 export class VoiceSessionPrefetcher {
   private cache: CacheEntry | null = null;
   private inflight: Promise<SessionFetchResult> | null = null;
+  /** Bumped by invalidate(); a settling fetch from an older generation must
+   *  never cache its (stale) result. */
+  private generation = 0;
 
   constructor(
     private readonly doFetch: () => Promise<SessionFetchResult>,
     private readonly now: () => number = Date.now,
     private readonly freshMs: number = SESSION_FRESH_MS,
   ) {}
+
+  /**
+   * Drop everything prefetched — cached AND in flight. Call this whenever a
+   * setting that RIDES the session response changes (language, voice gender,
+   * call voice, tone): the server bakes those into the session at mint time
+   * (voice token issue → frozen system prompt, humeVoiceId, tone), so a
+   * session minted before the change would give the user a whole call with
+   * their OLD settings. Seen live as "I switched to Español and the call
+   * spoke English" / "I picked the male voice and heard the old one" —
+   * always the first call within the 60s freshness window after a change.
+   */
+  invalidate(): void {
+    this.generation++;
+    this.cache = null;
+    this.inflight = null; // orphan it — its settle callback checks generation
+  }
 
   /**
    * Fire-and-forget: start a background fetch unless a fresh result (or a
@@ -61,10 +80,13 @@ export class VoiceSessionPrefetcher {
     // (two-arg then, not a trailing .finally) — otherwise a take() landing in
     // the window between "cache consumed" and "finally ran" would await the
     // already-settled promise and hand the same signed URL out twice.
+    const gen = this.generation;
     const job: Promise<SessionFetchResult> = this.doFetch().then(
       (result) => {
         if (this.inflight === job) this.inflight = null;
-        if (result.status === 200 && result.body?.available === true) {
+        // A fetch started before an invalidate() carries pre-change settings —
+        // its result must never be cached, however fresh it looks.
+        if (gen === this.generation && result.status === 200 && result.body?.available === true) {
           this.cache = { result, fetchedAt: this.now() };
         }
         return result;
