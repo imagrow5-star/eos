@@ -642,6 +642,17 @@ export async function voiceCompletionHandler(
     // runConversationExtractions (persistVoiceTurn), which detects intent itself.
     const rememberIntent = !synthetic && detectRememberIntent(userContent, voiceUserLanguage);
 
+    // Voice-tone context (Hume calls only — routes/humeLlm.ts sets
+    // body.voice_tone from the fresh turn's prosody scores; ElevenLabs
+    // requests never carry the field). Appended to the MODEL-facing user
+    // content only: freshUserContent was captured above, so the line is
+    // heard, never persisted — and it sits here, after remember-intent
+    // detection, so a tone line can't trip that. Riding the final user turn
+    // instead of systemExtra keeps the frozen system prefix byte-identical;
+    // the last user message is uncached every turn anyway.
+    const voiceTone = typeof body.voice_tone === "string" && body.voice_tone ? body.voice_tone : null;
+    if (voiceTone) userContent = `${userContent}\n${voiceTone}`;
+
     // ── OpenAI-compatible response: streaming SSE or plain JSON ──
     const completionId = `chatcmpl-${crypto.randomUUID()}`;
     const created = Math.floor(Date.now() / 1000);
