@@ -43,6 +43,11 @@ export interface VoiceOptionsData {
   voiceGenderExplicit: boolean;
   /** English: the six accents. Active non-English: one "std" entry. */
   accents: AccentWithVoices[];
+  /** Which engine this account's voice CALLS use. "hume" = the picker's
+   *  (ElevenLabs) voices apply to message playback only — the Settings UI
+   *  shows a note so the choice is never silently ignored. Optional so an
+   *  older server response still renders (treated as "elevenlabs"). */
+  voiceCallProvider?: "elevenlabs" | "hume";
 }
 
 /** The helper line shown after choosing a not-yet-active language. */

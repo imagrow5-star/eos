@@ -170,6 +170,26 @@ describe("session-mint provider branch", () => {
     await cleanupUser(email);
   });
 
+  it("settings/voice-options reports voiceCallProvider 'hume' for an allowlisted English account", async () => {
+    const { agent, email } = await signupAgent("vopts");
+    process.env.HUME_VOICE_ALLOWLIST = email;
+    const res = await agent.get("/api/settings/voice-options");
+    expect(res.status).toBe(200);
+    expect(res.body.voiceCallProvider).toBe("hume");
+    await cleanupUser(email);
+  });
+
+  it("settings/voice-options reports 'elevenlabs' when not allowlisted (and when unset)", async () => {
+    const { agent, email } = await signupAgent("vopts2");
+    process.env.HUME_VOICE_ALLOWLIST = "someone-else@example.invalid";
+    const denied = await agent.get("/api/settings/voice-options");
+    expect(denied.body.voiceCallProvider).toBe("elevenlabs");
+    delete process.env.HUME_VOICE_ALLOWLIST;
+    const unset = await agent.get("/api/settings/voice-options");
+    expect(unset.body.voiceCallProvider).toBe("elevenlabs");
+    await cleanupUser(email);
+  });
+
   it("token exchange failure → falls back to the ElevenLabs flow, never a dead session", async () => {
     const { agent, email } = await signupAgent("outage");
     process.env.HUME_VOICE_ALLOWLIST = email;
