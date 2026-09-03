@@ -222,6 +222,21 @@ describe("session-mint provider branch", () => {
     await cleanupUser(email);
   });
 
+  it("Spanish profile → Hume session (Stage 0: es rides the Hume path for verification)", async () => {
+    const { agent, userId, email } = await signupAgent("langes");
+    process.env.HUME_VOICE_ALLOWLIST = email;
+    const prof = await agent.get("/api/profile");
+    expect(prof.status).toBe(200);
+    await pool.query(
+      "UPDATE profile SET preferred_language = 'es' WHERE user_id = $1",
+      [userId],
+    );
+    const res = await agent.post("/api/voice-agent/session?provider=hume");
+    expect(res.status).toBe(200);
+    expect(res.body.mode).toBe("hume");
+    await cleanupUser(email);
+  });
+
   it("non-English profile → ElevenLabs flow (multilingual routing is ElevenLabs-specific)", async () => {
     const { agent, userId, email } = await signupAgent("lang");
     process.env.HUME_VOICE_ALLOWLIST = email;
