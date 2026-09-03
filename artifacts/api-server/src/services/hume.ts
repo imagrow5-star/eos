@@ -13,12 +13,13 @@ import { logger } from "../lib/logger.js";
  *   Authorization: Basic base64("apiKey:secretKey")
  *   body: grant_type=client_credentials  → { access_token }
  *
- * Rollout gate: HUME_VOICE_ALLOWLIST (comma-separated emails) mirrors the
- * memory-reset gate exactly — unset means the feature doesn't exist, and
- * only listed accounts ever take the Hume branch. Additionally the client
- * must OPT IN per request (?provider=hume): the currently shipped client
- * can't render a Hume session, so an allowlisted account on the old client
- * must keep getting ElevenLabs until the stage-B client asks for Hume.
+ * Rollout (Stage 1 of the ElevenLabs removal): Hume is the DEFAULT provider
+ * for every account — the founder allowlist is gone. The client still OPTS
+ * IN per request (?provider=hume): that param is a capability handshake, not
+ * a gate — a stale cached bundle that can't render a Hume session doesn't
+ * send it and keeps working on the dark ElevenLabs path until it refreshes.
+ * VOICE_PROVIDER=elevenlabs (isHumeDisabledByEnv) is the instant revert
+ * lever; it and the dark ElevenLabs path both disappear in Stage 4.
  */
 
 export function humeApiBase(): string {
@@ -94,24 +95,16 @@ export function humeVoiceIdForGender(
   return override || HUME_CALL_VOICES[gender][0]!.id;
 }
 
-export type HumeGateDecision = "not_configured" | "forbidden" | "allowed";
-
-/** Same semantics and tolerance as resetAllowlistDecision (resetGate.ts). */
-export function humeAllowlistDecision(
-  email: string | null | undefined,
-  rawAllowlist: string | undefined = process.env.HUME_VOICE_ALLOWLIST,
-): HumeGateDecision {
-  if (!rawAllowlist || rawAllowlist.trim() === "") return "not_configured";
-  const allow = new Set(
-    rawAllowlist
-      .split(",")
-      .map((e) => e.trim().toLowerCase())
-      .filter((e) => e.length > 0),
-  );
-  if (allow.size === 0) return "not_configured";
-  const normalized = (email ?? "").trim().toLowerCase();
-  if (normalized && allow.has(normalized)) return "allowed";
-  return "forbidden";
+/**
+ * Stage 1 revert lever: VOICE_PROVIDER=elevenlabs on the server flips every
+ * call back to the ElevenLabs path WITHOUT a deploy — the instant rollback
+ * for the everyone-on-Hume flip. Unset (the default) routes all capable
+ * clients to Hume. Anything other than the literal "elevenlabs" is ignored
+ * so a typo can never silently disable the primary provider. The lever and
+ * the dark ElevenLabs path it revives both disappear in Stage 4.
+ */
+export function isHumeDisabledByEnv(): boolean {
+  return process.env.VOICE_PROVIDER?.trim().toLowerCase() === "elevenlabs";
 }
 
 /**

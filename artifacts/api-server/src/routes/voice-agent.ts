@@ -1,13 +1,11 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
-import { db, usersTable } from "@workspace/db";
 import { requireSubscription } from "../middleware/entitlements.js";
 import { mintVoiceToken } from "../lib/voiceToken.js";
 import {
   fetchHumeAccessToken,
-  humeAllowlistDecision,
   humeConfigId,
   humeVoiceIdForGender,
+  isHumeDisabledByEnv,
   isHumeVoiceConfigured,
 } from "../services/hume.js";
 import { resolveVoiceGender } from "../services/settings/voiceCatalog.js";
@@ -52,32 +50,27 @@ const lastLanguageByUser = new Map<number, string>();
 // agent rejects id-only connections by closing the socket immediately, which
 // looks like a silent instant drop in the UI — the exact bug this prevents.
 
-// ─── Hume provider branch (voice stage A — founder allowlist + client opt-in) ─
+// ─── Hume provider branch (Stage 1: the DEFAULT for every account) ───────────
 // Returns true when it fully handled the response. Every "no" path returns
-// false so the request falls through to the ElevenLabs flow below unchanged —
-// including a Hume token-exchange failure (fail open to the provider that
-// works; a Hume outage must not kill the founder's voice button). English
-// only for now: the multilingual agent routing below is ElevenLabs-specific.
+// false so the request falls through to the DARK ElevenLabs flow below
+// unchanged — kept deliberately for one deploy cycle as the instant revert
+// (VOICE_PROVIDER=elevenlabs) and the fail-open on a Hume token-exchange
+// failure (a Hume outage must not kill anyone's voice button). The remaining
+// "no" paths: a stale cached client that doesn't send ?provider=hume (it
+// couldn't render a Hume session — the param is a capability handshake, not
+// a gate), and a profile row still carrying a removed language code ahead of
+// the boot backfill (languageSunset.ts). Stage 4 deletes the ElevenLabs flow
+// and this becomes the only path.
 async function tryHumeSession(
   req: import("express").Request,
   res: import("express").Response,
 ): Promise<boolean> {
   if (req.query?.provider !== "hume") return false;
   if (!isHumeVoiceConfigured()) return false;
-  const [u] = await db
-    .select({ email: usersTable.email })
-    .from(usersTable)
-    .where(eq(usersTable.id, req.userId))
-    .limit(1);
-  if (humeAllowlistDecision(u?.email) !== "allowed") return false;
+  if (isHumeDisabledByEnv()) return false;
 
   const profile = await getOrCreateProfileForUser(req.userId);
   const preferredLanguage = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
-  // English + Spanish (Stage 0 of the ElevenLabs removal): es rides the Hume
-  // path so allowlisted accounts can verify Spanish end-to-end — the CLM's
-  // Spanish directive, the es crisis floor, and EVI's Spanish speech — before
-  // Hume becomes the only provider. Other languages still fall through to
-  // ElevenLabs until the language set shrinks to en+es.
   if (preferredLanguage !== "en" && preferredLanguage !== "es") return false;
 
   const accessToken = await fetchHumeAccessToken();

@@ -8,9 +8,9 @@
 
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
-import { db, profileTable, usersTable } from "@workspace/db";
+import { db, profileTable } from "@workspace/db";
 import {
-  humeAllowlistDecision,
+  isHumeDisabledByEnv,
   isHumeVoiceConfigured,
   HUME_CALL_VOICES,
   isCuratedHumeVoice,
@@ -86,20 +86,19 @@ router.get("/settings/voice-options", async (req, res): Promise<void> => {
         : [];
 
   // Which engine this ACCOUNT's voice calls use — same gates as the session
-  // route's Hume branch (configured + allowlist + English profile, judged on
-  // the PROFILE language, never the ?language override). The picker's voices
-  // are ElevenLabs voices, so on a Hume-routed account they apply to message
-  // playback but not to calls — the UI shows a note instead of silently
-  // offering choices that don't apply (the exact bug this field fixes).
-  let voiceCallProvider: "elevenlabs" | "hume" = "elevenlabs";
-  if (isHumeVoiceConfigured() && profileLanguage === "en") {
-    const [u] = await db
-      .select({ email: usersTable.email })
-      .from(usersTable)
-      .where(eq(usersTable.id, req.userId))
-      .limit(1);
-    if (humeAllowlistDecision(u?.email) === "allowed") voiceCallProvider = "hume";
-  }
+  // route's Hume branch (configured + not env-reverted + en/es profile,
+  // judged on the PROFILE language, never the ?language override). Stage 1:
+  // Hume is the default for everyone; "elevenlabs" appears only under the
+  // VOICE_PROVIDER revert lever or a not-yet-backfilled removed-language row.
+  // The picker's specific voices are ElevenLabs voices, so on a Hume-routed
+  // account they apply to message playback but not to calls — the UI shows a
+  // note instead of silently offering choices that don't apply.
+  const voiceCallProvider: "elevenlabs" | "hume" =
+    isHumeVoiceConfigured() &&
+    !isHumeDisabledByEnv() &&
+    (profileLanguage === "en" || profileLanguage === "es")
+      ? "hume"
+      : "elevenlabs";
 
   // Hume-routed accounts also get the curated CALL voice chips (two per
   // gender: warmer default first, softer option second). currentHumeVoiceId

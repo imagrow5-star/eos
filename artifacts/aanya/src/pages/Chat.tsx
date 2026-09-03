@@ -1693,9 +1693,10 @@ export default function Chat() {
   const voiceSessionPrefetcher = useMemo(
     () =>
       new VoiceSessionPrefetcher(async () => {
-        // ?provider=hume is an OFFER, not a demand: the server returns a Hume
-        // session only for allowlisted accounts (English profiles, Hume env
-        // configured) and serves everyone else the ElevenLabs flow unchanged.
+        // ?provider=hume is a CAPABILITY handshake, not a gate: this bundle
+        // can render a Hume session, so the server (Stage 1: Hume default
+        // for everyone) returns one; the ElevenLabs flow remains only as
+        // the server-side revert lever and fail-open fallback.
         const res = await fetch(`${import.meta.env.BASE_URL}api/voice-agent/session?provider=hume`, {
           method: "POST",
           credentials: "include",
