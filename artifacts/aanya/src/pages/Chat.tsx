@@ -3194,6 +3194,20 @@ export default function Chat() {
                 )}
               </div>
 
+              {/* Hume-routed accounts (allowlist trial): the picker's voices
+                  are ElevenLabs voices, so accent, voice gender, and voice
+                  shape message playback but NOT calls — say so up front
+                  rather than letting a choice be silently ignored. Shown
+                  once, above all three sections it affects. */}
+              {voiceOptions?.voiceCallProvider === "hume" && (
+                <p className="text-[11px] text-amber-700 dark:text-amber-400/90 mt-5 leading-relaxed">
+                  Your voice calls are using Eos&rsquo;s new call engine, which
+                  has its own voice for now &mdash; the choices below apply to
+                  message playback (&ldquo;Listen&rdquo;), not to calls yet.
+                  Voice choice for calls is coming.
+                </p>
+              )}
+
               {/* ── Accent — an English concept: hidden for other active
                   languages, coming-soon helper for inactive ones ─────────── */}
               {(!voiceOptions ||
@@ -3222,18 +3236,6 @@ export default function Chat() {
               )}
 
               {/* ── Voice gender ──────────────────────────────────────────── */}
-              {/* Hume-routed accounts (allowlist trial): the picker's voices
-                  are ElevenLabs voices, so they shape message playback but NOT
-                  calls — say so up front rather than letting a choice be
-                  silently ignored. Shown once, above both pickers it affects. */}
-              {voiceOptions?.voiceCallProvider === "hume" && (
-                <p className="text-[11px] text-amber-700 dark:text-amber-400/90 mt-5 leading-relaxed">
-                  Your voice calls are using Eos's new call engine, which has
-                  its own voice for now — the choices below apply to message
-                  playback (&ldquo;Listen&rdquo;), not to calls yet. Voice
-                  choice for calls is coming.
-                </p>
-              )}
               <div className="mt-5">
                 <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
                   Voice gender
