@@ -12,7 +12,6 @@ import {
 import { getOrCreateProfileForUser } from "./profile.js";
 import { isVoiceCallEnabled } from "../lib/featureFlags.js";
 import { voiceSessionUsageLimits } from "../middleware/usageLimits.js";
-import { buildVoiceFirstMessage } from "../services/voiceGreeting.js";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { resolveHelplines, buildHelplineBlockText } from "../services/crisis/helplines.js";
@@ -104,7 +103,6 @@ async function tryHumeSession(
     configId: humeConfigId(),
     userToken,
     tone: (profile as { voiceTone?: string }).voiceTone ?? "auto",
-    firstMessage: buildVoiceFirstMessage(profile),
   });
   return true;
 }
@@ -152,14 +150,12 @@ router.post("/voice-agent/session", requireSubscription, ...voiceSessionUsageLim
   // same read. The speculative fetch above keeps the ElevenLabs round trip
   // out of this read's shadow on every call but the first.
   let tone = "auto";
-  let firstMessage: string;
   let preferredLanguage = "en";
   try {
     const profile = await getOrCreateProfileForUser(req.userId);
     tone = (profile as { voiceTone?: string }).voiceTone ?? "auto";
     preferredLanguage = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
     lastLanguageByUser.set(req.userId, preferredLanguage);
-    firstMessage = buildVoiceFirstMessage(profile);
     // Latency: build the call's frozen system prompt NOW, in the background,
     // keyed by the issuedAt inside the token we just minted (format
     // "<userId>.<issuedAt>...."). The first LLM turn — the greeting the user
@@ -173,7 +169,6 @@ router.post("/voice-agent/session", requireSubscription, ...voiceSessionUsageLim
     }
   } catch (err) {
     logger.warn({ err }, "voice-agent: couldn't load profile — using defaults");
-    firstMessage = buildVoiceFirstMessage(null);
   }
 
   // Route the call to the language-appropriate agent (safe-degrades inside).
@@ -208,13 +203,9 @@ router.post("/voice-agent/session", requireSubscription, ...voiceSessionUsageLim
 
   // "How Eos speaks" preference rides along so the client can set matching
   // TTS delivery overrides (stability/speed) on the ElevenLabs session.
-  // firstMessage is still computed and returned, but the client NO LONGER
-  // forwards it to ElevenLabs: the first_message override is rejected with a
-  // 1008 disconnect since ~July 29 (permission tightened on their side; no
-  // dashboard toggle on our tier). Greetings come from the custom LLM's
-  // synthetic-greeting path instead (routes/voice-llm.ts).
-  // TODO(cleanup): drop firstMessage from this response + voiceGreeting.ts
-  // once the LLM greeting is confirmed as the permanent path.
+  // No greeting rides along: the first_message override has been rejected by
+  // ElevenLabs with a 1008 disconnect since ~July 29, and the greeting comes
+  // from the custom LLM's synthetic-greeting path (routes/voice-llm.ts).
 
   if (!signedUrlPromise) {
     // No API key to sign with — only a PUBLIC agent can possibly work. Let the
@@ -226,7 +217,6 @@ router.post("/voice-agent/session", requireSubscription, ...voiceSessionUsageLim
       agentId,
       userToken,
       tone,
-      firstMessage,
       ...(language ? { language } : {}),
     });
     return;
@@ -246,7 +236,6 @@ router.post("/voice-agent/session", requireSubscription, ...voiceSessionUsageLim
           signedUrl: data.signed_url,
           userToken,
           tone,
-          firstMessage,
           ...(language ? { language } : {}),
         });
         return;

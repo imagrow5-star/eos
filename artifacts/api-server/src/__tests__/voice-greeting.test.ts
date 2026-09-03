@@ -1,8 +1,9 @@
 /**
  * Unit tests: the instant voice-call opening line (services/voiceGreeting.ts).
  *
- * These lines are spoken via the ElevenLabs firstMessage override with no LLM
- * involved, so the pools themselves must guarantee the product rules:
+ * These lines are spoken by the synthetic-greeting fast path
+ * (routes/voice-llm.ts) with no LLM involved, so the pools themselves must
+ * guarantee the product rules:
  *  - under 12 words, always;
  *  - never claim memory of specifics (a canned line must not be able to
  *    contradict Eos's real memory);

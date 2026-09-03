@@ -103,8 +103,10 @@ export function formatVoiceTone(prosody: unknown): string | null {
 export interface HumeChatMessage {
   role: "user" | "assistant";
   content: string;
-  /** 48-dimension emotion scores when the user SPOKE — null for text input.
-   *  Kept opaque until a real spoken capture pins the shape. */
+  /** Prosody model output when the user SPOKE — shape pinned by the real
+   *  spoken captures (2026-09-03): { scores: <48 named emotions, floats
+   *  0..1> }, consumed by formatVoiceTone. Null for text input and Hume's
+   *  own instruction turns. */
   prosody: unknown;
 }
 
