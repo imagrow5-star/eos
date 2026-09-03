@@ -183,28 +183,29 @@ describe.skipIf(!DB)("voice settings endpoints reconcile profile.voice_id", () =
     expect(row.voice_id).toBe(ELLI); // voice honestly unchanged (UI shows the gap note)
   });
 
-  it("POST /settings/language de re-points an English-only voice at a German catalog voice", async () => {
+  it("POST /settings/language es re-points an English-only voice at a Spanish catalog voice", async () => {
     const { agent, userId } = await makeAgent("language");
     await setVoiceState(userId, { voiceId: ELLI, voiceGender: "female", voiceAccent: "us", preferredLanguage: "en" });
 
-    const res = await agent.post("/api/settings/language").send({ language: "de" });
+    const res = await agent.post("/api/settings/language").send({ language: "es" });
     expect(res.status).toBe(200);
     expect(res.body.voiceChanged).toBe(true);
 
     const row = await readVoiceState(userId);
-    expect(row.preferred_language).toBe("de");
-    expect(voicesFor("de", "std", "female").some((v) => v.voiceId === row.voice_id)).toBe(true);
+    expect(row.preferred_language).toBe("es");
+    expect(voicesFor("es", "std", "female").some((v) => v.voiceId === row.voice_id)).toBe(true);
   });
 
-  it("POST /settings/language leaves the voice alone for an INACTIVE language (still English)", async () => {
-    const { agent, userId } = await makeAgent("language-inactive");
+  it("POST /settings/language rejects a REMOVED language and changes nothing", async () => {
+    // fi (and the other ten) left the supported set in the ElevenLabs sunset.
+    const { agent, userId } = await makeAgent("language-removed");
     await setVoiceState(userId, { voiceId: ELLI, voiceGender: "female", voiceAccent: "us", preferredLanguage: "en" });
 
     const res = await agent.post("/api/settings/language").send({ language: "fi" });
-    expect(res.status).toBe(200);
-    expect(res.body.voiceChanged).toBe(false);
+    expect(res.status).toBe(400);
 
     const row = await readVoiceState(userId);
+    expect(row.preferred_language).toBe("en");
     expect(row.voice_id).toBe(ELLI);
   });
 });

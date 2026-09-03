@@ -303,30 +303,27 @@ describe("helpline block localization", () => {
 
 // ─── System prompt language directive ────────────────────────────────────────
 
-const GOLDEN_DE_DIRECTIVE = `══════════════════════════════════════════════════════
+const GOLDEN_ES_DIRECTIVE = `══════════════════════════════════════════════════════
 LANGUAGE
 ══════════════════════════════════════════════════════
-The user's preferred language is Deutsch.
-You MUST respond in Deutsch. Every reply. Every time. Without exception.
+The user's preferred language is Español.
+You MUST respond in Español. Every reply. Every time. Without exception.
 
-If the user writes in a different language (including English) — still reply in Deutsch. Assume they can read Deutsch because they explicitly chose it in Settings. If their message is unclear (voice transcription garbled, typos, mixed words) — ask for clarification IN Deutsch. Never fall back to English on your own.
+If the user writes in a different language (including English) — still reply in Español. Assume they can read Español because they explicitly chose it in Settings. If their message is unclear (voice transcription garbled, typos, mixed words) — ask for clarification IN Español. Never fall back to English on your own.
 
 The only exceptions: (1) the user explicitly writes "please switch to English" or "réponds-moi en anglais" or similar, OR (2) the user changes their language preference in Settings. Both are signalled by the system, not inferred by you.
 
-Your craft rules (mirroring tone, no clinical labels, no invented affirmations, no death metaphors, honest presence) apply identically in Deutsch. If you don't know a word in Deutsch, say so honestly rather than switching to English.`;
+Your craft rules (mirroring tone, no clinical labels, no invented affirmations, no death metaphors, honest presence) apply identically in Español. If you don't know a word in Español, say so honestly rather than switching to English.`;
 
 describe("system prompt language directive", () => {
-  it("is byte-identical to the golden string for German", () => {
-    expect(buildLanguageDirective("de")).toBe(GOLDEN_DE_DIRECTIVE);
+  it("is byte-identical to the golden string for Spanish", () => {
+    expect(buildLanguageDirective("es")).toBe(GOLDEN_ES_DIRECTIVE);
   });
 
-  it("carries the strict wording for a French user (MUST + example phrases)", () => {
-    const fr = buildLanguageDirective("fr")!;
-    expect(fr).toContain("The user's preferred language is Français.");
-    expect(fr).toContain("You MUST respond in Français. Every reply. Every time. Without exception.");
-    expect(fr).toContain('"please switch to English" or "réponds-moi en anglais"');
-    expect(fr).toContain("Never fall back to English on your own.");
-    expect(fr).toContain("ask for clarification IN Français");
+  it("is absent for the REMOVED languages (sunset to en+es — see languages.ts)", () => {
+    expect(buildLanguageDirective("de")).toBeNull();
+    expect(buildLanguageDirective("fr")).toBeNull();
+    expect(buildLanguageDirective("nl")).toBeNull();
   });
 
   it("is absent for English, inactive, and unknown languages", () => {
@@ -399,7 +396,7 @@ async function makeGermanUser(tag: string) {
 }
 
 describe("end-to-end — German user", () => {
-  it("benign German message: no crisis artifacts; system prompt carries the German directive", async () => {
+  it("benign German message: no crisis artifacts; removed language means the plain English prompt", async () => {
     const { agent, userId } = await makeGermanUser("benign");
 
     const res = await agent.post("/api/chat/send").send({ content: "ich fühle mich so allein heute" });
@@ -410,13 +407,12 @@ describe("end-to-end — German user", () => {
         .rows[0].n,
     ).toBe(0);
 
-    // The actual system prompt for this user contains the German directive
-    // (the reply itself is the deterministic English mock in tests — the
-    // directive is what makes the live model answer in German).
+    // German is a REMOVED language (sunset to en+es): a row still storing
+    // 'de' (pre-backfill) gets the plain English prompt — no directive. The
+    // boot backfill (languageSunset.ts) moves such rows to 'en' anyway.
     const [profile] = await db.select().from(profileTable).where(eq(profileTable.userId, userId));
     const prompt = await buildSystemPrompt(profile!);
-    expect(prompt.stable).toContain("The user's preferred language is Deutsch.");
-    expect(prompt.stable).toContain("You MUST respond in Deutsch.");
+    expect(prompt.stable).not.toContain("The user's preferred language is Deutsch.");
   });
 
   it("German crisis message: detector fires, German helpline card with German lines", async () => {

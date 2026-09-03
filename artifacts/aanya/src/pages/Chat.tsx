@@ -745,7 +745,13 @@ export default function Chat() {
   // English voice (secondary guard — the primary rule is that the realtime
   // agent is the only audio source during a call).
   const speechLang = ((profile as any)?.preferredLanguage as string | undefined) || "en";
-  const activeVoiceTone: string = (profile as any)?.voiceTone ?? "auto";
+  // Optimistic tone override (same perceived-lag fix as the voice-options
+  // chips): the radio used to move only after PUT /profile + a full profile
+  // refetch — one to two seconds of "did my tap register?". The local
+  // override moves it instantly; a failed save clears it so the radio falls
+  // back to the stored truth.
+  const [pendingVoiceTone, setPendingVoiceTone] = useState<string | null>(null);
+  const activeVoiceTone: string = pendingVoiceTone ?? ((profile as any)?.voiceTone ?? "auto");
 
   // Fetch romantic voice availability from the server
   const { data: voicesStatus } = useQuery<{ romantic: RomanticVoiceStatus[]; voiceCallEnabled?: boolean }>({
@@ -2631,11 +2637,15 @@ export default function Chat() {
   // sections, saving through /api/settings/voice.)
 
   const handleToneSelect = (voiceTone: string) => {
+    setPendingVoiceTone(voiceTone);
     updateProfile.mutate(
       { data: { voiceTone } as any },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
+        },
+        onError: () => {
+          setPendingVoiceTone((cur) => (cur === voiceTone ? null : cur));
         },
       },
     );
