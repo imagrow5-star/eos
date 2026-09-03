@@ -125,6 +125,18 @@ router.post(
 
     const body = (req.body ?? {}) as Record<string, unknown>;
     const messages = normalizeHumeMessages(body.messages);
+
+    // ── Prosody shape capture (env-gated, founder-only) ─────────────────────
+    // A real SPOKEN turn is needed to pin models.prosody's exact shape
+    // before any code consumes it (capture-first rule — text turns carry
+    // null). With HUME_PROSODY_DEBUG=1, the prosody value of each incoming
+    // user message is logged — emotion scores only, NEVER message content.
+    // Default off; flip on in Render for one spoken test, then off again.
+    if (process.env.HUME_PROSODY_DEBUG === "1") {
+      for (const m of messages) {
+        if (m.role === "user") logger.info({ prosody: m.prosody }, "hume-prosody-debug");
+      }
+    }
     // Hand the shared handler exactly what it reads. The token rides as
     // user_token (its existing non-ElevenLabs slot); issuedAt inside it keys
     // the frozen per-call prompt and the pre-call history cutoff, same as an
