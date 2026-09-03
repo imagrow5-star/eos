@@ -52,8 +52,18 @@ const HUME_VOICE_BY_GENDER: Record<"female" | "male", string> = {
   male: "99d2cb9c-9011-4ead-8734-641656d3df66", // Comforting Male Conversationalist
 };
 
+/**
+ * Env overrides (HUME_VOICE_ID_FEMALE / HUME_VOICE_ID_MALE) exist for voice
+ * AUDITIONING and hotfixes: swapping a call voice is a Render env change, not
+ * a deploy. Not every Voice Library voice is EVI-compatible (voices carry a
+ * compatible_octave_models field; an incompatible voice_id gets the session
+ * rejected by EVI), so being able to retry candidates quickly matters. The
+ * winners get promoted into the map above.
+ */
 export function humeVoiceIdForGender(gender: "female" | "male"): string {
-  return HUME_VOICE_BY_GENDER[gender];
+  const override =
+    process.env[gender === "female" ? "HUME_VOICE_ID_FEMALE" : "HUME_VOICE_ID_MALE"]?.trim();
+  return override || HUME_VOICE_BY_GENDER[gender];
 }
 
 export type HumeGateDecision = "not_configured" | "forbidden" | "allowed";

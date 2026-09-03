@@ -251,9 +251,18 @@ async function runTokenCleanup() {
   }
 }
 
-// Run once at startup, then every 24 hours
-runTokenCleanup();
-setInterval(runTokenCleanup, 24 * 60 * 60 * 1000);
+// Run once at startup, then every 24 hours — but NEVER under test: every
+// vitest worker boots this app against the SHARED test database, so a
+// boot-time sweep from one file deletes another file's deliberately-expired
+// fixture rows mid-test. That exact race flaked reset-password.test.ts's
+// TOKEN_EXPIRED case into TOKEN_INVALID in CI (the sweep ate the expired
+// token between the test's INSERT and its request), and any test inserting
+// an expired email-verification token is equally exposed. Production and
+// dev behavior are unchanged.
+if (process.env.NODE_ENV !== "test") {
+  runTokenCleanup();
+  setInterval(runTokenCleanup, 24 * 60 * 60 * 1000);
+}
 
 const app: Express = express();
 

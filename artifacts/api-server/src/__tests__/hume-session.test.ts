@@ -84,6 +84,8 @@ beforeEach(() => {
   tokenCalls.length = 0;
   tokenExchangeFails = false;
   delete process.env.HUME_VOICE_ALLOWLIST;
+  delete process.env.HUME_VOICE_ID_FEMALE;
+  delete process.env.HUME_VOICE_ID_MALE;
 });
 
 describe("humeAllowlistDecision (mirrors the memory-reset gate)", () => {
@@ -143,6 +145,17 @@ describe("session-mint provider branch", () => {
     expect(res.body.mode).toBe("hume");
     // Comforting Male Conversationalist (live Voice Library capture).
     expect(res.body.humeVoiceId).toBe("99d2cb9c-9011-4ead-8734-641656d3df66");
+    await cleanupUser(email);
+  });
+
+  it("HUME_VOICE_ID_* env overrides win over the built-in gender map", async () => {
+    const { agent, email } = await signupAgent("voxenv");
+    process.env.HUME_VOICE_ALLOWLIST = email;
+    process.env.HUME_VOICE_ID_FEMALE = "audition-voice-id-1";
+    const res = await agent.post("/api/voice-agent/session?provider=hume");
+    expect(res.status).toBe(200);
+    expect(res.body.mode).toBe("hume");
+    expect(res.body.humeVoiceId).toBe("audition-voice-id-1");
     await cleanupUser(email);
   });
 
