@@ -24,7 +24,7 @@ import { db, messagesTable } from "@workspace/db";
 import app from "../app.js";
 import { logger } from "../lib/logger.js";
 import { mintVoiceToken } from "../lib/voiceToken.js";
-import { normalizeHumeMessages, HUME_GREETING_PREFIX } from "../routes/humeLlm.js";
+import { normalizeHumeMessages, formatVoiceTone, HUME_GREETING_PREFIX } from "../routes/humeLlm.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const emails: string[] = [];
@@ -230,6 +230,45 @@ describe("delegation to the shared voice brain", () => {
     // an in-flight insert into an FK violation.
     await waitForRows(userId, (r) => r.some((x) => x.startsWith("user:")));
     await cleanupUser(email);
+  });
+});
+
+describe("formatVoiceTone — pinned to the real spoken captures (2026-09-03)", () => {
+  it("joyful greeting sample → joy, excitement, determination", () => {
+    const scores = { Joy: 0.598, Excitement: 0.213, Determination: 0.142, Admiration: 0.117, Fear: 0.098, Calmness: 0.096, Sadness: 0.012 };
+    expect(formatVoiceTone({ scores })).toBe("(voice tone: joy, excitement, determination)");
+  });
+
+  it("frustrated sample → anger, determination, contempt (amusement .149 makes the threshold but not the top 3)", () => {
+    const scores = { Anger: 0.205, Determination: 0.165, Contempt: 0.158, Amusement: 0.149, Awkwardness: 0.124, Anxiety: 0.109, Joy: 0.037 };
+    expect(formatVoiceTone({ scores })).toBe("(voice tone: anger, determination, contempt)");
+  });
+
+  it("quiet low-arousal sample → sadness, confusion, pain (the case a 0.15 cut would flatten)", () => {
+    const scores = { Sadness: 0.169, Confusion: 0.139, Pain: 0.128, Distress: 0.112, Fear: 0.098, Boredom: 0.078 };
+    expect(formatVoiceTone({ scores })).toBe("(voice tone: sadness, confusion, pain)");
+  });
+
+  it("null prosody (Hume instruction turns, text input) → null", () => {
+    expect(formatVoiceTone(null)).toBeNull();
+    expect(formatVoiceTone(undefined)).toBeNull();
+    expect(formatVoiceTone({})).toBeNull();
+    expect(formatVoiceTone({ scores: "garbage" })).toBeNull();
+  });
+
+  it("all scores at floor noise → null (no tone line beats a made-up one)", () => {
+    expect(formatVoiceTone({ scores: { Joy: 0.05, Sadness: 0.04, Fear: 0.02 } })).toBeNull();
+  });
+
+  it("threshold is env-tunable without a deploy", () => {
+    process.env.HUME_TONE_THRESHOLD = "0.2";
+    try {
+      expect(formatVoiceTone({ scores: { Anger: 0.205, Determination: 0.165 } })).toBe(
+        "(voice tone: anger)",
+      );
+    } finally {
+      delete process.env.HUME_TONE_THRESHOLD;
+    }
   });
 });
 

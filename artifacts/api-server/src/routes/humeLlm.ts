@@ -48,10 +48,16 @@ const router: IRouter = Router();
 //      genuinely repeated speech ("yes" … "yes") arrives with differing
 //      time fields and survives.
 //
-// models.prosody was null in both captures (text input carries no voice).
-// It is deliberately NOT consumed yet: per the capture-first rule, code
-// that reads prosody scores waits for a real SPOKEN capture to pin the
-// shape. normalizeHumeMessages keeps the field visible for that next step.
+// PROSODY → VOICE-TONE CONTEXT: a real spoken capture (2026-09-03) pinned
+// the shape — prosody.scores is a flat object of 48 named emotions with
+// float confidences 0..1; Hume's own instruction turns (and text input)
+// carry prosody: null. formatVoiceTone turns the fresh user turn's scores
+// into a short context line, e.g. "(voice tone: anger, determination,
+// contempt)", which rides to the shared handler as body.voice_tone and is
+// appended to the MODEL-facing user content only — heard, never persisted,
+// and never in systemExtra (a per-turn system change would void the frozen
+// prompt cache every turn; the final user message is uncached anyway).
+// No prosody → no line: Eos simply doesn't get tone context for that turn.
 //
 // TOKEN-IN-LOGS RULE (non-negotiable, unchanged): the pino-http serializer
 // strips query strings from request lines, pino redact covers the
@@ -60,6 +66,39 @@ const router: IRouter = Router();
 
 /** The greeting-trigger instruction observed verbatim in both captures. */
 export const HUME_GREETING_PREFIX = "Speak your greeting to the user.";
+
+// ─── Voice-tone extraction ───────────────────────────────────────────────────
+// Threshold 0.12 (env-tunable), top 3 emotions. Calibrated on the three real
+// spoken captures: a joyful greeting (Joy .598, Excitement .213,
+// Determination .142), a frustrated turn (Anger .205, Determination .165,
+// Contempt .158), and a quiet low-arousal turn (Sadness .169, Confusion
+// .139, Pain .128). A 0.15 cut keeps the loud turns intact but reduces the
+// quiet one to "sadness" alone — and quiet turns are exactly where tone
+// context matters most (low-arousal speech compresses all scores downward).
+// 0.12 keeps each sample's genuinely dominant cluster while sitting far
+// above the ≤0.05 floor noise visible across all 48 dimensions.
+const TONE_MAX_EMOTIONS = 3;
+function toneThreshold(): number {
+  const raw = Number(process.env.HUME_TONE_THRESHOLD ?? "");
+  return Number.isFinite(raw) && raw > 0 && raw < 1 ? raw : 0.12;
+}
+
+/**
+ * Format prosody scores into the per-turn tone line, or null when there is
+ * nothing meaningful to say (no prosody — Hume instruction turns and text
+ * input — or no score above the threshold). Exported for tests.
+ */
+export function formatVoiceTone(prosody: unknown): string | null {
+  const scores = (prosody as { scores?: unknown } | null | undefined)?.scores;
+  if (!scores || typeof scores !== "object") return null;
+  const threshold = toneThreshold();
+  const top = Object.entries(scores as Record<string, unknown>)
+    .filter((e): e is [string, number] => typeof e[1] === "number" && e[1] >= threshold)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, TONE_MAX_EMOTIONS)
+    .map(([name]) => name.toLowerCase());
+  return top.length ? `(voice tone: ${top.join(", ")})` : null;
+}
 
 export interface HumeChatMessage {
   role: "user" | "assistant";
@@ -125,6 +164,10 @@ router.post(
 
     const body = (req.body ?? {}) as Record<string, unknown>;
     const messages = normalizeHumeMessages(body.messages);
+    // Tone context comes from the FRESH turn — the last user message; older
+    // turns' prosody already shaped their own replies.
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    const voiceTone = lastUser ? formatVoiceTone(lastUser.prosody) : null;
 
     // ── Prosody shape capture (env-gated, founder-only) ─────────────────────
     // A real SPOKEN turn is needed to pin models.prosody's exact shape
@@ -140,13 +183,14 @@ router.post(
     // Hand the shared handler exactly what it reads. The token rides as
     // user_token (its existing non-ElevenLabs slot); issuedAt inside it keys
     // the frozen per-call prompt and the pre-call history cutoff, same as an
-    // ElevenLabs call. prosody is dropped at this boundary for now — see the
-    // file header.
+    // ElevenLabs call. voice_tone (when the turn carried prosody) is applied
+    // by the handler to the model-facing user content only.
     req.body = {
       messages: messages.map(({ role, content }) => ({ role, content })),
       model: typeof body.model === "string" && body.model ? body.model : "eos-hume",
       stream: body.stream !== false,
       user_token: token,
+      ...(voiceTone ? { voice_tone: voiceTone } : {}),
     };
     await voiceCompletionHandler(req, res);
   },
