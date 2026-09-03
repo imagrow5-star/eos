@@ -73,7 +73,12 @@ async function tryHumeSession(
 
   const profile = await getOrCreateProfileForUser(req.userId);
   const preferredLanguage = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
-  if (preferredLanguage !== "en") return false;
+  // English + Spanish (Stage 0 of the ElevenLabs removal): es rides the Hume
+  // path so allowlisted accounts can verify Spanish end-to-end — the CLM's
+  // Spanish directive, the es crisis floor, and EVI's Spanish speech — before
+  // Hume becomes the only provider. Other languages still fall through to
+  // ElevenLabs until the language set shrinks to en+es.
+  if (preferredLanguage !== "en" && preferredLanguage !== "es") return false;
 
   const accessToken = await fetchHumeAccessToken();
   if (!accessToken) {

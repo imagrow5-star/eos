@@ -6,6 +6,7 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "hume-clm-test": "tsx ./src/hume-clm-capture-test.ts",
+    "hume-tts-probe": "tsx ./src/hume-tts-probe.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
