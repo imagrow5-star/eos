@@ -233,6 +233,54 @@ describe("delegation to the shared voice brain", () => {
   });
 });
 
+describe("prosody debug hook (HUME_PROSODY_DEBUG)", () => {
+  it("when enabled, logs the prosody object of user messages — never their content", async () => {
+    const { userId, email } = await signupUser("prosody");
+    process.env.HUME_PROSODY_DEBUG = "1";
+    const lines: Array<{ obj: unknown; msg: unknown }> = [];
+    const spy = vi.spyOn(logger, "info").mockImplementation(((obj: unknown, msg: unknown) => {
+      lines.push({ obj, msg });
+      return logger;
+    }) as never);
+    try {
+      const spoken = {
+        role: "user",
+        content: "a secret sentence that must not be logged",
+        models: { prosody: { scores: { anything: 0.5 } } },
+        time: { begin: 100, end: 900 },
+      };
+      const res = await postTurn({ bearer: mintVoiceToken(userId), messages: [spoken] });
+      expect(res.status).toBe(200);
+      const debugLines = lines.filter((l) => l.msg === "hume-prosody-debug");
+      expect(debugLines).toHaveLength(1);
+      expect(debugLines[0]!.obj).toEqual({ prosody: { scores: { anything: 0.5 } } });
+      expect(JSON.stringify(debugLines[0]!.obj)).not.toContain("secret sentence");
+    } finally {
+      delete process.env.HUME_PROSODY_DEBUG;
+      spy.mockRestore();
+    }
+    await waitForRows(userId, (r) => r.some((x) => x.startsWith("user:")));
+    await cleanupUser(email);
+  });
+
+  it("when disabled (default), no prosody debug line is emitted", async () => {
+    const { userId, email } = await signupUser("noprosody");
+    const lines: unknown[] = [];
+    const spy = vi.spyOn(logger, "info").mockImplementation(((_obj: unknown, msg: unknown) => {
+      lines.push(msg);
+      return logger;
+    }) as never);
+    try {
+      await postTurn({ bearer: mintVoiceToken(userId), messages: [humeMsg("user", "hi there")] });
+      expect(lines).not.toContain("hume-prosody-debug");
+    } finally {
+      spy.mockRestore();
+    }
+    await waitForRows(userId, (r) => r.some((x) => x.startsWith("user:")));
+    await cleanupUser(email);
+  });
+});
+
 describe("token-in-logs rule", () => {
   it("the voice token appears in no log line, from either carrier", async () => {
     const { userId, email } = await signupUser("logs");
