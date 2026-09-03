@@ -9,7 +9,13 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
 import { db, profileTable, usersTable } from "@workspace/db";
-import { humeAllowlistDecision, isHumeVoiceConfigured } from "../services/hume.js";
+import {
+  humeAllowlistDecision,
+  isHumeVoiceConfigured,
+  HUME_CALL_VOICES,
+  isCuratedHumeVoice,
+  humeVoiceIdForGender,
+} from "../services/hume.js";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { getOrCreateProfileForUser } from "./profile.js";
@@ -95,6 +101,25 @@ router.get("/settings/voice-options", async (req, res): Promise<void> => {
     if (humeAllowlistDecision(u?.email) === "allowed") voiceCallProvider = "hume";
   }
 
+  // Hume-routed accounts also get the curated CALL voice chips (two per
+  // gender: warmer default first, softer option second). currentHumeVoiceId
+  // is the RESOLVED id — what the next call will actually use, pick or
+  // default — so the UI always highlights the truth.
+  const humeCallVoices =
+    voiceCallProvider === "hume"
+      ? {
+          humeVoices: HUME_CALL_VOICES[filterGender].map((v) => ({
+            voiceId: v.id,
+            displayName: v.name,
+            tagline: v.tagline,
+          })),
+          currentHumeVoiceId: humeVoiceIdForGender(
+            filterGender,
+            (profile as { humeVoiceId?: string | null }).humeVoiceId,
+          ),
+        }
+      : {};
+
   res.json({
     languages: LANGUAGES,
     currentLanguage: language,
@@ -106,6 +131,7 @@ router.get("/settings/voice-options", async (req, res): Promise<void> => {
     voiceGenderExplicit: resolved.explicit,
     accents,
     voiceCallProvider,
+    ...humeCallVoices,
   });
 });
 
@@ -295,6 +321,43 @@ router.post("/settings/voice", async (req, res): Promise<void> => {
   try {
     const uh = hashUserIdForLog(req.userId);
     if (uh) logger.info({ uh }, "settings: voice saved from curated catalog");
+  } catch { /* logging must never crash the caller */ }
+  res.json({ ok: true, voiceId });
+});
+
+// ─── POST /settings/hume-voice ───────────────────────────────────────────────
+// Saves a Hume CALL voice pick — validated against the curated per-gender
+// catalog (services/hume.ts) so a profile can never point calls at an
+// arbitrary Voice Library id. Not gated on the Hume allowlist: the pick is
+// inert unless the account is Hume-routed, and gating would add a users read
+// for no safety gain.
+
+router.post("/settings/hume-voice", async (req, res): Promise<void> => {
+  const raw = req.body as { voice_id?: unknown; voiceId?: unknown } | undefined;
+  const voiceId =
+    typeof raw?.voice_id === "string" ? raw.voice_id
+    : typeof raw?.voiceId === "string" ? raw.voiceId
+    : "";
+  if (!voiceId) {
+    res.status(400).json({ error: "voice_id required" });
+    return;
+  }
+  const profile = await getOrCreateProfileForUser(req.userId);
+  const gender = resolveVoiceGender(
+    profile as { voiceGender?: string | null; companionGender?: string | null },
+  ).gender;
+  if (!isCuratedHumeVoice(gender, voiceId)) {
+    res.status(400).json({ error: "That call voice isn't available for your voice gender." });
+    return;
+  }
+
+  await db
+    .update(profileTable)
+    .set({ humeVoiceId: voiceId })
+    .where(and(eq(profileTable.id, profile.id), eq(profileTable.userId, req.userId)));
+  try {
+    const uh = hashUserIdForLog(req.userId);
+    if (uh) logger.info({ uh }, "settings: hume call voice saved");
   } catch { /* logging must never crash the caller */ }
   res.json({ ok: true, voiceId });
 });

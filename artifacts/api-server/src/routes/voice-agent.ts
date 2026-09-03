@@ -105,12 +105,15 @@ async function tryHumeSession(
     configId: humeConfigId(),
     userToken,
     tone: (profile as { voiceTone?: string }).voiceTone ?? "auto",
-    // Voice-gender parity (phase 1): the picked voice gender maps to one
-    // curated Hume voice; the client sends it as session_settings.voice_id.
+    // Call voice (phase 2): the user's explicit pick from the curated
+    // two-per-gender catalog when set and valid for their voice gender,
+    // else the gender default; the client sends it as
+    // session_settings.voice_id.
     humeVoiceId: humeVoiceIdForGender(
       resolveVoiceGender(
         profile as { voiceGender?: string | null; companionGender?: string | null },
       ).gender,
+      (profile as { humeVoiceId?: string | null }).humeVoiceId,
     ),
   });
   return true;

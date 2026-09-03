@@ -148,7 +148,7 @@ describe("session-mint provider branch", () => {
     await cleanupUser(email);
   });
 
-  it("HUME_VOICE_ID_* env overrides win over the built-in gender map", async () => {
+  it("HUME_VOICE_ID_* env overrides win over the built-in gender default", async () => {
     const { agent, email } = await signupAgent("voxenv");
     process.env.HUME_VOICE_ALLOWLIST = email;
     process.env.HUME_VOICE_ID_FEMALE = "audition-voice-id-1";
@@ -156,6 +156,41 @@ describe("session-mint provider branch", () => {
     expect(res.status).toBe(200);
     expect(res.body.mode).toBe("hume");
     expect(res.body.humeVoiceId).toBe("audition-voice-id-1");
+    await cleanupUser(email);
+  });
+
+  it("an explicit curated pick wins over the gender default AND the env override", async () => {
+    const { agent, userId, email } = await signupAgent("voxpick");
+    process.env.HUME_VOICE_ALLOWLIST = email;
+    process.env.HUME_VOICE_ID_FEMALE = "audition-voice-id-1";
+    const prof = await agent.get("/api/profile");
+    expect(prof.status).toBe(200);
+    // Relaxing ASMR Woman — the softer female option.
+    await pool.query(
+      "UPDATE profile SET hume_voice_id = 'aeaaf1f8-fe31-49ae-893d-c744e5207bc2' WHERE user_id = $1",
+      [userId],
+    );
+    const res = await agent.post("/api/voice-agent/session?provider=hume");
+    expect(res.status).toBe(200);
+    expect(res.body.mode).toBe("hume");
+    expect(res.body.humeVoiceId).toBe("aeaaf1f8-fe31-49ae-893d-c744e5207bc2");
+    await cleanupUser(email);
+  });
+
+  it("a pick from the OTHER gender goes inert — the current gender's default plays", async () => {
+    const { agent, userId, email } = await signupAgent("voxstale");
+    process.env.HUME_VOICE_ALLOWLIST = email;
+    const prof = await agent.get("/api/profile");
+    expect(prof.status).toBe(200);
+    // Male voice gender, but a stored FEMALE pick (e.g. from before a gender
+    // switch) → the male default, never the cross-gender voice.
+    await pool.query(
+      "UPDATE profile SET voice_gender = 'male', hume_voice_id = 'aeaaf1f8-fe31-49ae-893d-c744e5207bc2' WHERE user_id = $1",
+      [userId],
+    );
+    const res = await agent.post("/api/voice-agent/session?provider=hume");
+    expect(res.status).toBe(200);
+    expect(res.body.humeVoiceId).toBe("99d2cb9c-9011-4ead-8734-641656d3df66");
     await cleanupUser(email);
   });
 
@@ -212,6 +247,45 @@ describe("session-mint provider branch", () => {
     const res = await agent.get("/api/settings/voice-options");
     expect(res.status).toBe(200);
     expect(res.body.voiceCallProvider).toBe("hume");
+    // Curated call-voice chips for the (default female) gender: warmer
+    // default first, softer option second; current = the resolved default.
+    expect(res.body.humeVoices).toEqual([
+      { voiceId: "59cfc7ab-e945-43de-ad1a-471daa379c67", displayName: "Kora", tagline: "warm & calm" },
+      { voiceId: "aeaaf1f8-fe31-49ae-893d-c744e5207bc2", displayName: "Relaxing ASMR Woman", tagline: "soft & close" },
+    ]);
+    expect(res.body.currentHumeVoiceId).toBe("59cfc7ab-e945-43de-ad1a-471daa379c67");
+    await cleanupUser(email);
+  });
+
+  it("settings/hume-voice saves a curated pick, which the next voice-options and session reflect", async () => {
+    const { agent, email } = await signupAgent("voxsave");
+    process.env.HUME_VOICE_ALLOWLIST = email;
+    const save = await agent
+      .post("/api/settings/hume-voice")
+      .send({ voice_id: "aeaaf1f8-fe31-49ae-893d-c744e5207bc2" });
+    expect(save.status).toBe(200);
+    expect(save.body).toEqual({ ok: true, voiceId: "aeaaf1f8-fe31-49ae-893d-c744e5207bc2" });
+    const opts = await agent.get("/api/settings/voice-options");
+    expect(opts.body.currentHumeVoiceId).toBe("aeaaf1f8-fe31-49ae-893d-c744e5207bc2");
+    const sess = await agent.post("/api/voice-agent/session?provider=hume");
+    expect(sess.body.humeVoiceId).toBe("aeaaf1f8-fe31-49ae-893d-c744e5207bc2");
+    await cleanupUser(email);
+  });
+
+  it("settings/hume-voice rejects non-curated and cross-gender ids", async () => {
+    const { agent, email } = await signupAgent("voxbad");
+    process.env.HUME_VOICE_ALLOWLIST = email;
+    const unknown = await agent
+      .post("/api/settings/hume-voice")
+      .send({ voice_id: "not-a-curated-voice" });
+    expect(unknown.status).toBe(400);
+    // A male catalog voice while the profile resolves to female voice gender.
+    const crossGender = await agent
+      .post("/api/settings/hume-voice")
+      .send({ voice_id: "b152864b-6720-496a-9d18-eaadb31516ee" });
+    expect(crossGender.status).toBe(400);
+    const missing = await agent.post("/api/settings/hume-voice").send({});
+    expect(missing.status).toBe(400);
     await cleanupUser(email);
   });
 

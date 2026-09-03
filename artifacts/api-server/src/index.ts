@@ -6,7 +6,7 @@ import { reconcileAgentConfig } from "./services/agentConfigGuard";
 import { runDataEncryptionMigration } from "./services/dataEncryptionMigration";
 import { backfillVoiceGender } from "./services/settings/voiceGenderBackfill";
 import { migrateRomanticPersona } from "./services/settings/romanticPersonaMigration";
-import { ensureProfileThemeColumns, ensureReflectionReportsTable, ensureMorningNoteColumns, ensureDodoBillingColumns } from "./services/schemaGuard";
+import { ensureProfileThemeColumns, ensureReflectionReportsTable, ensureMorningNoteColumns, ensureDodoBillingColumns, ensureHumeVoiceColumn } from "./services/schemaGuard";
 import { backfillMemoryImportance } from "./services/memory/backfill";
 import { runDedupBackfill } from "./services/memory/dedupBackfill";
 import { warnIfAgentEnvIncomplete } from "./services/voiceAgentRouting";
@@ -109,6 +109,17 @@ await ensureDodoBillingColumns().catch((e) =>
   logger.error(
     { err: e },
     "dodo billing column guard failed at boot — subscriptions reads may fail until the rename applies",
+  ),
+);
+
+// Add the Hume call-voice column if a deploy predates it. Idempotent; instant
+// no-op once applied. On failure we still boot — the profile-read retry inside
+// getOrCreateProfileForUser does not cover this column, so profile reads may
+// 42703 until a later boot applies it.
+await ensureHumeVoiceColumn().catch((e) =>
+  logger.error(
+    { err: e },
+    "hume voice column guard failed at boot — profile reads may fail until the column exists",
   ),
 );
 

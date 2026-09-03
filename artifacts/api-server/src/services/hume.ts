@@ -37,33 +37,61 @@ export function isHumeVoiceConfigured(): boolean {
   );
 }
 
-// ─── Phase-1 call voices (voice-gender parity) ───────────────────────────────
-// The Settings voice picker's voices are ElevenLabs voices with no Hume
-// equivalents yet, so a Hume call maps the picked VOICE GENDER to one curated
-// Hume Voice Library voice per gender. The id rides to the client in the
-// session response and is sent as session_settings.voice_id (wire name
-// verified from the SDK serializer), in the same message that carries the
-// CLM auth — which EVI provably processes before synthesizing the greeting.
-// Ids are from the live Voice Library API capture (2026-09-03), founder-
-// picked; the full catalog is in the session notes for future per-voice
-// mapping (phase 2).
-const HUME_VOICE_BY_GENDER: Record<"female" | "male", string> = {
-  female: "59cfc7ab-e945-43de-ad1a-471daa379c67", // Kora
-  male: "99d2cb9c-9011-4ead-8734-641656d3df66", // Comforting Male Conversationalist
+// ─── Phase-2 call voices (curated two-per-gender picker) ─────────────────────
+// The Settings picker's specific voices are still ElevenLabs voices with no
+// Hume equivalents, so a Hume call resolves its voice from this curated
+// catalog: a warmer default and a softer alternative per gender, pickable in
+// Settings. The resolved id rides to the client in the session response and is
+// sent as session_settings.voice_id (wire name verified from the SDK
+// serializer), in the same message that carries the CLM auth — which EVI
+// provably processes before synthesizing the greeting. Ids are from the live
+// Voice Library API capture (2026-09-03), founder-picked; all four report
+// compatible_octave_models 1 and 2 (catalogue query, 2026-09-03).
+export interface HumeCallVoice {
+  id: string;
+  name: string;
+  /** Short feel label shown on the picker chip, e.g. "warm & calm". */
+  tagline: string;
+}
+
+/** The FIRST entry per gender is that gender's default. */
+export const HUME_CALL_VOICES: Record<"female" | "male", readonly HumeCallVoice[]> = {
+  female: [
+    { id: "59cfc7ab-e945-43de-ad1a-471daa379c67", name: "Kora", tagline: "warm & calm" },
+    { id: "aeaaf1f8-fe31-49ae-893d-c744e5207bc2", name: "Relaxing ASMR Woman", tagline: "soft & close" },
+  ],
+  male: [
+    { id: "99d2cb9c-9011-4ead-8734-641656d3df66", name: "Comforting Male Conversationalist", tagline: "warm & steady" },
+    { id: "b152864b-6720-496a-9d18-eaadb31516ee", name: "Soft Male Conversationalist", tagline: "gentle & low" },
+  ],
 };
 
+export function isCuratedHumeVoice(gender: "female" | "male", id: string): boolean {
+  return HUME_CALL_VOICES[gender].some((v) => v.id === id);
+}
+
 /**
- * Env overrides (HUME_VOICE_ID_FEMALE / HUME_VOICE_ID_MALE) exist for voice
- * AUDITIONING and hotfixes: swapping a call voice is a Render env change, not
+ * Resolve the call voice. An explicit pick (profile.hume_voice_id) wins when
+ * it's in the curated catalog FOR THE CURRENT GENDER — a pick from the other
+ * gender goes inert and that gender's default plays (switching back revives
+ * it), so no reconciliation write is needed on a gender change.
+ *
+ * Without a pick, the env overrides (HUME_VOICE_ID_FEMALE /
+ * HUME_VOICE_ID_MALE) replace the gender DEFAULT — they exist for voice
+ * AUDITIONING and hotfixes: swapping the default is a Render env change, not
  * a deploy. Not every Voice Library voice is EVI-compatible (voices carry a
  * compatible_octave_models field; an incompatible voice_id gets the session
  * rejected by EVI), so being able to retry candidates quickly matters. The
- * winners get promoted into the map above.
+ * winners get promoted into the catalog above.
  */
-export function humeVoiceIdForGender(gender: "female" | "male"): string {
+export function humeVoiceIdForGender(
+  gender: "female" | "male",
+  pickedId?: string | null,
+): string {
+  if (pickedId && isCuratedHumeVoice(gender, pickedId)) return pickedId;
   const override =
     process.env[gender === "female" ? "HUME_VOICE_ID_FEMALE" : "HUME_VOICE_ID_MALE"]?.trim();
-  return override || HUME_VOICE_BY_GENDER[gender];
+  return override || HUME_CALL_VOICES[gender][0]!.id;
 }
 
 export type HumeGateDecision = "not_configured" | "forbidden" | "allowed";

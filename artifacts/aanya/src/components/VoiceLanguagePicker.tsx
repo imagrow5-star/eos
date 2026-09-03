@@ -21,6 +21,13 @@ export interface CatalogVoiceOption {
   gender: "female" | "male";
 }
 
+export interface HumeVoiceOption {
+  voiceId: string;
+  displayName: string;
+  /** Short feel label shown on the chip, e.g. "warm & calm". */
+  tagline: string;
+}
+
 export interface AccentWithVoices {
   code: string;
   label: string;
@@ -49,6 +56,12 @@ export interface VoiceOptionsData {
    *  Settings UI shows a note so no choice is silently ignored. Optional so
    *  an older server response still renders (treated as "elevenlabs"). */
   voiceCallProvider?: "elevenlabs" | "hume";
+  /** Hume-routed accounts only: the curated CALL voices for the current
+   *  voice gender (warmer default first, softer option second). */
+  humeVoices?: HumeVoiceOption[];
+  /** The call voice the next call will actually use (resolved server-side:
+   *  the explicit pick when set and valid for the gender, else the default). */
+  currentHumeVoiceId?: string;
 }
 
 /** The helper line shown after choosing a not-yet-active language. */
@@ -127,6 +140,46 @@ export function VoiceGenderChips({
           {label}
         </button>
       ))}
+    </div>
+  );
+}
+
+/** Hume CALL voice chips — no preview (Hume previews aren't wired yet), so a
+ *  tap selects directly; the tagline tells the user what to expect. */
+export function HumeVoiceChips({
+  voices,
+  selectedVoiceId,
+  disabled,
+  onSelect,
+}: {
+  voices: HumeVoiceOption[];
+  selectedVoiceId: string;
+  disabled?: boolean;
+  onSelect: (voiceId: string) => void;
+}) {
+  return (
+    <div className="flex gap-1.5 flex-wrap">
+      {voices.map((v) => {
+        const isSelected = selectedVoiceId === v.voiceId;
+        return (
+          <button
+            key={v.voiceId}
+            onClick={() => onSelect(v.voiceId)}
+            disabled={disabled}
+            title={isSelected ? "Your current call voice" : "Use this voice on calls"}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium tracking-wide border transition-all",
+              isSelected
+                ? "bg-primary text-primary-foreground border-primary shadow-[0_2px_8px_hsl(var(--primary)/0.3)]"
+                : "border-primary/15 text-muted-foreground/60 hover:border-primary/35 hover:text-foreground/75",
+            )}
+          >
+            {isSelected && <Check className="w-3 h-3 shrink-0" />}
+            {v.displayName}
+            <span className="text-[9px] opacity-70">{v.tagline}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
