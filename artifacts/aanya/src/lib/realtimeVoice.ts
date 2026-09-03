@@ -27,10 +27,15 @@ export type RealtimeSessionInfo = {
   reason?: string;
   /** Human-readable extra context from the server (e.g. the ElevenLabs error). */
   detail?: string;
-  mode?: "signed" | "public";
+  /** "hume" = the server routed this call to Hume EVI (allowlist) — the
+   *  client starts lib/humeVoice.ts instead of the ElevenLabs engine. */
+  mode?: "signed" | "public" | "hume";
   signedUrl?: string;
   agentId?: string;
   userToken?: string;
+  /** Hume mode only: short-lived OAuth access token + EVI config id. */
+  accessToken?: string;
+  configId?: string;
   /** "How Eos speaks" preference — maps to TTS delivery overrides (voiceOverrides.ts). */
   tone?: VoiceTone;
   /**

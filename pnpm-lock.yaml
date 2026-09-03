@@ -169,6 +169,9 @@ importers:
       '@elevenlabs/client':
         specifier: ^1.15.0
         version: 1.15.0
+      hume:
+        specifier: 0.16.1
+        version: 0.16.1
     devDependencies:
       '@hookform/resolvers':
         specifier: ^3.10.0
@@ -2993,6 +2996,10 @@ packages:
     resolution: {integrity: sha512-eKCa6bwnJhvxj14kZk5NCPc6Hb6BdsU9DZcOnmQKSnO1VKrfV0zCvtttPZUsBvjmNDn8rpcJfpwSYnHBjc95MQ==}
     engines: {node: '>=18.18.0'}
 
+  hume@0.16.1:
+    resolution: {integrity: sha512-L1W0u4Bft0xQLRZ6Ywou4atszrArPI/WZHbUJ0mRkk/8YKm6D4yVRDDxQA3S1tER/73nvLXAPVVpbIptFoBDtQ==}
+    engines: {node: '>=18.0.0'}
+
   iconv-lite@0.7.3:
     resolution: {integrity: sha512-IKXpvIzjnC9XTAUbVBcMfGS0EPaIXtW6v+zr+RRp+hqULEpo0owZax6wyRwPOJbWbzjYspQwusTsfVr0ifh4uQ==}
     engines: {node: '>=0.10.0'}
@@ -4261,6 +4268,18 @@ packages:
 
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
+
+  ws@8.21.3:
+    resolution: {integrity: sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
 
   xtend@4.0.2:
     resolution: {integrity: sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ==}
@@ -6745,6 +6764,14 @@ snapshots:
 
   human-signals@8.0.1: {}
 
+  hume@0.16.1:
+    dependencies:
+      ws: 8.21.3
+      zod: 3.25.76
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
   iconv-lite@0.7.3:
     dependencies:
       safer-buffer: 2.1.2
@@ -7988,6 +8015,8 @@ snapshots:
       use-sync-external-store: 1.6.0(react@19.1.0)
 
   wrappy@1.0.2: {}
+
+  ws@8.21.3: {}
 
   xtend@4.0.2: {}
 
