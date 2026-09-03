@@ -1872,6 +1872,15 @@ export default function Chat() {
           const convo = await startHumeCall(session, {
             onMode: (mode) => {
               if (realtimeGenRef.current !== rtGen || !continuousVoiceRef.current) return;
+              // Mirror the ElevenLabs handler's unmute: a manual interrupt
+              // muted the PREVIOUS reply (setVolume 0 in interruptRealtime);
+              // this transition to "speaking" is a fresh reply, which must be
+              // audible again. Without this, one tap of "Tap to interrupt" on
+              // a Hume call silenced every later reply for the whole call.
+              if (mode === "speaking" && realtimeMutedRef.current) {
+                realtimeMutedRef.current = false;
+                try { realtimeConvoRef.current?.setVolume({ volume: 1 }); } catch { /* best-effort */ }
+              }
               voiceCallPhaseRef.current = mode;
               setVoiceCallPhase(mode);
               if (mode === "listening") setVoiceCallRecognizedText("");
