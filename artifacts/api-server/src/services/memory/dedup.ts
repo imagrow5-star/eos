@@ -149,11 +149,32 @@ Reply with ONLY this JSON, no prose:
 
 // ─── Robust parsers (pure) ──────────────────────────────────────────────────────
 
-/** First balanced-ish `{...}` slice — tolerates code fences and stray prose. */
+/** First balanced `{...}` slice — tolerates code fences, stray prose, and
+ *  anything the model appends AFTER the object (seen in production: a valid
+ *  clusters object followed by extra text, which the old first-`{`-to-last-`}`
+ *  slice turned into a parse failure and a skipped batch). */
 function extractJsonObject(text: string): string {
   const start = text.indexOf("{");
+  if (start === -1) throw new Error("no JSON object");
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}" && --depth === 0) return text.slice(start, i + 1);
+  }
+  // Never balanced (truncated output) — old widest-slice behavior, so
+  // JSON.parse reports the truncation and callers fail open as before.
   const end = text.lastIndexOf("}");
-  if (start === -1 || end === -1 || end < start) throw new Error("no JSON object");
+  if (end === -1 || end < start) throw new Error("no JSON object");
   return text.slice(start, end + 1);
 }
 
