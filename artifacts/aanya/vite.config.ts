@@ -58,8 +58,18 @@ const cspMetaPlugin = {
       // AudioWorklet module scripts; without an explicit script-src-elem it
       // falls back to script-src 'self', blocking the blob: worklet. Setting
       // script-src-elem explicitly keeps script-src tight.
-      "script-src-elem 'self' blob: data:",
-      "worker-src 'self' blob: data:",
+      //
+      // Hume's EVIWebAudioPlayer loads its worklet from a HARDCODED URL on
+      // Hume's SDK-assets bucket (no override option, file not in the npm
+      // package — verified in hume@0.16.1 EVIWebAudioPlayer source). The
+      // allowance is PATH-SCOPED to that bucket directory only — never bare
+      // storage.googleapis.com, which hosts arbitrary user buckets and would
+      // gut script-src. The trailing slash makes it a prefix match, so a
+      // pinned-SDK upgrade that bumps the versioned filename keeps working;
+      // only Hume controls content under that path. Added to worker-src too
+      // for browsers that police worklets there instead of script-src-elem.
+      "script-src-elem 'self' blob: data: https://storage.googleapis.com/evi-react-sdk-assets/",
+      "worker-src 'self' blob: data: https://storage.googleapis.com/evi-react-sdk-assets/",
       "manifest-src 'self'",
       "object-src 'none'",
       "base-uri 'self'",
