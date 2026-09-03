@@ -85,6 +85,23 @@ describe("parseClusterDecision", () => {
     const clusters = parseClusterDecision('{"clusters": [{"canonical_id": 4, "duplicate_ids": [4, 6]}]}');
     expect(clusters).toEqual([{ canonicalId: 4, duplicateIds: [6] }]);
   });
+
+  it("tolerates extra content AFTER the object (the production backfill failure)", () => {
+    // Seen live: a valid pretty-printed object, then more text containing
+    // braces. The old first-"{" to last-"}" slice made JSON.parse throw
+    // "Unexpected non-whitespace character after JSON" and the batch was skipped.
+    const clusters = parseClusterDecision(
+      '{\n  "clusters": [\n    {"canonical_id": 1, "duplicate_ids": [2]}\n  ]\n}\nNote: {3, 5} looked related but are distinct habits.',
+    );
+    expect(clusters).toEqual([{ canonicalId: 1, duplicateIds: [2] }]);
+  });
+
+  it("ignores braces inside string values while scanning", () => {
+    const clusters = parseClusterDecision(
+      '```json\n{"clusters": [{"canonical_id": 7, "duplicate_ids": [9], "note": "same {goal}"}]}\n```\ntrailing prose',
+    );
+    expect(clusters).toEqual([{ canonicalId: 7, duplicateIds: [9] }]);
+  });
 });
 
 // ─── findSemanticDuplicate orchestration (stubbed model) ─────────────────────
