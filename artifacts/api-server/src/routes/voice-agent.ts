@@ -7,8 +7,10 @@ import {
   fetchHumeAccessToken,
   humeAllowlistDecision,
   humeConfigId,
+  humeVoiceIdForGender,
   isHumeVoiceConfigured,
 } from "../services/hume.js";
+import { resolveVoiceGender } from "../services/settings/voiceCatalog.js";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { isVoiceCallEnabled } from "../lib/featureFlags.js";
 import { voiceSessionUsageLimits } from "../middleware/usageLimits.js";
@@ -103,6 +105,13 @@ async function tryHumeSession(
     configId: humeConfigId(),
     userToken,
     tone: (profile as { voiceTone?: string }).voiceTone ?? "auto",
+    // Voice-gender parity (phase 1): the picked voice gender maps to one
+    // curated Hume voice; the client sends it as session_settings.voice_id.
+    humeVoiceId: humeVoiceIdForGender(
+      resolveVoiceGender(
+        profile as { voiceGender?: string | null; companionGender?: string | null },
+      ).gender,
+    ),
   });
   return true;
 }

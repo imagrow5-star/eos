@@ -113,6 +113,9 @@ describe("session-mint provider branch", () => {
     expect(res.body.configId).toBe("cfg_test_1");
     expect(typeof res.body.userToken).toBe("string");
     expect(res.body.userToken.split(".").length).toBe(5);
+    // Voice-gender parity: a fresh profile resolves to the female display
+    // default → Kora (id from the live Voice Library capture, 2026-09-03).
+    expect(res.body.humeVoiceId).toBe("59cfc7ab-e945-43de-ad1a-471daa379c67");
 
     // The exchange used the scheme from the SDK source: Basic key:secret +
     // client_credentials.
@@ -120,6 +123,26 @@ describe("session-mint provider branch", () => {
     const expectedBasic = `Basic ${Buffer.from("hume-test-api-key:hume-test-secret-key").toString("base64")}`;
     expect(tokenCalls[0]!.auth).toBe(expectedBasic);
     expect(tokenCalls[0]!.body).toContain("grant_type=client_credentials");
+    await cleanupUser(email);
+  });
+
+  it("male voice gender → the male Hume voice in the session response", async () => {
+    const { agent, userId, email } = await signupAgent("malevoice");
+    process.env.HUME_VOICE_ALLOWLIST = email;
+    // Materialize the profile row, then pick the male voice gender the way
+    // POST /settings/voice-gender stores it.
+    const prof = await agent.get("/api/profile");
+    expect(prof.status).toBe(200);
+    const upd = await pool.query(
+      "UPDATE profile SET voice_gender = 'male' WHERE user_id = $1",
+      [userId],
+    );
+    expect(upd.rowCount).toBe(1);
+    const res = await agent.post("/api/voice-agent/session?provider=hume");
+    expect(res.status).toBe(200);
+    expect(res.body.mode).toBe("hume");
+    // Comforting Male Conversationalist (live Voice Library capture).
+    expect(res.body.humeVoiceId).toBe("99d2cb9c-9011-4ead-8734-641656d3df66");
     await cleanupUser(email);
   });
 

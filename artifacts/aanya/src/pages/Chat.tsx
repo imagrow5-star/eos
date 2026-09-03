@@ -3194,17 +3194,18 @@ export default function Chat() {
                 )}
               </div>
 
-              {/* Hume-routed accounts (allowlist trial): the picker's voices
-                  are ElevenLabs voices, so accent, voice gender, and voice
-                  shape message playback but NOT calls — say so up front
-                  rather than letting a choice be silently ignored. Shown
-                  once, above all three sections it affects. */}
+              {/* Hume-routed accounts (allowlist trial): VOICE GENDER now
+                  applies on calls (the server maps it to a curated Hume
+                  voice per gender), but the picker's specific voices and
+                  accents are ElevenLabs voices with no Hume mapping yet —
+                  those still shape message playback only. Say so up front
+                  rather than letting a choice be silently ignored. */}
               {voiceOptions?.voiceCallProvider === "hume" && (
                 <p className="text-[11px] text-amber-700 dark:text-amber-400/90 mt-5 leading-relaxed">
-                  Your voice calls are using Eos&rsquo;s new call engine, which
-                  has its own voice for now &mdash; the choices below apply to
-                  message playback (&ldquo;Listen&rdquo;), not to calls yet.
-                  Voice choice for calls is coming.
+                  Your voice calls are using Eos&rsquo;s new call engine. Your
+                  voice gender choice applies to calls; the accent and
+                  specific voice choices below shape message playback
+                  (&ldquo;Listen&rdquo;) only, for now.
                 </p>
               )}
 

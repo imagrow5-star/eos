@@ -33,6 +33,9 @@ export type HumeSessionInfo = {
   accessToken: string;
   configId: string;
   userToken: string;
+  /** Voice for the user's picked voice gender (phase-1 parity). Optional:
+   *  absent (older server) means the EVI config's own voice plays. */
+  humeVoiceId?: string;
 };
 
 export type HumeCallHandlers = {
@@ -152,9 +155,14 @@ export async function startHumeCall(
 
     // The voice token in BOTH carriers — language_model_api_key becomes the
     // Bearer on our CLM endpoint; custom_session_id rides the query string.
+    // voiceId (→ wire voice_id) rides the SAME message: EVI processes these
+    // settings before the greeting synthesizes (proven by the CLM auth that
+    // arrives the same way), so the whole call — greeting included — speaks
+    // in the gender-matched voice.
     socket.sendSessionSettings({
       customSessionId: session.userToken,
       languageModelApiKey: session.userToken,
+      ...(session.humeVoiceId ? { voiceId: session.humeVoiceId } : {}),
     });
 
     // Audio out, then audio in. init() unlocks the AudioContext — the call
