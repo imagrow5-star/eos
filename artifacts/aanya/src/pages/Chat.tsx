@@ -1649,7 +1649,10 @@ export default function Chat() {
   const voiceSessionPrefetcher = useMemo(
     () =>
       new VoiceSessionPrefetcher(async () => {
-        const res = await fetch(`${import.meta.env.BASE_URL}api/voice-agent/session`, {
+        // ?provider=hume is an OFFER, not a demand: the server returns a Hume
+        // session only for allowlisted accounts (English profiles, Hume env
+        // configured) and serves everyone else the ElevenLabs flow unchanged.
+        const res = await fetch(`${import.meta.env.BASE_URL}api/voice-agent/session?provider=hume`, {
           method: "POST",
           credentials: "include",
         });
@@ -1852,6 +1855,91 @@ export default function Chat() {
         }
         const session: RealtimeSessionInfo | null = res.status === 200 ? res.body : null;
         if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) return; // ended/superseded while connecting
+
+        // ── 1a) Hume EVI engine (allowlist trial — see lib/humeVoice.ts) ────
+        // Same call screen, same teardown paths: the returned controls are
+        // structurally compatible with the ElevenLabs convo (endSession +
+        // setVolume), so realtimeConvoRef-driven cleanup works unchanged.
+        // Captions are sentence-level (Hume has no character alignment): the
+        // full reply text is revealed at once.
+        if (session?.available && session.mode === "hume") {
+          connectStage = "handshake";
+          const { startHumeCall, isHumeSession } = await import("@/lib/humeVoice");
+          if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) return;
+          if (!isHumeSession(session)) {
+            throw new Error("Hume session response is missing accessToken/configId/userToken");
+          }
+          const convo = await startHumeCall(session, {
+            onMode: (mode) => {
+              if (realtimeGenRef.current !== rtGen || !continuousVoiceRef.current) return;
+              voiceCallPhaseRef.current = mode;
+              setVoiceCallPhase(mode);
+              if (mode === "listening") setVoiceCallRecognizedText("");
+            },
+            onUserText: (text) => {
+              if (realtimeGenRef.current !== rtGen || !continuousVoiceRef.current) return;
+              setVoiceCallRecognizedText(text);
+            },
+            onAgentText: (text) => {
+              if (realtimeGenRef.current !== rtGen || !continuousVoiceRef.current) return;
+              setVoiceCallCaptionText(text);
+              setVoiceCallCaptionRevealed(text.split(/\s+/).filter(Boolean).length);
+            },
+            onFirstAudio: () => {
+              if (realtimeGenRef.current !== rtGen) return;
+              if (!firstAudioReported) {
+                firstAudioReported = true;
+                timing.firstAudioMs = Date.now() - tPress;
+                reportVoiceCallTiming(timing);
+              }
+            },
+            onDisconnect: (info) => {
+              if (
+                realtimeGenRef.current !== rtGen ||
+                !continuousVoiceRef.current ||
+                voiceEngineRef.current !== "realtime"
+              ) return;
+              realtimeGenRef.current++;
+              realtimeConvoRef.current = null;
+              voiceEngineRef.current = null;
+              setVoiceEngine(null);
+              setContinuousVoice(false);
+              continuousVoiceRef.current = false;
+              voiceCallPhaseRef.current = "listening";
+              setVoiceCallPhase("listening");
+              setVoiceCallRecognizedText("");
+              setVoiceCallCaptionText("");
+              setVoiceCallCaptionRevealed(0);
+              setVoiceCallMessage(null);
+              if (info.message) {
+                setVoiceError(`Voice call disconnected: ${info.message}`);
+                reportVoiceCallError("hume-disconnect", info.message);
+              } else {
+                setVoiceError("Voice call disconnected. Tap Voice call to reconnect.");
+              }
+              queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
+            },
+            onError: (message, context) => {
+              if (realtimeGenRef.current !== rtGen) return;
+              console.error("[voice-call] hume error:", message, context);
+              reportVoiceCallError("hume-error", message);
+            },
+          });
+          if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) {
+            convo.endSession().catch(() => {});
+            return;
+          }
+          timing.connectedLevel = "hume";
+          timing.connectMs = Date.now() - tPress;
+          realtimeConvoRef.current = convo as unknown as RealtimeConversation;
+          voiceEngineRef.current = "realtime";
+          stopSpeaking();
+          voice.stopListening();
+          setVoiceEngine("realtime");
+          setVoiceCallMessage(null);
+          console.log("[voice-call] hume engine connected");
+          return;
+        }
 
         if (session?.available) {
           connectStage = "handshake";
