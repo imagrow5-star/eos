@@ -1,6 +1,14 @@
 import { Router, type IRouter } from "express";
+import { eq } from "drizzle-orm";
+import { db, usersTable } from "@workspace/db";
 import { requireSubscription } from "../middleware/entitlements.js";
 import { mintVoiceToken } from "../lib/voiceToken.js";
+import {
+  fetchHumeAccessToken,
+  humeAllowlistDecision,
+  humeConfigId,
+  isHumeVoiceConfigured,
+} from "../services/hume.js";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { isVoiceCallEnabled } from "../lib/featureFlags.js";
 import { voiceSessionUsageLimits } from "../middleware/usageLimits.js";
@@ -43,11 +51,71 @@ const lastLanguageByUser = new Map<number, string>();
 // agent rejects id-only connections by closing the socket immediately, which
 // looks like a silent instant drop in the UI — the exact bug this prevents.
 
+// ─── Hume provider branch (voice stage A — founder allowlist + client opt-in) ─
+// Returns true when it fully handled the response. Every "no" path returns
+// false so the request falls through to the ElevenLabs flow below unchanged —
+// including a Hume token-exchange failure (fail open to the provider that
+// works; a Hume outage must not kill the founder's voice button). English
+// only for now: the multilingual agent routing below is ElevenLabs-specific.
+async function tryHumeSession(
+  req: import("express").Request,
+  res: import("express").Response,
+): Promise<boolean> {
+  if (req.query?.provider !== "hume") return false;
+  if (!isHumeVoiceConfigured()) return false;
+  const [u] = await db
+    .select({ email: usersTable.email })
+    .from(usersTable)
+    .where(eq(usersTable.id, req.userId))
+    .limit(1);
+  if (humeAllowlistDecision(u?.email) !== "allowed") return false;
+
+  const profile = await getOrCreateProfileForUser(req.userId);
+  const preferredLanguage = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
+  if (preferredLanguage !== "en") return false;
+
+  const accessToken = await fetchHumeAccessToken();
+  if (!accessToken) {
+    logger.warn("voice-agent: Hume access-token exchange failed — falling back to ElevenLabs");
+    return false;
+  }
+
+  const userToken = mintVoiceToken(req.userId);
+  // Same call-bootstrap warmers as the ElevenLabs path: the greeting turn
+  // (Hume's instruction arrives as user content and normalizes to the
+  // synthetic-greeting fast path) reads the primed profile, and turn 2
+  // finds the frozen prompt already built.
+  const issuedAt = Number(userToken.split(".")[1]);
+  if (Number.isFinite(issuedAt)) {
+    prewarmFrozenSystem(req.userId, issuedAt, profile);
+    primeCallProfile(req.userId, issuedAt, profile);
+  }
+  lastLanguageByUser.set(req.userId, preferredLanguage);
+
+  try {
+    const uh = hashUserIdForLog(req.userId);
+    if (uh !== undefined) logger.info({ uh, agentUsed: "hume" }, "voice-agent: call routed");
+  } catch { /* logging must never break call routing */ }
+
+  res.json({
+    available: true,
+    mode: "hume",
+    accessToken,
+    configId: humeConfigId(),
+    userToken,
+    tone: (profile as { voiceTone?: string }).voiceTone ?? "auto",
+    firstMessage: buildVoiceFirstMessage(profile),
+  });
+  return true;
+}
+
 router.post("/voice-agent/session", requireSubscription, ...voiceSessionUsageLimits, async (req, res): Promise<void> => {
   if (!isVoiceCallEnabled()) {
     res.json({ available: false, reason: "disabled" });
     return;
   }
+
+  if (await tryHumeSession(req, res)) return;
 
   const baseAgentId = process.env.ELEVENLABS_AGENT_ID?.trim();
   if (!baseAgentId) {

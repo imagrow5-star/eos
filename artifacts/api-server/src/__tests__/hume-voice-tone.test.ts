@@ -80,6 +80,19 @@ async function persistedUserRows(userId: number): Promise<string[]> {
   return rows.filter((r) => r.role === "user").map((r) => r.content);
 }
 
+/** The persist chain writes user THEN assistant rows (fire-and-forget from
+ *  the route) — cleanup must wait for BOTH or the in-flight assistant insert
+ *  races the DELETEs into an FK violation. */
+async function waitForFullExchange(userId: number): Promise<void> {
+  await waitFor(async () => {
+    const rows = await db
+      .select({ role: messagesTable.role })
+      .from(messagesTable)
+      .where(eq(messagesTable.userId, userId));
+    return rows.some((r) => r.role === "user") && rows.some((r) => r.role === "assistant");
+  });
+}
+
 async function waitFor(pred: () => Promise<boolean>): Promise<void> {
   for (let i = 0; i < 40; i++) {
     if (await pred()) return;
@@ -120,7 +133,7 @@ describe("voice-tone injection", () => {
     expect(modelFacing).toContain("that's not the answer I needed");
     expect(modelFacing).toContain("(voice tone: anger, determination, contempt)");
 
-    await waitFor(async () => (await persistedUserRows(userId)).length > 0);
+    await waitForFullExchange(userId);
     const persisted = await persistedUserRows(userId);
     expect(persisted).toEqual(["that's not the answer I needed"]);
     expect(persisted.join("\n")).not.toContain("(voice tone:");
@@ -138,7 +151,7 @@ describe("voice-tone injection", () => {
     expect(capturedUserContent.length).toBeGreaterThan(before);
     expect(modelFacing).toContain("hello there");
     expect(modelFacing).not.toContain("(voice tone:");
-    await waitFor(async () => (await persistedUserRows(userId)).length > 0);
+    await waitForFullExchange(userId);
     await cleanupUser(email);
   });
 });
