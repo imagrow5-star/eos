@@ -47,8 +47,10 @@ const cspMetaPlugin = {
       "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' data: blob:",
       "media-src 'self' blob: data:",
-      // ElevenLabs realtime voice (websocket + REST, incl. regional/WebRTC hosts)
-      "connect-src 'self' https://api.elevenlabs.io wss://api.elevenlabs.io https://*.elevenlabs.io wss://*.elevenlabs.io https://*.livekit.cloud wss://*.livekit.cloud",
+      // ElevenLabs realtime voice (websocket + REST, incl. regional/WebRTC
+      // hosts) + Hume EVI (websocket; the access token comes from our own
+      // API, but the call socket connects to api.hume.ai directly)
+      "connect-src 'self' https://api.elevenlabs.io wss://api.elevenlabs.io https://*.elevenlabs.io wss://*.elevenlabs.io https://*.livekit.cloud wss://*.livekit.cloud https://api.hume.ai wss://api.hume.ai",
       // ElevenLabs Conversational AI SDK inlines the rawAudioProcessor and
       // audioConcatProcessor worklet source into the JS bundle, then loads it
       // via URL.createObjectURL (blob:) with a data: base64 fallback for
