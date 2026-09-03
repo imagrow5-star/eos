@@ -52,12 +52,12 @@ const reinforcement = (langName: string) =>
   `The user chose ${langName}; write your entire reply in ${langName}.`;
 
 describe("terminal reply-language reinforcement", () => {
-  it("fr: reinforcement is the LAST line of the prompt (≥95% of total length)", async () => {
-    const profile = await makeUser("fr");
+  it("es: reinforcement is the LAST line of the prompt (≥95% of total length)", async () => {
+    const profile = await makeUser("es");
     const { stable, context } = await buildSystemPrompt(profile);
     const full = `${stable}\n\n${context}`;
 
-    const line = reinforcement("Français");
+    const line = reinforcement("Español");
     const idx = full.indexOf(line);
     expect(idx, "reinforcement present").toBeGreaterThan(-1);
     // It must sit in the recency-strongest position: at/after 95% of the prompt.
@@ -80,10 +80,8 @@ describe("terminal reply-language reinforcement", () => {
     expect(context).not.toContain("REPLY LANGUAGE (overrides every English example above)");
   });
 
-  it("golden terminal line — byte-for-byte for de, fr, es", async () => {
+  it("golden terminal line — byte-for-byte for es (the one non-English language left)", async () => {
     const cases: Array<[string, string]> = [
-      ["de", "Deutsch"],
-      ["fr", "Français"],
       ["es", "Español"],
     ];
     for (const [code, native] of cases) {
@@ -96,12 +94,12 @@ describe("terminal reply-language reinforcement", () => {
 });
 
 describe("RULE 5 anti-language-switch clause", () => {
-  it("fr: RULE 5 pins mirroring to Français", async () => {
-    const profile = await makeUser("fr");
+  it("es: RULE 5 pins mirroring to Español", async () => {
+    const profile = await makeUser("es");
     const { stable } = await buildSystemPrompt(profile);
-    expect(stable).toContain("but always in Français — mirroring never means switching languages");
+    expect(stable).toContain("but always in Español — mirroring never means switching languages");
     expect(stable).toContain(
-      "If they type in English while your reply-language is Français, still reply in Français; do not echo English back.",
+      "If they type in English while your reply-language is Español, still reply in Español; do not echo English back.",
     );
   });
 

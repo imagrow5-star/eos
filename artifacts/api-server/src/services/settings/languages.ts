@@ -9,8 +9,16 @@
 // may be CHOSEN and stored while inactive — Eos keeps speaking English until
 // every piece above exists. That gate is deliberate: a helpline floor that
 // can't read the user's language is not a floor.
-// Sprint 1.6 activated the ten target languages; Finnish stays as an inactive
-// placeholder (chooseable, "coming soon", English conversation).
+//
+// ElevenLabs removal (2026-09): the supported set shrank from twelve
+// languages to ENGLISH + SPANISH — the two the Hume voice provider carries.
+// Removed codes are invalid again: the chips don't offer them, POST
+// /settings/language rejects them, and a boot backfill
+// (settings/languageSunset.ts) moves stored profiles on removed codes to
+// English so nobody is left selecting into a dead option. The crisis
+// pattern sets for the removed languages stay in i18nPatterns.ts on
+// purpose — detection breadth is free and a user may still WRITE in
+// those languages.
 
 export interface LanguageOption {
   /** ISO 639-1 code, stored in profile.preferred_language. */
@@ -25,20 +33,8 @@ export interface LanguageOption {
 }
 
 export const LANGUAGES: LanguageOption[] = [
-  { code: "en", nameEnglish: "English",    nameNative: "English",    flag: "🇺🇸", active: true },
-  { code: "nl", nameEnglish: "Dutch",      nameNative: "Nederlands", flag: "🇳🇱", active: true },
-  { code: "de", nameEnglish: "German",     nameNative: "Deutsch",    flag: "🇩🇪", active: true },
-  { code: "fr", nameEnglish: "French",     nameNative: "Français",   flag: "🇫🇷", active: true },
-  { code: "es", nameEnglish: "Spanish",    nameNative: "Español",    flag: "🇪🇸", active: true },
-  { code: "it", nameEnglish: "Italian",    nameNative: "Italiano",   flag: "🇮🇹", active: true },
-  { code: "pt", nameEnglish: "Portuguese", nameNative: "Português",  flag: "🇵🇹", active: true },
-  { code: "sv", nameEnglish: "Swedish",    nameNative: "Svenska",    flag: "🇸🇪", active: true },
-  { code: "no", nameEnglish: "Norwegian",  nameNative: "Norsk",      flag: "🇳🇴", active: true },
-  { code: "da", nameEnglish: "Danish",     nameNative: "Dansk",      flag: "🇩🇰", active: true },
-  { code: "pl", nameEnglish: "Polish",     nameNative: "Polski",     flag: "🇵🇱", active: true },
-  // Inactive placeholder — chooseable, shows the "coming soon" helper, and
-  // proves the inactive path keeps working now that the first ten are live.
-  { code: "fi", nameEnglish: "Finnish",    nameNative: "Suomi",      flag: "🇫🇮", active: false },
+  { code: "en", nameEnglish: "English", nameNative: "English", flag: "🇺🇸", active: true },
+  { code: "es", nameEnglish: "Spanish", nameNative: "Español", flag: "🇪🇸", active: true },
 ];
 
 export const LANGUAGE_CODES = new Set(LANGUAGES.map((l) => l.code));

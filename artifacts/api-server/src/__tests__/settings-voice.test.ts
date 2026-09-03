@@ -130,17 +130,36 @@ describe("backfill defaults + voice options", () => {
 
     const res = await agent.get("/api/settings/voice-options");
     expect(res.status).toBe(200);
-    // 11 original languages + the Finnish inactive placeholder (Sprint 1.6).
-    expect(res.body.languages).toHaveLength(12);
+    // English + Spanish only since the ElevenLabs sunset (languages.ts).
+    expect(res.body.languages).toHaveLength(2);
     const active = res.body.languages.filter((l: { active: boolean }) => l.active);
-    expect(active).toHaveLength(11); // en + the ten activated languages
-    expect(active.map((l: { code: string }) => l.code)).toContain("en");
+    expect(active).toHaveLength(2);
+    expect(active.map((l: { code: string }) => l.code)).toEqual(["en", "es"]);
     expect(res.body.currentLanguage).toBe("en");
     expect(res.body.currentAccent).toBe("us");
     // Default companion is a woman → only female voices offered.
     const us = res.body.accents.find((a: { code: string }) => a.code === "us");
     expect(us.voices.length).toBeGreaterThan(0);
     expect(us.voices.every((v: { gender: string }) => v.gender === "female")).toBe(true);
+  });
+});
+
+// ─── Language sunset boot backfill ───────────────────────────────────────────
+
+describe("backfillLanguageSunset", () => {
+  it("moves removed-language rows to English and leaves en/es untouched", async () => {
+    const { userId: deUser } = await makeUser("sunset-de");
+    const { userId: esUser } = await makeUser("sunset-es");
+    const { userId: enUser } = await makeUser("sunset-en");
+    await pool.query("UPDATE profile SET preferred_language='de' WHERE user_id=$1", [deUser]);
+    await pool.query("UPDATE profile SET preferred_language='es' WHERE user_id=$1", [esUser]);
+
+    const { backfillLanguageSunset } = await import("../services/settings/languageSunset.js");
+    await backfillLanguageSunset();
+
+    expect((await profileRow(deUser)).preferred_language).toBe("en");
+    expect((await profileRow(esUser)).preferred_language).toBe("es");
+    expect((await profileRow(enUser)).preferred_language).toBe("en");
   });
 });
 
@@ -297,11 +316,11 @@ describe("onboarding voice step", () => {
 
     const res = await agent.post("/api/onboarding/answer").send({
       step: "voice",
-      answer: JSON.stringify({ language: "de", voiceId: "ZZfakeVoice" }),
+      answer: JSON.stringify({ language: "es", voiceId: "ZZfakeVoice" }),
     });
     expect(res.status).toBe(200);
     const row = await profileRow(userId);
-    expect(row.preferred_language).toBe("de"); // active since Sprint 1.6
+    expect(row.preferred_language).toBe("es"); // the one non-English language left
     expect(row.voice_accent).toBe("us");
     expect(row.voice_id).toBe(before.voice_id); // bogus id ignored
   });

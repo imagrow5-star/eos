@@ -5,6 +5,7 @@ import { initVoiceLibrary } from "./services/voiceLibrary";
 import { reconcileAgentConfig } from "./services/agentConfigGuard";
 import { runDataEncryptionMigration } from "./services/dataEncryptionMigration";
 import { backfillVoiceGender } from "./services/settings/voiceGenderBackfill";
+import { backfillLanguageSunset } from "./services/settings/languageSunset";
 import { migrateRomanticPersona } from "./services/settings/romanticPersonaMigration";
 import { ensureProfileThemeColumns, ensureReflectionReportsTable, ensureMorningNoteColumns, ensureDodoBillingColumns, ensureHumeVoiceColumn } from "./services/schemaGuard";
 import { backfillMemoryImportance } from "./services/memory/backfill";
@@ -192,6 +193,14 @@ app.listen(port, (err) => {
   // never changes what anyone hears).
   backfillVoiceGender().catch((e) =>
     logger.error({ err: e }, "voice_gender backfill failed — reads fall back to companion gender"),
+  );
+
+  // Move profiles stored on a removed language (everything but en/es) to
+  // English — the picker no longer offers those codes (ElevenLabs removal).
+  // Idempotent single UPDATE; reads already default unknown codes to English,
+  // so a failed run changes nothing user-visible.
+  backfillLanguageSunset().catch((e) =>
+    logger.error({ err: e }, "language sunset backfill failed — removed-code rows behave as English regardless; retry next boot"),
   );
 
   // Move any remaining relationship_type='romantic' rows to 'friend' (the
