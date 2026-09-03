@@ -417,6 +417,10 @@ export default function Chat() {
   const handleVoiceGenderSelect = async (gender: "female" | "male") => {
     setArmedCatalogVoiceId(null);
     setVoiceSettingsError(null);
+    // The prefetched call session was minted with the OLD settings (frozen
+    // prompt, humeVoiceId, tone all ride the session response) — drop it so
+    // the next call reflects this change instead of speaking the old way.
+    voiceSessionPrefetcher.invalidate();
     patchVoiceOptions({ currentVoiceGender: gender, voiceGenderExplicit: true });
     const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/voice-gender`, {
       method: "POST",
@@ -443,6 +447,7 @@ export default function Chat() {
   // previews are wired.
   const handleHumeVoiceSelect = async (voiceId: string) => {
     setVoiceSettingsError(null);
+    voiceSessionPrefetcher.invalidate(); // stale prefetched session carries the old voice
     patchVoiceOptions({ currentHumeVoiceId: voiceId });
     const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/hume-voice`, {
       method: "POST",
@@ -496,6 +501,7 @@ export default function Chat() {
   const handleLanguageSelect = async (lang: LanguageOption) => {
     setLanguageNote(lang.active ? null : comingSoonNote(lang));
     setVoiceSettingsError(null);
+    voiceSessionPrefetcher.invalidate(); // stale prefetched session carries the old language's frozen prompt
     patchVoiceOptions({ currentLanguage: lang.code, currentLanguageActive: lang.active });
     const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/language`, {
       method: "POST",
@@ -516,6 +522,7 @@ export default function Chat() {
   const handleAccentSelect = async (accent: string) => {
     setArmedCatalogVoiceId(null);
     setVoiceSettingsError(null);
+    voiceSessionPrefetcher.invalidate();
     patchVoiceOptions({ currentAccent: accent });
     const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/accent`, {
       method: "POST",
@@ -543,6 +550,7 @@ export default function Chat() {
     stopCatalogPreview();
     setVoiceSettingsError(null);
     setArmedCatalogVoiceId(null);
+    voiceSessionPrefetcher.invalidate();
     patchVoiceOptions({ currentVoiceId: voiceId });
     const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/voice`, {
       method: "POST",
@@ -2638,6 +2646,7 @@ export default function Chat() {
 
   const handleToneSelect = (voiceTone: string) => {
     setPendingVoiceTone(voiceTone);
+    voiceSessionPrefetcher.invalidate(); // tone rides the session response too
     updateProfile.mutate(
       { data: { voiceTone } as any },
       {
