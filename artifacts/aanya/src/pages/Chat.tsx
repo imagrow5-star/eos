@@ -2159,6 +2159,9 @@ export default function Chat() {
             restVoiceAndReturnToText();
             return;
           }
+          // Beacon it: handshake failures were previously visible only on
+          // the user's screen — never in the server logs.
+          reportVoiceCallError("handshake", msg);
           voiceCallPhaseRef.current = "error";
           setVoiceCallPhase("error");
           setVoiceCallMessage(`Voice call couldn't connect: ${msg}. End the call and try again.`);

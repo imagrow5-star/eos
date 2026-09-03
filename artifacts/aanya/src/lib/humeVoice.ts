@@ -214,7 +214,15 @@ export async function startHumeCall(
     recorder.start(RECORDER_CHUNK_MS);
   } catch (err) {
     teardown();
-    throw err;
+    // waitForOpen rejects with the raw WebSocket error EVENT (not an Error),
+    // which renders as "[object Object]" in the call-screen message. Always
+    // rethrow a real Error with whatever detail the value carries.
+    if (err instanceof Error) throw err;
+    const detail =
+      (err as { message?: string; reason?: string } | null)?.message ??
+      (err as { reason?: string } | null)?.reason ??
+      (() => { try { return JSON.stringify(err); } catch { return String(err); } })();
+    throw new Error(`Hume connection failed${detail && detail !== "{}" ? `: ${detail}` : ""}`);
   }
 
   return {
