@@ -39,16 +39,6 @@ export type RealtimeSessionInfo = {
   /** "How Eos speaks" preference — maps to TTS delivery overrides (voiceOverrides.ts). */
   tone?: VoiceTone;
   /**
-   * Server-built opening line (api-server services/voiceGreeting.ts).
-   * NO LONGER SENT to ElevenLabs: the first_message override is rejected with
-   * a 1008 disconnect since ~July 29 (permission tightened on their side, no
-   * dashboard toggle on our tier). The greeting now always comes from the
-   * custom LLM's synthetic-greeting path (routes/voice-llm.ts).
-   * TODO(cleanup): drop this field + the server's firstMessage plumbing once
-   * we decide the LLM greeting is the permanent path.
-   */
-  firstMessage?: string;
-  /**
    * ISO language code (multilingual-agent calls only) — informational.
    * DELIBERATELY NOT forwarded to ElevenLabs: the agent.language override is
    * rejected by config with a post-connect 1008 that kills the call (July
@@ -161,9 +151,9 @@ export async function startRealtimeCall(
 
   const attempt = (level: OverrideLevel) => {
     // The SDK's override typings lag the API — stability/speed are accepted
-    // when enabled in the agent's Security settings. session.firstMessage is
-    // deliberately NOT passed: the first_message override is rejected by
-    // ElevenLabs with a 1008 disconnect (see voiceOverrides.ts).
+    // when enabled in the agent's Security settings. No agent-block override
+    // (first_message, language) is ever sent: ElevenLabs rejects those with
+    // post-connect 1008 disconnects (see voiceOverrides.ts).
     const overrides = buildSessionOverrides(level, {
       tone: session.tone,
       voiceId,

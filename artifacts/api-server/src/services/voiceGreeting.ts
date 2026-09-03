@@ -1,16 +1,12 @@
 /**
  * Instant voice-call opening lines.
  *
- * CURRENTLY UNUSED ON CALLS — kept, not deleted. These lines were spoken via
- * the client-side `overrides.agent.firstMessage` conversation override, but
- * ElevenLabs rejects that override with a 1008 disconnect since ~July 29
- * (runtime override permission tightened on their side; our subscription
- * tier has no dashboard toggle to re-allow it). The session route still
- * returns the line; the client no longer forwards it to ElevenLabs, and the
- * greeting comes from the custom LLM's synthetic-greeting path instead
- * (routes/voice-llm.ts).
- * TODO(cleanup): remove this module + the session-response plumbing if the
- * LLM greeting becomes the permanent path (or rewire these lines into it).
+ * These pools ARE the live English call greeting: the custom LLM's
+ * synthetic-greeting fast path (routes/voice-llm.ts) speaks one instantly on
+ * every English call, for both providers. History: they were originally sent
+ * via ElevenLabs' client-side first_message override, which ElevenLabs has
+ * rejected with a 1008 disconnect since ~July 29 — the LLM fast path is the
+ * permanent home now, and the session response no longer carries the line.
  *
  * Hard rules for every line:
  *  - warm, brief, under 12 words;

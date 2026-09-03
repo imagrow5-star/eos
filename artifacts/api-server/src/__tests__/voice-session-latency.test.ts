@@ -2,9 +2,11 @@
  * Integration tests: the voice-call connect-latency changes in
  * routes/voice-agent.ts.
  *
- *  - POST /voice-agent/session includes an instant `firstMessage` opening
- *    line (spoken via the client-side ElevenLabs override — no LLM round
- *    trip) alongside the existing token/tone fields.
+ *  - POST /voice-agent/session returns the token/tone session fields — and
+ *    NO `firstMessage`: the field was dead plumbing (the client stopped
+ *    forwarding it when ElevenLabs began rejecting the first_message
+ *    override with a 1008; greetings come from the custom LLM's
+ *    synthetic-greeting path, pinned in voice-greeting-fastpath.test.ts).
  *  - POST /voice-agent/client-timing accepts the connect-timing beacon,
  *    answers 204, and logs a WARN pointing at the dashboard override flags
  *    when the "full" attempt failed but a lower level connected (each failed
@@ -67,8 +69,8 @@ afterAll(async () => {
   await pool.end();
 });
 
-describe("POST /voice-agent/session firstMessage", () => {
-  it("returns an instant opening line alongside the session fields", async () => {
+describe("POST /voice-agent/session response shape", () => {
+  it("returns the session fields — and no dead firstMessage plumbing", async () => {
     const { agent } = await signupUser("fm");
 
     const res = await agent.post("/api/voice-agent/session").send({});
@@ -77,28 +79,9 @@ describe("POST /voice-agent/session firstMessage", () => {
     expect(res.body.mode).toBe("public");
     expect(typeof res.body.userToken).toBe("string");
     expect(typeof res.body.tone).toBe("string");
-
-    const firstMessage: unknown = res.body.firstMessage;
-    expect(typeof firstMessage).toBe("string");
-    const line = firstMessage as string;
-    expect(line.trim().split(/\s+/).length).toBeLessThan(12);
-    // Canned lines must never claim specific shared history.
-    expect(line).not.toMatch(/yesterday|last time|you said|we talked/i);
-  });
-
-  it("weaves the stored first name into the line when the profile has one", async () => {
-    const { agent, userId } = await signupUser("named");
-    await agent.get("/api/profile"); // materialize the profile row
-    await pool.query(
-      `UPDATE profile SET user_name = 'Priya' WHERE user_id = $1`,
-      [userId],
-    );
-    // user_name is written encrypted by the ORM in production; a raw plaintext
-    // UPDATE is fine here because reads pass unprefixed values through.
-
-    const res = await agent.post("/api/voice-agent/session").send({});
-    expect(res.status).toBe(200);
-    expect(res.body.firstMessage).toContain("Priya");
+    // The greeting is the LLM fast path's job (voice-greeting-fastpath
+    // .test.ts); nothing in this response should resurrect the dead field.
+    expect(res.body).not.toHaveProperty("firstMessage");
   });
 });
 
