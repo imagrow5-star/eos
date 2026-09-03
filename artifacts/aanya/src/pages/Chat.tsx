@@ -465,6 +465,7 @@ export default function Chat() {
 
   const playCatalogPreview = async (voiceId: string) => {
     stopCatalogPreview();
+    setVoiceSettingsError(null);
     setPreviewingCatalogVoiceId(voiceId);
     try {
       const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/voice/preview`, {
@@ -480,6 +481,15 @@ export default function Chat() {
       await el.play();
     } catch {
       setPreviewingCatalogVoiceId((cur) => (cur === voiceId ? null : cur));
+      // A dead preview used to fail SILENTLY here, which read as "tapping
+      // does nothing" while the chip stayed armed — so a second tap saved a
+      // voice the user never heard, with no clue why. Surface it instead.
+      // The chip deliberately STAYS armed: when previews are down (e.g. the
+      // provider rejects our key), keeping the voice must remain possible,
+      // and the message makes that second tap an informed choice. Client
+      // wording on purpose — the server's generic "Preview failed" doesn't
+      // explain what the next tap does.
+      setVoiceSettingsError("Couldn't play the preview — tap again to keep this voice anyway.");
     }
   };
 
