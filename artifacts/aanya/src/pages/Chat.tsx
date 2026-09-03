@@ -1933,6 +1933,13 @@ export default function Chat() {
               console.error("[voice-call] hume error:", message, context);
               reportVoiceCallError("hume-error", message);
             },
+            onReconnect: (chatId) => {
+              if (realtimeGenRef.current !== rtGen) return;
+              // Settings (voice + CLM auth) were already re-sent by the
+              // engine; beacon it so mid-call glitches are visible in logs.
+              console.warn("[voice-call] hume socket reconnected mid-call — settings re-sent", chatId);
+              reportVoiceCallError("hume-reconnect", `new chat ${chatId} — session settings re-sent`);
+            },
           });
           if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) {
             convo.endSession().catch(() => {});

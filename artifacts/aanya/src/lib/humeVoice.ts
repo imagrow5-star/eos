@@ -50,6 +50,11 @@ export type HumeCallHandlers = {
   /** Fired once when the session ends. `message` null = clean close. */
   onDisconnect: (info: { message: string | null }) => void;
   onError: (message: string, context?: unknown) => void;
+  /** The SDK's reconnecting socket silently redialed mid-call: a NEW EVI
+   *  chat started (fresh chatId in chat_metadata). Session settings have
+   *  already been re-sent by the time this fires — this is observability,
+   *  not a call to action. */
+  onReconnect?: (chatId: string) => void;
 };
 
 /** Structurally compatible with how Chat.tsx drives the ElevenLabs convo. */
@@ -91,6 +96,27 @@ export async function startHumeCall(
   let recorder: MediaRecorder | null = null;
   let ended = false;
   let firstAudio = false;
+  // Last chat id seen in chat_metadata — a DIFFERENT id later in the same
+  // call means the reconnecting socket silently redialed into a new chat.
+  let currentChatId: string | null = null;
+
+  // Session settings must be (re)sent on EVERY open, not just the first:
+  // the SDK's socket is a ReconnectingWebSocket (up to 30 silent redials on
+  // network blips), and each redial starts a brand-new EVI chat that knows
+  // NOTHING sent on the previous connection. Without this, a mid-call
+  // reconnect silently dropped both the CLM auth (Eos's brain gone) and the
+  // gender-matched voice_id (voice reverts to the EVI config's voice —
+  // heard as "a different voice took over mid-call").
+  const sendSettings = () => {
+    socket.sendSessionSettings({
+      customSessionId: session.userToken,
+      languageModelApiKey: session.userToken,
+      ...(session.humeVoiceId ? { voiceId: session.humeVoiceId } : {}),
+    });
+  };
+  socket.on("open", () => {
+    if (!ended) sendSettings();
+  });
 
   const teardown = () => {
     if (ended) return;
@@ -131,8 +157,20 @@ export async function startHumeCall(
       case "error":
         handlers.onError(msg.message ?? "Hume error", msg);
         break;
+      case "chat_metadata": {
+        // One per connection. A SECOND, different chatId in the same call
+        // means the socket silently reconnected into a new EVI chat — the
+        // open handler has already re-sent the session settings; surface
+        // the event so mid-call voice/brain glitches are diagnosable.
+        const chatId = (msg as { chatId?: string }).chatId ?? "";
+        if (currentChatId && chatId && chatId !== currentChatId) {
+          handlers.onReconnect?.(chatId);
+        }
+        if (chatId) currentChatId = chatId;
+        break;
+      }
       default:
-        break; // chat_metadata and friends — nothing to render
+        break; // assistant_prosody and friends — nothing to render
     }
   });
   socket.on("close", (event) => {
@@ -153,17 +191,10 @@ export async function startHumeCall(
       ),
     ]);
 
-    // The voice token in BOTH carriers — language_model_api_key becomes the
-    // Bearer on our CLM endpoint; custom_session_id rides the query string.
-    // voiceId (→ wire voice_id) rides the SAME message: EVI processes these
-    // settings before the greeting synthesizes (proven by the CLM auth that
-    // arrives the same way), so the whole call — greeting included — speaks
-    // in the gender-matched voice.
-    socket.sendSessionSettings({
-      customSessionId: session.userToken,
-      languageModelApiKey: session.userToken,
-      ...(session.humeVoiceId ? { voiceId: session.humeVoiceId } : {}),
-    });
+    // Session settings (voice token in both carriers + the gender voice_id)
+    // are sent by the on("open") handler above — on the first open AND on
+    // every silent reconnect. waitForOpen resolving means the first send
+    // has happened: the open handler runs in the same event dispatch.
 
     // Audio out, then audio in. init() unlocks the AudioContext — the call
     // press is the user gesture that makes this legal on mobile Safari.
