@@ -73,6 +73,21 @@ export async function ensureMorningNoteColumns(): Promise<void> {
   logger.info("schema guard: memory_facts.last_surfaced_at / commitments.last_surfaced_at present");
 }
 
+/**
+ * Idempotent schema guard for the Hume call-voice column.
+ *
+ * The Hume call-voice picker stores an explicit pick in profile.hume_voice_id
+ * (lib/db/src/schema/profile.ts). Deploys don't run `drizzle-kit push` (see
+ * ensureProfileThemeColumns), and drizzle selects all mapped columns
+ * explicitly — a database missing the column would 42703 every profile read.
+ * ADD COLUMN IF NOT EXISTS is non-destructive and instant for a nullable
+ * column, and a no-op forever after the first boot.
+ */
+export async function ensureHumeVoiceColumn(): Promise<void> {
+  await db.execute(sql`ALTER TABLE profile ADD COLUMN IF NOT EXISTS hume_voice_id text`);
+  logger.info("schema guard: profile.hume_voice_id present");
+}
+
 /** True when an error is Postgres 42703 for the theme columns specifically. */
 export function isMissingThemeColumnError(e: unknown): boolean {
   const err = e as { code?: string; message?: string } | null;

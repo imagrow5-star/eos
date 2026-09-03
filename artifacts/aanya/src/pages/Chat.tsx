@@ -45,6 +45,7 @@ import {
   AccentChips,
   VoiceGenderChips,
   VoiceChips,
+  HumeVoiceChips,
   comingSoonNote,
   type VoiceOptionsData,
   type LanguageOption,
@@ -434,6 +435,25 @@ export default function Chat() {
     } else {
       rollbackVoiceOptions();
       await voiceSettingsFailed(r, "Couldn't save the voice gender. Try again.");
+    }
+  };
+
+  // Hume CALL voice pick — same optimistic-chip pattern as the handlers
+  // above. No preview step: the chip's tagline stands in until Hume
+  // previews are wired.
+  const handleHumeVoiceSelect = async (voiceId: string) => {
+    setVoiceSettingsError(null);
+    patchVoiceOptions({ currentHumeVoiceId: voiceId });
+    const r = await apiFetch(`${import.meta.env.BASE_URL}api/settings/hume-voice`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ voice_id: voiceId }),
+    }).catch(() => null);
+    if (r?.ok) {
+      queryClient.invalidateQueries({ queryKey: ["settings-voice-options"] });
+    } else {
+      rollbackVoiceOptions();
+      await voiceSettingsFailed(r, "Couldn't save the call voice. Try again.");
     }
   };
 
@@ -3204,19 +3224,34 @@ export default function Chat() {
                 )}
               </div>
 
-              {/* Hume-routed accounts (allowlist trial): VOICE GENDER now
-                  applies on calls (the server maps it to a curated Hume
-                  voice per gender), but the picker's specific voices and
-                  accents are ElevenLabs voices with no Hume mapping yet —
-                  those still shape message playback only. Say so up front
-                  rather than letting a choice be silently ignored. */}
+              {/* Hume-routed accounts (allowlist trial): calls now have their
+                  own curated picker — two Hume voices per gender (warmer
+                  default + softer option), filtered by VOICE GENDER below.
+                  The accent and specific-voice choices further down are
+                  ElevenLabs voices with no Hume mapping — those still shape
+                  message playback only. Say so up front rather than letting
+                  a choice be silently ignored. */}
               {voiceOptions?.voiceCallProvider === "hume" && (
-                <p className="text-[11px] text-amber-700 dark:text-amber-400/90 mt-5 leading-relaxed">
-                  Your voice calls are using Eos&rsquo;s new call engine. Your
-                  voice gender choice applies to calls; the accent and
-                  specific voice choices below shape message playback
-                  (&ldquo;Listen&rdquo;) only, for now.
-                </p>
+                <>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400/90 mt-5 leading-relaxed">
+                    Your voice calls are using Eos&rsquo;s new call engine.
+                    Pick a call voice below; the accent and specific voice
+                    choices further down shape message playback
+                    (&ldquo;Listen&rdquo;) only, for now.
+                  </p>
+                  {(voiceOptions.humeVoices?.length ?? 0) > 0 && (
+                    <div className="mt-3">
+                      <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                        Call voice
+                      </p>
+                      <HumeVoiceChips
+                        voices={voiceOptions.humeVoices!}
+                        selectedVoiceId={voiceOptions.currentHumeVoiceId ?? ""}
+                        onSelect={handleHumeVoiceSelect}
+                      />
+                    </div>
+                  )}
+                </>
               )}
 
               {/* ── Accent — an English concept: hidden for other active

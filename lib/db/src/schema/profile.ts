@@ -43,6 +43,11 @@ export const profileTable = pgTable("profile", {
   // backfill in api-server stamps man→male / woman→female; nonbinary stays
   // null and displays as female until the user picks).
   voiceGender: text("voice_gender"),
+  // humeVoiceId: explicit Hume CALL voice pick from the curated two-per-gender
+  // catalog (api-server services/hume.ts is the source of truth). Null = never
+  // picked: calls use the gender default. Only takes effect while the account
+  // is Hume-routed; ElevenLabs playback keeps using voiceId above.
+  humeVoiceId: text("hume_voice_id"),
   companionGender: text("companion_gender").notNull().default("woman"), // woman | man | nonbinary
   userGender: text("user_gender"), // man | woman | custom (legacy: other) — nullable, optional
   userGenderCustom: encryptedText("user_gender_custom", "profile.user_gender_custom"), // their own words when userGender = "custom" (e.g. "non-binary") — encrypted at rest
