@@ -36,6 +36,10 @@ export type RealtimeSessionInfo = {
   /** Hume mode only: short-lived OAuth access token + EVI config id. */
   accessToken?: string;
   configId?: string;
+  /** Hume mode only: Voice Library voice for the user's picked voice gender —
+   *  sent as session_settings.voice_id. Optional (older servers omit it; the
+   *  EVI config's own voice then plays). */
+  humeVoiceId?: string;
   /** "How Eos speaks" preference — maps to TTS delivery overrides (voiceOverrides.ts). */
   tone?: VoiceTone;
   /**

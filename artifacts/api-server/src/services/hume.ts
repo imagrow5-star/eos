@@ -37,6 +37,25 @@ export function isHumeVoiceConfigured(): boolean {
   );
 }
 
+// ─── Phase-1 call voices (voice-gender parity) ───────────────────────────────
+// The Settings voice picker's voices are ElevenLabs voices with no Hume
+// equivalents yet, so a Hume call maps the picked VOICE GENDER to one curated
+// Hume Voice Library voice per gender. The id rides to the client in the
+// session response and is sent as session_settings.voice_id (wire name
+// verified from the SDK serializer), in the same message that carries the
+// CLM auth — which EVI provably processes before synthesizing the greeting.
+// Ids are from the live Voice Library API capture (2026-09-03), founder-
+// picked; the full catalog is in the session notes for future per-voice
+// mapping (phase 2).
+const HUME_VOICE_BY_GENDER: Record<"female" | "male", string> = {
+  female: "59cfc7ab-e945-43de-ad1a-471daa379c67", // Kora
+  male: "99d2cb9c-9011-4ead-8734-641656d3df66", // Comforting Male Conversationalist
+};
+
+export function humeVoiceIdForGender(gender: "female" | "male"): string {
+  return HUME_VOICE_BY_GENDER[gender];
+}
+
 export type HumeGateDecision = "not_configured" | "forbidden" | "allowed";
 
 /** Same semantics and tolerance as resetAllowlistDecision (resetGate.ts). */
