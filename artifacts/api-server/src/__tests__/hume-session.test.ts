@@ -1,9 +1,10 @@
 /**
- * Hume voice provider — session-mint branch (stage A, server only).
+ * Hume voice provider — session-mint branch (Stage 1: default for everyone).
  *
- * The Hume branch fires only when EVERY gate opens: client opt-in
- * (?provider=hume), HUME_* env config, the founder allowlist, and an
- * English-language profile. Every closed gate falls through to the
+ * The Hume branch fires for ANY signed-in account when the client opts in
+ * (?provider=hume — a capability handshake for stale cached bundles), the
+ * HUME_* env config exists, the VOICE_PROVIDER revert lever is not set, and
+ * the profile language is en/es. Every closed gate falls through to the dark
  * ElevenLabs flow unchanged — including a failed access-token exchange
  * (fail open to the provider that works). The OAuth exchange is
  * intercepted at the fetch layer and asserted against the scheme verified
@@ -39,7 +40,6 @@ globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: Parameters<typeo
 }) as typeof fetch;
 
 import app from "../app.js";
-import { humeAllowlistDecision } from "../services/hume.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const emails: string[] = [];
@@ -83,29 +83,14 @@ afterAll(async () => {
 beforeEach(() => {
   tokenCalls.length = 0;
   tokenExchangeFails = false;
-  delete process.env.HUME_VOICE_ALLOWLIST;
+  delete process.env.VOICE_PROVIDER;
   delete process.env.HUME_VOICE_ID_FEMALE;
   delete process.env.HUME_VOICE_ID_MALE;
-});
-
-describe("humeAllowlistDecision (mirrors the memory-reset gate)", () => {
-  it("unset/blank/empty allowlist → not_configured", () => {
-    expect(humeAllowlistDecision("a@b.c", undefined)).toBe("not_configured");
-    expect(humeAllowlistDecision("a@b.c", "  ")).toBe("not_configured");
-    expect(humeAllowlistDecision("a@b.c", " , ,")).toBe("not_configured");
-  });
-
-  it("case-insensitive, whitespace-tolerant matching", () => {
-    expect(humeAllowlistDecision("Founder@Example.com", " founder@example.com , dev@x.com ")).toBe("allowed");
-    expect(humeAllowlistDecision("other@example.com", "founder@example.com")).toBe("forbidden");
-    expect(humeAllowlistDecision(null, "founder@example.com")).toBe("forbidden");
-  });
 });
 
 describe("session-mint provider branch", () => {
   it("all gates open → Hume session with access token, config id, and voice token", async () => {
     const { agent, email } = await signupAgent("allowed");
-    process.env.HUME_VOICE_ALLOWLIST = email;
 
     const res = await agent.post("/api/voice-agent/session?provider=hume");
     expect(res.status).toBe(200);
@@ -130,7 +115,6 @@ describe("session-mint provider branch", () => {
 
   it("male voice gender → the male Hume voice in the session response", async () => {
     const { agent, userId, email } = await signupAgent("malevoice");
-    process.env.HUME_VOICE_ALLOWLIST = email;
     // Materialize the profile row, then pick the male voice gender the way
     // POST /settings/voice-gender stores it.
     const prof = await agent.get("/api/profile");
@@ -150,7 +134,6 @@ describe("session-mint provider branch", () => {
 
   it("HUME_VOICE_ID_* env overrides win over the built-in gender default", async () => {
     const { agent, email } = await signupAgent("voxenv");
-    process.env.HUME_VOICE_ALLOWLIST = email;
     process.env.HUME_VOICE_ID_FEMALE = "audition-voice-id-1";
     const res = await agent.post("/api/voice-agent/session?provider=hume");
     expect(res.status).toBe(200);
@@ -161,7 +144,6 @@ describe("session-mint provider branch", () => {
 
   it("an explicit curated pick wins over the gender default AND the env override", async () => {
     const { agent, userId, email } = await signupAgent("voxpick");
-    process.env.HUME_VOICE_ALLOWLIST = email;
     process.env.HUME_VOICE_ID_FEMALE = "audition-voice-id-1";
     const prof = await agent.get("/api/profile");
     expect(prof.status).toBe(200);
@@ -179,7 +161,6 @@ describe("session-mint provider branch", () => {
 
   it("a pick from the OTHER gender goes inert — the current gender's default plays", async () => {
     const { agent, userId, email } = await signupAgent("voxstale");
-    process.env.HUME_VOICE_ALLOWLIST = email;
     const prof = await agent.get("/api/profile");
     expect(prof.status).toBe(200);
     // Male voice gender, but a stored FEMALE pick (e.g. from before a gender
@@ -196,7 +177,6 @@ describe("session-mint provider branch", () => {
 
   it("no ?provider=hume opt-in → ElevenLabs flow even for an allowlisted user", async () => {
     const { agent, email } = await signupAgent("noopt");
-    process.env.HUME_VOICE_ALLOWLIST = email;
     const res = await agent.post("/api/voice-agent/session");
     expect(res.status).toBe(200);
     expect(res.body.mode).not.toBe("hume");
@@ -204,9 +184,9 @@ describe("session-mint provider branch", () => {
     await cleanupUser(email);
   });
 
-  it("opt-in but NOT on the allowlist → ElevenLabs flow", async () => {
-    const { agent, email } = await signupAgent("denied");
-    process.env.HUME_VOICE_ALLOWLIST = "someone-else@example.invalid";
+  it("VOICE_PROVIDER=elevenlabs revert lever → ElevenLabs flow, no Hume calls", async () => {
+    const { agent, email } = await signupAgent("killswitch");
+    process.env.VOICE_PROVIDER = "elevenlabs";
     const res = await agent.post("/api/voice-agent/session?provider=hume");
     expect(res.status).toBe(200);
     expect(res.body.mode).not.toBe("hume");
@@ -214,17 +194,17 @@ describe("session-mint provider branch", () => {
     await cleanupUser(email);
   });
 
-  it("allowlist unset → feature doesn't exist, ElevenLabs flow", async () => {
-    const { agent, email } = await signupAgent("unset");
+  it("a VOICE_PROVIDER typo is ignored — Hume stays the default", async () => {
+    const { agent, email } = await signupAgent("levertypo");
+    process.env.VOICE_PROVIDER = "elevenlab";
     const res = await agent.post("/api/voice-agent/session?provider=hume");
     expect(res.status).toBe(200);
-    expect(res.body.mode).not.toBe("hume");
+    expect(res.body.mode).toBe("hume");
     await cleanupUser(email);
   });
 
   it("Spanish profile → Hume session (Stage 0: es rides the Hume path for verification)", async () => {
     const { agent, userId, email } = await signupAgent("langes");
-    process.env.HUME_VOICE_ALLOWLIST = email;
     const prof = await agent.get("/api/profile");
     expect(prof.status).toBe(200);
     await pool.query(
@@ -239,7 +219,6 @@ describe("session-mint provider branch", () => {
 
   it("non-English profile → ElevenLabs flow (multilingual routing is ElevenLabs-specific)", async () => {
     const { agent, userId, email } = await signupAgent("lang");
-    process.env.HUME_VOICE_ALLOWLIST = email;
     // Ensure the profile row exists (GET /profile creates it), then set a
     // non-English language directly.
     const prof = await agent.get("/api/profile");
@@ -256,9 +235,8 @@ describe("session-mint provider branch", () => {
     await cleanupUser(email);
   });
 
-  it("settings/voice-options reports voiceCallProvider 'hume' for an allowlisted English account", async () => {
+  it("settings/voice-options reports voiceCallProvider 'hume' for any English account", async () => {
     const { agent, email } = await signupAgent("vopts");
-    process.env.HUME_VOICE_ALLOWLIST = email;
     const res = await agent.get("/api/settings/voice-options");
     expect(res.status).toBe(200);
     expect(res.body.voiceCallProvider).toBe("hume");
@@ -274,7 +252,6 @@ describe("session-mint provider branch", () => {
 
   it("settings/hume-voice saves a curated pick, which the next voice-options and session reflect", async () => {
     const { agent, email } = await signupAgent("voxsave");
-    process.env.HUME_VOICE_ALLOWLIST = email;
     const save = await agent
       .post("/api/settings/hume-voice")
       .send({ voice_id: "aeaaf1f8-fe31-49ae-893d-c744e5207bc2" });
@@ -289,7 +266,6 @@ describe("session-mint provider branch", () => {
 
   it("settings/hume-voice rejects non-curated and cross-gender ids", async () => {
     const { agent, email } = await signupAgent("voxbad");
-    process.env.HUME_VOICE_ALLOWLIST = email;
     const unknown = await agent
       .post("/api/settings/hume-voice")
       .send({ voice_id: "not-a-curated-voice" });
@@ -304,20 +280,19 @@ describe("session-mint provider branch", () => {
     await cleanupUser(email);
   });
 
-  it("settings/voice-options reports 'elevenlabs' when not allowlisted (and when unset)", async () => {
+  it("settings/voice-options reports 'elevenlabs' under the VOICE_PROVIDER revert lever", async () => {
     const { agent, email } = await signupAgent("vopts2");
-    process.env.HUME_VOICE_ALLOWLIST = "someone-else@example.invalid";
-    const denied = await agent.get("/api/settings/voice-options");
-    expect(denied.body.voiceCallProvider).toBe("elevenlabs");
-    delete process.env.HUME_VOICE_ALLOWLIST;
-    const unset = await agent.get("/api/settings/voice-options");
-    expect(unset.body.voiceCallProvider).toBe("elevenlabs");
+    process.env.VOICE_PROVIDER = "elevenlabs";
+    const reverted = await agent.get("/api/settings/voice-options");
+    expect(reverted.body.voiceCallProvider).toBe("elevenlabs");
+    delete process.env.VOICE_PROVIDER;
+    const normal = await agent.get("/api/settings/voice-options");
+    expect(normal.body.voiceCallProvider).toBe("hume");
     await cleanupUser(email);
   });
 
   it("token exchange failure → falls back to the ElevenLabs flow, never a dead session", async () => {
     const { agent, email } = await signupAgent("outage");
-    process.env.HUME_VOICE_ALLOWLIST = email;
     tokenExchangeFails = true;
     const res = await agent.post("/api/voice-agent/session?provider=hume");
     expect(res.status).toBe(200);
