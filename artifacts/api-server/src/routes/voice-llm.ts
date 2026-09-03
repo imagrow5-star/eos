@@ -418,7 +418,17 @@ export async function persistVoiceTurn(args: {
   return { savedUser, savedAssistant };
 }
 
-router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (req, res): Promise<void> => {
+/**
+ * The voice completion handler, extracted from the route registration so the
+ * Hume CLM route (routes/humeLlm.ts) can delegate to the SAME brain after
+ * normalizing its request into this shape ({messages, model, stream,
+ * user_token}). Behavior is identical to the previous inline handler; the
+ * ElevenLabs route below registers it unchanged.
+ */
+export async function voiceCompletionHandler(
+  req: import("express").Request,
+  res: import("express").Response,
+): Promise<void> {
   const body = (req.body ?? {}) as Record<string, any>;
 
   // ── Identify which logged-in user this call belongs to ──
@@ -775,6 +785,8 @@ router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, async (re
       res.status(500).json({ error: { message: "Internal error", type: "server_error" } });
     }
   }
-});
+}
+
+router.post("/voice-llm/v1/chat/completions", ...voiceTurnUsageLimits, voiceCompletionHandler);
 
 export default router;

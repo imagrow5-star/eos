@@ -37,9 +37,9 @@ router.use(emailRouter);  // one-click unsubscribe — no auth
 // ElevenLabs Conversational AI custom-LLM callback — called by ElevenLabs
 // servers (no browser session); authenticated per-call via HMAC voice token.
 router.use(voiceLlmRouter);
-// Hume EVI custom-LLM callback (capture stage) — called by Hume's servers;
-// authenticated by static Bearer key + the same HMAC voice token (via the
-// custom_session_id query parameter). See routes/humeLlm.ts.
+// Hume EVI custom-LLM callback — called by Hume's servers; authenticated
+// per-call by the HMAC voice token (Bearer or custom_session_id), then
+// delegates to the same voice brain as the ElevenLabs route.
 router.use(humeLlmRouter);
 // Weekly-chapter sweep — called hourly by the daily-email scheduled job;
 // authenticated per-call via HMAC internal token (no browser session).
