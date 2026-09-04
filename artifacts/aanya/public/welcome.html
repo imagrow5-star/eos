@@ -130,6 +130,25 @@
   .plink{color:var(--green-deep);font-weight:600;border-bottom:1.5px solid rgba(95,127,92,.35);padding-bottom:1px;transition:border-color .2s,color .2s}
   .plink:hover{color:var(--green);border-color:var(--green)}
 
+  /* ── Philosophy — a slow, signed closing note. No icon, no card, no box:
+     plain text on the page background, left-aligned, narrow ~60ch measure,
+     with more air than the rest of the page so it reads as a note. ── */
+  .philosophy{padding:118px 0 128px}
+  .philosophy .note{max-width:60ch}
+  .philosophy h2{margin-bottom:30px;color:var(--ink)}
+  .philosophy p{max-width:60ch;color:var(--ink-soft)}
+  .philosophy p + p{margin-top:22px}
+  /* Signature — distinct from the body: smaller, a lighter muted tone
+     (--muted is documented AA-safe on these grounds), with space above. */
+  .philosophy .sig{margin-top:46px;font-size:15px;color:var(--muted)}
+  .philosophy .sig-link{margin-top:10px}
+  .philosophy .sig-link a{
+    font-size:13px;color:var(--muted);
+    text-decoration:underline;text-decoration-color:rgba(113,103,91,.4);
+    text-underline-offset:3px;transition:color .2s,text-decoration-color .2s;
+  }
+  .philosophy .sig-link a:hover{color:var(--ink-soft);text-decoration-color:var(--muted)}
+
   /* Soft ambient blobs behind alternating sections */
   .blob{position:absolute;border-radius:50%;filter:blur(60px);opacity:.5;pointer-events:none}
   .blob.g{background:rgba(95,127,92,.10)}
@@ -187,6 +206,7 @@
   @media(max-width:600px){
     .hero{padding:64px 0 0}
     section{padding:60px 0}
+    .philosophy{padding:76px 0 88px} /* keep its extra air, but calmer on phones */
     .scene{margin-top:34px}
   }
 </style>
@@ -354,6 +374,23 @@
       </div>
     </div>
     <p class="trial-note rv">7-day free trial · Card required · Cancel in one tap · Secure checkout</p>
+  </div>
+</section>
+
+<!-- Philosophy — a quiet, signed closing note. Sits as the final section
+     before the footer (the Membership section falls between Privacy and here).
+     No icon, no card, no box: plain text on the page background. -->
+<section class="philosophy">
+  <div class="wrap">
+    <div class="note rv">
+      <h2>Built to be outgrown</h2>
+      <p>Most apps like this are built to keep you. Streaks. Notifications that pull you back. Little tricks that make leaving feel bad.</p>
+      <p>Eos doesn't do any of that. No streaks. No nudges. No guilt when you close the app.</p>
+      <p>The honest version of what I want: for you to feel a bit less alone at 2am, to feel heard, and eventually to need this less. If a day comes when you're doing well and you forget Eos is here, that's not a failure. That's the point.</p>
+      <p>You decide how much or how little you use it. It'll be here when you want it, and quiet when you don't.</p>
+      <p class="sig">— Naveen, who built this</p>
+      <p class="sig-link"><a href="https://www.linkedin.com/in/eppilinaveen23050a" target="_blank" rel="noopener noreferrer" aria-label="Naveen on LinkedIn">LinkedIn</a></p>
+    </div>
   </div>
 </section>
 
