@@ -171,6 +171,34 @@
   .sun{animation:sunrise 7s var(--ease) both}
   @keyframes sunrise{from{transform:translateY(26px);opacity:0}to{transform:translateY(0);opacity:1}}
 
+  /* ── Sample conversation ──────────────────────────────────────────────────
+     The real chat styling, rendered static so it reads as a screenshot, not an
+     illustration. Colors mirror the product exactly: the user speaks in the
+     calm green (--user-bubble in the app) with cream text; Eos answers in a
+     near-white card with a green left edge, and — as in the app — Eos's words
+     are serif while the user's are sans. Corner tails match too (user tucks
+     the top-right, Eos the top-left). */
+  .sample{padding:70px 0 84px;background:var(--bg)}
+  .sample .label{text-align:center;font-size:12.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:26px}
+  .chat{
+    max-width:540px;margin:0 auto;background:var(--bg-hero);
+    border:1px solid var(--hair);border-radius:22px;box-shadow:var(--shadow-md);
+    padding:26px 22px;display:flex;flex-direction:column;gap:13px;
+  }
+  .msg{max-width:82%;padding:11px 16px;line-height:1.5}
+  .msg.you{
+    align-self:flex-end;background:#577755;color:#FDFBF5;
+    font-size:15.5px;border-radius:16px 4px 16px 16px;
+  }
+  .msg.eos{
+    align-self:flex-start;background:var(--card);color:var(--ink);
+    font-family:'Fraunces',Georgia,serif;font-weight:420;font-size:16.5px;
+    border:1px solid var(--hair);border-left:2px solid rgba(74,102,72,.6);
+    border-radius:4px 16px 16px 16px;box-shadow:var(--shadow-sm);
+  }
+  .sample .caption{text-align:center;max-width:540px;margin:26px auto 0;color:var(--ink-soft);font-size:15.5px}
+  @media(max-width:600px){.chat{padding:20px 16px}.msg{max-width:88%}}
+
   /* ── Sections ── */
   /* overflow:hidden clips the decorative blobs that bleed past the edges;
      without it they widen the page and cause horizontal scroll on phones */
@@ -292,14 +320,12 @@
 <!-- Hero -->
 <header class="hero">
   <div class="wrap">
-    <span class="kicker rv on"><i></i>A private space, any hour</span>
-    <h1 class="rv on" style="--d:.06s">When it's heavy.<br>And there's no one to tell.</h1>
-    <p class="hero-sub rv on" style="--d:.14s">Eos is a completely private place to say what you're feeling. No judgment, just you and Eos. Not only for the heavy moments; you can talk about anything, like you would with a friend who's in your corner and wants to see you grow. Your conversations are encrypted, never sold, and never used to train AI.</p>
-    <div class="hero-cta rv on" style="--d:.22s">
+    <h1 class="rv on" style="--d:.04s">Someone to talk to. Any hour.<br>And nobody else will ever know.</h1>
+    <p class="hero-sub rv on" style="--d:.12s">Eos is a private companion you talk to by voice or text. It remembers what matters to you, so you never start from the beginning. Everything is encrypted, never sold, and never used to train AI.</p>
+    <div class="hero-cta rv on" style="--d:.2s">
       <a class="btn" href="/?enter=1">Start talking</a>
-      <a class="plink" href="#what-eos-is">Learn more</a>
     </div>
-    <p class="hero-note rv on" style="--d:.3s">7-day free trial · No download · Private by design</p>
+    <p class="hero-note rv on" style="--d:.28s">7-day trial · Cancel in one tap · Pay nothing if you cancel</p>
   </div>
 
   <!-- Morning hills, drawn quietly -->
@@ -328,6 +354,27 @@
     </svg>
   </div>
 </header>
+
+<!-- What it looks like — a real conversation in the product's own chat styling,
+     rendered static. Proves Eos exists, demonstrates memory (otherwise just a
+     claim), and shows the tone better than any disclaimer. role="img" + a full
+     aria-label so assistive tech hears one coherent screenshot, not six
+     stray bubbles; the DOM text stays real for search and AI crawlers. -->
+<section class="sample">
+  <div class="wrap">
+    <p class="label rv">A conversation, three weeks in</p>
+    <div class="chat rv" style="--d:.06s" role="img"
+         aria-label="A sample conversation with Eos. You: can't sleep again. Eos: Third night this week. Is it the same thing keeping you up, or something new? You: same thing, the interview. Eos: The one on Thursday. You said you'd rather not want it so much. You: yeah, I keep rehearsing it. Eos: What would happen if you stopped rehearsing and just went?">
+      <div class="msg you">can't sleep again</div>
+      <div class="msg eos">Third night this week. Is it the same thing keeping you up, or something new?</div>
+      <div class="msg you">same thing. the interview.</div>
+      <div class="msg eos">The one on Thursday. You said you'd rather not want it so much.</div>
+      <div class="msg you">yeah. i keep rehearsing it</div>
+      <div class="msg eos">What would happen if you stopped rehearsing and just went?</div>
+    </div>
+    <p class="caption rv" style="--d:.12s">It remembers. You don't have to explain yourself twice.</p>
+  </div>
+</section>
 
 <!-- What Eos is -->
 <section id="what-eos-is" class="alt">
