@@ -29,7 +29,7 @@ import { CHAT_DRAFT_KEY, ONBOARDING_DRAFT_KEY } from "@/lib/sessionDrafts";
 import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useSpeechRecognition, speakText, stopSpeaking, unlockAudioOnGesture } from "@/lib/voice";
+import { useSpeechRecognition, speakText, stopSpeaking, unlockAudioOnGesture, unlockAudioContextOnGesture } from "@/lib/voice";
 import { shouldAutoplayChatReply } from "@/lib/ttsAutoplay";
 import { countryName, suggestCountry, searchCountries, type Country } from "@/lib/countries";
 // Type-only import — erased at build time. The realtimeVoice module itself
@@ -372,6 +372,9 @@ export default function Chat() {
   // Free-message wall reached mid-conversation: show a quiet handoff (Eos line
   // + trial CTA) in place of the composer, never an error.
   const [paywallReached, setPaywallReached] = useState(false);
+  // Which surface hit the wall — the handoff line is honest about what the
+  // user was reaching for (voice is hard-gated: "no free voice").
+  const [paywallVia, setPaywallVia] = useState<"chat" | "voice">("chat");
   // Message ids whose reply was the honest provider-outage fallback (the SSE
   // done event carries degraded:true) — rendered with a subtle caption so a
   // degraded reply never masquerades as a normal one. Session-local by design:
@@ -689,6 +692,11 @@ export default function Chat() {
   // Live-caption state: which message is currently being spoken, and how many words revealed
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [revealedWords, setRevealedWords] = useState(0);
+  // Set when TTS just dropped from Eos's own voice to the device's built-in
+  // speech synthesizer (ElevenLabs quota/error) — a quiet, honest note so the
+  // sudden robotic voice is never unexplained. Auto-clears.
+  const [ttsFallbackNote, setTtsFallbackNote] = useState<string | null>(null);
+  const ttsFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Voice call mode state
   const [voiceCallPhase, setVoiceCallPhase] = useState<"listening" | "thinking" | "speaking" | "error">("listening");
   const [voiceCallMessage, setVoiceCallMessage] = useState<string | null>(null); // sub-label / error text
@@ -1022,6 +1030,18 @@ export default function Chat() {
     speakText(text, {
       voiceId: activeVoiceId,
       lang: speechLang,
+      onFallback: () => {
+        // The reply is about to be read by the device's built-in synthesizer,
+        // not Eos's voice. Outside a call, say so — a robotic voice with no
+        // explanation reads as "this is the product we built". (Inside a call
+        // the "standard voice mode" note already carries this.)
+        if (continuousVoiceRef.current) return;
+        if (ttsFallbackTimerRef.current) clearTimeout(ttsFallbackTimerRef.current);
+        setTtsFallbackNote(
+          "That's your device's built-in voice — Eos's own voice is resting for now.",
+        );
+        ttsFallbackTimerRef.current = setTimeout(() => setTtsFallbackNote(null), 7000);
+      },
       onStart: () => {
         setIsSpeaking(true);
         if (continuousVoiceRef.current && voiceTtsGenRef.current === gen) {
@@ -1140,6 +1160,7 @@ export default function Chat() {
         // reassuring line with it) into the bare Pricing gate. The user reaches
         // Pricing by choosing the CTA. Clean up the streaming UI and return.
         if (response.status === 402 || body?.code === "subscription_required") {
+          setPaywallVia("chat");
           setPaywallReached(true);
           setIsStreaming(false);
           if (streamHoldTimerRef.current) clearTimeout(streamHoldTimerRef.current);
@@ -1852,6 +1873,12 @@ export default function Chat() {
     });
   }, [voiceSessionPrefetcher]);
 
+  // Clear the TTS-fallback note timer on unmount so it never fires into a
+  // torn-down component.
+  useEffect(() => () => {
+    if (ttsFallbackTimerRef.current) clearTimeout(ttsFallbackTimerRef.current);
+  }, []);
+
   // Warm the call path as soon as the chat screen is on screen, and again
   // when the tab returns to the foreground. Mobile taps land ~100ms after
   // touchstart — far less than the signed-URL round trip — so intent-time
@@ -1905,6 +1932,11 @@ export default function Chat() {
       setVoiceError(null);
       voice.clearError();
       unlockAudioOnGesture(); // unlock Audio.play() + speechSynthesis in this gesture context
+      // iOS: unlock Web Audio NOW, on the tap, so the Hume player's own
+      // AudioContext (resumed later, after the session + mic awaits, well
+      // outside this gesture) is allowed to start. Without this the call
+      // connects but plays no sound. See unlockAudioContextOnGesture.
+      unlockAudioContextOnGesture();
       // A call is starting: silence any in-flight chat TTS immediately, and
       // make sure no previous agent session is still alive (a language
       // switch must never leave two agents connected at once).
@@ -2028,6 +2060,27 @@ export default function Chat() {
               ? body.error
               : "Voice calls need a short break. Please try again in a little while.",
           );
+          return;
+        }
+        if (
+          res.status === 402 ||
+          (res.body as { code?: unknown } | null)?.code === "subscription_required"
+        ) {
+          // Voice is hard-gated — there is no free voice minute. NEVER downgrade
+          // to browser speech here; that hands the user a robotic voice they'll
+          // think is the product. End the call cleanly and show the SAME honest
+          // handoff the chat wall uses: an in-character line, then Pricing.
+          if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) return;
+          setContinuousVoice(false);
+          continuousVoiceRef.current = false;
+          realtimeGenRef.current++;
+          voiceEngineRef.current = null;
+          setVoiceEngine(null);
+          voiceCallPhaseRef.current = "listening";
+          setVoiceCallPhase("listening");
+          setVoiceCallMessage(null);
+          setPaywallVia("voice");
+          setPaywallReached(true);
           return;
         }
         const session: RealtimeSessionInfo | null = res.status === 200 ? res.body : null;
@@ -3100,7 +3153,9 @@ export default function Chat() {
               </span>
               <div className="px-[18px] py-3 leading-relaxed companion-bubble rounded-2xl rounded-tl-sm">
                 <p className={cn("companion-message text-foreground/90", isBereavement ? "text-[17px]" : "text-[16px]")}>
-                  I'd like to keep going with you. To carry on, you'll need to start the trial. Nothing you've said goes anywhere.
+                  {paywallVia === "voice"
+                    ? "I'd love to talk with you out loud. Calling is part of the trial, so let's start it, then I'm only a tap away. Nothing you've said goes anywhere."
+                    : "I'd like to keep going with you. To carry on, you'll need to start the trial. Nothing you've said goes anywhere."}
                 </p>
               </div>
               <a
@@ -4914,6 +4969,21 @@ export default function Chat() {
                       className="text-center text-[12px] text-amber-700 dark:text-amber-400/75 mt-2.5 leading-relaxed px-2"
                     >
                       {voice.error || voiceError}
+                    </motion.p>
+                  )}
+                </AnimatePresence>
+
+                {/* TTS fell back to the device's built-in voice — quiet, honest note */}
+                <AnimatePresence>
+                  {ttsFallbackNote && !voice.error && !voiceError && (
+                    <motion.p
+                      key="tts-fallback"
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      className="text-center text-[12px] text-muted-foreground/55 mt-2.5 leading-relaxed px-2"
+                    >
+                      {ttsFallbackNote}
                     </motion.p>
                   )}
                 </AnimatePresence>

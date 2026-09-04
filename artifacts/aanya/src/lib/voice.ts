@@ -169,6 +169,11 @@ export interface SpeakOptions {
       Without it the fallback used an English voice even for non-English
       users — heard as a wrong-language voice under the real one. */
   lang?: string;
+  /** Fired the moment we drop from Eos's ElevenLabs voice to the browser's
+      built-in speech synthesizer (quota exhausted, TTS error, or autoplay
+      block). The caller uses this to tell the user WHY the voice suddenly
+      sounds robotic — never a silent downgrade to a worse product. */
+  onFallback?: () => void;
 }
 
 // ─── Active-audio tracking (module-level singleton) ──────────────────────────
@@ -250,8 +255,39 @@ export function unlockAudioOnGesture(): void {
   }
 }
 
+// ─── Web Audio unlock (mobile Safari) ─────────────────────────────────────────
+// The Hume realtime player (EVIWebAudioPlayer) creates its OWN AudioContext and
+// calls resume() inside its init() — but in our connect flow init() runs AFTER
+// the session fetch and the mic await, i.e. well outside the tap gesture. On
+// iOS an AudioContext first resumed outside a gesture stays suspended, so the
+// call "connects" but no agent audio ever plays. iOS's autoplay unlock is
+// per-page, not per-context: once ANY context has resumed and produced output
+// inside a gesture, the page is unlocked and later contexts may resume
+// programmatically. So we resume a shared context (and push one silent sample
+// through it) synchronously on the call press — the same resume-in-gesture
+// trick sendSound.ts already relies on. Never throws.
+let _unlockCtx: AudioContext | null = null;
+export function unlockAudioContextOnGesture(): void {
+  if (typeof window === "undefined") return;
+  try {
+    _unlockCtx ??= new (window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+    const ac = _unlockCtx;
+    if (ac.state === "suspended") ac.resume().catch(() => { /* blocked — nothing lost */ });
+    // Some iOS versions unlock only once a context has actually produced output
+    // within the gesture, not on resume() alone — push one silent sample.
+    const buf = ac.createBuffer(1, 1, 22050);
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    src.connect(ac.destination);
+    src.start(0);
+  } catch {
+    /* no Web Audio / blocked — the call still tries; there is nothing to lose */
+  }
+}
+
 export async function speakText(text: string, options?: SpeakOptions): Promise<void> {
-  const { onStart, onEnd, voiceId, signal: externalSignal, onWordReveal, lang } = options ?? {};
+  const { onStart, onEnd, voiceId, signal: externalSignal, onWordReveal, lang, onFallback } = options ?? {};
 
   if (!text?.trim()) { onEnd?.(); return; }
 
@@ -331,7 +367,8 @@ export async function speakText(text: string, options?: SpeakOptions): Promise<v
             URL.revokeObjectURL(url);
             _activeAudioEl = null;
             _activeAudioUrl = null;
-            browserSpeak(text, onStart, onEnd, onWordReveal, totalWords);
+            onFallback?.();
+            browserSpeak(text, onStart, onEnd, onWordReveal, totalWords, lang);
             resolve();
           });
 
@@ -411,6 +448,10 @@ export async function speakText(text: string, options?: SpeakOptions): Promise<v
   if (signal.aborted) return;
 
   // ── Browser Web Speech API fallback ──────────────────────────────────────
+  // Reached on any ElevenLabs failure (quota exhausted, TTS error, network).
+  // Tell the caller first so the user learns WHY the voice just changed — a
+  // robotic voice with no explanation is worse than an honest one.
+  onFallback?.();
   const totalWords = text.trim().split(/\s+/).length;
   browserSpeak(text, onStart, onEnd, onWordReveal, totalWords, lang);
 }

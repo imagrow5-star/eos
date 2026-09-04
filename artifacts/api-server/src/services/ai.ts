@@ -1733,11 +1733,17 @@ export async function generateContextualGreeting(
 
   const appreciationConstraint = `\n\nAPPRECIATION: Do NOT praise or appreciate ${name} by default. Give genuine appreciation ONLY when they've actually done something real and meaningful — took a hard step, followed through on a commitment, resisted an urge. Most of the time: just be present, warm, and curious. When appreciation IS given: make it specific and tied to their real situation, never generic ("amazing", "well done", "you've got this", "I'm so proud of you").`;
 
+  // GROUND TRUTH — the same anti-invention rule the chat system prompt enforces,
+  // carried here because a greeting is user-facing text too. Without it, "anchor
+  // to something specific" instructions push the model to fabricate a shared
+  // past (a job, "the work stuff", a rough week) when the context is thin.
+  const antiInventionConstraint = `\n\nGROUND TRUTH — NEVER INVENT: Reference ONLY facts, events, feelings, or history that appear in the context above. If there is little or nothing there, be warm and present WITHOUT referencing specifics — never guess at "the work stuff", "a rough week", a job, a relationship, plans, or anything you were not told. Never imply you have spoken before unless the context shows real prior history. One fabricated detail destroys trust instantly; when in doubt, stay general.`;
+
   const contextBlock =
     (contextLines.length > 0
       ? contextLines.join("\n\n")
       : "(Still early days — respond with genuine warmth even without much data yet.)") +
-    `\n\n${describeUserGender(profile, name)}\n${describeUserBasics(profile, name)}` + antiRepLine + appreciationConstraint;
+    `\n\n${describeUserGender(profile, name)}\n${describeUserBasics(profile, name)}` + antiRepLine + appreciationConstraint + antiInventionConstraint;
 
   const pathNote = isBereavement
     ? "\nNote: They are grieving a loss. Presence and warmth only — never forward-push."
@@ -1809,7 +1815,7 @@ Write a SHORT, warm welcome back (2–4 sentences). Energy: a close friend who h
 
 Rules:
 • No guilt. No mention of the time away. No "where have you been?"
-• Reference something specific from what you know — don't be generic.
+• If the context above gives you something specific, reference it — otherwise stay warm and general. Never invent a detail to sound personal.
 • "I've been thinking about you" warmth — sincere, not dramatic.
 • End with something that gently invites them to share how they've been.
 • No clichés.

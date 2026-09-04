@@ -452,6 +452,19 @@ router.post("/chat/contextual-greeting", async (req, res): Promise<void> => {
   const timeCtx = getTimeContext(tz);
   const today = todayInTimezone(tz);
 
+  // ── Guard 1: real-history gate ──────────────────────────────────────────────
+  // A proactive note requires that the user has actually said something. With no
+  // prior user message there is no shared past, no "again", nothing real to
+  // anchor to — so a brand-new account gets no note at all. (Onboarding answers
+  // are stored on the profile, not as messages, so this is genuine conversation.)
+  // Independent of Guard 2 below, by design.
+  const [priorUserMessage] = await db
+    .select({ id: messagesTable.id })
+    .from(messagesTable)
+    .where(and(eq(messagesTable.userId, userId), eq(messagesTable.role, "user")))
+    .limit(1);
+  if (!priorUserMessage) { res.json({ message: null }); return; }
+
   const slot = getGreetingSlot(timeCtx.partOfDay);
   const rawTs = (profile as any).lastGreetingAt;
   const lastGreetingAt: Date | null = rawTs ? new Date(rawTs) : null;
@@ -461,7 +474,14 @@ router.post("/chat/contextual-greeting", async (req, res): Promise<void> => {
     : 999;
   const daysSinceLast = hoursSinceLast / 24;
 
-  const isAbsent   = daysSinceLast >= 2;
+  // ── Guard 2: "absent" requires a REAL prior greeting ───────────────────────
+  // A null lastGreetingAt means "never greeted", NOT "away a long time". Without
+  // the explicit null check, hoursSinceLast falls back to 999 and a first-ever
+  // greeting is misread as a ~41-day absence — routing it to the "welcome back"
+  // slot that implies a shared past ("good to hear from you again"). Kept
+  // independent of Guard 1 on purpose: even if the history gate were removed, a
+  // never-greeted account must never reach the absent slot.
+  const isAbsent   = lastGreetingAt !== null && daysSinceLast >= 2;
   const tooRecent  = hoursSinceLast < 6;
 
   // Too recent: suppress regardless of time
