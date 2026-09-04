@@ -107,22 +107,23 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </button>
       </aside>
 
-      <main className="flex-1 min-w-0 overflow-hidden relative z-10 pb-[72px] md:pb-0">
+      <main className="flex-1 min-w-0 overflow-hidden relative z-10 pb-[60px] md:pb-0">
         {children}
       </main>
 
       {/* Bottom Navigation */}
-      {/* Items size to their content (shrink-0, justify-around) rather than
-          equal flex shares: six entries at 390px can't split evenly without
-          clipping PRIVATE ROOM, but the natural widths fit down to ~360px. */}
-      <nav className="md:hidden absolute bottom-0 left-0 right-0 h-[72px] bg-card/90 backdrop-blur-xl border-t border-primary/20 z-20 px-2 flex items-center justify-around pb-safe">
+      {/* Four equal columns (flex-1): one destination per tab, evenly spaced.
+          Sign out used to live here as a fifth, detached item — it's an action,
+          not a destination, so it moved to the Settings panel. With only the
+          four one-word-ish labels left, equal columns fit down to ~360px. */}
+      <nav className="md:hidden absolute bottom-0 left-0 right-0 h-[60px] bg-card/90 backdrop-blur-xl border-t border-primary/20 z-20 px-2 flex items-center pb-safe">
         {navItems.map((item) => {
           const isActive = location === item.href;
           return (
             <Link
               key={item.href}
               href={item.href}
-              className="flex flex-col items-center justify-center shrink-0 h-full gap-1 group"
+              className="flex flex-1 min-w-0 flex-col items-center justify-center h-full gap-1 group"
             >
               <div className={cn(
                 "p-2 rounded-full transition-all duration-300",
@@ -141,21 +142,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </Link>
           );
         })}
-
-        {/* Log out — subtle, far right */}
-        <button
-          onClick={handleLogout}
-          className="flex flex-col items-center justify-center shrink-0 w-14 h-full gap-1 group"
-          title="Sign out"
-          aria-label="Sign out"
-        >
-          <div className="p-2 rounded-full transition-all duration-300 text-muted-foreground/50 group-hover:text-muted-foreground">
-            <LogOut className="w-4 h-4" strokeWidth={1.5} />
-          </div>
-          <span className="text-[9px] tracking-widest uppercase text-muted-foreground/40 group-hover:text-muted-foreground/70 transition-colors">
-            Out
-          </span>
-        </button>
       </nav>
     </div>
   );
