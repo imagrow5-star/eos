@@ -299,29 +299,10 @@ export default function Chat() {
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [showSettings]);
-  // Manual edge-swipe-to-dismiss. The history/popstate path above only fires
-  // on a BROWSER back — but an installed PWA (iOS standalone especially) has
-  // no browser back-swipe gesture at all, so people swipe and nothing happens.
-  // This reproduces the native "swipe from the left edge to go back" directly:
-  // a touch that STARTS within 32px of the left edge and travels right past a
-  // threshold, predominantly horizontal, closes the panel. Edge-only so it
-  // never fights vertical scrolling or the horizontal chip rows.
-  const swipeStartRef = useRef<{ x: number; y: number; fromEdge: boolean } | null>(null);
-  const onSettingsTouchStart = useCallback((e: React.TouchEvent) => {
-    const t = e.touches[0];
-    if (!t) return;
-    swipeStartRef.current = { x: t.clientX, y: t.clientY, fromEdge: t.clientX <= 32 };
-  }, []);
-  const onSettingsTouchEnd = useCallback((e: React.TouchEvent) => {
-    const s = swipeStartRef.current;
-    swipeStartRef.current = null;
-    if (!s?.fromEdge) return;
-    const t = e.changedTouches[0];
-    if (!t) return;
-    const dx = t.clientX - s.x;
-    const dy = t.clientY - s.y;
-    if (dx > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) closeSettings();
-  }, [closeSettings]);
+  // (Swipe-to-go-back is app-wide now — one gesture handler in the app shell
+  // (components/layout/Shell.tsx) fires history.back() for every screen. In
+  // Settings that pops the entry openSettings pushed, so the popstate listener
+  // above closes the panel; no Settings-specific gesture is needed here.)
   // Appearance — the one remaining choice: opt-in calm dark mode (default light)
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
   // Send sound — opt-in, per-device, default off
@@ -3179,8 +3160,6 @@ export default function Chat() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            onTouchStart={onSettingsTouchStart}
-            onTouchEnd={onSettingsTouchEnd}
             className="bg-muted/95 border-b border-border backdrop-blur-xl z-10 shrink-0 overflow-hidden"
           >
             {/* The panel is taller than most viewports: the motion.div above
