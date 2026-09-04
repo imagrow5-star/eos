@@ -89,7 +89,7 @@ export function Privacy() {
             <li>
               <span className="text-foreground/80">Hume</span>: the voice. Turns Eos's words into
               speech and yours into text during calls. Zero data retention is switched on for our
-              account, which means Hume stores nothing — no transcripts, no recordings. Nothing is
+              account, which means Hume stores nothing. No transcripts, no recordings. Nothing is
               kept and nothing is used to train their models.
             </li>
             <li>
@@ -118,7 +118,7 @@ export function Privacy() {
             <li>· Sell or rent your data, to anyone, for any reason.</li>
             <li>· Use your conversations to train AI models.</li>
             <li>· Show you ads or share data with advertisers.</li>
-            <li>· Read your conversations for our own purposes. There's no admin screen for it, and it isn't part of how we run Eos. (The AI does process your messages to write each reply — see "Who helps run Eos" above.)</li>
+            <li>· Read your conversations for our own purposes. There's no admin screen for it, and it isn't part of how we run Eos. (The AI does process your messages to write each reply. See "Who helps run Eos" above.)</li>
           </ul>
         </Section>
 
