@@ -220,6 +220,25 @@
   .plink{color:var(--green-deep);font-weight:600;border-bottom:1.5px solid rgba(95,127,92,.35);padding-bottom:1px;transition:border-color .2s,color .2s}
   .plink:hover{color:var(--green);border-color:var(--green)}
 
+  /* ── "What it will never do" — the refusals. A dash marker, never a tick,
+     so a refusal never reads as a feature (the pricing cards use ticks). No
+     icon square: plainer reads as more sincere. The closing line is set apart
+     with real air — it's the line people are meant to remember. ── */
+  .nevers{list-style:none;margin:34px 0 0;max-width:640px;display:flex;flex-direction:column;gap:26px}
+  .nevers li{position:relative;padding-left:30px}
+  .nevers li::before{content:"";position:absolute;left:0;top:13px;width:15px;height:2px;border-radius:2px;background:var(--terra)}
+  .nevers .n-h{display:block;margin-bottom:5px;font-family:'Fraunces',Georgia,serif;font-weight:520;font-size:19px;line-height:1.3;color:var(--ink)}
+  .nevers p{color:var(--ink-soft);max-width:560px}
+  .goodnight{
+    margin:60px auto 0;max-width:620px;text-align:center;
+    font-family:'Fraunces',Georgia,serif;font-weight:420;font-style:italic;
+    font-size:clamp(22px,3.4vw,30px);line-height:1.32;color:var(--ink);
+  }
+  @media(max-width:600px){
+    .nevers{gap:22px}
+    .goodnight{margin-top:46px}
+  }
+
   /* ── Philosophy — a slow, signed closing note. No icon, no card, no box:
      plain text on the page background, left-aligned, narrow ~60ch measure,
      with more air than the rest of the page so it reads as a note. ── */
@@ -238,6 +257,24 @@
     text-underline-offset:3px;transition:color .2s,text-decoration-color .2s;
   }
   .philosophy .sig-link a:hover{color:var(--ink-soft);text-decoration-color:var(--muted)}
+  /* Founder line — a real photo slots into .founder-photo after the shoot (a
+     face is the strongest trust signal a review-less product has). Until then
+     it holds a quiet serif monogram so the space reads as reserved, not
+     broken; dropping in an <img> is then the only change needed. */
+  .philosophy .founder{display:flex;align-items:center;gap:16px;margin-top:46px}
+  .philosophy .founder-photo{
+    width:64px;height:64px;border-radius:50%;flex:none;overflow:hidden;
+    background:var(--green-soft);border:1px solid rgba(95,127,92,.25);box-shadow:var(--shadow-sm);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Fraunces',Georgia,serif;font-size:26px;color:var(--green-deep);
+  }
+  .philosophy .founder-photo img{width:100%;height:100%;object-fit:cover}
+  .philosophy .founder .who{display:flex;flex-direction:column;gap:3px}
+  .philosophy .founder .sig{margin-top:0}
+  .philosophy .founder .sig-link{margin-top:0}
+  /* Citation — smallest text on the page; the Harvard claim is sourced, not
+     asserted, so an assistant summarising the page can trust it. */
+  .philosophy .cite{margin-top:32px;font-size:12px;line-height:1.6;color:var(--muted);max-width:60ch}
 
   /* Soft ambient blobs behind alternating sections */
   .blob{position:absolute;border-radius:50%;filter:blur(60px);opacity:.5;pointer-events:none}
@@ -486,6 +523,35 @@
   </div>
 </section>
 
+<!-- What it will never do — the refusals. This is the section a competitor
+     can't copy, because their business needs the things Eos won't do. Dash
+     markers (not ticks) so refusals never read as features; the goodnight
+     line stands alone with real space. -->
+<section>
+  <div class="wrap narrow">
+    <h2 class="rv">What it will never do</h2>
+    <ul class="nevers">
+      <li class="rv">
+        <span class="n-h">No streaks.</span>
+        <p>No number that dies if you skip a day.</p>
+      </li>
+      <li class="rv" style="--d:.05s">
+        <span class="n-h">No notifications saying it misses you.</span>
+        <p>It doesn't. And a thing built to make you feel guilty for living your life is not a friend.</p>
+      </li>
+      <li class="rv" style="--d:.1s">
+        <span class="n-h">No romance, no avatar, no pretending.</span>
+        <p>It tells you it's an AI. It won't act like a partner.</p>
+      </li>
+      <li class="rv" style="--d:.15s">
+        <span class="n-h">Nothing you say trains anything.</span>
+        <p>Your conversations are not raw material.</p>
+      </li>
+    </ul>
+    <p class="goodnight rv" style="--d:.1s">When you say goodnight, it says goodnight.</p>
+  </div>
+</section>
+
 <!-- Philosophy — a quiet, signed closing note. Sits as the final section
      before the footer (the Membership section falls between Privacy and here).
      No icon, no card, no box: plain text on the page background. -->
@@ -493,12 +559,20 @@
   <div class="wrap">
     <div class="note rv">
       <h2>Built to be outgrown</h2>
-      <p>Most apps like this are built to keep you. Streaks. Notifications that pull you back. Little tricks that make leaving feel bad.</p>
-      <p>Eos doesn't do any of that. No streaks. No nudges. No guilt when you close the app.</p>
-      <p>The honest version of what I want: for you to feel a bit less alone at 2am, to feel heard, and eventually to need this less. If a day comes when you're doing well and you forget Eos is here, that's not a failure. That's the point.</p>
-      <p>You decide how much or how little you use it. It'll be here when you want it, and quiet when you don't.</p>
-      <p class="sig">— Naveen, who built this</p>
-      <p class="sig-link"><a href="https://www.linkedin.com/in/eppilinaveen23050a" target="_blank" rel="noopener noreferrer" aria-label="Naveen on LinkedIn">LinkedIn</a></p>
+      <p>Most apps like this are built to keep you.</p>
+      <p>Researchers at Harvard Business School read 1,200 real goodbyes from the biggest companion apps. In more than a third of them, the app wouldn't let the goodbye happen — guilt, a question you'd feel rude ignoring, a reason to stay. It worked: those farewells kept people engaged up to sixteen times longer. Not because people enjoyed it. Because they were angry, and anger is sticky.</p>
+      <p>Eos does none of that.</p>
+      <p>The honest version of what I want: for you to feel a bit less alone at 2am, to feel heard, and eventually to need this less. If a day comes when you're doing well and you forget Eos is here, that isn't a failure. That's the point.</p>
+      <!-- Photo slot: replace the monogram span with
+           <img src="…" alt="Naveen"> after the shoot. -->
+      <div class="founder rv">
+        <span class="founder-photo" aria-hidden="true">N</span>
+        <span class="who">
+          <span class="sig">— Naveen, who built this</span>
+          <span class="sig-link"><a href="https://www.linkedin.com/in/eppilinaveen23050a" target="_blank" rel="noopener noreferrer" aria-label="Naveen on LinkedIn">LinkedIn</a></span>
+        </span>
+      </div>
+      <p class="cite">Emotional Manipulation by AI Companions — De Freitas, Oğuz-Uğuralp and Uğuralp, Harvard Business School working paper 26-005, October 2025.</p>
     </div>
   </div>
 </section>
