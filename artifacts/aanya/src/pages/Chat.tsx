@@ -3089,8 +3089,10 @@ export default function Chat() {
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="h-16 flex items-center justify-between px-5 border-b border-border bg-muted/95 backdrop-blur-xl z-20 shrink-0 relative">
-        {/* Companion presence — left */}
-        <div className="flex items-center gap-2.5 min-w-0">
+        {/* Companion presence — left. flex-1 + min-w-0 so a long companion
+            name truncates instead of sliding under the centred wordmark /
+            the Settings pill on a narrow phone. */}
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <div className="relative shrink-0">
             <div className={cn(
               "w-8 h-8 rounded-full bg-card border flex items-center justify-center transition-all",
@@ -3123,14 +3125,18 @@ export default function Chat() {
           </div>
         </div>
 
-        {/* Eos wordmark — centered */}
-        <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center select-none pointer-events-none gap-0">
+        {/* Eos wordmark — centered. Hidden on phones: at ~390px it collided
+            with the companion name and the Settings pill (all three landed on
+            top of each other). It's decoration — the brand already shows on the
+            splash and, on desktop, the sidebar — so it only appears from sm up
+            where there's room. pointer-events-none keeps it from eating taps. */}
+        <div className="hidden sm:flex absolute left-1/2 -translate-x-1/2 flex-col items-center select-none pointer-events-none gap-0">
           <span className="font-serif text-[19px] font-medium tracking-[0.42em] text-foreground/90">E O S</span>
           <div className="h-px w-9 bg-primary/50 my-[3px]" />
         </div>
 
         {/* Right actions */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
           {/* Settings — the one header action, so it carries the accent: soft
               green fill + green border (same family as active nav pills), not
               the old 45%-muted outline that vanished into the header. This is
@@ -3138,16 +3144,19 @@ export default function Chat() {
               read as a real button at first glance, still calm. */}
           <button
             onClick={() => (showSettings ? closeSettings() : openSettings())}
+            aria-label={showSettings ? "Close settings" : "Open settings"}
             className={cn(
-              "flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-medium tracking-wider uppercase transition-all duration-200 shadow-sm",
+              // Icon-only on phones (label hidden below sm) so it can't crowd
+              // the companion name; full "Settings"/"Close" label from sm up.
+              "flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-full text-[12px] font-medium tracking-wider uppercase transition-all duration-200 shadow-sm",
               showSettings
                 ? "bg-primary/20 text-primary-strong border border-primary/45"
                 : "bg-primary/12 text-primary-strong border border-primary/30 hover:bg-primary/20 hover:border-primary/45",
             )}
           >
             {showSettings
-              ? <><X className="w-3.5 h-3.5" /> Close</>
-              : <><Settings className="w-3.5 h-3.5" /> Settings</>
+              ? <><X className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Close</span></>
+              : <><Settings className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Settings</span></>
             }
           </button>
         </div>
