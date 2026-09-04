@@ -39,7 +39,7 @@ export function Privacy() {
           </h1>
           <div className="h-px bg-primary/20" />
           <p className="text-[13px] text-muted-foreground/60">
-            Last updated July 22, 2026 · Questions? Write to{" "}
+            Last updated September 4, 2026 · Questions? Write to{" "}
             <a href="mailto:hello@eoscompanion.com" className="text-primary-strong/80 hover:text-primary-strong">
               hello@eoscompanion.com
             </a>
@@ -87,9 +87,10 @@ export function Privacy() {
               it's gone from their side too.
             </li>
             <li>
-              <span className="text-foreground/80">ElevenLabs</span>: the voice. Turns Eos's words
-              into speech and yours into text during calls. We've set their retention so
-              transcripts and audio are deleted right after processing rather than stored.
+              <span className="text-foreground/80">Hume</span>: the voice. Turns Eos's words into
+              speech and yours into text during calls. Zero data retention is switched on for our
+              account, which means Hume stores nothing — no transcripts, no recordings. Nothing is
+              kept and nothing is used to train their models.
             </li>
             <li>
               <span className="text-foreground/80">Resend</span>: delivers the emails you asked
