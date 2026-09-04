@@ -83,6 +83,24 @@ export interface Profile {
      * @nullable
      */
   themeMode?: string | null;
+  /** Voice-call delivery: auto | gentle | calm | upbeat */
+  voiceTone?: string;
+  /** IANA timezone string e.g. America/New_York */
+  timezone: string;
+  /** Web-push notifications enabled (opt-in only, default false) */
+  pushOptIn?: boolean;
+  /**
+     * Version tag of the consent copy the user accepted — null = never consented
+     * @nullable
+     */
+  consentVersion?: string | null;
+  /**
+     * Server timestamp when consent was recorded
+     * @nullable
+     */
+  consentAt?: string | null;
+  /** Placeholder for future data-sharing — nothing shares today; default false */
+  dataSharingOptIn?: boolean;
 }
 
 export interface ProfileInput {
@@ -105,6 +123,8 @@ export interface ProfileInput {
   theme?: string;
   /** Appearance mode: light | dark */
   themeMode?: string;
+  /** Voice-call delivery: auto | gentle | calm | upbeat */
+  voiceTone?: string;
 }
 
 export interface Message {

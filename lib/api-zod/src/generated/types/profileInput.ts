@@ -26,4 +26,6 @@ export interface ProfileInput {
   theme?: string;
   /** Appearance mode: light | dark */
   themeMode?: string;
+  /** Voice-call delivery: auto | gentle | calm | upbeat */
+  voiceTone?: string;
 }

@@ -65,7 +65,13 @@ export const GetProfileResponse = zod.object({
   "birthYear": zod.number().nullish().describe('Approximate birth year (from age or DOB) — adults only, null when not shared'),
   "ageYears": zod.number().nullish().describe('Current age computed from birthYear — null when not shared'),
   "theme": zod.string().nullish().describe('Appearance theme: amber | dawn | sage | twilight — null when never chosen'),
-  "themeMode": zod.string().nullish().describe('Appearance mode: light | dark — null when never chosen')
+  "themeMode": zod.string().nullish().describe('Appearance mode: light | dark — null when never chosen'),
+  "voiceTone": zod.string().optional().describe('Voice-call delivery: auto | gentle | calm | upbeat'),
+  "timezone": zod.string().describe('IANA timezone string e.g. America\/New_York'),
+  "pushOptIn": zod.boolean().optional().describe('Web-push notifications enabled (opt-in only, default false)'),
+  "consentVersion": zod.string().nullish().describe('Version tag of the consent copy the user accepted — null = never consented'),
+  "consentAt": zod.coerce.date().nullish().describe('Server timestamp when consent was recorded'),
+  "dataSharingOptIn": zod.boolean().optional().describe('Placeholder for future data-sharing — nothing shares today; default false')
 })
 
 
@@ -86,7 +92,8 @@ export const UpdateProfileBody = zod.object({
   "userGenderCustom": zod.string().optional().describe('The user\'s own words for their gender; persisted only when userGender is \'custom\''),
   "ageYears": zod.union([zod.number().describe('Age in years (18–120), or empty string \/ 0 to clear. Stored as birthYear; under-18 values are never stored.'),zod.string().describe('Age in years (18–120), or empty string \/ 0 to clear. Stored as birthYear; under-18 values are never stored.')]).optional().describe('Age in years (18–120), or empty string \/ 0 to clear. Stored as birthYear; under-18 values are never stored.'),
   "theme": zod.string().optional().describe('Appearance theme: amber | dawn | sage | twilight'),
-  "themeMode": zod.string().optional().describe('Appearance mode: light | dark')
+  "themeMode": zod.string().optional().describe('Appearance mode: light | dark'),
+  "voiceTone": zod.string().optional().describe('Voice-call delivery: auto | gentle | calm | upbeat')
 })
 
 export const UpdateProfileResponse = zod.object({
@@ -108,7 +115,13 @@ export const UpdateProfileResponse = zod.object({
   "birthYear": zod.number().nullish().describe('Approximate birth year (from age or DOB) — adults only, null when not shared'),
   "ageYears": zod.number().nullish().describe('Current age computed from birthYear — null when not shared'),
   "theme": zod.string().nullish().describe('Appearance theme: amber | dawn | sage | twilight — null when never chosen'),
-  "themeMode": zod.string().nullish().describe('Appearance mode: light | dark — null when never chosen')
+  "themeMode": zod.string().nullish().describe('Appearance mode: light | dark — null when never chosen'),
+  "voiceTone": zod.string().optional().describe('Voice-call delivery: auto | gentle | calm | upbeat'),
+  "timezone": zod.string().describe('IANA timezone string e.g. America\/New_York'),
+  "pushOptIn": zod.boolean().optional().describe('Web-push notifications enabled (opt-in only, default false)'),
+  "consentVersion": zod.string().nullish().describe('Version tag of the consent copy the user accepted — null = never consented'),
+  "consentAt": zod.coerce.date().nullish().describe('Server timestamp when consent was recorded'),
+  "dataSharingOptIn": zod.boolean().optional().describe('Placeholder for future data-sharing — nothing shares today; default false')
 })
 
 
