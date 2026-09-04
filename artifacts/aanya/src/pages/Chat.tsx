@@ -4802,7 +4802,7 @@ export default function Chat() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="px-4 sm:px-6 pb-5 pt-2 bg-background shrink-0 relative z-10"
+            className="px-4 sm:px-6 pb-2.5 pt-2 bg-background shrink-0 relative z-10"
           >
 
             {showTextInput && (
@@ -5034,7 +5034,7 @@ export default function Chat() {
                 The AI disclosure (EU AI Act Art. 50) is ALWAYS present, with or
                 without the counter, in both the normal composer and onboarding
                 choice modes. */}
-            <p className="text-center text-[11px] text-muted-foreground/50 mt-2 px-4 leading-relaxed max-w-3xl mx-auto">
+            <p className="text-center text-[11px] text-muted-foreground/50 mt-1 px-4 leading-relaxed max-w-3xl mx-auto">
               {onboarding?.isComplete && freeMessagesRemaining != null && freeMessagesRemaining > 0 && (
                 <span className="text-primary-strong/60">
                   {freeMessagesRemaining} message{freeMessagesRemaining === 1 ? "" : "s"} left ·{" "}
