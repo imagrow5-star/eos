@@ -15,7 +15,7 @@
  */
 
 import type { Request, Response, NextFunction } from "express";
-import { getUserTier, needsSubscription, LEGACY_FULL_ACCESS, type UserTierResult } from "../services/tiers.js";
+import { getUserTier, needsSubscription, chatGateStatus, LEGACY_FULL_ACCESS, type UserTierResult } from "../services/tiers.js";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
@@ -72,6 +72,36 @@ export async function requireSubscription(
   } catch {
     // needsSubscription already fails open internally; this belt-and-braces
     // catch keeps the rule absolute even if that ever changes.
+  }
+  next();
+}
+
+/**
+ * Chat gate for /chat/send and /chat/stream: the same 402, but a gated
+ * account is still allowed while it has free messages left (see
+ * services/tiers.ts chatGateStatus). This is what lets a brand-new user talk
+ * to Eos before the card wall; once the free turns are spent the endpoints
+ * 402 and the client shows /pricing. Voice stays on requireSubscription
+ * (hard) — no free voice.
+ *
+ * Same one unbendable rule: any lookup failure lets the request through.
+ */
+export async function requireSubscriptionForChat(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const gate = await chatGateStatus(req.userId);
+    if (gate.needsSubscription) {
+      res.status(402).json({
+        error: "You've used your free messages. Start your free trial to keep talking.",
+        code: "subscription_required",
+      });
+      return;
+    }
+  } catch {
+    // chatGateStatus already fails open internally; belt-and-braces.
   }
   next();
 }

@@ -7,9 +7,12 @@
  *  2. needsSubscription — the DB wrapper's ONE UNBENDABLE RULE, proven with
  *     injected lookups: any lookup failure grants access. A database hiccup
  *     must never lock a paying customer out.
- *  3. The wired gate through the real app: the /api/auth/me flag, and 402
- *     from the three money endpoints (/chat/stream, /chat/send,
- *     /voice-agent/session) for gated accounts only.
+ *  2b. chatGateStatus — the SOFT chat gate: a gated account is still let
+ *     through while it has free messages left, with a countdown; grandfathered
+ *     and subscribed accounts have no counter; fails open like the hard gate.
+ *  3. The wired gate through the real app: the /api/auth/me flag +
+ *     freeMessagesRemaining, and 402 behaviour — chat endpoints honour the
+ *     free window, /voice-agent/session never does (no free voice).
  */
 
 import { describe, it, expect, afterAll } from "vitest";
@@ -18,8 +21,10 @@ import pg from "pg";
 import app from "../app.js";
 import {
   needsSubscription,
+  chatGateStatus,
   resolveAccess,
   SUBSCRIPTION_REQUIRED_AFTER,
+  FREE_MESSAGE_LIMIT,
   type GateLookups,
 } from "../services/tiers.js";
 
@@ -102,6 +107,81 @@ describe("needsSubscription fail-open (the one unbendable rule)", () => {
   });
 });
 
+describe("chatGateStatus (free-message window)", () => {
+  const GATED_AT = new Date(SUBSCRIPTION_REQUIRED_AFTER.getTime() + DAY_MS);
+  const GRANDFATHERED_AT = new Date(SUBSCRIPTION_REQUIRED_AFTER.getTime() - DAY_MS);
+  const gated = (used: number): GateLookups => ({
+    userCreatedAt: async () => GATED_AT,
+    subscriptionRow: async () => null,
+    userMessageCount: async () => used,
+  });
+
+  it("post-cutoff, no sub, no messages → granted with a full countdown", async () => {
+    expect(await chatGateStatus(1, gated(0))).toEqual({
+      needsSubscription: FREE_MESSAGE_LIMIT <= 0,
+      freeMessagesRemaining: FREE_MESSAGE_LIMIT,
+    });
+  });
+
+  it("one below the limit → one free message left, still granted", async () => {
+    if (FREE_MESSAGE_LIMIT < 1) return; // window disabled by env — nothing to prove
+    expect(await chatGateStatus(1, gated(FREE_MESSAGE_LIMIT - 1))).toEqual({
+      needsSubscription: false,
+      freeMessagesRemaining: 1,
+    });
+  });
+
+  it("at the limit → zero left, gated", async () => {
+    expect(await chatGateStatus(1, gated(FREE_MESSAGE_LIMIT))).toEqual({
+      needsSubscription: true,
+      freeMessagesRemaining: 0,
+    });
+  });
+
+  it("past the limit → clamped at zero, gated", async () => {
+    expect(await chatGateStatus(1, gated(FREE_MESSAGE_LIMIT + 5))).toEqual({
+      needsSubscription: true,
+      freeMessagesRemaining: 0,
+    });
+  });
+
+  it("grandfathered → no counter, and the message count is never even queried", async () => {
+    let counted = false;
+    const g = await chatGateStatus(1, {
+      userCreatedAt: async () => GRANDFATHERED_AT,
+      subscriptionRow: async () => null,
+      userMessageCount: async () => {
+        counted = true;
+        return 0;
+      },
+    });
+    expect(g).toEqual({ needsSubscription: false, freeMessagesRemaining: null });
+    expect(counted).toBe(false);
+  });
+
+  it("live subscription → no counter (unlimited)", async () => {
+    expect(
+      await chatGateStatus(1, {
+        userCreatedAt: async () => GATED_AT,
+        subscriptionRow: async () => ({ status: "trialing" }),
+        userMessageCount: async () => 999,
+      }),
+    ).toEqual({ needsSubscription: false, freeMessagesRemaining: null });
+  });
+
+  it("fails open (granted, no counter) when a lookup throws", async () => {
+    expect(
+      await chatGateStatus(1, {
+        userCreatedAt: async () => {
+          throw new Error("db down");
+        },
+        subscriptionRow: async () => null,
+        userMessageCount: async () => 0,
+      }),
+    ).toEqual({ needsSubscription: false, freeMessagesRemaining: null });
+  });
+});
+
 // ─── The wired gate, through the real app ────────────────────────────────────
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -153,10 +233,31 @@ async function setSubscription(userId: number, status: string | null): Promise<v
   }
 }
 
+// Seed N real user messages directly. content is encryptedText over a plain
+// text column and the gate only COUNTS role="user" rows (never decrypts), so
+// raw ciphertext-shaped placeholders are fine here.
+async function seedUserMessages(userId: number, n: number): Promise<void> {
+  await pool.query("DELETE FROM messages WHERE user_id = $1", [userId]);
+  for (let i = 0; i < n; i++) {
+    await pool.query(
+      "INSERT INTO messages (user_id, role, content) VALUES ($1, 'user', $2)",
+      [userId, `seed-${i}`],
+    );
+  }
+}
+
 async function meFlag(agent: ReturnType<typeof request.agent>): Promise<boolean | undefined> {
   const res = await agent.get("/api/auth/me");
   expect(res.status).toBe(200);
   return res.body.needsSubscription;
+}
+
+async function meRemaining(
+  agent: ReturnType<typeof request.agent>,
+): Promise<number | null | undefined> {
+  const res = await agent.get("/api/auth/me");
+  expect(res.status).toBe(200);
+  return res.body.freeMessagesRemaining;
 }
 
 const POST_CUTOFF = new Date(SUBSCRIPTION_REQUIRED_AFTER.getTime() + DAY_MS);
@@ -168,11 +269,29 @@ afterAll(async () => {
 });
 
 describe("subscription gate through the app", () => {
-  it("post-cutoff account with no row: flagged, and all three money endpoints return 402", async () => {
-    const { agent, userId } = await signupUser("gated");
+  it("post-cutoff, no row, fresh account: free window is OPEN (chat allowed, voice gated)", async () => {
+    const { agent, userId } = await signupUser("free-open");
     await setCreatedAt(userId, POST_CUTOFF);
 
+    // No messages yet → inside the free window: not flagged, full countdown.
+    expect(await meFlag(agent)).toBe(false);
+    expect(await meRemaining(agent)).toBe(FREE_MESSAGE_LIMIT);
+    // Chat endpoints are NOT gated during the free window (they may fail
+    // further in without LLM creds — this pins only that the GATE isn't what
+    // blocks them)...
+    expect((await agent.post("/api/chat/send").send({ content: "hi" })).status).not.toBe(402);
+    expect((await agent.post("/api/chat/stream").send({ content: "hi" })).status).not.toBe(402);
+    // ...but voice is never free.
+    expect((await agent.post("/api/voice-agent/session").send({})).status).toBe(402);
+  });
+
+  it("post-cutoff, no row, free messages spent: wall closes (chat 402, voice 402)", async () => {
+    const { agent, userId } = await signupUser("free-spent");
+    await setCreatedAt(userId, POST_CUTOFF);
+    await seedUserMessages(userId, FREE_MESSAGE_LIMIT);
+
     expect(await meFlag(agent)).toBe(true);
+    expect(await meRemaining(agent)).toBe(0);
     expect((await agent.post("/api/chat/send").send({ content: "hi" })).status).toBe(402);
     expect((await agent.post("/api/chat/stream").send({ content: "hi" })).status).toBe(402);
     expect((await agent.post("/api/voice-agent/session").send({})).status).toBe(402);
@@ -181,6 +300,9 @@ describe("subscription gate through the app", () => {
   it("post-cutoff account: each row status matches the approved access table", async () => {
     const { agent, userId } = await signupUser("statuses");
     await setCreatedAt(userId, POST_CUTOFF);
+    // Close the free window first so this isolates the row-state decision,
+    // not the free-message allowance.
+    await seedUserMessages(userId, FREE_MESSAGE_LIMIT);
 
     const expected: Array<[string, boolean]> = [
       ["trialing", false],
@@ -211,6 +333,7 @@ describe("subscription gate through the app", () => {
     await setCreatedAt(userId, PRE_CUTOFF);
 
     expect(await meFlag(agent)).toBe(false);
+    expect(await meRemaining(agent)).toBe(null); // grandfathered → unlimited, no counter
     expect((await agent.post("/api/chat/send").send({ content: "hi" })).status).not.toBe(402);
   });
 

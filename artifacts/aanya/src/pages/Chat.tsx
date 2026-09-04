@@ -348,6 +348,9 @@ export default function Chat() {
   const streamFlushRafRef = useRef<number | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
+  // Free-message wall reached mid-conversation: show a quiet handoff (Eos line
+  // + trial CTA) in place of the composer, never an error.
+  const [paywallReached, setPaywallReached] = useState(false);
   // Message ids whose reply was the honest provider-outage fallback (the SSE
   // done event carries degraded:true) — rendered with a subtle caption so a
   // degraded reply never masquerades as a normal one. Session-local by design:
@@ -813,7 +816,15 @@ export default function Chat() {
   const voiceCallEnabled = voicesStatus?.voiceCallEnabled ?? false;
 
   // Current account email — reuse the auth/me cache the AuthGate already populated.
-  const { data: authMe } = useQuery<{ user: { id: number; email: string }; emailVerified: boolean }>({
+  // freeMessagesRemaining drives the quiet "N free messages left" counter: it's
+  // the number of real chat turns a not-yet-subscribed user has before the wall
+  // (null once subscribed/grandfathered — unlimited, no counter).
+  const { data: authMe } = useQuery<{
+    user: { id: number; email: string };
+    emailVerified: boolean;
+    needsSubscription?: boolean;
+    freeMessagesRemaining?: number | null;
+  }>({
     queryKey: ["/api/auth/me"],
     queryFn: async () => {
       const r = await apiFetch(`${import.meta.env.BASE_URL}api/auth/me`);
@@ -824,6 +835,7 @@ export default function Chat() {
     retry: false,
   });
   const accountEmail = authMe?.user.email ?? "";
+  const freeMessagesRemaining = authMe?.freeMessagesRemaining ?? null;
   const [showChangeEmail, setShowChangeEmail] = useState(false);
 
   // Sync rename input with loaded profile
@@ -1099,7 +1111,25 @@ export default function Chat() {
         // The server answers pre-stream rejections (rate limit 429, message
         // too long 400) with a friendly { error } body — show those words
         // instead of a generic failure line.
-        const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
+        const body = (await response.json().catch(() => null)) as { error?: unknown; code?: unknown } | null;
+        // Free-message wall (402): a gentle handoff, never an error. Keep the
+        // user's message on screen and show the paywall-handoff bubble (Eos's
+        // quiet line + trial CTA). Deliberately do NOT invalidate /api/auth/me
+        // here: flipping needsSubscription would unmount this screen (and the
+        // reassuring line with it) into the bare Pricing gate. The user reaches
+        // Pricing by choosing the CTA. Clean up the streaming UI and return.
+        if (response.status === 402 || body?.code === "subscription_required") {
+          setPaywallReached(true);
+          setIsStreaming(false);
+          if (streamHoldTimerRef.current) clearTimeout(streamHoldTimerRef.current);
+          if (streamFlushRafRef.current !== null) {
+            cancelAnimationFrame(streamFlushRafRef.current);
+            streamFlushRafRef.current = null;
+          }
+          pendingStreamRef.current = "";
+          setStreamingContent("");
+          return;
+        }
         if (typeof body?.error === "string" && body.error) {
           const serverErr = new Error(body.error);
           (serverErr as { serverMessage?: boolean }).serverMessage = true;
@@ -1259,6 +1289,15 @@ export default function Chat() {
 
     if (finalMessageId && finalContent) {
       queryClient.invalidateQueries({ queryKey: getGetMessagesQueryKey() });
+      // Decrement the free-message counter after a real turn. Only while the
+      // free window applies (freeMessagesRemaining != null) — subscribed and
+      // grandfathered users have no counter, so skip the extra /auth/me GET.
+      {
+        const gate = queryClient.getQueryData<{ freeMessagesRemaining?: number | null }>(["/api/auth/me"]);
+        if (gate?.freeMessagesRemaining != null) {
+          queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+        }
+      }
 
       // Crisis floor: TTS speaks Eos's words only — never the helpline block.
       const speakableContent = finalCrisisBlock
@@ -1313,6 +1352,9 @@ export default function Chat() {
 
   const handleSend = async (data: ChatMessageFormValues) => {
     if (!data.content.trim()) return;
+    // Free-message wall already reached: the composer is replaced by the trial
+    // handoff, so ignore any stray submit rather than stacking another turn.
+    if (paywallReached) return;
     const content = data.content.trim();
     playSendSound(); // user sends only — never on Eos's replies (opt-in, default off)
     setStreamError(null);
@@ -2967,6 +3009,39 @@ export default function Chat() {
           )}
         </AnimatePresence>
 
+        {/* ── Free-message handoff ──────────────────────────────────────────
+            The user hit the wall mid-conversation. NOT an error: their message
+            stays on screen, Eos says one quiet line, and the trial CTA sits
+            where the reply would be. The last sentence answers the fear a
+            person has the instant a payment screen appears — what happens to
+            what I just wrote — before they can ask it. */}
+        <AnimatePresence>
+          {paywallReached && !isStreaming && (
+            <motion.div
+              key="paywall-handoff"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="flex flex-col w-full max-w-[85%] self-start"
+            >
+              <span className="text-[10px] text-muted-foreground/60 tracking-widest uppercase mb-1.5 ml-1">
+                {companionName}
+              </span>
+              <div className="px-[18px] py-3 leading-relaxed companion-bubble rounded-2xl rounded-tl-sm">
+                <p className={cn("companion-message text-foreground/90", isBereavement ? "text-[17px]" : "text-[16px]")}>
+                  I'd like to keep going with you. To carry on, you'll need to start the trial. Nothing you've said goes anywhere.
+                </p>
+              </div>
+              <a
+                href={`${import.meta.env.BASE_URL}pricing`}
+                className="mt-3 self-start inline-flex items-center rounded-xl bg-primary/90 hover:bg-primary text-primary-foreground text-sm font-medium px-5 py-2.5 transition-colors"
+              >
+                Start the trial
+              </a>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* ── Streaming bubble — appears while model is generating ─────────── */}
         <AnimatePresence>
           {isStreaming && (
@@ -4603,7 +4678,7 @@ export default function Chat() {
               </button>
             </div>
           </motion.div>
-        ) : (
+        ) : paywallReached ? null : (
           /* ── Normal text input area ──────────────────────────────────── */
           <motion.div
             key="text-input"
@@ -4817,6 +4892,19 @@ export default function Chat() {
                   </Button>
                 </form>
               </Form>
+            )}
+
+            {/* Free-message counter — the wall should never surprise someone
+                mid-conversation, so we show it coming. Only after onboarding
+                (real chat), and only while free turns remain and the account
+                isn't yet subscribed (freeMessagesRemaining != null). */}
+            {onboarding?.isComplete && freeMessagesRemaining != null && freeMessagesRemaining > 0 && (
+              <p className="text-center text-[11px] text-primary-strong/60 mt-3 px-4 leading-relaxed">
+                {freeMessagesRemaining} free message{freeMessagesRemaining === 1 ? "" : "s"} left ·{" "}
+                <a href={`${import.meta.env.BASE_URL}pricing`} className="underline underline-offset-2 hover:text-primary-strong">
+                  start your free trial
+                </a>
+              </p>
             )}
 
             {/* AI disclosure (EU AI Act Art. 50) — plain-language, always

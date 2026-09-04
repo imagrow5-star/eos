@@ -14,8 +14,8 @@
  * otherwise.
  */
 
-import { eq } from "drizzle-orm";
-import { db, subscriptionsTable, usersTable } from "@workspace/db";
+import { eq, and, count } from "drizzle-orm";
+import { db, subscriptionsTable, usersTable, messagesTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
@@ -176,6 +176,31 @@ function resolveCutoff(): Date {
 }
 export const SUBSCRIPTION_REQUIRED_AFTER = resolveCutoff();
 
+/**
+ * How many real chat turns a gated (post-cutoff, no-live-subscription) user
+ * may take before the paywall. The point is that someone can actually talk to
+ * Eos and feel the value before being asked for a card — the wall lands just
+ * after the first real exchange, never as a cold open.
+ *
+ * Counts the user's own messages (role="user" in messagesTable) — onboarding
+ * answers are stored on the profile, not as messages, so this is purely real
+ * conversation. VOICE is never free (voice minutes cost real money and the
+ * hard gate below still applies to /voice-agent/session).
+ *
+ * Env-overridable (FREE_MESSAGE_LIMIT) so the number can be tuned without a
+ * deploy, exactly like SUBSCRIPTION_REQUIRED_AFTER. 0 disables the free
+ * window entirely (wall before the first message, i.e. today's behavior). An
+ * unparseable or negative value falls back to the default.
+ */
+function resolveFreeMessageLimit(): number {
+  const fallback = 3;
+  const env = process.env.FREE_MESSAGE_LIMIT?.trim();
+  if (!env) return fallback;
+  const n = Number.parseInt(env, 10);
+  return Number.isInteger(n) && n >= 0 ? n : fallback;
+}
+export const FREE_MESSAGE_LIMIT = resolveFreeMessageLimit();
+
 /** Row statuses that keep access for a gated (post-cutoff) account.
  *  past_due is deliberate grace: Dodo's on_hold means the card is being
  *  retried — a bank hiccup must not lock someone out; if dunning fails the
@@ -205,10 +230,13 @@ export function resolveAccess(
   return "needs_subscription";
 }
 
-/** DB lookups behind the gate — injectable so tests can prove fail-open. */
+/** DB lookups behind the gate — injectable so tests can prove fail-open.
+ *  userMessageCount is optional: the hard gate (needsSubscription) never needs
+ *  it; only the free-window gate (chatGateStatus) does. */
 export interface GateLookups {
   userCreatedAt(userId: number): Promise<Date | null>;
   subscriptionRow(userId: number): Promise<{ status: string } | null>;
+  userMessageCount?(userId: number): Promise<number>;
 }
 
 const defaultGateLookups: GateLookups = {
@@ -227,6 +255,13 @@ const defaultGateLookups: GateLookups = {
       .where(eq(subscriptionsTable.userId, userId))
       .limit(1);
     return row ?? null;
+  },
+  async userMessageCount(userId) {
+    const [row] = await db
+      .select({ n: count() })
+      .from(messagesTable)
+      .where(and(eq(messagesTable.userId, userId), eq(messagesTable.role, "user")));
+    return Number(row?.n ?? 0);
   },
 };
 
@@ -252,5 +287,52 @@ export async function needsSubscription(
       if (uh) logger.error({ err, uh }, "subscription-gate: lookup failed — granting access (fail open)");
     } catch { /* logging must never crash the caller */ }
     return false;
+  }
+}
+
+// ─── Chat gate (subscription OR free-message window) ──────────────────────────
+
+export interface ChatGateStatus {
+  /** True only when the account is post-cutoff, has no live subscription, AND
+   *  has used up its free messages. This is the flag /auth/me returns and the
+   *  chat endpoints enforce. */
+  needsSubscription: boolean;
+  /** Free real-chat turns left before the wall, or null when the concept
+   *  doesn't apply (grandfathered or subscribed → unlimited). The UI shows a
+   *  quiet counter from this so the wall is never a surprise mid-conversation. */
+  freeMessagesRemaining: number | null;
+}
+
+/**
+ * The gate the CHAT surfaces use: a user is let through if the hard gate would
+ * grant them (grandfathered / live subscription / fail-open) OR they still
+ * have free messages left. Voice deliberately does NOT use this — it stays on
+ * the hard needsSubscription gate, so there is never a free voice minute.
+ *
+ * Fails open exactly like needsSubscription: any lookup error grants access
+ * with no counter. The message-count query only runs when it can matter (the
+ * hard gate says pay), so grandfathered and subscribed users pay for nothing
+ * extra here.
+ */
+export async function chatGateStatus(
+  userId: number,
+  lookups: GateLookups = defaultGateLookups,
+): Promise<ChatGateStatus> {
+  try {
+    // Hard gate first: false means fully granted (grandfather / live sub /
+    // fail-open) — no free-window concept applies, no counter shown.
+    if (!(await needsSubscription(userId, lookups))) {
+      return { needsSubscription: false, freeMessagesRemaining: null };
+    }
+    // Hard gate says pay. Offer the free window if any is configured.
+    const used = lookups.userMessageCount ? await lookups.userMessageCount(userId) : Number.MAX_SAFE_INTEGER;
+    const remaining = Math.max(0, FREE_MESSAGE_LIMIT - used);
+    return { needsSubscription: remaining <= 0, freeMessagesRemaining: remaining };
+  } catch (err) {
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.error({ err, uh }, "chat-gate: lookup failed — granting access (fail open)");
+    } catch { /* logging must never crash the caller */ }
+    return { needsSubscription: false, freeMessagesRemaining: null };
   }
 }
