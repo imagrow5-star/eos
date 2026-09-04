@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2, Square, Sun, Moon, ArrowLeft } from "lucide-react";
+import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2, Square, Sun, Moon, ArrowLeft, LogOut } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { playSendSound, sendSoundEnabled, setSendSoundEnabled } from "@/lib/sendSound";
 import { motion, AnimatePresence } from "framer-motion";
@@ -25,7 +25,7 @@ import {
 import { useContextualGreeting } from "@/api/contextualGreeting";
 import { ChangeEmailForm } from "@/components/ChangeEmailForm";
 import { chatMessageSchema, type ChatMessageFormValues } from "@/lib/schemas";
-import { CHAT_DRAFT_KEY, ONBOARDING_DRAFT_KEY } from "@/lib/sessionDrafts";
+import { CHAT_DRAFT_KEY, ONBOARDING_DRAFT_KEY, clearSessionDrafts } from "@/lib/sessionDrafts";
 import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -2842,6 +2842,19 @@ export default function Chat() {
     }
   };
 
+  // Sign out — moved here from the bottom nav (it's an action, not a
+  // destination). Mirrors Shell.handleLogout: end the server session, wipe
+  // per-tab drafts (shared-device hygiene), then clear the auth query so
+  // AuthGate redirects to the login screen.
+  const handleSignOut = async () => {
+    try {
+      await apiFetch(`${import.meta.env.BASE_URL}api/auth/logout`, { method: "POST" });
+    } catch { /* network hiccup — still clear local state below */ }
+    clearSessionDrafts();
+    queryClient.setQueryData(["/api/auth/me"], null);
+    await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+  };
+
   // ─── Settings: voice-call delivery tone ───────────────────────────────────
   // (The legacy "Companion voice" picker was retired in Sprint 1.6 — voice
   // selection now lives entirely in the LANGUAGE/ACCENT/VOICE GENDER/VOICE
@@ -4193,6 +4206,20 @@ export default function Chat() {
               </div>
             </div>
 
+            {/* ── Sign out ──────────────────────────────────────────────
+                A plain action, kept as its own section well ABOVE the
+                destructive Delete-account block (parent space-y-6 gives a
+                clear gap) so the two are never adjacent enough to mistap. */}
+            <div className="pt-2 border-t border-border">
+              <button
+                onClick={handleSignOut}
+                className="flex items-center gap-2 text-[12px] text-muted-foreground/70 hover:text-foreground tracking-wider uppercase transition-colors"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Sign out
+              </button>
+            </div>
+
             {/* ── Delete account ──────────────────────────────────────── */}
             <div className="pt-2 border-t border-destructive/10 space-y-3">
               {!showDeleteConfirm ? (
@@ -4802,7 +4829,7 @@ export default function Chat() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="px-4 sm:px-6 pb-2.5 pt-2 bg-background shrink-0 relative z-10"
+            className="px-4 sm:px-6 pb-1 pt-2 bg-background shrink-0 relative z-10"
           >
 
             {showTextInput && (
