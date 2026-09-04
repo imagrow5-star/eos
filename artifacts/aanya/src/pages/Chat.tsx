@@ -280,16 +280,6 @@ export default function Chat() {
   useEffect(() => () => {
     if (ackPauseTimerRef.current) clearTimeout(ackPauseTimerRef.current);
   }, []);
-  // Post-onboarding "make Eos yours" nudge — the persona/voice setup we moved
-  // OUT of the required flow is offered here, once, and is dismissible. Reuses
-  // Settings (where those live); dismissal persists per-device.
-  const [personalizeNudgeDismissed, setPersonalizeNudgeDismissed] = useState<boolean>(() => {
-    try { return localStorage.getItem("eos-personalize-nudge") === "dismissed"; } catch { return false; }
-  });
-  const dismissPersonalizeNudge = () => {
-    setPersonalizeNudgeDismissed(true);
-    try { localStorage.setItem("eos-personalize-nudge", "dismissed"); } catch { /* private mode */ }
-  };
   const [showSettings, setShowSettings] = useState(false);
   // Settings is a visual overlay, not a route — but people expect the platform
   // "back" (mobile edge-swipe, Android hardware back, browser back) to close
@@ -4274,7 +4264,7 @@ export default function Chat() {
       <div
         ref={scrollRef}
         className={cn(
-          "flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-7",
+          "flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-3",
           // scroll-smooth during streaming makes every frame's follow-scroll
           // an animated scroll that fights the next one — instant while
           // streaming, smooth the rest of the time.
@@ -4282,7 +4272,7 @@ export default function Chat() {
           showSettings && "hidden",
         )}
       >
-        <div className="flex flex-col justify-end min-h-full pb-4 max-w-3xl mx-auto w-full">
+        <div className="flex flex-col justify-end min-h-full max-w-3xl mx-auto w-full">
           {chatContent()}
 
           <AnimatePresence>
@@ -4812,9 +4802,8 @@ export default function Chat() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="px-4 sm:px-6 pb-5 pt-3 bg-background shrink-0 relative z-10"
+            className="px-4 sm:px-6 pb-5 pt-2 bg-background shrink-0 relative z-10"
           >
-            <div className="h-px bg-border mb-4" />
 
             {showTextInput && (
               <>
@@ -5035,49 +5024,27 @@ export default function Chat() {
               </Form>
             )}
 
-            {/* "Make Eos yours" nudge — the persona/voice setup moved out of
-                onboarding, offered once here and dismissible. Only while the
-                companion is still at its default (unnamed) and not at the wall. */}
-            {onboarding?.isComplete && !paywallReached && !personalizeNudgeDismissed && (profile?.companionName ?? "Eos") === "Eos" && (
-              <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mt-3 px-4 text-[12px] text-muted-foreground/70">
-                <span>Want to give me a name or pick a voice?</span>
-                <button
-                  type="button"
-                  onClick={openSettings}
-                  className="text-primary-strong/80 underline underline-offset-2 hover:text-primary-strong"
-                >
-                  Personalize
-                </button>
-                <button
-                  type="button"
-                  onClick={dismissPersonalizeNudge}
-                  className="text-muted-foreground/50 hover:text-muted-foreground"
-                >
-                  Maybe later
-                </button>
-              </div>
-            )}
+            {/* Footer — ONE line. The free-message counter (when it applies)
+                prefixes the AI disclosure so the composer isn't buried under a
+                stack of meta lines. The persona/voice nudge was removed
+                deliberately: prompting a new user to name their companion the
+                moment they've started talking is setup wearing a friendly face
+                — it lives in Settings, where whoever wants it will find it.
 
-            {/* Free-message counter — the wall should never surprise someone
-                mid-conversation, so we show it coming. Only after onboarding
-                (real chat), and only while free turns remain and the account
-                isn't yet subscribed (freeMessagesRemaining != null). */}
-            {onboarding?.isComplete && freeMessagesRemaining != null && freeMessagesRemaining > 0 && (
-              <p className="text-center text-[11px] text-primary-strong/60 mt-3 px-4 leading-relaxed">
-                {freeMessagesRemaining} free message{freeMessagesRemaining === 1 ? "" : "s"} left ·{" "}
-                <a href={`${import.meta.env.BASE_URL}pricing`} className="underline underline-offset-2 hover:text-primary-strong">
-                  start your free trial
-                </a>
-              </p>
-            )}
-
-            {/* AI disclosure (EU AI Act Art. 50) — plain-language, always
-                visible at the point of conversation so a user can tell they're
-                talking to an AI without asking. Present every session (not a
-                one-time flash) and in both the normal composer and onboarding
+                The AI disclosure (EU AI Act Art. 50) is ALWAYS present, with or
+                without the counter, in both the normal composer and onboarding
                 choice modes. */}
-            <p className="text-center text-[11px] text-muted-foreground/50 mt-3 px-4 leading-relaxed max-w-3xl mx-auto">
-              Eos is an AI. It's here to listen anytime, but it isn't a person or a substitute for professional help.
+            <p className="text-center text-[11px] text-muted-foreground/50 mt-2 px-4 leading-relaxed max-w-3xl mx-auto">
+              {onboarding?.isComplete && freeMessagesRemaining != null && freeMessagesRemaining > 0 && (
+                <span className="text-primary-strong/60">
+                  {freeMessagesRemaining} message{freeMessagesRemaining === 1 ? "" : "s"} left ·{" "}
+                  <a href={`${import.meta.env.BASE_URL}pricing`} className="underline underline-offset-2 hover:text-primary-strong">
+                    Start trial
+                  </a>
+                  {" · "}
+                </span>
+              )}
+              Eos is an AI, not a person or a substitute for professional help.
             </p>
           </motion.div>
         )}
