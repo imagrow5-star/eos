@@ -37,6 +37,7 @@ import { countryName, suggestCountry, searchCountries, type Country } from "@/li
 // never weighs down the initial chunk.
 import type { AttemptResult, RealtimeConversation, RealtimeSessionInfo } from "@/lib/realtimeVoice";
 import { VoiceSessionPrefetcher } from "@/lib/voiceSessionPrefetch";
+import { asrLanguageMismatch } from "@/lib/asrLanguage";
 import { CaptionSyncEngine } from "@/lib/captionSync";
 import { splitCrisisBlock } from "@/lib/crisisBlock";
 import CrisisHelplineCard from "@/components/CrisisHelplineCard";
@@ -760,6 +761,9 @@ export default function Chat() {
   // back to the stored truth.
   const [pendingVoiceTone, setPendingVoiceTone] = useState<string | null>(null);
   const activeVoiceTone: string = pendingVoiceTone ?? ((profile as any)?.voiceTone ?? "auto");
+  // ASR-language mismatches already beaconed THIS call (one report per
+  // detected language per call — see the onDetectedLanguage handler).
+  const asrLangReportedRef = useRef<Set<string>>(new Set());
 
   // Fetch romantic voice availability from the server
   const { data: voicesStatus } = useQuery<{ romantic: RomanticVoiceStatus[]; voiceCallEnabled?: boolean }>({
@@ -1914,6 +1918,7 @@ export default function Chat() {
           if (!isHumeSession(session)) {
             throw new Error("Hume session response is missing accessToken/configId/userToken");
           }
+          asrLangReportedRef.current.clear(); // fresh mismatch evidence per call
           const convo = await startHumeCall(session, {
             onMode: (mode) => {
               if (realtimeGenRef.current !== rtGen || !continuousVoiceRef.current) return;
@@ -1984,6 +1989,21 @@ export default function Chat() {
               // engine; beacon it so mid-call glitches are visible in logs.
               console.warn("[voice-call] hume socket reconnected mid-call — settings re-sent", chatId);
               reportVoiceCallError("hume-reconnect", `new chat ${chatId} — session settings re-sent`);
+            },
+            onDetectedLanguage: (language) => {
+              if (realtimeGenRef.current !== rtGen) return;
+              // ASR-language evidence: EVI auto-detects with no language
+              // setting anywhere in its API (see lib/asrLanguage.ts). Beacon
+              // a detect-vs-profile mismatch once per language per call —
+              // the raw detected value, never the transcript — so Render
+              // logs carry evidence for Hume support.
+              if (!asrLanguageMismatch(language, speechLang)) return;
+              if (asrLangReportedRef.current.has(language)) return;
+              asrLangReportedRef.current.add(language);
+              reportVoiceCallError(
+                "hume-asr-language",
+                `EVI detected "${language}" while the profile language is "${speechLang}"`,
+              );
             },
           });
           if (!continuousVoiceRef.current || realtimeGenRef.current !== rtGen) {

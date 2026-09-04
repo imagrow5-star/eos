@@ -7,6 +7,7 @@
 
 import { describe, it, expect } from "vitest";
 import { humeCloseMessage, isHumeSession } from "../lib/humeVoice";
+import { asrLanguageMismatch } from "../lib/asrLanguage";
 
 describe("isHumeSession", () => {
   const full = { mode: "hume", accessToken: "tok", configId: "cfg", userToken: "1.2.3.dev.sig" };
@@ -38,5 +39,32 @@ describe("humeCloseMessage", () => {
 
   it("a clean close with a reason still surfaces the reason", () => {
     expect(humeCloseMessage(1000, "server going away")).toBe("server going away");
+  });
+});
+
+describe("asrLanguageMismatch (detect-vs-profile evidence)", () => {
+  it("accepts plausible spellings of the profile language — format is unpinned", () => {
+    for (const d of ["en", "eng", "en-US", "English"]) {
+      expect(asrLanguageMismatch(d, "en"), d).toBe(false);
+    }
+    for (const d of ["es", "es-MX", "spa", "Spanish", "español"]) {
+      expect(asrLanguageMismatch(d, "es"), d).toBe(false);
+    }
+  });
+
+  it("flags the live failure: English detected on a Spanish profile", () => {
+    expect(asrLanguageMismatch("en", "es")).toBe(true);
+    expect(asrLanguageMismatch("English", "es")).toBe(true);
+    expect(asrLanguageMismatch("es", "en")).toBe(true);
+  });
+
+  it("an unknown detected format counts as a mismatch so the raw value reaches the logs", () => {
+    expect(asrLanguageMismatch("und", "en")).toBe(true);
+    expect(asrLanguageMismatch("zz-XX", "es")).toBe(true);
+  });
+
+  it("an empty detection reports nothing", () => {
+    expect(asrLanguageMismatch("", "es")).toBe(false);
+    expect(asrLanguageMismatch("   ", "en")).toBe(false);
   });
 });

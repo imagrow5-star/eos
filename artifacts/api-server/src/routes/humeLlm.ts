@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { stripExpressionTags } from "../lib/expressionTags.js";
 import { verifyVoiceToken } from "../lib/voiceToken.js";
 import { humeTurnUsageLimits } from "../middleware/usageLimits.js";
 import { voiceCompletionHandler } from "./voice-llm.js";
@@ -73,12 +74,10 @@ export const HUME_GREETING_PREFIX = "Speak your greeting to the user.";
 //   "Rato. {very slightly excited, very slightly amused}"
 // Tone context must reach the model ONLY via formatVoiceTone (built from the
 // structured prosody scores we already receive), and the braces must never
-// hit the prompt or the persisted transcript. ASR never emits braces, so any
-// {…} group in USER content is Hume's annotation, not the user's speech —
-// strip them all, wherever they sit in the string.
-export function stripExpressionTags(content: string): string {
-  return content.replace(/\{[^{}]*\}/g, " ").replace(/\s{2,}/g, " ").trim();
-}
+// hit the prompt or the persisted transcript. The strip lives in
+// lib/expressionTags.ts, shared with the boot scrub for rows persisted
+// before this normalizer stripped them.
+export { stripExpressionTags };
 
 // ─── Voice-tone extraction ───────────────────────────────────────────────────
 // Threshold 0.12 (env-tunable), top 3 emotions. Calibrated on the three real

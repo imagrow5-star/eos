@@ -6,6 +6,7 @@ import { reconcileAgentConfig } from "./services/agentConfigGuard";
 import { runDataEncryptionMigration } from "./services/dataEncryptionMigration";
 import { backfillVoiceGender } from "./services/settings/voiceGenderBackfill";
 import { backfillLanguageSunset } from "./services/settings/languageSunset";
+import { scrubMessageAnnotations } from "./services/messageAnnotationScrub";
 import { migrateRomanticPersona } from "./services/settings/romanticPersonaMigration";
 import { ensureProfileThemeColumns, ensureReflectionReportsTable, ensureMorningNoteColumns, ensureDodoBillingColumns, ensureHumeVoiceColumn } from "./services/schemaGuard";
 import { backfillMemoryImportance } from "./services/memory/backfill";
@@ -201,6 +202,13 @@ app.listen(port, (err) => {
   // so a failed run changes nothing user-visible.
   backfillLanguageSunset().catch((e) =>
     logger.error({ err: e }, "language sunset backfill failed — removed-code rows behave as English regardless; retry next boot"),
+  );
+
+  // Scrub EVI {expression} annotations from user messages persisted before
+  // the live normalizer stripped them (see services/messageAnnotationScrub.ts
+  // — decrypt-scan bounded by a fixed cutoff, rewrite only changed rows).
+  scrubMessageAnnotations().catch((e) =>
+    logger.error({ err: e }, "message annotation scrub failed — old rows keep their braces; retry next boot"),
   );
 
   // Move any remaining relationship_type='romantic' rows to 'friend' (the
