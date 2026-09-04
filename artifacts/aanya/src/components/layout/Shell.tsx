@@ -1,3 +1,4 @@
+import { useCallback, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { apiFetch } from "@/lib/api";
 import { clearSessionDrafts } from "@/lib/sessionDrafts";
@@ -8,6 +9,37 @@ import { useQueryClient } from "@tanstack/react-query";
 export function Shell({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const queryClient = useQueryClient();
+
+  // ── App-wide swipe-to-go-back ──────────────────────────────────────────────
+  // Wraps every authed screen, so one gesture handles the whole app: a touch
+  // that STARTS within 28px of the left edge and travels right past a threshold
+  // (predominantly horizontal) fires history.back() — returning to the previous
+  // screen, exactly like the OS back gesture. Because every screen change is a
+  // real history entry (wouter routes push; the Settings overlay pushes its own
+  // entry and closes on popstate), one back() always lands where the user was
+  // before. Desktop trackpads already do this natively via the browser's
+  // two-finger swipe over the same history; this covers mobile — especially an
+  // installed PWA (iOS standalone), which has no browser back-swipe at all.
+  // Edge-only so it never competes with vertical scrolling or horizontal chip
+  // rows / charts inside a screen.
+  const swipeRef = useRef<{ x: number; y: number; fromEdge: boolean } | null>(null);
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    const t = e.touches[0];
+    if (!t) return;
+    swipeRef.current = { x: t.clientX, y: t.clientY, fromEdge: t.clientX <= 28 };
+  }, []);
+  const onTouchEnd = useCallback((e: React.TouchEvent) => {
+    const s = swipeRef.current;
+    swipeRef.current = null;
+    if (!s?.fromEdge) return;
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const dx = t.clientX - s.x;
+    const dy = t.clientY - s.y;
+    if (dx > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      try { window.history.back(); } catch { /* nothing to go back to */ }
+    }
+  }, []);
 
   // Settings deliberately has ONE entry point: the Private-room header button
   // (founder decision, 2026-08 — a second entry in this nav read as clutter).
@@ -32,7 +64,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="flex flex-col md:flex-row h-[100dvh] w-full bg-background overflow-hidden relative">
+    <div
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+      className="flex flex-col md:flex-row h-[100dvh] w-full bg-background overflow-hidden relative"
+    >
       {/* ── Desktop left rail — replaces the bottom bar on md+ so the chat
            column isn't full-bleed on wide screens ─────────────────────── */}
       <aside className="hidden md:flex md:flex-col w-56 shrink-0 h-full border-r border-border bg-card/40 px-4 py-6">
