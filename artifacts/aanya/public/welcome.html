@@ -171,6 +171,34 @@
   .sun{animation:sunrise 7s var(--ease) both}
   @keyframes sunrise{from{transform:translateY(26px);opacity:0}to{transform:translateY(0);opacity:1}}
 
+  /* ── Sample conversation ──────────────────────────────────────────────────
+     The real chat styling, rendered static so it reads as a screenshot, not an
+     illustration. Colors mirror the product exactly: the user speaks in the
+     calm green (--user-bubble in the app) with cream text; Eos answers in a
+     near-white card with a green left edge, and — as in the app — Eos's words
+     are serif while the user's are sans. Corner tails match too (user tucks
+     the top-right, Eos the top-left). */
+  .sample{padding:70px 0 84px;background:var(--bg)}
+  .sample .label{text-align:center;font-size:12.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:26px}
+  .chat{
+    max-width:540px;margin:0 auto;background:var(--bg-hero);
+    border:1px solid var(--hair);border-radius:22px;box-shadow:var(--shadow-md);
+    padding:26px 22px;display:flex;flex-direction:column;gap:13px;
+  }
+  .msg{max-width:82%;padding:11px 16px;line-height:1.5}
+  .msg.you{
+    align-self:flex-end;background:#577755;color:#FDFBF5;
+    font-size:15.5px;border-radius:16px 4px 16px 16px;
+  }
+  .msg.eos{
+    align-self:flex-start;background:var(--card);color:var(--ink);
+    font-family:'Fraunces',Georgia,serif;font-weight:420;font-size:16.5px;
+    border:1px solid var(--hair);border-left:2px solid rgba(74,102,72,.6);
+    border-radius:4px 16px 16px 16px;box-shadow:var(--shadow-sm);
+  }
+  .sample .caption{text-align:center;max-width:540px;margin:26px auto 0;color:var(--ink-soft);font-size:15.5px}
+  @media(max-width:600px){.chat{padding:20px 16px}.msg{max-width:88%}}
+
   /* ── Sections ── */
   /* overflow:hidden clips the decorative blobs that bleed past the edges;
      without it they widen the page and cause horizontal scroll on phones */
@@ -192,6 +220,44 @@
   .plink{color:var(--green-deep);font-weight:600;border-bottom:1.5px solid rgba(95,127,92,.35);padding-bottom:1px;transition:border-color .2s,color .2s}
   .plink:hover{color:var(--green);border-color:var(--green)}
 
+  /* ── "What it will never do" — the refusals. A dash marker, never a tick,
+     so a refusal never reads as a feature (the pricing cards use ticks). No
+     icon square: plainer reads as more sincere. The closing line is set apart
+     with real air — it's the line people are meant to remember. ── */
+  .nevers{list-style:none;margin:34px 0 0;max-width:640px;display:flex;flex-direction:column;gap:26px}
+  .nevers li{position:relative;padding-left:30px}
+  .nevers li::before{content:"";position:absolute;left:0;top:13px;width:15px;height:2px;border-radius:2px;background:var(--terra)}
+  .nevers .n-h{display:block;margin-bottom:5px;font-family:'Fraunces',Georgia,serif;font-weight:520;font-size:19px;line-height:1.3;color:var(--ink)}
+  .nevers p{color:var(--ink-soft);max-width:560px}
+  .goodnight{
+    margin:60px auto 0;max-width:620px;text-align:center;
+    font-family:'Fraunces',Georgia,serif;font-weight:420;font-style:italic;
+    font-size:clamp(22px,3.4vw,30px);line-height:1.32;color:var(--ink);
+  }
+  @media(max-width:600px){
+    .nevers{gap:22px}
+    .goodnight{margin-top:46px}
+  }
+
+  /* ── "What it's for" — three short blocks: bold serif lead + a line. Like
+     the refusals, minus the dash marker. ── */
+  .blocks{margin-top:30px;max-width:640px;display:flex;flex-direction:column;gap:26px}
+  .blocks .b-h{display:block;margin-bottom:5px;font-family:'Fraunces',Georgia,serif;font-weight:520;font-size:19px;line-height:1.3;color:var(--ink)}
+  .blocks p{color:var(--ink-soft);max-width:600px}
+
+  /* ── FAQ — plain question/answer pairs. ── */
+  .faq{margin-top:32px;max-width:680px;display:flex;flex-direction:column;gap:24px}
+  .faq .q{margin-bottom:5px;font-family:'Fraunces',Georgia,serif;font-weight:520;font-size:18px;line-height:1.3;color:var(--ink)}
+  .faq .a{color:var(--ink-soft);max-width:640px}
+
+  /* ── Per-day reframe under the Essential price. ── */
+  .plan .per-day{margin-top:6px;font-size:13px;color:var(--muted)}
+
+  /* ── Final CTA — one line and the button, centred. ── */
+  .finalcta{text-align:center}
+  .finalcta .lead{max-width:600px;margin:0 auto;color:var(--ink-soft);font-size:clamp(17px,2.2vw,19px)}
+  .finalcta .hero-cta{margin-top:26px}
+
   /* ── Philosophy — a slow, signed closing note. No icon, no card, no box:
      plain text on the page background, left-aligned, narrow ~60ch measure,
      with more air than the rest of the page so it reads as a note. ── */
@@ -210,6 +276,24 @@
     text-underline-offset:3px;transition:color .2s,text-decoration-color .2s;
   }
   .philosophy .sig-link a:hover{color:var(--ink-soft);text-decoration-color:var(--muted)}
+  /* Founder line — a real photo slots into .founder-photo after the shoot (a
+     face is the strongest trust signal a review-less product has). Until then
+     it holds a quiet serif monogram so the space reads as reserved, not
+     broken; dropping in an <img> is then the only change needed. */
+  .philosophy .founder{display:flex;align-items:center;gap:16px;margin-top:46px}
+  .philosophy .founder-photo{
+    width:64px;height:64px;border-radius:50%;flex:none;overflow:hidden;
+    background:var(--green-soft);border:1px solid rgba(95,127,92,.25);box-shadow:var(--shadow-sm);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Fraunces',Georgia,serif;font-size:26px;color:var(--green-deep);
+  }
+  .philosophy .founder-photo img{width:100%;height:100%;object-fit:cover}
+  .philosophy .founder .who{display:flex;flex-direction:column;gap:3px}
+  .philosophy .founder .sig{margin-top:0}
+  .philosophy .founder .sig-link{margin-top:0}
+  /* Citation — smallest text on the page; the Harvard claim is sourced, not
+     asserted, so an assistant summarising the page can trust it. */
+  .philosophy .cite{margin-top:32px;font-size:12px;line-height:1.6;color:var(--muted);max-width:60ch}
 
   /* Soft ambient blobs behind alternating sections */
   .blob{position:absolute;border-radius:50%;filter:blur(60px);opacity:.5;pointer-events:none}
@@ -292,14 +376,12 @@
 <!-- Hero -->
 <header class="hero">
   <div class="wrap">
-    <span class="kicker rv on"><i></i>A private space, any hour</span>
-    <h1 class="rv on" style="--d:.06s">When it's heavy.<br>And there's no one to tell.</h1>
-    <p class="hero-sub rv on" style="--d:.14s">Eos is a completely private place to say what you're feeling. No judgment, just you and Eos. Not only for the heavy moments; you can talk about anything, like you would with a friend who's in your corner and wants to see you grow. Your conversations are encrypted, never sold, and never used to train AI.</p>
-    <div class="hero-cta rv on" style="--d:.22s">
+    <h1 class="rv on" style="--d:.04s">Someone to talk to. Any hour.<br>And nobody else will ever know.</h1>
+    <p class="hero-sub rv on" style="--d:.12s">Eos is a private companion you talk to by voice or text. It remembers what matters to you, so you never start from the beginning. Everything is encrypted, never sold, and never used to train AI.</p>
+    <div class="hero-cta rv on" style="--d:.2s">
       <a class="btn" href="/?enter=1">Start talking</a>
-      <a class="plink" href="#what-eos-is">Learn more</a>
     </div>
-    <p class="hero-note rv on" style="--d:.3s">7-day free trial · No download · Private by design</p>
+    <p class="hero-note rv on" style="--d:.28s">7-day trial · Cancel in one tap · Pay nothing if you cancel</p>
   </div>
 
   <!-- Morning hills, drawn quietly -->
@@ -329,7 +411,28 @@
   </div>
 </header>
 
-<!-- What Eos is -->
+<!-- What it looks like — a real conversation in the product's own chat styling,
+     rendered static. Proves Eos exists, demonstrates memory (otherwise just a
+     claim), and shows the tone better than any disclaimer. role="img" + a full
+     aria-label so assistive tech hears one coherent screenshot, not six
+     stray bubbles; the DOM text stays real for search and AI crawlers. -->
+<section class="sample">
+  <div class="wrap">
+    <p class="label rv">A conversation, three weeks in</p>
+    <div class="chat rv" style="--d:.06s" role="img"
+         aria-label="A sample conversation with Eos. You: can't sleep again. Eos: Third night this week. Is it the same thing keeping you up, or something new? You: same thing, the interview. Eos: The one on Thursday. You said you'd rather not want it so much. You: yeah, I keep rehearsing it. Eos: What would happen if you stopped rehearsing and just went?">
+      <div class="msg you">can't sleep again</div>
+      <div class="msg eos">Third night this week. Is it the same thing keeping you up, or something new?</div>
+      <div class="msg you">same thing. the interview.</div>
+      <div class="msg eos">The one on Thursday. You said you'd rather not want it so much.</div>
+      <div class="msg you">yeah. i keep rehearsing it</div>
+      <div class="msg eos">What would happen if you stopped rehearsing and just went?</div>
+    </div>
+    <p class="caption rv" style="--d:.12s">It remembers. You don't have to explain yourself twice.</p>
+  </div>
+</section>
+
+<!-- What it's for (was "What Eos is") -->
 <section id="what-eos-is" class="alt">
   <span class="blob g" style="width:340px;height:340px;top:-80px;right:-120px"></span>
   <div class="wrap narrow">
@@ -337,41 +440,28 @@
       <span class="icon green" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
       </span>
-      <h2>What Eos is</h2>
+      <h2>What it's for</h2>
     </div>
-    <p class="rv" style="--d:.08s">You don't need the right words, and you don't need to be in crisis to need somewhere to put it. Sometimes it just helps to say a thing out loud, to something that listens, remembers what matters to you, keeps it completely private, and never judges. Talk by voice or text, any hour. Eos remembers your goals and what you're going through, so over time it's less like starting over and more like talking to someone who actually knows you.</p>
+    <div class="blocks">
+      <div class="rv" style="--d:.06s">
+        <span class="b-h">The hours nobody else is awake for.</span>
+        <p>Three in the morning, when the people who love you are asleep and you'd feel stupid waking them.</p>
+      </div>
+      <div class="rv" style="--d:.11s">
+        <span class="b-h">The things you've stopped saying out loud.</span>
+        <p>The worry you've mentioned twice and don't want to mention again. The thing you're not sure counts as a problem.</p>
+      </div>
+      <div class="rv" style="--d:.16s">
+        <span class="b-h">And the ordinary days too.</span>
+        <p>It isn't only for the heavy stuff. Some people just talk about their day.</p>
+      </div>
+    </div>
   </div>
 </section>
 
-<!-- What Eos isn't -->
-<section>
-  <span class="blob t" style="width:300px;height:300px;bottom:-60px;left:-110px"></span>
-  <div class="wrap narrow">
-    <div class="sec-head rv">
-      <span class="icon terra" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 8.5l7 7M15.5 8.5l-7 7"/></svg>
-      </span>
-      <h2>What Eos isn't</h2>
-    </div>
-    <p class="rv" style="--d:.08s">Eos is not a romantic partner, and it's not pretending to be a person. It's an AI, a friend to talk to, nothing more. If you're looking for romance or a relationship, this isn't the place, and that's okay. Eos is also not therapy or a substitute for professional help. It's simply a private space to be heard.</p>
-  </div>
-</section>
-
-<!-- A friend in your corner -->
-<section class="alt">
-  <span class="blob g" style="width:300px;height:300px;top:-70px;left:-100px"></span>
-  <div class="wrap narrow">
-    <div class="sec-head rv">
-      <span class="icon sand" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1"/></svg>
-      </span>
-      <h2>A friend in your corner</h2>
-    </div>
-    <p class="rv" style="--d:.08s">Not every conversation has to be heavy. Talk about your day, a small win, something on your mind, a goal you're chasing. Eos is here for the ordinary moments too. The kind of friend who remembers, who's glad when things go well for you, and who wants to see you grow.</p>
-  </div>
-</section>
-
-<!-- Privacy -->
+<!-- Privacy — moved up (people decide on trust early) and rewritten with
+     specifics a competitor can't copy: the stolen-database line, no admin
+     screen, real deletion, and the provider switch and why. -->
 <section>
   <span class="blob b" style="width:320px;height:320px;bottom:-80px;right:-120px"></span>
   <div class="wrap narrow">
@@ -379,15 +469,88 @@
       <span class="icon blue" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>
       </span>
-      <h2>Privacy</h2>
+      <h2>Nobody reads this. Not even me.</h2>
     </div>
-    <p class="rv" style="--d:.08s">Your conversations belong to you. They're encrypted the moment they're saved, never sold, and never used to train AI. Private by design, because the whole point is a place you can be fully honest.</p>
-    <p class="rv" style="--d:.16s"><a class="plink" href="/privacy">Read the full privacy page</a></p>
+    <p class="rv" style="--d:.08s">Your conversations are encrypted the moment they're saved. If someone stole the entire database tomorrow, your words would read as noise.</p>
+    <p class="rv" style="--d:.12s">There's no admin screen where I can look at what you said. It isn't part of how Eos runs, and I didn't build one.</p>
+    <p class="rv" style="--d:.16s">Nothing is sold. Nothing trains any AI model. When you delete something, it's gone. No recycle bin, no thirty-day grace period.</p>
+    <p class="rv" style="--d:.2s">Voice calls go through a provider with zero data retention switched on. They keep no transcripts and no recordings. I moved providers to get that, because the previous one wouldn't give it to me.</p>
+    <p class="rv" style="--d:.24s"><a class="plink" href="/privacy">The full privacy page, in plain words →</a></p>
+  </div>
+</section>
+
+<!-- What it will never do — the refusals. This is the section a competitor
+     can't copy, because their business needs the things Eos won't do. Dash
+     markers (not ticks) so refusals never read as features; the goodnight
+     line stands alone with real space. -->
+<section class="alt">
+  <div class="wrap narrow">
+    <h2 class="rv">What it will never do</h2>
+    <ul class="nevers">
+      <li class="rv">
+        <span class="n-h">No streaks.</span>
+        <p>No number that dies if you skip a day.</p>
+      </li>
+      <li class="rv" style="--d:.05s">
+        <span class="n-h">No notifications saying it misses you.</span>
+        <p>It doesn't. And a thing built to make you feel guilty for living your life is not a friend.</p>
+      </li>
+      <li class="rv" style="--d:.1s">
+        <span class="n-h">No romance, no avatar, no pretending.</span>
+        <p>It tells you it's an AI. It won't act like a partner.</p>
+      </li>
+      <li class="rv" style="--d:.15s">
+        <span class="n-h">Nothing you say trains anything.</span>
+        <p>Your conversations are not raw material.</p>
+      </li>
+    </ul>
+    <p class="goodnight rv" style="--d:.1s">When you say goodnight, it says goodnight.</p>
+  </div>
+</section>
+
+<!-- Philosophy — a quiet, signed closing note. Sits as the final section
+     before the footer (the Membership section falls between Privacy and here).
+     No icon, no card, no box: plain text on the page background. -->
+<section class="philosophy">
+  <div class="wrap">
+    <div class="note rv">
+      <h2>Built to be outgrown</h2>
+      <p>Most apps like this are built to keep you.</p>
+      <p>Researchers at Harvard Business School read 1,200 real goodbyes from the biggest companion apps. In more than a third of them, the app wouldn't simply let the goodbye happen. There was guilt, a question you'd feel rude ignoring, a reason to stay. It worked: those farewells kept people engaged up to sixteen times longer. Not because people enjoyed it. Because they were angry, and anger is sticky.</p>
+      <p>Eos does none of that.</p>
+      <p>The honest version of what I want: for you to feel a bit less alone at 2am, to feel heard, and eventually to need this less. If a day comes when you're doing well and you forget Eos is here, that isn't a failure. That's the point.</p>
+      <!-- Photo slot: replace the monogram span with
+           <img src="…" alt="Naveen"> after the shoot. -->
+      <div class="founder rv">
+        <span class="founder-photo" aria-hidden="true">N</span>
+        <span class="who">
+          <span class="sig">— Naveen, who built this</span>
+          <span class="sig-link"><a href="https://www.linkedin.com/in/eppilinaveen23050a" target="_blank" rel="noopener noreferrer" aria-label="Naveen on LinkedIn">LinkedIn</a></span>
+        </span>
+      </div>
+      <p class="cite">Emotional Manipulation by AI Companions. De Freitas, Oğuz-Uğuralp and Uğuralp, Harvard Business School working paper 26-005, October 2025.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Where it stops (was "What Eos isn't") — compressed to two lines and moved
+     down; it shouldn't be the third thing someone reads. -->
+<section class="alt">
+  <span class="blob t" style="width:300px;height:300px;bottom:-60px;left:-110px"></span>
+  <div class="wrap narrow">
+    <div class="sec-head rv">
+      <span class="icon terra" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 8.5l7 7M15.5 8.5l-7 7"/></svg>
+      </span>
+      <h2>Where it stops</h2>
+    </div>
+    <p class="rv" style="--d:.08s">Eos isn't therapy and it isn't a crisis line. It says so itself, and if you're ever in real danger it will stop and point you toward people who can actually help.</p>
+    <p class="rv" style="--d:.14s">It also isn't a replacement for the people in your life. It's somewhere to put things down when there's nobody available, so you can take them to a real person later, in better shape.</p>
   </div>
 </section>
 
 <!-- Membership -->
-<section id="membership" class="alt">
+<section id="membership">
   <div class="wrap">
     <div class="sec-head rv">
       <span class="icon green" aria-hidden="true">
@@ -395,19 +558,20 @@
       </span>
       <h2>Membership</h2>
     </div>
-    <p class="rv" style="--d:.08s">Every membership begins with a 7-day free trial — a card is required to start, and there is no free tier. Cancel during the trial and you pay nothing. Plans are $19.99, $39.99, or $59.99 per month.</p>
+    <p class="rv" style="--d:.08s">Every plan starts with a 7-day trial. A card is required to start. Cancel any time during the trial and you pay nothing.</p>
     <div class="plans">
       <div class="plan rv" style="--d:.05s">
         <div class="pname">Essential</div>
         <div class="psub">Unlimited text, 120 minutes of voice</div>
         <div class="price">$19.99<small> / month</small></div>
+        <div class="per-day">about 66 cents a day</div>
         <ul>
           <li>Unlimited text conversations</li>
           <li>120 minutes of voice per month</li>
           <li>Full memory and weekly chapters</li>
           <li>Encrypted, always</li>
         </ul>
-        <a class="btn quiet" href="/?enter=1&amp;plan=companion" aria-label="Start free trial — Essential plan">Start free trial</a>
+        <a class="btn quiet" href="/?enter=1&amp;plan=companion" aria-label="Start free trial, Essential plan">Start free trial</a>
       </div>
       <div class="plan mid rv" style="--d:.14s">
         <div class="badge">Most popular</div>
@@ -420,7 +584,7 @@
           <li>A short personal note each morning</li>
           <li>Priority voice quality</li>
         </ul>
-        <a class="btn" href="/?enter=1&amp;plan=closer" aria-label="Start free trial — Standard plan">Start free trial</a>
+        <a class="btn" href="/?enter=1&amp;plan=closer" aria-label="Start free trial, Standard plan">Start free trial</a>
       </div>
       <div class="plan rv" style="--d:.23s">
         <div class="pname">Full</div>
@@ -432,27 +596,51 @@
           <li>For daily, longer conversations</li>
           <li>First access to new features</li>
         </ul>
-        <a class="btn quiet" href="/?enter=1&amp;plan=always" aria-label="Start free trial — Full plan">Start free trial</a>
+        <a class="btn quiet" href="/?enter=1&amp;plan=always" aria-label="Start free trial, Full plan">Start free trial</a>
       </div>
     </div>
-    <p class="trial-note rv">7-day free trial · Card required · Cancel in one tap · Secure checkout</p>
+    <p class="trial-note rv">Cancel in one tap. No email, no retention offer, no questions.</p>
   </div>
 </section>
 
-<!-- Philosophy — a quiet, signed closing note. Sits as the final section
-     before the footer (the Membership section falls between Privacy and here).
-     No icon, no card, no box: plain text on the page background. -->
-<section class="philosophy">
-  <div class="wrap">
-    <div class="note rv">
-      <h2>Built to be outgrown</h2>
-      <p>Most apps like this are built to keep you. Streaks. Notifications that pull you back. Little tricks that make leaving feel bad.</p>
-      <p>Eos doesn't do any of that. No streaks. No nudges. No guilt when you close the app.</p>
-      <p>The honest version of what I want: for you to feel a bit less alone at 2am, to feel heard, and eventually to need this less. If a day comes when you're doing well and you forget Eos is here, that's not a failure. That's the point.</p>
-      <p>You decide how much or how little you use it. It'll be here when you want it, and quiet when you don't.</p>
-      <p class="sig">— Naveen, who built this</p>
-      <p class="sig-link"><a href="https://www.linkedin.com/in/eppilinaveen23050a" target="_blank" rel="noopener noreferrer" aria-label="Naveen on LinkedIn">LinkedIn</a></p>
+<!-- FAQ -->
+<section class="alt">
+  <div class="wrap narrow">
+    <div class="sec-head rv">
+      <span class="icon sand" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.4 9.4a2.7 2.7 0 0 1 5.2 1c0 1.7-2.6 2-2.6 3.6"/><path d="M12 17.6h.01"/></svg>
+      </span>
+      <h2>Questions</h2>
     </div>
+    <div class="faq">
+      <div class="rv" style="--d:.06s">
+        <p class="q">Can you read my conversations?</p>
+        <p class="a">No. They're encrypted where they're stored and there's no screen anywhere that would let me look at them.</p>
+      </div>
+      <div class="rv" style="--d:.1s">
+        <p class="q">Is this therapy?</p>
+        <p class="a">No. It's somewhere to talk. If you need clinical help, Eos will say so and point you toward it.</p>
+      </div>
+      <div class="rv" style="--d:.14s">
+        <p class="q">What happens to my data if I cancel?</p>
+        <p class="a">It stays until you delete it, and you can delete everything in one action from Settings. There's no grace period and no recovery. Deleted means deleted.</p>
+      </div>
+      <div class="rv" style="--d:.18s">
+        <p class="q">Is it a real person?</p>
+        <p class="a">No, and it tells you that up front. It won't pretend otherwise.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Final CTA -->
+<section class="finalcta">
+  <div class="wrap">
+    <p class="lead rv">If any of this sounds like something you'd want, it takes about a minute to start.</p>
+    <div class="hero-cta rv" style="--d:.06s">
+      <a class="btn" href="/?enter=1">Start talking</a>
+    </div>
+    <p class="hero-note rv" style="--d:.12s">7-day trial · Cancel in one tap · Pay nothing if you cancel</p>
   </div>
 </section>
 
@@ -461,7 +649,7 @@
 <footer>
   <div class="foot">
     <div class="wordmark">eos<span style="color:var(--green)">.</span></div>
-    <p class="meaning">eos — the first light, before the sun.</p>
+    <p class="meaning">eos, the first light before the sun.</p>
     <div class="links">
       <a href="/privacy">Privacy</a>
       <a href="/terms">Terms</a>
