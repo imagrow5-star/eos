@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2, Square, Sun, Moon } from "lucide-react";
+import { Send, Mic, Phone, PhoneOff, Settings, X, Check, Play, Pause, Sparkles, Trash2, Download, FileText, Volume2, Square, Sun, Moon, ArrowLeft } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 import { playSendSound, sendSoundEnabled, setSendSoundEnabled } from "@/lib/sendSound";
 import { motion, AnimatePresence } from "framer-motion";
@@ -270,6 +270,35 @@ export default function Chat() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [continuousVoice, setContinuousVoice] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // Settings is a visual overlay, not a route — but people expect the platform
+  // "back" (mobile edge-swipe, Android hardware back, browser back) to close
+  // it, exactly as they'd close any full-screen view. Tie the open panel to a
+  // history entry on the SAME path (so wouter's location never changes): open
+  // pushes one, any back pops it and closes the panel. closeSettings pops our
+  // own entry when it's still on top so history stays clean; the popstate
+  // listener closes on a platform back without a second pop.
+  const openSettings = useCallback(() => {
+    setShowSettings(true);
+    try {
+      if (!(window.history.state as { eosSettings?: boolean } | null)?.eosSettings) {
+        window.history.pushState({ eosSettings: true }, "", window.location.href);
+      }
+    } catch { /* history unavailable — the × / Back button still closes it */ }
+  }, []);
+  const closeSettings = useCallback(() => {
+    setShowSettings(false);
+    try {
+      if ((window.history.state as { eosSettings?: boolean } | null)?.eosSettings) {
+        window.history.back(); // remove the entry we pushed
+      }
+    } catch { /* no-op */ }
+  }, []);
+  useEffect(() => {
+    if (!showSettings) return;
+    const onPop = () => setShowSettings(false);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [showSettings]);
   // Appearance — the one remaining choice: opt-in calm dark mode (default light)
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
   // Send sound — opt-in, per-device, default off
@@ -852,6 +881,13 @@ export default function Chat() {
   useEffect(() => {
     setSettingsAge(profile?.ageYears ? String(profile.ageYears) : "");
   }, [profile?.ageYears]);
+  // Optimistic country override (same perceived-lag fix as the voice chips):
+  // null = defer to the saved profile; a value (possibly "") = show this
+  // instantly while the save runs behind. Reset to null whenever the server
+  // value changes (our save landed, or another device), and on a failed save.
+  const [pendingCountry, setPendingCountry] = useState<string | null>(null);
+  useEffect(() => { setPendingCountry(null); }, [profile?.country]);
+  const effectiveCountry = pendingCountry !== null ? pendingCountry : (profile?.country ?? "");
 
   // ── Notifications (web push) — settings toggle ────────────────────────────
   const pushOn = !!(profile as unknown as { pushOptIn?: boolean } | undefined)?.pushOptIn;
@@ -2309,7 +2345,7 @@ export default function Chat() {
   const handleRename = () => {
     const cleaned = renameValue.trim();
     if (!cleaned || cleaned === profile?.companionName) {
-      setShowSettings(false);
+      closeSettings();
       return;
     }
     updateProfile.mutate(
@@ -2317,7 +2353,7 @@ export default function Chat() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
-          setShowSettings(false);
+          closeSettings();
         },
       },
     );
@@ -2329,13 +2365,16 @@ export default function Chat() {
     queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
 
   const handleGenderSelect = (val: "man" | "woman" | "custom") => {
+    // Optimistic: the chip highlight moves immediately (genderChoice is local,
+    // re-synced from the profile by the effect above). A failed save re-syncs
+    // from the unchanged server value, reverting the highlight.
     if (genderChoice === val) {
       // Tap the active chip again to clear — back to "not shared"
       setGenderChoice(null);
       setGenderCustomValue("");
       updateProfile.mutate(
         { data: { userGender: "", userGenderCustom: "" } },
-        { onSuccess: refreshProfile },
+        { onSuccess: refreshProfile, onError: refreshProfile },
       );
       return;
     }
@@ -2344,7 +2383,7 @@ export default function Chat() {
     setGenderCustomValue("");
     updateProfile.mutate(
       { data: { userGender: val, userGenderCustom: "" } },
-      { onSuccess: refreshProfile },
+      { onSuccess: refreshProfile, onError: refreshProfile },
     );
   };
 
@@ -2387,11 +2426,19 @@ export default function Chat() {
 
   const handleSaveCountry = (code: string) => {
     setSettingsCountryQuery("");
-    updateProfile.mutate({ data: { country: code } }, { onSuccess: refreshProfile });
+    setPendingCountry(code); // optimistic — show the chip instantly
+    updateProfile.mutate(
+      { data: { country: code } },
+      { onSuccess: refreshProfile, onError: () => { setPendingCountry(null); refreshProfile(); } },
+    );
   };
 
   const handleClearCountry = () => {
-    updateProfile.mutate({ data: { country: "" } }, { onSuccess: refreshProfile });
+    setPendingCountry(""); // optimistic — back to the search box instantly
+    updateProfile.mutate(
+      { data: { country: "" } },
+      { onSuccess: refreshProfile, onError: () => { setPendingCountry(null); refreshProfile(); } },
+    );
   };
 
   // ─── Settings: delete account ─────────────────────────────────────────────
@@ -3086,7 +3133,7 @@ export default function Chat() {
               where users personalize Eos (name, tone, theme, voice) — it must
               read as a real button at first glance, still calm. */}
           <button
-            onClick={() => setShowSettings((s) => !s)}
+            onClick={() => (showSettings ? closeSettings() : openSettings())}
             className={cn(
               "flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-medium tracking-wider uppercase transition-all duration-200 shadow-sm",
               showSettings
@@ -3117,94 +3164,18 @@ export default function Chat() {
                 viewport height so every field stays reachable on laptop and
                 mobile alike. */}
             <div className="max-h-[calc(100dvh-7rem)] overflow-y-auto overscroll-contain px-5 py-5 space-y-6">
-            {/* ── Appearance — light default, opt-in calm dark for night ──── */}
-            <div>
-              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
-                Appearance
-              </p>
-              <div className="flex gap-1.5">
-                {([
-                  { value: "light", label: "Light", Icon: Sun },
-                  { value: "dark", label: "Dark", Icon: Moon },
-                ] as const).map(({ value, label, Icon }) => (
-                  <button
-                    key={value}
-                    onClick={() => setThemeMode(value)}
-                    aria-pressed={themeMode === value}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-medium tracking-wider transition-all border",
-                      themeMode === value
-                        ? "bg-primary/15 text-primary-strong border-primary/30"
-                        : "text-muted-foreground border-border hover:text-foreground/70 hover:border-secondary/40",
-                    )}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    {label}
-                  </button>
-                ))}
-              </div>
-              {/* Send sound — soft chime on YOUR sends only. ON by default
-                  (it is deliberately very quiet); this switch is the one-tap
-                  off. Turning it on plays the chime once as a preview. */}
-              <div className="mt-4">
-                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
-                  Send sound
-                </p>
-                <div className="flex items-center gap-2.5">
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={sendSoundOn}
-                    aria-label="Send sound"
-                    onClick={() => {
-                      const next = !sendSoundOn;
-                      setSendSoundOn(next);
-                      setSendSoundEnabled(next);
-                      if (next) playSendSound(true); // preview what you enabled
-                    }}
-                    className={cn(
-                      "relative w-11 h-6 rounded-full border transition-all shrink-0",
-                      sendSoundOn ? "bg-primary/40 border-primary/60" : "bg-background/60 border-primary/25",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-transform duration-200",
-                        sendSoundOn ? "translate-x-5 bg-primary" : "translate-x-0 bg-foreground/30",
-                      )}
-                    />
-                  </button>
-                  <p className="text-[12px] text-muted-foreground/70 leading-relaxed">
-                    A soft chime when you send a message. On by default; turn it off here anytime. Never plays on {companionName}'s replies.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* ── Companion name ─────────────────────────────────────────── */}
-            <div>
-              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
-                Companion name
-              </p>
-              <div className="flex gap-2">
-                <Input
-                  value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  placeholder="Enter a name..."
-                  className="bg-background/60 border-primary/20 text-sm text-foreground placeholder:text-muted-foreground h-9 flex-1"
-                  onKeyDown={(e) => e.key === "Enter" && handleRename()}
-                  maxLength={30}
-                />
-                <Button
-                  size="sm"
-                  className="h-9 bg-primary/15 text-primary-strong hover:bg-primary/25 border border-primary/25 px-4"
-                  onClick={handleRename}
-                  disabled={updateProfile.isPending}
-                >
-                  <Check className="w-4 h-4" />
-                </Button>
-              </div>
-            </div>
+            {/* ← Back — a real exit at the top of the panel. The header's pill
+                also closes Settings, but it reads as a toggle; this is an
+                unambiguous way out, and it sticks to the top so it's reachable
+                however far you've scrolled. The platform back gestures (mobile
+                edge-swipe, Android hardware back, browser back) close the panel
+                too — see openSettings/closeSettings. */}
+            <button
+              onClick={closeSettings}
+              className="sticky top-0 z-10 -mx-5 -mt-5 mb-0 flex items-center gap-1.5 w-[calc(100%+2.5rem)] bg-muted/95 backdrop-blur-xl px-5 pt-5 pb-3 border-b border-border/50 text-[12px] font-medium text-primary-strong/90 hover:text-primary-strong tracking-wider uppercase transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" /> Back to chat
+            </button>
 
             {/* ── About you ───────────────────────────────────────────────── */}
             <div>
@@ -3216,7 +3187,6 @@ export default function Chat() {
                   <button
                     key={val}
                     onClick={() => handleGenderSelect(val)}
-                    disabled={updateProfile.isPending}
                     className={cn(
                       "px-3 py-1.5 rounded-full text-[11px] font-medium tracking-wide border transition-all",
                       genderChoice === val
@@ -3252,8 +3222,96 @@ export default function Chat() {
                 Optional, so {profile?.companionName || "Eos"} speaks to you the way you'd want. Tap the selected one again to clear it.
               </p>
 
-              {/* ── Language (Sprint 1.5) ─────────────────────────────────── */}
+              {/* Age */}
               <div className="mt-5">
+                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                  Your age
+                </p>
+                <div className="flex gap-2 items-center">
+                  <Input
+                    value={settingsAge}
+                    onChange={(e) => {
+                      setSettingsAge(e.target.value);
+                      setSettingsAgeNote(null);
+                    }}
+                    onKeyDown={(e) => e.key === "Enter" && handleSaveAge()}
+                    placeholder="—"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    className="bg-background/60 border-primary/20 text-sm text-foreground placeholder:text-muted-foreground h-9 w-24"
+                  />
+                  <Button
+                    size="sm"
+                    className="h-9 bg-primary/15 text-primary-strong hover:bg-primary/25 border border-primary/25 px-4"
+                    onClick={handleSaveAge}
+                    disabled={updateProfile.isPending}
+                  >
+                    <Check className="w-4 h-4" />
+                  </Button>
+                </div>
+                {settingsAgeNote && (
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400/70 mt-1.5 leading-relaxed">{settingsAgeNote}</p>
+                )}
+              </div>
+
+              {/* Country */}
+              <div className="mt-5">
+                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                  Your country
+                </p>
+                {effectiveCountry && countryName(effectiveCountry) ? (
+                  <div className="flex items-center gap-2.5">
+                    <span className="px-3 py-1.5 rounded-full text-[11px] font-medium bg-primary/15 border border-primary/40 text-primary-strong">
+                      {countryName(effectiveCountry)}
+                    </span>
+                    <button
+                      onClick={handleClearCountry}
+                      className="text-[11px] text-muted-foreground/55 hover:text-foreground/75 transition-colors"
+                    >
+                      clear
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <Input
+                      value={settingsCountryQuery}
+                      onChange={(e) => setSettingsCountryQuery(e.target.value)}
+                      placeholder="Start typing, e.g. India"
+                      autoComplete="off"
+                      className="bg-background/60 border-primary/20 text-sm text-foreground placeholder:text-muted-foreground h-9"
+                    />
+                    {settingsCountryQuery.trim() && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {searchCountries(settingsCountryQuery, 6).map((c) => (
+                          <button
+                            key={c.code}
+                            onClick={() => handleSaveCountry(c.code)}
+                            className="px-3 py-1.5 rounded-full text-[11px] border border-primary/15 text-foreground/70 hover:border-primary/40 hover:text-foreground transition-all"
+                          >
+                            {c.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <p className="text-[10.5px] text-muted-foreground/45 mt-2 leading-relaxed">
+                  Both optional. They help {profile?.companionName || "Eos"} meet you where you are, and know who to point you to if you ever need local support.
+                </p>
+              </div>
+            </div>
+
+            {/* ── Voice & language — every speech control in one place ────── */}
+            <div>
+              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-1">
+                Voice &amp; language
+              </p>
+              <p className="text-[11px] text-muted-foreground/45 mb-3">
+                How {companionName} sounds — the language she speaks, her call voice, and her delivery.
+              </p>
+
+              {/* ── Language (Sprint 1.5) ─────────────────────────────────── */}
+              <div>
                 <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
                   Language
                 </p>
@@ -3274,13 +3332,12 @@ export default function Chat() {
                 )}
               </div>
 
-              {/* Hume-routed accounts (allowlist trial): calls now have their
-                  own curated picker — two Hume voices per gender (warmer
-                  default + softer option), filtered by VOICE GENDER below.
-                  The accent and specific-voice choices further down are
-                  ElevenLabs voices with no Hume mapping — those still shape
-                  message playback only. Say so up front rather than letting
-                  a choice be silently ignored. */}
+              {/* Hume-routed accounts: calls have their own curated picker —
+                  two Hume voices per gender (warmer default + softer option),
+                  filtered by VOICE GENDER below. The accent and specific-voice
+                  choices further down are ElevenLabs voices with no Hume
+                  mapping — those still shape message playback only. Say so up
+                  front rather than letting a choice be silently ignored. */}
               {voiceOptions?.voiceCallProvider === "hume" && (
                 <>
                   <p className="text-[11px] text-amber-700 dark:text-amber-400/90 mt-5 leading-relaxed">
@@ -3392,85 +3449,194 @@ export default function Chat() {
                 )}
               </div>
 
-              {/* Age */}
+              {/* ── How Eos speaks — voice-call delivery preference ────────── */}
               <div className="mt-5">
-                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
-                  Your age
+                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-1">
+                  How {companionName} speaks
                 </p>
-                <div className="flex gap-2 items-center">
-                  <Input
-                    value={settingsAge}
-                    onChange={(e) => {
-                      setSettingsAge(e.target.value);
-                      setSettingsAgeNote(null);
-                    }}
-                    onKeyDown={(e) => e.key === "Enter" && handleSaveAge()}
-                    placeholder="—"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    className="bg-background/60 border-primary/20 text-sm text-foreground placeholder:text-muted-foreground h-9 w-24"
-                  />
-                  <Button
-                    size="sm"
-                    className="h-9 bg-primary/15 text-primary-strong hover:bg-primary/25 border border-primary/25 px-4"
-                    onClick={handleSaveAge}
-                    disabled={updateProfile.isPending}
-                  >
-                    <Check className="w-4 h-4" />
-                  </Button>
-                </div>
-                {settingsAgeNote && (
-                  <p className="text-[11px] text-amber-700 dark:text-amber-400/70 mt-1.5 leading-relaxed">{settingsAgeNote}</p>
-                )}
-              </div>
-
-              {/* Country */}
-              <div className="mt-5">
-                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
-                  Your country
+                <p className="text-[11px] text-muted-foreground/45 mb-3">
+                  Delivery on voice calls. The voice itself stays the one you chose.
                 </p>
-                {profile?.country && countryName(profile.country) ? (
-                  <div className="flex items-center gap-2.5">
-                    <span className="px-3 py-1.5 rounded-full text-[11px] font-medium bg-primary/15 border border-primary/40 text-primary-strong">
-                      {countryName(profile.country)}
-                    </span>
-                    <button
-                      onClick={handleClearCountry}
-                      disabled={updateProfile.isPending}
-                      className="text-[11px] text-muted-foreground/55 hover:text-foreground/75 transition-colors"
-                    >
-                      clear
-                    </button>
-                  </div>
-                ) : (
-                  <div>
-                    <Input
-                      value={settingsCountryQuery}
-                      onChange={(e) => setSettingsCountryQuery(e.target.value)}
-                      placeholder="Start typing, e.g. India"
-                      autoComplete="off"
-                      className="bg-background/60 border-primary/20 text-sm text-foreground placeholder:text-muted-foreground h-9"
-                    />
-                    {settingsCountryQuery.trim() && (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {searchCountries(settingsCountryQuery, 6).map((c) => (
-                          <button
-                            key={c.code}
-                            onClick={() => handleSaveCountry(c.code)}
-                            disabled={updateProfile.isPending}
-                            className="px-3 py-1.5 rounded-full text-[11px] border border-primary/15 text-foreground/70 hover:border-primary/40 hover:text-foreground transition-all"
+                <div className="space-y-1.5">
+                  {VOICE_TONE_OPTIONS.map((t) => {
+                    const isSelected = activeVoiceTone === t.value;
+                    return (
+                      <div
+                        key={t.value}
+                        onClick={() => handleToneSelect(t.value)}
+                        className={cn(
+                          "flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-pointer transition-all active:scale-[0.98]",
+                          isSelected
+                            ? "bg-primary/12 border-primary/45 shadow-[0_0_0_1px_hsl(var(--primary)/0.15)]"
+                            : "bg-background/50 border-primary/12 hover:border-primary/30 hover:bg-primary/6",
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
+                            isSelected ? "border-primary bg-primary/30" : "border-foreground/20",
+                          )}
+                        >
+                          {isSelected && <div className="w-2 h-2 rounded-full bg-primary" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <span
+                            className={cn(
+                              "text-[14px] font-medium",
+                              isSelected ? "text-foreground" : "text-foreground/70",
+                            )}
                           >
-                            {c.name}
-                          </button>
-                        ))}
+                            {t.label}
+                          </span>
+                          <p className="text-[11px] text-muted-foreground/50 mt-0.5">{t.desc}</p>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                )}
-                <p className="text-[10.5px] text-muted-foreground/45 mt-2 leading-relaxed">
-                  Both optional. They help {profile?.companionName || "Eos"} meet you where you are, and know who to point you to if you ever need local support.
-                </p>
+                    );
+                  })}
+                </div>
               </div>
+            </div>
+
+            {/* ── Your companion — Eos's name ─────────────────────────────── */}
+            <div>
+              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
+                Your companion
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  placeholder="Enter a name..."
+                  className="bg-background/60 border-primary/20 text-sm text-foreground placeholder:text-muted-foreground h-9 flex-1"
+                  onKeyDown={(e) => e.key === "Enter" && handleRename()}
+                  maxLength={30}
+                />
+                <Button
+                  size="sm"
+                  className="h-9 bg-primary/15 text-primary-strong hover:bg-primary/25 border border-primary/25 px-4"
+                  onClick={handleRename}
+                  disabled={updateProfile.isPending}
+                >
+                  <Check className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* ── Appearance — light default, opt-in calm dark for night ──── */}
+            <div>
+              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
+                Appearance
+              </p>
+              <div className="flex gap-1.5">
+                {([
+                  { value: "light", label: "Light", Icon: Sun },
+                  { value: "dark", label: "Dark", Icon: Moon },
+                ] as const).map(({ value, label, Icon }) => (
+                  <button
+                    key={value}
+                    onClick={() => setThemeMode(value)}
+                    aria-pressed={themeMode === value}
+                    className={cn(
+                      "flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-medium tracking-wider transition-all border",
+                      themeMode === value
+                        ? "bg-primary/15 text-primary-strong border-primary/30"
+                        : "text-muted-foreground border-border hover:text-foreground/70 hover:border-secondary/40",
+                    )}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {/* Send sound — soft chime on YOUR sends only. ON by default
+                  (it is deliberately very quiet); this switch is the one-tap
+                  off. Turning it on plays the chime once as a preview. */}
+              <div className="mt-4">
+                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                  Send sound
+                </p>
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={sendSoundOn}
+                    aria-label="Send sound"
+                    onClick={() => {
+                      const next = !sendSoundOn;
+                      setSendSoundOn(next);
+                      setSendSoundEnabled(next);
+                      if (next) playSendSound(true); // preview what you enabled
+                    }}
+                    className={cn(
+                      "relative w-11 h-6 rounded-full border transition-all shrink-0",
+                      sendSoundOn ? "bg-primary/40 border-primary/60" : "bg-background/60 border-primary/25",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-transform duration-200",
+                        sendSoundOn ? "translate-x-5 bg-primary" : "translate-x-0 bg-foreground/30",
+                      )}
+                    />
+                  </button>
+                  <p className="text-[12px] text-muted-foreground/70 leading-relaxed">
+                    A soft chime when you send a message. On by default; turn it off here anytime. Never plays on {companionName}'s replies.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Notifications ───────────────────────────────────────────── */}
+            <div>
+              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
+                Notifications
+              </p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] text-foreground/75">Gentle nudges on this device</p>
+                  <p className="text-[10.5px] text-muted-foreground/45 mt-1 leading-relaxed">
+                    At most two a day: your Sunday chapter, and a morning note. Nothing else, ever.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={pushOn}
+                  aria-label="Toggle notifications"
+                  onClick={handlePushToggle}
+                  disabled={pushBusy}
+                  className={cn(
+                    "relative w-11 h-6 rounded-full border transition-all shrink-0",
+                    pushOn ? "bg-primary/40 border-primary/60" : "bg-background/60 border-primary/25",
+                    pushBusy && "opacity-50",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-transform duration-200",
+                      pushOn ? "translate-x-5 bg-primary" : "translate-x-0 bg-foreground/30",
+                    )}
+                  />
+                </button>
+              </div>
+              {!pushOn && needsInstallFirst() && (
+                <p className="text-[10.5px] text-muted-foreground/45 mt-2 leading-relaxed">
+                  On iPhone or iPad: first add Eos to your Home Screen (Share → Add to Home Screen), then turn
+                  this on from the installed app.
+                </p>
+              )}
+              {pushOn && (
+                <button
+                  type="button"
+                  onClick={handleSendTestPush}
+                  className="mt-2 text-[11px] text-primary-strong/80 hover:text-primary-strong tracking-wider uppercase transition-colors"
+                >
+                  Send a test
+                </button>
+              )}
+              {pushNote && (
+                <p className="text-[10.5px] text-amber-700 dark:text-amber-400/70 mt-2 leading-relaxed">{pushNote}</p>
+              )}
             </div>
 
             {/* ── Account email ───────────────────────────────────────────── */}
@@ -3584,59 +3750,6 @@ export default function Chat() {
               </div>
             )}
 
-            {/* ── Notifications ───────────────────────────────────────────── */}
-            <div>
-              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
-                Notifications
-              </p>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <p className="text-[13px] text-foreground/75">Gentle nudges on this device</p>
-                  <p className="text-[10.5px] text-muted-foreground/45 mt-1 leading-relaxed">
-                    At most two a day: your Sunday chapter, and a morning note. Nothing else, ever.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={pushOn}
-                  aria-label="Toggle notifications"
-                  onClick={handlePushToggle}
-                  disabled={pushBusy}
-                  className={cn(
-                    "relative w-11 h-6 rounded-full border transition-all shrink-0",
-                    pushOn ? "bg-primary/40 border-primary/60" : "bg-background/60 border-primary/25",
-                    pushBusy && "opacity-50",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "absolute top-0.5 left-0.5 w-4 h-4 rounded-full transition-transform duration-200",
-                      pushOn ? "translate-x-5 bg-primary" : "translate-x-0 bg-foreground/30",
-                    )}
-                  />
-                </button>
-              </div>
-              {!pushOn && needsInstallFirst() && (
-                <p className="text-[10.5px] text-muted-foreground/45 mt-2 leading-relaxed">
-                  On iPhone or iPad: first add Eos to your Home Screen (Share → Add to Home Screen), then turn
-                  this on from the installed app.
-                </p>
-              )}
-              {pushOn && (
-                <button
-                  type="button"
-                  onClick={handleSendTestPush}
-                  className="mt-2 text-[11px] text-primary-strong/80 hover:text-primary-strong tracking-wider uppercase transition-colors"
-                >
-                  Send a test
-                </button>
-              )}
-              {pushNote && (
-                <p className="text-[10.5px] text-amber-700 dark:text-amber-400/70 mt-2 leading-relaxed">{pushNote}</p>
-              )}
-            </div>
-
             {/* ── Privacy ─────────────────────────────────────────────────── */}
             <div>
               <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
@@ -3656,53 +3769,6 @@ export default function Chat() {
               >
                 Read the privacy page
               </a>
-            </div>
-
-            {/* ── How Eos speaks — voice-call delivery preference ──────── */}
-            <div>
-              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-1">
-                How Eos speaks
-              </p>
-              <p className="text-[11px] text-muted-foreground/45 mb-3">
-                Delivery on voice calls. The voice itself stays the one you chose.
-              </p>
-              <div className="space-y-1.5">
-                {VOICE_TONE_OPTIONS.map((t) => {
-                  const isSelected = activeVoiceTone === t.value;
-                  return (
-                    <div
-                      key={t.value}
-                      onClick={() => handleToneSelect(t.value)}
-                      className={cn(
-                        "flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-pointer transition-all active:scale-[0.98]",
-                        isSelected
-                          ? "bg-primary/12 border-primary/45 shadow-[0_0_0_1px_hsl(var(--primary)/0.15)]"
-                          : "bg-background/50 border-primary/12 hover:border-primary/30 hover:bg-primary/6",
-                      )}
-                    >
-                      <div
-                        className={cn(
-                          "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all",
-                          isSelected ? "border-primary bg-primary/30" : "border-foreground/20",
-                        )}
-                      >
-                        {isSelected && <div className="w-2 h-2 rounded-full bg-primary" />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <span
-                          className={cn(
-                            "text-[14px] font-medium",
-                            isSelected ? "text-foreground" : "text-foreground/70",
-                          )}
-                        >
-                          {t.label}
-                        </span>
-                        <p className="text-[11px] text-muted-foreground/50 mt-0.5">{t.desc}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
             </div>
 
             {/* ── Your data ───────────────────────────────────────────── */}
