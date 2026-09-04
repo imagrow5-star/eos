@@ -5,6 +5,68 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Eos. A private place to say what you're feeling.</title>
 <meta name="description" content="Eos is a completely private place to say what you're feeling, by voice or text. It listens, remembers what matters to you, and keeps everything encrypted. Never sold, never used to train AI.">
+<!-- Machine-readable pricing so assistants and search can quote the plans
+     exactly (the visible Membership section carries the same numbers). This is
+     a data block, not executable JS, so it is exempt from the CSP script-src.
+     Keep the three prices in sync with the Membership section below and with
+     public/llms.txt. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": "Eos",
+  "description": "A private AI companion you talk to by voice or text. It remembers what matters to you and keeps everything encrypted, never sold and never used to train AI.",
+  "brand": { "@type": "Brand", "name": "Eos" },
+  "url": "https://eoscompanion.com/",
+  "offers": [
+    {
+      "@type": "Offer",
+      "name": "Essential",
+      "price": "19.99",
+      "priceCurrency": "USD",
+      "url": "https://eoscompanion.com/pricing",
+      "availability": "https://schema.org/InStock",
+      "priceSpecification": {
+        "@type": "UnitPriceSpecification",
+        "price": "19.99",
+        "priceCurrency": "USD",
+        "billingIncrement": 1,
+        "unitText": "MONTH"
+      }
+    },
+    {
+      "@type": "Offer",
+      "name": "Standard",
+      "price": "39.99",
+      "priceCurrency": "USD",
+      "url": "https://eoscompanion.com/pricing",
+      "availability": "https://schema.org/InStock",
+      "priceSpecification": {
+        "@type": "UnitPriceSpecification",
+        "price": "39.99",
+        "priceCurrency": "USD",
+        "billingIncrement": 1,
+        "unitText": "MONTH"
+      }
+    },
+    {
+      "@type": "Offer",
+      "name": "Full",
+      "price": "59.99",
+      "priceCurrency": "USD",
+      "url": "https://eoscompanion.com/pricing",
+      "availability": "https://schema.org/InStock",
+      "priceSpecification": {
+        "@type": "UnitPriceSpecification",
+        "price": "59.99",
+        "priceCurrency": "USD",
+        "billingIncrement": 1,
+        "unitText": "MONTH"
+      }
+    }
+  ]
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- Fonts load non-render-blocking via load-fonts.js (a plain stylesheet link
