@@ -198,6 +198,7 @@ function AuthGate() {
         user: { id: number; email: string };
         emailVerified: boolean;
         needsSubscription?: boolean;
+        freeMessagesRemaining?: number | null;
       }>;
     },
     retry: false,

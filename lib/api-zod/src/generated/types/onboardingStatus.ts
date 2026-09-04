@@ -15,4 +15,9 @@ export interface OnboardingStatus {
      * @nullable
      */
   companionFirstMessage?: string | null;
+  /**
+     * Respond-before-ask: a standalone message responding to what the user just said, shown as its own bubble before companionFirstMessage
+     * @nullable
+     */
+  acknowledgment?: string | null;
 }

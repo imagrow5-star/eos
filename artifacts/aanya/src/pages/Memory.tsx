@@ -143,6 +143,27 @@ export default function Memory() {
 
   const hasNoData = facts.length === 0 && signals.length === 0 && feelings.length === 0;
 
+  // ── "When we met" — the promise ("it remembers you") kept from minute one.
+  // On day one the memory lists are empty, but the person already told us who
+  // they are and why they came. Reflect that back, honestly framed as what
+  // they SAID at the start (not inferred from conversation), so the page shows
+  // something being held instead of only "still getting to know you". Built
+  // from the onboarding profile fields; always present as the origin of the
+  // record. The companion-name line shows only if they actually chose one
+  // (setup is deferred now, so most day-one users keep the default).
+  const pathLine: Record<string, string> = {
+    breakup: "You came here going through a breakup.",
+    bereavement: "You came here after losing someone.",
+    lonely: "You came here feeling lonely.",
+    support: "You came here looking for support.",
+  };
+  const metLines: string[] = [];
+  if (profile?.userName) metLines.push(`You told me your name is ${profile.userName}.`);
+  if (profile?.userPath && pathLine[profile.userPath]) metLines.push(pathLine[profile.userPath]!);
+  if (profile?.companionName && profile.companionName !== "Eos") {
+    metLines.push(`You chose to call me ${profile.companionName}.`);
+  }
+
   return (
     <div className="h-full overflow-y-auto px-6 py-10 pb-20 space-y-12">
       {/* Quiet inline notice — only when a star toggle failed to save. */}
@@ -162,6 +183,24 @@ export default function Memory() {
         </p>
       </div>
 
+      {/* ── When we met — the onboarding facts, held from day one ──────────── */}
+      {metLines.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="font-serif text-[19px] text-foreground/85">When we met</h2>
+          <div className="bg-card border border-primary/15 rounded-2xl p-6 space-y-2.5">
+            {metLines.map((line, i) => (
+              <p key={i} className="flex gap-2.5 text-sm text-muted-foreground/90 leading-relaxed">
+                <span className="text-primary-strong/50 select-none">·</span>
+                <span>{line}</span>
+              </p>
+            ))}
+            <p className="pt-1.5 text-xs text-muted-foreground/50 italic">
+              The start of what {companionName} holds. It grows as you talk.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ── Reflections — first thing on the page, above memories/feelings ──── */}
       <ReflectionsSection />
 
@@ -171,8 +210,8 @@ export default function Memory() {
           <div className="w-11 h-11 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
             <Sparkles className="w-5 h-5 text-primary-strong/50" />
           </div>
-          <p className="text-sm text-muted-foreground font-serif italic max-w-[220px] leading-relaxed">
-            {companionName} is still getting to know you. The more you share, the more it will hold.
+          <p className="text-sm text-muted-foreground font-serif italic max-w-[240px] leading-relaxed">
+            Beyond what you told me at the start, there's nothing here yet. The more you share, the more {companionName} holds.
           </p>
         </div>
       ) : (

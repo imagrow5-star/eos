@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { requireSubscription } from "../middleware/entitlements.js";
+import { requireSubscriptionForChat } from "../middleware/entitlements.js";
 import { eq, desc, asc, sql, and } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { messagesTable, profileTable, commitmentsTable, habitsTable, moodScoresTable, habitCompletionsTable, personalizationStateTable, storyThreadsTable, chapterQuoteDismissalsTable } from "@workspace/db";
@@ -143,7 +143,7 @@ router.delete("/chat/messages/:id", async (req, res): Promise<void> => {
 // Uses SSE to push tokens as they arrive from Anthropic.
 // Events: delta { text }, done { messageId, content }, error { error }
 
-router.post("/chat/stream", requireSubscription, ...chatUsageLimits, async (req, res): Promise<void> => {
+router.post("/chat/stream", requireSubscriptionForChat, ...chatUsageLimits, async (req, res): Promise<void> => {
   const userId = req.userId;
   const parsed = SendMessageBody.safeParse(req.body);
   if (!parsed.success) {
@@ -297,7 +297,7 @@ router.post("/chat/stream", requireSubscription, ...chatUsageLimits, async (req,
   }
 });
 
-router.post("/chat/send", requireSubscription, ...chatUsageLimits, async (req, res): Promise<void> => {
+router.post("/chat/send", requireSubscriptionForChat, ...chatUsageLimits, async (req, res): Promise<void> => {
   const userId = req.userId;
   const parsed = SendMessageBody.safeParse(req.body);
   if (!parsed.success) {

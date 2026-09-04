@@ -22,7 +22,9 @@ export const HealthCheckResponse = zod.object({
 export const GetOnboardingStatusResponse = zod.object({
   "isComplete": zod.boolean(),
   "currentStep": zod.string().describe('purpose | companionGender | name | companionName | country | ageBand | userGender | done'),
-  "companionFirstMessage": zod.string().nullish().describe('The companion\'s next question or first greeting after onboarding completes')
+  "companionFirstMessage": zod.string().nullish().describe('The companion\'s next question or first greeting after onboarding completes'),
+  // kept in sync by hand with OnboardingStatus in lib/api-spec/openapi.yaml
+  "acknowledgment": zod.string().nullish().describe('Respond-before-ask: a standalone message responding to what the user just said, shown as its own bubble before companionFirstMessage')
 })
 
 
@@ -37,7 +39,9 @@ export const SubmitOnboardingAnswerBody = zod.object({
 export const SubmitOnboardingAnswerResponse = zod.object({
   "isComplete": zod.boolean(),
   "currentStep": zod.string().describe('purpose | companionGender | name | companionName | country | ageBand | userGender | done'),
-  "companionFirstMessage": zod.string().nullish().describe('The companion\'s next question or first greeting after onboarding completes')
+  "companionFirstMessage": zod.string().nullish().describe('The companion\'s next question or first greeting after onboarding completes'),
+  // kept in sync by hand with OnboardingStatus in lib/api-spec/openapi.yaml
+  "acknowledgment": zod.string().nullish().describe('Respond-before-ask: a standalone message responding to what the user just said, shown as its own bubble before companionFirstMessage')
 })
 
 

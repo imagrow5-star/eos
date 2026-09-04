@@ -330,6 +330,14 @@ components:
         companionFirstMessage:
           type: ["string", "null"]
           description: The companion's next question or first greeting after onboarding completes
+        acknowledgment:
+          type: ["string", "null"]
+          description: >-
+            Respond-before-ask. A standalone message that genuinely responds to
+            what the user just said (currently the opening "what brought you"
+            answer), shown as its own bubble BEFORE companionFirstMessage, with
+            a pause between, so the person is answered before they are asked the
+            next thing. Null on steps that don't warrant it.
       required:
         - isComplete
         - currentStep
@@ -402,6 +410,25 @@ components:
         themeMode:
           type: ["string", "null"]
           description: "Appearance mode: light | dark — null when never chosen"
+        voiceTone:
+          type: string
+          description: "Voice-call delivery: auto | gentle | calm | upbeat"
+        timezone:
+          type: string
+          description: "IANA timezone string e.g. America/New_York"
+        pushOptIn:
+          type: boolean
+          description: "Web-push notifications enabled (opt-in only, default false)"
+        consentVersion:
+          type: ["string", "null"]
+          description: "Version tag of the consent copy the user accepted — null = never consented"
+        consentAt:
+          type: ["string", "null"]
+          format: date-time
+          description: "Server timestamp when consent was recorded"
+        dataSharingOptIn:
+          type: boolean
+          description: "Placeholder for future data-sharing — nothing shares today; default false"
       required:
         - id
         - userName
@@ -416,6 +443,7 @@ components:
         - currentStage
         - voiceId
         - companionGender
+        - timezone
 
     ProfileInput:
       type: object
@@ -453,6 +481,9 @@ components:
         themeMode:
           type: string
           description: "Appearance mode: light | dark"
+        voiceTone:
+          type: string
+          description: "Voice-call delivery: auto | gentle | calm | upbeat"
 
     Message:
       type: object

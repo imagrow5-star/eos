@@ -12,6 +12,7 @@ import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import type { Profile } from "@workspace/db";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { sanitizeGenderWords } from "../services/systemPrompt.js";
+import { generateOnboardingAcknowledgment } from "../services/ai.js";
 import { parseAgeText, ageToBand, resolveCountryAnswer, AGE_BANDS, isValidCountryCode } from "../lib/basics.js";
 import { isValidLanguage } from "../services/settings/languages.js";
 import { ENGLISH_ACCENT_CODES, NON_ENGLISH_ACCENT, isVoiceAllowed, resolveVoiceGender } from "../services/settings/voiceCatalog.js";
@@ -118,25 +119,43 @@ function getStepQuestion(step: string, profile: Profile): string {
 
 // ─── Next step resolver ───────────────────────────────────────────────────────
 
+// Whether the age question has genuinely been answered (18+ gate evidence).
+function hasAgeEvidence(profile: Profile): boolean {
+  return (
+    (profile as { birthYear?: number | null }).birthYear != null ||
+    (AGE_BANDS as readonly string[]).includes((profile.ageBand ?? "").trim())
+  );
+}
+
 function getNextStep(currentStep: string, profile: Profile): string {
   switch (currentStep) {
+    // ── Talk-first flow (2026-09) ──────────────────────────────────────────
+    // The required chain is now just: what brought you → name → age (18+) →
+    // done. Eos responds to the opening answer before asking the name (see the
+    // answer handler's acknowledgment). Companion gender/name, voice, country
+    // and user gender are no longer front-loaded blocking steps: they're
+    // editable in Settings and offered by a gentle, dismissible nudge after
+    // chat unlocks. Country stays as an OPTIONAL field on the age card, not a
+    // step of its own.
     case "purpose":
-    case "path":            return "companionGender";
-    case "companionGender": return "name";
-    case "name":            return "companionName";
-    // Voice picker sits right after the companion is named (Sprint 1.5);
-    // age still comes before country so the 18+ gate runs before anything
-    // else about them is stored.
-    case "companionName":   return "voice";
-    case "voice":           return "ageBand";
-    // Legacy sessions (old step order) may already have a country — don't ask twice.
-    case "ageBand":         return isValidCountryCode(profile.country ?? "") ? "userGender" : "country";
-    case "country":         return "userGender";
-    case "userGender":      return "done";
-    // relationshipType is a retired legacy step (romantic persona removed):
-    // parked sessions answer the energy question there, so both advance alike.
+    case "path":            return "name";
+    case "name":            return "ageBand";
+    // Country is captured on the SAME card as age (the client auto-submits it
+    // silently right after the age answer), so it stays as the step between
+    // age and done — never rendered as its own question, but still stored when
+    // given. Completion happens after it.
+    case "ageBand":         return "country";
+    case "country":         return "done";
+    // Legacy sessions parked on a retired/optional step (old flow): advance
+    // toward completion — but never skip the 18+ gate. If age was never
+    // captured, collect it now; otherwise finish.
+    case "companionGender":
+    case "companionName":
+    case "voice":
+    case "country":
+    case "userGender":
     case "relationshipType":
-    case "energy":          return "companionName";
+    case "energy":          return hasAgeEvidence(profile) ? "done" : "ageBand";
     default:                return "done";
   }
 }
@@ -186,10 +205,7 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
   // (country before age) could finish setup without ever seeing the age
   // question.
   const STEPS_REQUIRING_AGE = ["country", "userGender", "relationshipType", "energy"];
-  const hasAgeEvidence =
-    (profile as any).birthYear != null ||
-    (AGE_BANDS as readonly string[]).includes((profile.ageBand ?? "").trim());
-  if (STEPS_REQUIRING_AGE.includes(step) && !hasAgeEvidence) {
+  if (STEPS_REQUIRING_AGE.includes(step) && !hasAgeEvidence(profile)) {
     // Nothing from this answer is stored — the age question comes first.
     await db
       .update(profileTable)
@@ -366,7 +382,8 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
           updates.userGenderCustom = words === "" ? null : words;
         }
       }
-      updates.isOnboardingComplete = true;
+      // Completion is centralized below (nextStep === "done"), so a legacy
+      // session on userGender without age evidence can't finish before the gate.
       break;
     }
 
@@ -393,6 +410,10 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
   const mergedProfile = { ...profile, ...updates };
   const nextStep = getNextStep(step, mergedProfile as Profile);
   updates.onboardingStep = nextStep;
+  // Completion is reaching "done" — now the terminal required step is age, so
+  // chat unlocks right after the 18+ gate. Centralizing it here (rather than
+  // per-step) means a legacy session can never finish without passing the gate.
+  if (nextStep === "done") updates.isOnboardingComplete = true;
 
   const [updated] = await db
     .update(profileTable)
@@ -442,11 +463,22 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
 
   const nextQuestion = updated ? getStepQuestion(updated.onboardingStep, updated as Profile) : null;
 
+  // Respond before ask: on the opening "what brought you" answer, Eos responds
+  // to what they actually said as its OWN beat (a separate bubble the client
+  // shows before nextQuestion, with a pause). Only this step — name and age
+  // are neutral and don't warrant it. Never blocks onboarding: the generator
+  // falls back to a warm, path-specific line if the model is unavailable.
+  let acknowledgment: string | null = null;
+  if ((step === "purpose" || step === "path") && updated) {
+    acknowledgment = await generateOnboardingAcknowledgment(updated.userPath, answer);
+  }
+
   res.json(
     SubmitOnboardingAnswerResponse.parse({
       isComplete: updated?.isOnboardingComplete ?? false,
       currentStep: updated?.onboardingStep ?? "done",
       companionFirstMessage: firstGreeting ?? nextQuestion,
+      acknowledgment,
     }),
   );
 });

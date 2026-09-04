@@ -6,7 +6,7 @@ import { db, pool } from "@workspace/db";
 import { usersTable, passwordResetTokensTable, emailVerificationTokensTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
-import { needsSubscription } from "../services/tiers.js";
+import { chatGateStatus } from "../services/tiers.js";
 import { hashAuthToken, tokenHashMatches } from "../lib/authTokenHash.js";
 
 const router: IRouter = Router();
@@ -509,13 +509,17 @@ router.get("/auth/me", async (req, res): Promise<void> => {
 
   // Subscription gate flag (entitlement stage): tells AuthGate whether to
   // route this account to /pricing instead of the app. Computed server-side
-  // (the client can't know created_at vs the cutoff); needsSubscription
-  // itself fails OPEN on any lookup error — it can only ever say "gate"
-  // from positively established facts.
+  // (the client can't know created_at vs the cutoff). This is the CHAT gate:
+  // a gated account with free messages left is NOT sent to /pricing yet — it
+  // enters the app and talks first, and freeMessagesRemaining feeds the quiet
+  // "N free messages left" counter so the wall is never a surprise. Fails
+  // OPEN on any lookup error — it can only ever gate from established facts.
+  const gate = await chatGateStatus(user.id);
   res.json({
     user: { id: user.id, email: user.email },
     emailVerified: user.emailVerifiedAt !== null,
-    needsSubscription: await needsSubscription(user.id),
+    needsSubscription: gate.needsSubscription,
+    freeMessagesRemaining: gate.freeMessagesRemaining,
   });
 });
 

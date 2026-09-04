@@ -268,10 +268,14 @@ async function walkToVoiceStep(agent: request.Agent) {
 }
 
 describe("onboarding voice step", () => {
-  it("appears after companionName; skip keeps every default and advances to age", async () => {
+  it("voice step (now optional / Settings-only): a direct skip keeps every default and advances to age", async () => {
     const { agent, userId } = await makeUser("ob-skip");
+    // Talk-first flow (2026-09): the required chain is purpose → name → age, so
+    // seeding the early steps lands on ageBand. The voice step is no longer
+    // auto-reached — it lives in Settings — but its handler still parses a
+    // direct submit (legacy sessions, and this parser test).
     const status = await walkToVoiceStep(agent);
-    expect(status.currentStep).toBe("voice");
+    expect(status.currentStep).toBe("ageBand");
 
     const before = await profileRow(userId);
     const res = await agent.post("/api/onboarding/answer").send({ step: "voice", answer: "skip" });
