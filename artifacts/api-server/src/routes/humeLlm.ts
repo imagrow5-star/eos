@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { stripExpressionTags } from "../lib/expressionTags.js";
 import { verifyVoiceToken } from "../lib/voiceToken.js";
 import { humeTurnUsageLimits } from "../middleware/usageLimits.js";
 import { voiceCompletionHandler } from "./voice-llm.js";
@@ -66,6 +67,17 @@ const router: IRouter = Router();
 
 /** The greeting-trigger instruction observed verbatim in both captures. */
 export const HUME_GREETING_PREFIX = "Speak your greeting to the user.";
+
+// Quirk 3 (seen live 2026-09-03, after the EVI config was edited in the
+// dashboard): EVI now appends its expression annotation to the TRANSCRIPT
+// text itself — user content arrives as e.g.
+//   "Rato. {very slightly excited, very slightly amused}"
+// Tone context must reach the model ONLY via formatVoiceTone (built from the
+// structured prosody scores we already receive), and the braces must never
+// hit the prompt or the persisted transcript. The strip lives in
+// lib/expressionTags.ts, shared with the boot scrub for rows persisted
+// before this normalizer stripped them.
+export { stripExpressionTags };
 
 // ─── Voice-tone extraction ───────────────────────────────────────────────────
 // Threshold 0.12 (env-tunable), top 3 emotions. Calibrated on the three real
@@ -137,6 +149,7 @@ export function normalizeHumeMessages(raw: unknown): HumeChatMessage[] {
     if (msg.role === "user" && content.startsWith(HUME_GREETING_PREFIX)) {
       content = content.slice(HUME_GREETING_PREFIX.length).trim(); // quirk 1
     }
+    if (msg.role === "user") content = stripExpressionTags(content); // quirk 3
     if (!content.trim()) continue;
     out.push({ role: msg.role, content, prosody: msg.models?.prosody ?? null });
   }

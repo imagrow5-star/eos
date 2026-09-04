@@ -43,6 +43,10 @@ export type HumeCallHandlers = {
   onMode: (mode: "speaking" | "listening") => void;
   /** Live user transcript (interim and final — final replaces interim). */
   onUserText: (text: string) => void;
+  /** EVI's auto-detected ASR language for a FINALIZED user turn (the SDK's
+   *  user_message.language, format unpinned). Fired so Chat.tsx can beacon
+   *  detect-vs-profile mismatches as evidence — see lib/asrLanguage.ts. */
+  onDetectedLanguage?: (language: string) => void;
   /** Full reply text for THIS turn (sentence-level captions). */
   onAgentText: (text: string) => void;
   /** First audio chunk accepted for playback — the connect-timing moment. */
@@ -130,11 +134,17 @@ export async function startHumeCall(
   socket.on("message", (msg) => {
     if (ended) return;
     switch (msg.type) {
-      case "user_message":
+      case "user_message": {
         // Interim and final transcripts both update the live line; a final
-        // simply replaces the interim it refined.
+        // simply replaces the interim it refined. Finalized turns also carry
+        // EVI's detected ASR language — surfaced for mismatch evidence.
+        const detected = (msg as { language?: string }).language;
+        if (typeof detected === "string" && (msg as { interim?: boolean }).interim === false) {
+          handlers.onDetectedLanguage?.(detected);
+        }
         handlers.onUserText(msg.message?.content ?? "");
         break;
+      }
       case "assistant_message":
         handlers.onAgentText(msg.message?.content ?? "");
         handlers.onMode("speaking");
