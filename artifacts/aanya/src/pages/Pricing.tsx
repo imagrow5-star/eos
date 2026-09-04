@@ -230,8 +230,24 @@ export function Pricing({
     );
   }
 
+  // Height depends on the parent. The gated / signed-out variants render at the
+  // document top level (no Shell), so they must be able to GROW past the
+  // viewport and let the document scroll — min-h-[100dvh]. The in-app /pricing
+  // route (neither prop set) renders inside Shell's <main>, which is a bounded,
+  // overflow-hidden box with a 72px bottom-nav inset: there the page must fill
+  // that box and scroll INTERNALLY (h-full), or a min-height taller than the
+  // clipped box just overflows with no way to scroll — the plans below the fold
+  // become unreachable. Extra bottom padding in-Shell clears the fixed nav.
+  const inShell = !signedOut && !gated;
   return (
-    <div className="min-h-[100dvh] bg-background px-5 py-10 overflow-y-auto">
+    <div
+      className={cn(
+        "bg-background px-5 py-10 overflow-y-auto",
+        inShell
+          ? "h-full pb-[calc(72px+env(safe-area-inset-bottom,0px)+2.5rem)] md:pb-10"
+          : "min-h-[100dvh]",
+      )}
+    >
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-10">
           <p className="text-[11px] tracking-[0.35em] uppercase text-primary-strong/70 mb-3">Membership</p>
