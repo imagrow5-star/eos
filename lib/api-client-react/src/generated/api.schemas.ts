@@ -19,7 +19,7 @@ export interface OnboardingStatus {
      */
   companionFirstMessage?: string | null;
   /**
-     * Respond-before-ask. A standalone message that genuinely responds to what the user just said (currently the opening "what brought you" answer), shown as its own bubble BEFORE companionFirstMessage, with a pause between, so the person is answered before they are asked the next thing. Null on steps that don't warrant it.
+     * Respond-before-ask: a standalone message responding to what the user just said, shown as its own bubble before companionFirstMessage
      * @nullable
      */
   acknowledgment?: string | null;
@@ -54,53 +54,19 @@ export interface Profile {
   /** woman | man | nonbinary */
   companionGender: string;
   /**
-     * man | woman | custom (legacy rows may hold 'other') — null when not shared
+     * man | woman | other (optional — may be null)
      * @nullable
      */
   userGender?: string | null;
   /**
-     * The user's own words for their gender — only present when userGender is 'custom'
+     * Their own words when userGender = custom — e.g. non-binary
      * @nullable
      */
   userGenderCustom?: string | null;
-  /**
-     * Approximate birth year (from age or DOB) — adults only, null when not shared
-     * @nullable
-     */
+  /** Approximate birth year — adults only, null when not shared */
   birthYear?: number | null;
-  /**
-     * Current age computed from birthYear — null when not shared
-     * @nullable
-     */
+  /** Current age computed from birthYear — null when not shared */
   ageYears?: number | null;
-  /**
-     * Appearance theme: amber | dawn | sage | twilight — null when never chosen
-     * @nullable
-     */
-  theme?: string | null;
-  /**
-     * Appearance mode: light | dark — null when never chosen
-     * @nullable
-     */
-  themeMode?: string | null;
-  /** Voice-call delivery: auto | gentle | calm | upbeat */
-  voiceTone?: string;
-  /** IANA timezone string e.g. America/New_York */
-  timezone: string;
-  /** Web-push notifications enabled (opt-in only, default false) */
-  pushOptIn?: boolean;
-  /**
-     * Version tag of the consent copy the user accepted — null = never consented
-     * @nullable
-     */
-  consentVersion?: string | null;
-  /**
-     * Server timestamp when consent was recorded
-     * @nullable
-     */
-  consentAt?: string | null;
-  /** Placeholder for future data-sharing — nothing shares today; default false */
-  dataSharingOptIn?: boolean;
 }
 
 export interface ProfileInput {
@@ -113,18 +79,10 @@ export interface ProfileInput {
   ageBand?: string;
   voiceId?: string;
   companionGender?: string;
-  /** man | woman | custom — or empty string to clear back to 'not shared' */
   userGender?: string;
-  /** The user's own words for their gender; persisted only when userGender is 'custom' */
   userGenderCustom?: string;
-  /** Age in years (18–120), or empty string / 0 to clear. Stored as birthYear; under-18 values are never stored. */
+  /** Age in years (18–120), or empty string / 0 to clear */
   ageYears?: number | string;
-  /** Appearance theme: amber | dawn | sage | twilight */
-  theme?: string;
-  /** Appearance mode: light | dark */
-  themeMode?: string;
-  /** Voice-call delivery: auto | gentle | calm | upbeat */
-  voiceTone?: string;
 }
 
 export interface Message {
@@ -134,15 +92,15 @@ export interface Message {
   content: string;
   createdAt: string;
   isMorningNote: boolean;
-  /** Crisis floor: true when the user dismissed the helpline card appended to this assistant message. Absent/false everywhere else. */
+  /**
+   * Crisis floor: true when the user dismissed the helpline card appended to
+   * this assistant message. (Kept in sync by hand with openapi.yaml.)
+   */
   crisisBlockDismissed?: boolean;
 }
 
 export interface MessageInput {
-  /**
-     * @minLength 1
-     * @maxLength 4000
-     */
+  /** @minLength 1 */
   content: string;
 }
 
@@ -151,9 +109,18 @@ export interface ChatReply {
   assistantMessage: Message;
   /** Whether memory extraction ran this cycle */
   memoryExtracted: boolean;
-  /** Present and true when the AI provider was unreachable and the assistant message is the honest fallback line — clients show a subtle indicator instead of treating it as a normal reply. */
+  /**
+   * Present and true when the AI provider was unreachable and the assistant
+   * message is the honest fallback line — show a subtle indicator instead of
+   * treating it as a normal reply. (Kept in sync by hand with openapi.yaml.)
+   */
   degraded?: boolean;
-  /** Crisis floor: present when the user's message matched the crisis detector. The localized helpline block appended to the assistant message — returned separately so clients render it as a distinct, dismissible card rather than Eos's own words. */
+  /**
+   * Crisis floor: present when the user's message matched the crisis detector —
+   * the localized helpline block appended to the assistant message, returned
+   * separately so clients render a distinct, dismissible card. (Kept in sync
+   * by hand with openapi.yaml.)
+   */
   crisisHelplineBlock?: string;
 }
 

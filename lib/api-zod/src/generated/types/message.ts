@@ -13,6 +13,6 @@ export interface Message {
   content: string;
   createdAt: Date;
   isMorningNote: boolean;
-  /** Crisis floor: true when the user dismissed the helpline card appended to this assistant message. Absent/false everywhere else. */
+  /** Crisis floor: user dismissed the helpline card on this assistant message */
   crisisBlockDismissed?: boolean;
 }

@@ -7,9 +7,6 @@
  */
 
 export interface MessageInput {
-  /**
-     * @minLength 1
-     * @maxLength 4000
-     */
+  /** @minLength 1 */
   content: string;
 }

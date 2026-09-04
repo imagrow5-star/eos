@@ -15,17 +15,9 @@ export interface ProfileInput {
   country?: string;
   ageBand?: string;
   voiceId?: string;
-  companionGender?: string;
-  /** man | woman | custom — or empty string to clear back to 'not shared' */
-  userGender?: string;
-  /** The user's own words for their gender; persisted only when userGender is 'custom' */
-  userGenderCustom?: string;
-  /** Age in years (18–120), or empty string / 0 to clear. Stored as birthYear; under-18 values are never stored. */
-  ageYears?: number | string;
-  /** Appearance theme: amber | dawn | sage | twilight */
-  theme?: string;
-  /** Appearance mode: light | dark */
-  themeMode?: string;
-  /** Voice-call delivery: auto | gentle | calm | upbeat */
   voiceTone?: string;
+  companionGender?: string;
+  userGender?: string;
+  userGenderCustom?: string;
+  ageYears?: number | string;
 }

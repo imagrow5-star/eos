@@ -26,54 +26,20 @@ export interface Profile {
   currentStage: number;
   /** ElevenLabs voice ID */
   voiceId: string;
+  /** Voice-call delivery: auto | gentle | calm | upbeat */
+  voiceTone?: string;
   /** woman | man | nonbinary */
   companionGender: string;
   /**
-     * man | woman | custom (legacy rows may hold 'other') — null when not shared
+     * man | woman | other (optional — may be null)
      * @nullable
      */
   userGender?: string | null;
   /**
-     * The user's own words for their gender — only present when userGender is 'custom'
+     * Their own words when userGender = custom — e.g. non-binary
      * @nullable
      */
   userGenderCustom?: string | null;
-  /**
-     * Approximate birth year (from age or DOB) — adults only, null when not shared
-     * @nullable
-     */
   birthYear?: number | null;
-  /**
-     * Current age computed from birthYear — null when not shared
-     * @nullable
-     */
   ageYears?: number | null;
-  /**
-     * Appearance theme: amber | dawn | sage | twilight — null when never chosen
-     * @nullable
-     */
-  theme?: string | null;
-  /**
-     * Appearance mode: light | dark — null when never chosen
-     * @nullable
-     */
-  themeMode?: string | null;
-  /** Voice-call delivery: auto | gentle | calm | upbeat */
-  voiceTone?: string;
-  /** IANA timezone string e.g. America/New_York */
-  timezone: string;
-  /** Web-push notifications enabled (opt-in only, default false) */
-  pushOptIn?: boolean;
-  /**
-     * Version tag of the consent copy the user accepted — null = never consented
-     * @nullable
-     */
-  consentVersion?: string | null;
-  /**
-     * Server timestamp when consent was recorded
-     * @nullable
-     */
-  consentAt?: Date | null;
-  /** Placeholder for future data-sharing — nothing shares today; default false */
-  dataSharingOptIn?: boolean;
 }
