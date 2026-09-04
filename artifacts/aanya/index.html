@@ -22,8 +22,14 @@
     <meta name="apple-mobile-web-app-title" content="Eos" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <!-- Inter 300 dropped: no font-light anywhere in the app -->
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,500;0,600;1,500&family=IBM+Plex+Mono:wght@400;500&family=Inter:opsz,wght@14..32,400;500;600&family=Fraunces:ital,opsz,wght@0,9..144,420;0,9..144,520;1,9..144,420&display=swap" rel="stylesheet">
+    <!-- Inter 300 dropped: no font-light anywhere in the app.
+         Fonts load NON-render-blocking via load-fonts.js (a plain stylesheet
+         link here would hold first paint; the CSP forbids the inline-onload
+         swap). display=swap paints text in the fallback immediately, then
+         swaps. <noscript> keeps fonts for the (JS-required app's) rare no-JS
+         probe / crawlers. -->
+    <script src="load-fonts.js" data-href="https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,500;0,600;1,500&family=IBM+Plex+Mono:wght@400;500&family=Inter:opsz,wght@14..32,400;500;600&family=Fraunces:ital,opsz,wght@0,9..144,420;0,9..144,520;1,9..144,420&display=swap" defer></script>
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,500;0,600;1,500&family=IBM+Plex+Mono:wght@400;500&family=Inter:opsz,wght@14..32,400;500;600&family=Fraunces:ital,opsz,wght@0,9..144,420;0,9..144,520;1,9..144,420&display=swap" rel="stylesheet"></noscript>
     <!-- Paint the calm cream shell immediately: the app CSS arrives later, and
          without this slower devices show a stark white flash first.
          theme-init.js flips this to the dark shell pre-paint when the user
