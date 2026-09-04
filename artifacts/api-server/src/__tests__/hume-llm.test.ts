@@ -153,6 +153,30 @@ describe("normalizeHumeMessages — pinned to the captured payloads", () => {
     ]);
   });
 
+  it("quirk 3: strips EVI's {expression} annotations from user transcripts", () => {
+    // Seen live 2026-09-03: EVI appends its expression annotation to the
+    // transcript itself. It must reach neither the prompt nor persistence —
+    // tone context comes from the structured prosody scores instead.
+    const msgs = [
+      humeMsg("user", "Rato. {very slightly excited, very slightly amused, very slightly positively surprised}"),
+      humeMsg("user", "hola {calm} como estas {curious}"),
+      humeMsg("assistant", "Claro. {this is literal assistant text}"), // assistant content untouched
+      humeMsg("user", "{only annotation}"), // nothing left → dropped
+    ];
+    expect(normalizeHumeMessages(msgs)).toEqual([
+      { role: "user", content: "Rato.", prosody: null },
+      { role: "user", content: "hola como estas", prosody: null },
+      { role: "assistant", content: "Claro. {this is literal assistant text}", prosody: null },
+    ]);
+  });
+
+  it("quirk 3 + quirk 1 together: greeting prefix and annotation both stripped", () => {
+    const msgs = [humeMsg("user", `${HUME_GREETING_PREFIX} Hola. {slightly joyful}`)];
+    expect(normalizeHumeMessages(msgs)).toEqual([
+      { role: "user", content: "Hola.", prosody: null },
+    ]);
+  });
+
   it("carries prosody through opaquely and tolerates garbage", () => {
     const withScores = { role: "user", content: "hi", models: { prosody: { anything: 1 } } };
     expect(normalizeHumeMessages([withScores])[0]!.prosody).toEqual({ anything: 1 });
