@@ -19,6 +19,7 @@ import {
   getGetMessagesQueryKey,
   getGetProfileQueryKey,
   type Message,
+  type OnboardingStatus,
 } from "@workspace/api-client-react";
 
 import { useContextualGreeting } from "@/api/contextualGreeting";
@@ -267,8 +268,28 @@ export default function Chat() {
   const updateProfile = useUpdateProfile();
 
   const [isTyping, setIsTyping] = useState(false);
+  // Respond-before-ask (onboarding): the acknowledgment bubble (beat 1) stays
+  // pinned above the next question (beat 2). A real "thinking" pause between
+  // them is carried by the typing indicator; the timer is held in a ref so a
+  // new turn can cancel a pause still in flight.
+  const [onboardingAck, setOnboardingAck] = useState<string | null>(null);
+  const ackPauseTimerRef = useRef<number | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [continuousVoice, setContinuousVoice] = useState(false);
+  // Clear a pending respond-before-ask pause if the screen unmounts mid-beat.
+  useEffect(() => () => {
+    if (ackPauseTimerRef.current) clearTimeout(ackPauseTimerRef.current);
+  }, []);
+  // Post-onboarding "make Eos yours" nudge — the persona/voice setup we moved
+  // OUT of the required flow is offered here, once, and is dismissible. Reuses
+  // Settings (where those live); dismissal persists per-device.
+  const [personalizeNudgeDismissed, setPersonalizeNudgeDismissed] = useState<boolean>(() => {
+    try { return localStorage.getItem("eos-personalize-nudge") === "dismissed"; } catch { return false; }
+  });
+  const dismissPersonalizeNudge = () => {
+    setPersonalizeNudgeDismissed(true);
+    try { localStorage.setItem("eos-personalize-nudge", "dismissed"); } catch { /* private mode */ }
+  };
   const [showSettings, setShowSettings] = useState(false);
   // Settings is a visual overlay, not a route — but people expect the platform
   // "back" (mobile edge-swipe, Android hardware back, browser back) to close
@@ -1350,6 +1371,34 @@ export default function Chat() {
 
   // ─── Send handler (onboarding + chat) ────────────────────────────────────
 
+  // Apply an onboarding step result. When it carries an acknowledgment
+  // (respond-before-ask), the genuine response lands first as its own bubble
+  // and the next question is held back a real beat (~1.5s) behind the typing
+  // indicator — so the person is answered before they are asked, two beats,
+  // not one message. Otherwise it applies immediately, as before.
+  const applyOnboardingStatus = (status: OnboardingStatus) => {
+    if (ackPauseTimerRef.current) {
+      clearTimeout(ackPauseTimerRef.current);
+      ackPauseTimerRef.current = null;
+    }
+    if (status.acknowledgment) {
+      setOnboardingAck(status.acknowledgment);
+      handleSpeak(status.acknowledgment);
+      setIsTyping(true); // thinking indicator carries the pause
+      ackPauseTimerRef.current = window.setTimeout(() => {
+        ackPauseTimerRef.current = null;
+        queryClient.setQueryData(getGetOnboardingStatusQueryKey(), status);
+        setIsTyping(false);
+        if (status.companionFirstMessage) handleSpeak(status.companionFirstMessage);
+      }, 1500);
+      return;
+    }
+    setOnboardingAck(null);
+    queryClient.setQueryData(getGetOnboardingStatusQueryKey(), status);
+    setIsTyping(false);
+    if (status.companionFirstMessage) handleSpeak(status.companionFirstMessage);
+  };
+
   const handleSend = async (data: ChatMessageFormValues) => {
     if (!data.content.trim()) return;
     // Free-message wall already reached: the composer is replaced by the trial
@@ -1373,10 +1422,7 @@ export default function Chat() {
         { data: { step: onboarding?.currentStep || "", answer: content } },
         {
           onSuccess: (newStatus) => {
-            queryClient.setQueryData(getGetOnboardingStatusQueryKey(), newStatus);
-            setIsTyping(false);
-            if (newStatus.companionFirstMessage)
-              handleSpeak(newStatus.companionFirstMessage);
+            applyOnboardingStatus(newStatus);
           },
           onError: () => setIsTyping(false),
         },
@@ -2966,22 +3012,47 @@ export default function Chat() {
     if (!onboarding?.isComplete) {
       return (
         <div className="flex flex-col gap-4">
-          <motion.div
-            key={currentStep}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, ease: "easeOut" }}
-            className="flex items-end gap-2 max-w-[85%]"
-          >
-            <div className="companion-bubble px-5 py-3.5 rounded-2xl rounded-bl-sm">
-              <p className={cn(
-                "companion-message leading-relaxed text-foreground/90",
-                isBereavement ? "text-[17px]" : "text-[16px]",
-              )}>
-                {onboarding?.companionFirstMessage || "Hello. What brought you here today?"}
-              </p>
-            </div>
-          </motion.div>
+          {/* Respond-before-ask, beat 1: the genuine response to what they said,
+              on its own, pinned above the next question once it lands. */}
+          {onboardingAck && (
+            <motion.div
+              key="ob-ack"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+              className="flex items-end gap-2 max-w-[85%]"
+            >
+              <div className="companion-bubble px-5 py-3.5 rounded-2xl rounded-bl-sm">
+                <p className={cn(
+                  "companion-message leading-relaxed text-foreground/90",
+                  isBereavement ? "text-[17px]" : "text-[16px]",
+                )}>
+                  {onboardingAck}
+                </p>
+              </div>
+            </motion.div>
+          )}
+          {/* Beat 2: the question. Hidden through the thinking pause (the typing
+              indicator below carries it) so it arrives as its own beat, never
+              alongside the acknowledgment. */}
+          {!(onboardingAck && isTyping) && (
+            <motion.div
+              key={currentStep}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+              className="flex items-end gap-2 max-w-[85%]"
+            >
+              <div className="companion-bubble px-5 py-3.5 rounded-2xl rounded-bl-sm">
+                <p className={cn(
+                  "companion-message leading-relaxed text-foreground/90",
+                  isBereavement ? "text-[17px]" : "text-[16px]",
+                )}>
+                  {onboarding?.companionFirstMessage || "Hello. What brought you here today?"}
+                </p>
+              </div>
+            </motion.div>
+          )}
         </div>
       );
     }
@@ -4892,6 +4963,29 @@ export default function Chat() {
                   </Button>
                 </form>
               </Form>
+            )}
+
+            {/* "Make Eos yours" nudge — the persona/voice setup moved out of
+                onboarding, offered once here and dismissible. Only while the
+                companion is still at its default (unnamed) and not at the wall. */}
+            {onboarding?.isComplete && !paywallReached && !personalizeNudgeDismissed && (profile?.companionName ?? "Eos") === "Eos" && (
+              <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 mt-3 px-4 text-[12px] text-muted-foreground/70">
+                <span>Want to give me a name or pick a voice?</span>
+                <button
+                  type="button"
+                  onClick={openSettings}
+                  className="text-primary-strong/80 underline underline-offset-2 hover:text-primary-strong"
+                >
+                  Personalize
+                </button>
+                <button
+                  type="button"
+                  onClick={dismissPersonalizeNudge}
+                  className="text-muted-foreground/50 hover:text-muted-foreground"
+                >
+                  Maybe later
+                </button>
+              </div>
             )}
 
             {/* Free-message counter — the wall should never surprise someone

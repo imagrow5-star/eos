@@ -18,6 +18,11 @@ export interface OnboardingStatus {
      * @nullable
      */
   companionFirstMessage?: string | null;
+  /**
+     * Respond-before-ask. A standalone message that genuinely responds to what the user just said (currently the opening "what brought you" answer), shown as its own bubble BEFORE companionFirstMessage, with a pause between, so the person is answered before they are asked the next thing. Null on steps that don't warrant it.
+     * @nullable
+     */
+  acknowledgment?: string | null;
 }
 
 export interface OnboardingAnswerInput {
@@ -49,19 +54,35 @@ export interface Profile {
   /** woman | man | nonbinary */
   companionGender: string;
   /**
-     * man | woman | other (optional — may be null)
+     * man | woman | custom (legacy rows may hold 'other') — null when not shared
      * @nullable
      */
   userGender?: string | null;
   /**
-     * Their own words when userGender = custom — e.g. non-binary
+     * The user's own words for their gender — only present when userGender is 'custom'
      * @nullable
      */
   userGenderCustom?: string | null;
-  /** Approximate birth year — adults only, null when not shared */
+  /**
+     * Approximate birth year (from age or DOB) — adults only, null when not shared
+     * @nullable
+     */
   birthYear?: number | null;
-  /** Current age computed from birthYear — null when not shared */
+  /**
+     * Current age computed from birthYear — null when not shared
+     * @nullable
+     */
   ageYears?: number | null;
+  /**
+     * Appearance theme: amber | dawn | sage | twilight — null when never chosen
+     * @nullable
+     */
+  theme?: string | null;
+  /**
+     * Appearance mode: light | dark — null when never chosen
+     * @nullable
+     */
+  themeMode?: string | null;
 }
 
 export interface ProfileInput {
@@ -74,10 +95,16 @@ export interface ProfileInput {
   ageBand?: string;
   voiceId?: string;
   companionGender?: string;
+  /** man | woman | custom — or empty string to clear back to 'not shared' */
   userGender?: string;
+  /** The user's own words for their gender; persisted only when userGender is 'custom' */
   userGenderCustom?: string;
-  /** Age in years (18–120), or empty string / 0 to clear */
+  /** Age in years (18–120), or empty string / 0 to clear. Stored as birthYear; under-18 values are never stored. */
   ageYears?: number | string;
+  /** Appearance theme: amber | dawn | sage | twilight */
+  theme?: string;
+  /** Appearance mode: light | dark */
+  themeMode?: string;
 }
 
 export interface Message {
@@ -87,15 +114,15 @@ export interface Message {
   content: string;
   createdAt: string;
   isMorningNote: boolean;
-  /**
-   * Crisis floor: true when the user dismissed the helpline card appended to
-   * this assistant message. (Kept in sync by hand with openapi.yaml.)
-   */
+  /** Crisis floor: true when the user dismissed the helpline card appended to this assistant message. Absent/false everywhere else. */
   crisisBlockDismissed?: boolean;
 }
 
 export interface MessageInput {
-  /** @minLength 1 */
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
   content: string;
 }
 
@@ -104,18 +131,9 @@ export interface ChatReply {
   assistantMessage: Message;
   /** Whether memory extraction ran this cycle */
   memoryExtracted: boolean;
-  /**
-   * Present and true when the AI provider was unreachable and the assistant
-   * message is the honest fallback line — show a subtle indicator instead of
-   * treating it as a normal reply. (Kept in sync by hand with openapi.yaml.)
-   */
+  /** Present and true when the AI provider was unreachable and the assistant message is the honest fallback line — clients show a subtle indicator instead of treating it as a normal reply. */
   degraded?: boolean;
-  /**
-   * Crisis floor: present when the user's message matched the crisis detector —
-   * the localized helpline block appended to the assistant message, returned
-   * separately so clients render a distinct, dismissible card. (Kept in sync
-   * by hand with openapi.yaml.)
-   */
+  /** Crisis floor: present when the user's message matched the crisis detector. The localized helpline block appended to the assistant message — returned separately so clients render it as a distinct, dismissible card rather than Eos's own words. */
   crisisHelplineBlock?: string;
 }
 

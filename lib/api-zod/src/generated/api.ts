@@ -22,7 +22,8 @@ export const HealthCheckResponse = zod.object({
 export const GetOnboardingStatusResponse = zod.object({
   "isComplete": zod.boolean(),
   "currentStep": zod.string().describe('purpose | companionGender | name | companionName | country | ageBand | userGender | done'),
-  "companionFirstMessage": zod.string().nullish().describe('The companion\'s next question or first greeting after onboarding completes')
+  "companionFirstMessage": zod.string().nullish().describe('The companion\'s next question or first greeting after onboarding completes'),
+  "acknowledgment": zod.string().nullish().describe('Respond-before-ask. A standalone message that genuinely responds to what the user just said (currently the opening \"what brought you\" answer), shown as its own bubble BEFORE companionFirstMessage, with a pause between, so the person is answered before they are asked the next thing. Null on steps that don\'t warrant it.')
 })
 
 
@@ -37,7 +38,8 @@ export const SubmitOnboardingAnswerBody = zod.object({
 export const SubmitOnboardingAnswerResponse = zod.object({
   "isComplete": zod.boolean(),
   "currentStep": zod.string().describe('purpose | companionGender | name | companionName | country | ageBand | userGender | done'),
-  "companionFirstMessage": zod.string().nullish().describe('The companion\'s next question or first greeting after onboarding completes')
+  "companionFirstMessage": zod.string().nullish().describe('The companion\'s next question or first greeting after onboarding completes'),
+  "acknowledgment": zod.string().nullish().describe('Respond-before-ask. A standalone message that genuinely responds to what the user just said (currently the opening \"what brought you\" answer), shown as its own bubble BEFORE companionFirstMessage, with a pause between, so the person is answered before they are asked the next thing. Null on steps that don\'t warrant it.')
 })
 
 
@@ -57,17 +59,11 @@ export const GetProfileResponse = zod.object({
   "daysSinceStart": zod.number(),
   "currentStage": zod.number().describe('1=Arrival 2=Held 3=FirstStep 4=Building'),
   "voiceId": zod.string().describe('ElevenLabs voice ID'),
-  "voiceTone": zod.string().optional().describe('Voice-call delivery: auto | gentle | calm | upbeat'),
   "companionGender": zod.string().describe('woman | man | nonbinary'),
-  "userGender": zod.string().nullish().describe('man | woman | custom (legacy: other) — may be null'),
-  "userGenderCustom": zod.string().nullish().describe('Their own words when userGender = custom — e.g. non-binary'),
-  "birthYear": zod.number().nullish().describe('Approximate birth year — adults only, null when not shared'),
+  "userGender": zod.string().nullish().describe('man | woman | custom (legacy rows may hold \'other\') — null when not shared'),
+  "userGenderCustom": zod.string().nullish().describe('The user\'s own words for their gender — only present when userGender is \'custom\''),
+  "birthYear": zod.number().nullish().describe('Approximate birth year (from age or DOB) — adults only, null when not shared'),
   "ageYears": zod.number().nullish().describe('Current age computed from birthYear — null when not shared'),
-  "timezone": zod.string().describe('IANA timezone string e.g. America/New_York'),
-  "pushOptIn": zod.boolean().optional().describe('Web-push notifications enabled (opt-in only, default false)'),
-  "consentVersion": zod.string().nullish().describe('Version tag of the consent copy the user accepted — null = never consented'),
-  "consentAt": zod.coerce.date().nullish().describe('Server timestamp when consent was recorded'),
-  "dataSharingOptIn": zod.boolean().optional().describe('Placeholder for future data-sharing — nothing shares today; default false'),
   "theme": zod.string().nullish().describe('Appearance theme: amber | dawn | sage | twilight — null when never chosen'),
   "themeMode": zod.string().nullish().describe('Appearance mode: light | dark — null when never chosen')
 })
@@ -85,12 +81,10 @@ export const UpdateProfileBody = zod.object({
   "country": zod.string().optional(),
   "ageBand": zod.string().optional(),
   "voiceId": zod.string().optional(),
-  "voiceTone": zod.string().optional(),
   "companionGender": zod.string().optional(),
-  "userGender": zod.string().optional(),
-  "userGenderCustom": zod.string().optional(),
-  "ageYears": zod.union([zod.number(), zod.string()]).optional(),
-  "timezone": zod.string().optional(),
+  "userGender": zod.string().optional().describe('man | woman | custom — or empty string to clear back to \'not shared\''),
+  "userGenderCustom": zod.string().optional().describe('The user\'s own words for their gender; persisted only when userGender is \'custom\''),
+  "ageYears": zod.union([zod.number().describe('Age in years (18–120), or empty string \/ 0 to clear. Stored as birthYear; under-18 values are never stored.'),zod.string().describe('Age in years (18–120), or empty string \/ 0 to clear. Stored as birthYear; under-18 values are never stored.')]).optional().describe('Age in years (18–120), or empty string \/ 0 to clear. Stored as birthYear; under-18 values are never stored.'),
   "theme": zod.string().optional().describe('Appearance theme: amber | dawn | sage | twilight'),
   "themeMode": zod.string().optional().describe('Appearance mode: light | dark')
 })
@@ -108,13 +102,11 @@ export const UpdateProfileResponse = zod.object({
   "daysSinceStart": zod.number(),
   "currentStage": zod.number().describe('1=Arrival 2=Held 3=FirstStep 4=Building'),
   "voiceId": zod.string().describe('ElevenLabs voice ID'),
-  "voiceTone": zod.string().optional().describe('Voice-call delivery: auto | gentle | calm | upbeat'),
   "companionGender": zod.string().describe('woman | man | nonbinary'),
-  "userGender": zod.string().nullish().describe('man | woman | custom (legacy: other) — may be null'),
-  "userGenderCustom": zod.string().nullish().describe('Their own words when userGender = custom — e.g. non-binary'),
-  "birthYear": zod.number().nullish().describe('Approximate birth year — adults only, null when not shared'),
+  "userGender": zod.string().nullish().describe('man | woman | custom (legacy rows may hold \'other\') — null when not shared'),
+  "userGenderCustom": zod.string().nullish().describe('The user\'s own words for their gender — only present when userGender is \'custom\''),
+  "birthYear": zod.number().nullish().describe('Approximate birth year (from age or DOB) — adults only, null when not shared'),
   "ageYears": zod.number().nullish().describe('Current age computed from birthYear — null when not shared'),
-  "timezone": zod.string().describe('IANA timezone string e.g. America/New_York'),
   "theme": zod.string().nullish().describe('Appearance theme: amber | dawn | sage | twilight — null when never chosen'),
   "themeMode": zod.string().nullish().describe('Appearance mode: light | dark — null when never chosen')
 })
@@ -129,8 +121,7 @@ export const GetMessagesResponseItem = zod.object({
   "content": zod.string(),
   "createdAt": zod.coerce.date(),
   "isMorningNote": zod.boolean(),
-  // kept in sync by hand with Message in lib/api-spec/openapi.yaml
-  "crisisBlockDismissed": zod.boolean().optional().describe('Crisis floor: user dismissed the helpline card on this assistant message')
+  "crisisBlockDismissed": zod.boolean().optional().describe('Crisis floor: true when the user dismissed the helpline card appended to this assistant message. Absent\/false everywhere else.')
 })
 export const GetMessagesResponse = zod.array(GetMessagesResponseItem)
 
@@ -138,14 +129,12 @@ export const GetMessagesResponse = zod.array(GetMessagesResponseItem)
 /**
  * @summary Send a user message and get companion reply
  */
+export const sendMessageBodyContentMax = 4000;
 
 
 
 export const SendMessageBody = zod.object({
-  // maxLength kept in sync by hand with MessageInput in lib/api-spec/openapi.yaml
-  // (cost guard — bounds the size of the paid Claude prompt). The message text
-  // is what chat routes surface to the user on a 400.
-  "content": zod.string().min(1, "Say something first — even a word is enough.").max(4000, "That message is a little too long — please keep it under 4,000 characters, or split it into a couple of messages.")
+  "content": zod.string().min(1).max(sendMessageBodyContentMax)
 })
 
 export const SendMessageResponse = zod.object({
@@ -155,7 +144,7 @@ export const SendMessageResponse = zod.object({
   "content": zod.string(),
   "createdAt": zod.coerce.date(),
   "isMorningNote": zod.boolean(),
-  "crisisBlockDismissed": zod.boolean().optional()
+  "crisisBlockDismissed": zod.boolean().optional().describe('Crisis floor: true when the user dismissed the helpline card appended to this assistant message. Absent\/false everywhere else.')
 }),
   "assistantMessage": zod.object({
   "id": zod.number(),
@@ -163,12 +152,11 @@ export const SendMessageResponse = zod.object({
   "content": zod.string(),
   "createdAt": zod.coerce.date(),
   "isMorningNote": zod.boolean(),
-  "crisisBlockDismissed": zod.boolean().optional()
+  "crisisBlockDismissed": zod.boolean().optional().describe('Crisis floor: true when the user dismissed the helpline card appended to this assistant message. Absent\/false everywhere else.')
 }),
   "memoryExtracted": zod.boolean().describe('Whether memory extraction ran this cycle'),
-  // kept in sync by hand with ChatReply in lib/api-spec/openapi.yaml
-  "degraded": zod.boolean().optional().describe('True when the AI provider was unreachable and the assistant message is the honest fallback line'),
-  "crisisHelplineBlock": zod.string().optional().describe('Crisis floor: localized helpline block appended to the assistant message — returned separately so clients render a distinct, dismissible card')
+  "degraded": zod.boolean().optional().describe('Present and true when the AI provider was unreachable and the assistant message is the honest fallback line — clients show a subtle indicator instead of treating it as a normal reply.'),
+  "crisisHelplineBlock": zod.string().optional().describe('Crisis floor: present when the user\'s message matched the crisis detector. The localized helpline block appended to the assistant message — returned separately so clients render it as a distinct, dismissible card rather than Eos\'s own words.')
 })
 
 
@@ -180,7 +168,8 @@ export const GenerateMorningNoteResponse = zod.object({
   "role": zod.string().describe('user | assistant'),
   "content": zod.string(),
   "createdAt": zod.coerce.date(),
-  "isMorningNote": zod.boolean()
+  "isMorningNote": zod.boolean(),
+  "crisisBlockDismissed": zod.boolean().optional().describe('Crisis floor: true when the user dismissed the helpline card appended to this assistant message. Absent\/false everywhere else.')
 })
 
 
@@ -344,9 +333,7 @@ export const GetJourneyResponse = zod.object({
   "isUnlocked": zod.boolean(),
   "unlockedAt": zod.coerce.date().nullish()
 })),
-  "moodCaption": zod.string().nullish(),
-  "growthScore": zod.number().describe('0-99 compounding growth score, never decreases'),
-  "habitMoodInsight": zod.string().nullish().describe('e.g. on days you walked, mood averaged 6.8 vs 4.2')
+  "moodCaption": zod.string().nullish()
 })
 
 

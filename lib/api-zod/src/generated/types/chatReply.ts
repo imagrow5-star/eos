@@ -12,6 +12,8 @@ export interface ChatReply {
   assistantMessage: Message;
   /** Whether memory extraction ran this cycle */
   memoryExtracted: boolean;
-  /** Crisis floor: localized helpline block appended to the assistant message */
+  /** Present and true when the AI provider was unreachable and the assistant message is the honest fallback line — clients show a subtle indicator instead of treating it as a normal reply. */
+  degraded?: boolean;
+  /** Crisis floor: present when the user's message matched the crisis detector. The localized helpline block appended to the assistant message — returned separately so clients render it as a distinct, dismissible card rather than Eos's own words. */
   crisisHelplineBlock?: string;
 }

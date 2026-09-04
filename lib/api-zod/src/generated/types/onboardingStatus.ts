@@ -15,4 +15,9 @@ export interface OnboardingStatus {
      * @nullable
      */
   companionFirstMessage?: string | null;
+  /**
+     * Respond-before-ask. A standalone message that genuinely responds to what the user just said (currently the opening "what brought you" answer), shown as its own bubble BEFORE companionFirstMessage, with a pause between, so the person is answered before they are asked the next thing. Null on steps that don't warrant it.
+     * @nullable
+     */
+  acknowledgment?: string | null;
 }
