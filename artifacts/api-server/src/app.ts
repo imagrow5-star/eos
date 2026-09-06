@@ -8,6 +8,7 @@ import pinoHttp from "pino-http";
 import { pool } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { shouldServeLanding } from "./lib/landingRoute";
 import path from "node:path";
 import fs from "node:fs";
 
@@ -518,11 +519,17 @@ if (fs.existsSync(frontendIndex)) {
   // A brand-new visitor opening eoscompanion.com should meet the marketing
   // landing page (public/welcome.html), not the sign-in screen. The app (SPA)
   // still owns "/" whenever it matters:
-  //   - any query string (e.g. ?verifyToken=…, ?resetToken=…, ?cancelReset=…,
-  //     ?enter=1) → SPA, so emailed token links keep working, and the landing
-  //     page's own "Enter Eos" buttons link to /?enter=1 to reach sign-in;
+  //   - a KNOWN SPA query key (?verifyToken=…, ?resetToken=…, ?cancelReset=…,
+  //     ?cancelEmailChange=…, ?googleError=…, ?enter=1, ?mode=…, ?plan=…) → SPA,
+  //     so emailed token links keep working and the landing page's own
+  //     "Enter Eos" buttons (/?enter=1) reach sign-in;
   //   - an existing session cookie ("sid") → SPA, so returning users land
   //     straight in the app.
+  // Everything else — including marketing/tracking params such as Instagram's
+  // ?igsh / ?igshid, Meta's ?fbclid, and utm_ / gclid — still gets the landing
+  // page. A prior "any query string → SPA" check sent all paid social traffic
+  // to the signup screen (a tapped IG bio link arrives as /?igsh=…). The rule
+  // is a pure, tested function — see lib/landingRoute.ts.
   // ─── Standalone legal pages (/terms, /refunds) ─────────────────────────────
   // Static files beside welcome.html in the same bundle — the marketing
   // page's footer already links here. Served at the clean path (no .html);
@@ -539,9 +546,7 @@ if (fs.existsSync(frontendIndex)) {
 
   const landingPage = path.join(frontendDir, "welcome.html");
   app.get("/", (req, res, next) => {
-    const hasQuery = req.originalUrl.includes("?");
-    const hasSession = (req.headers.cookie ?? "").includes("sid=");
-    if (!hasQuery && !hasSession && fs.existsSync(landingPage)) {
+    if (shouldServeLanding(req.originalUrl, req.headers.cookie) && fs.existsSync(landingPage)) {
       res.setHeader("Cache-Control", "no-cache");
       return res.sendFile(landingPage);
     }
