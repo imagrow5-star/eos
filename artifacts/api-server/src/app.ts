@@ -54,6 +54,20 @@ pool
   .query(`ALTER TABLE email_verification_tokens ADD COLUMN IF NOT EXISTS new_email text;`)
   .catch((err) => logger.error({ err }, "Failed to ensure new_email column"));
 
+// Safety-net: ensure the landing-page email-capture table exists.
+// Authoritative definition: lib/db/src/schema/leads.ts.
+pool
+  .query(`
+    CREATE TABLE IF NOT EXISTS leads (
+      id serial PRIMARY KEY,
+      email text NOT NULL UNIQUE,
+      source text NOT NULL,
+      consent_text text NOT NULL,
+      created_at timestamp NOT NULL DEFAULT now()
+    );
+  `)
+  .catch((err) => logger.error({ err }, "Failed to ensure leads table"));
+
 // Safety-net: collapse duplicate profile rows for the same user. A race in
 // getOrCreateProfileForUser (fixed with an advisory lock, but prod data may
 // predate the fix) could insert two rows for one user_id. Keep the row the
