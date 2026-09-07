@@ -164,18 +164,21 @@
   @media(min-width:700px){.hero-sub{text-align:center}}
   .hero-cta{margin-top:38px;display:flex;gap:14px;justify-content:center;align-items:center;flex-wrap:wrap}
   .hero-note{margin-top:20px;font-size:13.5px;color:var(--muted)}
-  /* Email capture — the primary ask. Input + button share the hero-cta row. */
-  .lead-form{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;width:100%;max-width:460px;margin:0 auto}
-  .lead-input{flex:1 1 220px;min-width:0;padding:14px 18px;border-radius:12px;border:1.5px solid rgba(92,72,44,.2);background:var(--card);color:var(--ink);font-size:16px;font-family:inherit;transition:border-color .2s,box-shadow .2s}
-  .lead-input::placeholder{color:var(--muted)}
-  .lead-input:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(95,127,92,.15)}
-  .lead-form .btn{border:0;cursor:pointer;font-family:inherit;flex:0 0 auto}
+  /* Ask-the-founder — a direct line, not a signup. Stacked email + message. */
+  .lead-ask{margin-top:34px;font-family:'Fraunces',Georgia,serif;font-weight:520;font-size:clamp(21px,2.6vw,26px);color:var(--ink)}
+  .lead-intro{margin-top:12px;font-size:15.5px;line-height:1.6;color:var(--ink-soft);max-width:460px;margin-left:auto;margin-right:auto}
+  .lead-form{display:flex;flex-direction:column;gap:10px;width:100%;max-width:460px;margin:0 auto;text-align:left}
+  .lead-input,.lead-msg{width:100%;padding:14px 18px;border-radius:12px;border:1.5px solid rgba(92,72,44,.2);background:var(--card);color:var(--ink);font-size:16px;font-family:inherit;transition:border-color .2s,box-shadow .2s}
+  .lead-msg{min-height:92px;resize:vertical;line-height:1.55}
+  .lead-input::placeholder,.lead-msg::placeholder{color:var(--muted)}
+  .lead-input:focus,.lead-msg:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(95,127,92,.15)}
+  .lead-form .btn{border:0;cursor:pointer;font-family:inherit;width:100%;text-align:center}
   .lead-hp{position:absolute!important;left:-9999px;width:1px;height:1px;opacity:0}
   .lead-ok{margin-top:16px;color:var(--green-deep);font-size:15.5px}
   .lead-err{margin-top:10px;color:#a2322b;font-size:13.5px;width:100%;text-align:center}
-  .lead-fine{margin-top:8px;font-size:12.5px}
-  .lead-fine a,.lead-secondary{color:var(--ink-soft);border-bottom:1px solid rgba(92,72,44,.25)}
-  .lead-fine a:hover,.lead-secondary:hover{color:var(--ink)}
+  .lead-fine{margin-top:10px;font-size:12.5px}
+  .lead-secondary{color:var(--ink-soft);border-bottom:1px solid rgba(92,72,44,.25)}
+  .lead-secondary:hover{color:var(--ink)}
 
   /* Sunrise illustration: soft hills, quiet sun. Sits at the hero's base. */
   .scene{display:block;width:100%;margin-top:44px}
@@ -390,16 +393,18 @@
   <div class="wrap">
     <h1 class="rv on" style="--d:.04s">Someone to talk to. Any hour.<br>And nobody else will ever know.</h1>
     <p class="hero-sub rv on" style="--d:.12s">Eos is a private companion you talk to by voice or text. It remembers what matters to you, so you never start from the beginning. Everything is encrypted, never sold, and never used to train AI.</p>
-    <div class="hero-cta rv on" style="--d:.2s">
+    <p class="lead-ask rv on" style="--d:.18s">Not sure? Ask me.</p>
+    <p class="lead-intro rv on" style="--d:.22s">I'm Naveen, the founder. I read every message myself and I'll answer honestly.</p>
+    <div class="hero-cta rv on" style="--d:.26s">
       <form class="lead-form" data-source="landing_hero" novalidate>
         <input class="lead-input" type="email" name="email" required autocomplete="email" placeholder="Your email" aria-label="Your email">
+        <textarea class="lead-msg" name="message" rows="3" maxlength="2000" placeholder="what's stopping you?" aria-label="Your message"></textarea>
         <input class="lead-hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
-        <button class="btn" type="submit">Send me the essays</button>
+        <button class="btn" type="submit">Send</button>
       </form>
-      <p class="lead-ok" role="status" hidden>Sent. Watch your inbox for the essays.</p>
+      <p class="lead-ok" role="status" hidden>Thanks. I got your message and I'll reply personally.</p>
     </div>
-    <p class="hero-note rv on" style="--d:.28s">I'll send you the essays as they're published. Nothing else.</p>
-    <p class="hero-note lead-fine rv on" style="--d:.3s">No spam, unsubscribe anytime · <a href="/privacy">Privacy</a></p>
+    <p class="hero-note lead-fine rv on" style="--d:.3s">I won't add you to anything.</p>
     <p class="hero-note rv on" style="--d:.34s"><a class="lead-secondary" href="/?enter=1">Or start the 7-day trial &rarr;</a></p>
   </div>
 
@@ -655,18 +660,19 @@
 <!-- Final CTA -->
 <section class="finalcta">
   <div class="wrap">
-    <p class="lead rv">If any of this sounds like something you'd want, start with the essays. No card, no account.</p>
-    <div class="hero-cta rv" style="--d:.06s">
+    <p class="lead-ask rv" style="--d:.02s">Not sure? Ask me.</p>
+    <p class="lead-intro rv" style="--d:.06s">I'm Naveen, the founder. I read every message myself and I'll answer honestly.</p>
+    <div class="hero-cta rv" style="--d:.1s">
       <form class="lead-form" data-source="landing_footer" novalidate>
         <input class="lead-input" type="email" name="email" required autocomplete="email" placeholder="Your email" aria-label="Your email">
+        <textarea class="lead-msg" name="message" rows="3" maxlength="2000" placeholder="what's stopping you?" aria-label="Your message"></textarea>
         <input class="lead-hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
-        <button class="btn" type="submit">Send me the essays</button>
+        <button class="btn" type="submit">Send</button>
       </form>
-      <p class="lead-ok" role="status" hidden>Sent. Watch your inbox for the essays.</p>
+      <p class="lead-ok" role="status" hidden>Thanks. I got your message and I'll reply personally.</p>
     </div>
-    <p class="hero-note rv" style="--d:.1s">I'll send you the essays as they're published. Nothing else.</p>
-    <p class="hero-note lead-fine rv" style="--d:.12s">No spam, unsubscribe anytime · <a href="/privacy">Privacy</a></p>
-    <p class="hero-note rv" style="--d:.16s"><a class="lead-secondary" href="/?enter=1">Or start the 7-day trial &rarr;</a></p>
+    <p class="hero-note lead-fine rv" style="--d:.14s">I won't add you to anything.</p>
+    <p class="hero-note rv" style="--d:.18s"><a class="lead-secondary" href="/?enter=1">Or start the 7-day trial &rarr;</a></p>
   </div>
 </section>
 
@@ -717,6 +723,7 @@
       e.preventDefault();
       var emailEl = form.querySelector('input[name="email"]');
       var email = (emailEl && emailEl.value || '').trim();
+      var msgEl = form.querySelector('[name="message"]');
       var hpEl = form.querySelector('input[name="website"]');
       var btn = form.querySelector('button');
       if (!email) { if (emailEl) emailEl.focus(); return; }
@@ -726,6 +733,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: email,
+          message: (msgEl && msgEl.value) || '',
           website: (hpEl && hpEl.value) || '',
           source: form.getAttribute('data-source') || 'landing_hero'
         })

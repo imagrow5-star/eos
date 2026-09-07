@@ -1,15 +1,18 @@
 /**
- * Landing-page email capture — POST /api/leads (public, no auth).
+ * "Ask the founder" capture — POST /api/leads (public, no auth).
  *
- * A cold visitor's first ask is an email, not a card. This path had none of
- * the app's auth scaffolding, so it's the kind of user-facing route that ships
- * untested — guard it: valid capture stores the consent record, a repeat is
- * idempotent, junk is rejected, and the bot honeypot stores nothing.
+ * A visitor with doubts reaches Naveen directly: email + optional message. This
+ * path has none of the app's auth scaffolding, so guard it — valid capture
+ * stores the message and the consent record, the consent copy never drifts into
+ * marketing/list claims, a repeat updates the message (one row), junk is
+ * rejected, the bot honeypot stores nothing, and the founder-notify carries the
+ * message (escaped).
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import pg from "pg";
 import app from "../app.js";
+import { founderNotifyHtml, LEAD_CONSENT_TEXT } from "../routes/leads.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const emails: string[] = [];
@@ -21,8 +24,6 @@ function freshEmail(tag: string): string {
 }
 
 beforeAll(async () => {
-  // The boot safety-net creates this fire-and-forget; ensure it exists before
-  // the first request so the suite never races the table into being.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS leads (
       id serial PRIMARY KEY,
@@ -32,6 +33,7 @@ beforeAll(async () => {
       created_at timestamp NOT NULL DEFAULT now()
     );
   `);
+  await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS message text;`);
 });
 
 afterAll(async () => {
@@ -39,40 +41,79 @@ afterAll(async () => {
   await pool.end();
 });
 
-describe("POST /api/leads — landing email capture", () => {
-  it("stores a valid email with its source and the consent copy", async () => {
+describe("consent copy — must stay a personal reply, never a marketing claim", () => {
+  it("is the exact founder-reply promise and carries no list/marketing language", () => {
+    expect(LEAD_CONSENT_TEXT).toBe(
+      "Naveen reads every message himself and replies personally. You won't be added to anything.",
+    );
+    // The whole point of the reframe: no newsletter/subscription/offer wording,
+    // and no leftover "essays"/"free" from the previous version.
+    expect(LEAD_CONSENT_TEXT).not.toMatch(
+      /newsletter|subscribe|unsubscribe|marketing|essays|free|offer|discount|deal|promo/i,
+    );
+  });
+});
+
+describe("founder-notify email — the message must reach Naveen", () => {
+  it("includes the message and HTML-escapes it", () => {
+    const html = founderNotifyHtml("who@example.invalid", "why <b>should</b> I trust you?", "landing_hero");
+    expect(html).toContain("who@example.invalid");
+    expect(html).toContain("why &lt;b&gt;should&lt;/b&gt; I trust you?"); // escaped, not raw markup
+    expect(html).not.toContain("<b>should</b>");
+  });
+
+  it("handles an email-only reach out (no message)", () => {
+    const html = founderNotifyHtml("who@example.invalid", "", "landing_footer");
+    expect(html).toMatch(/no message/i);
+  });
+});
+
+describe("POST /api/leads — the capture", () => {
+  it("stores the email, the message, the source and the consent copy", async () => {
     const email = freshEmail("valid");
-    const res = await request(app).post("/api/leads").send({ email, source: "landing_hero" });
+    const res = await request(app)
+      .post("/api/leads")
+      .send({ email, message: "What happens to what I tell it?", source: "landing_hero" });
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
 
     const rows = await pool.query(
-      "SELECT source, consent_text FROM leads WHERE email = $1",
+      "SELECT message, source, consent_text FROM leads WHERE email = $1",
       [email],
     );
     expect(rows.rowCount).toBe(1);
+    expect(rows.rows[0].message).toBe("What happens to what I tell it?");
     expect(rows.rows[0].source).toBe("landing_hero");
-    // The stored consent must be the real promise — and must NOT claim a free
-    // tier we haven't committed to.
-    expect(rows.rows[0].consent_text).toBe(
-      "I'll send you the essays as they're published. Nothing else.",
-    );
-    expect(rows.rows[0].consent_text).not.toMatch(/free/i);
+    expect(rows.rows[0].consent_text).toBe(LEAD_CONSENT_TEXT);
   });
 
-  it("normalizes case/whitespace and is idempotent on a repeat submit", async () => {
-    const email = freshEmail("dupe");
-    const r1 = await request(app).post("/api/leads").send({ email: `  ${email.toUpperCase()} ` });
-    expect(r1.status).toBe(200);
-    const r2 = await request(app).post("/api/leads").send({ email });
-    expect(r2.status).toBe(200);
+  it("allows an email-only reach out (message optional → null)", async () => {
+    const email = freshEmail("nomsg");
+    const res = await request(app).post("/api/leads").send({ email });
+    expect(res.status).toBe(200);
+    const rows = await pool.query("SELECT message FROM leads WHERE email = $1", [email]);
+    expect(rows.rowCount).toBe(1);
+    expect(rows.rows[0].message).toBeNull();
+  });
 
-    const rows = await pool.query("SELECT id FROM leads WHERE email = $1", [email]);
-    expect(rows.rowCount).toBe(1); // one row, stored lowercased/trimmed
+  it("keeps one row per person and updates the message on a repeat", async () => {
+    const email = freshEmail("repeat");
+    await request(app).post("/api/leads").send({ email, message: "first question" });
+    await request(app).post("/api/leads").send({ email, message: "second question" });
+    const rows = await pool.query("SELECT message FROM leads WHERE email = $1", [email]);
+    expect(rows.rowCount).toBe(1);
+    expect(rows.rows[0].message).toBe("second question");
+  });
+
+  it("caps an over-long message rather than storing unbounded text", async () => {
+    const email = freshEmail("long");
+    await request(app).post("/api/leads").send({ email, message: "x".repeat(5000) });
+    const rows = await pool.query("SELECT length(message) AS n FROM leads WHERE email = $1", [email]);
+    expect(Number(rows.rows[0].n)).toBe(2000);
   });
 
   it("rejects an obviously invalid email", async () => {
-    const res = await request(app).post("/api/leads").send({ email: "not-an-email" });
+    const res = await request(app).post("/api/leads").send({ email: "not-an-email", message: "hi" });
     expect(res.status).toBe(400);
   });
 
@@ -80,10 +121,10 @@ describe("POST /api/leads — landing email capture", () => {
     const email = freshEmail("bot");
     const res = await request(app)
       .post("/api/leads")
-      .send({ email, website: "http://spam.example" });
-    expect(res.status).toBe(200); // looks like success to the bot
+      .send({ email, message: "spam", website: "http://spam.example" });
+    expect(res.status).toBe(200);
     const rows = await pool.query("SELECT id FROM leads WHERE email = $1", [email]);
-    expect(rows.rowCount).toBe(0); // …but nothing was stored
+    expect(rows.rowCount).toBe(0);
   });
 
   it("defaults an unknown source to landing_hero rather than storing junk", async () => {
