@@ -4,27 +4,28 @@ import { db, leadsTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 
 /**
- * Landing-page email capture (public, no auth). A cold visitor's first ask is
- * an email, not a card — this stores it, sends a plain confirmation, and pings
- * the founder so a new signup is a live signal.
+ * "Ask the founder" — the landing page's direct line to Naveen (public, no
+ * auth). A visitor with doubts leaves an email and (optionally) a message; we
+ * store it, email Naveen the message so he can reply directly, and send the
+ * visitor a short personal confirmation.
  *
- * Fails SOFT end to end: a bad DB or Resend call must never show the visitor an
- * error on what is meant to be the friendliest possible first interaction.
+ * Fails SOFT end to end: neither a DB nor a Resend hiccup shows the visitor an
+ * error on what is meant to be the friendliest interaction on the site — and
+ * the founder-notify is attempted even if the DB write fails, so a real message
+ * is never lost to a storage blip.
  */
 
 const router: IRouter = Router();
 
-// The exact promise shown beside the form. Deliberately server-side and
-// authoritative (not trusted from the client): it's the consent record, and it
-// must NOT promise anything we haven't committed to building — no "free tier"
-// language until a free tier actually exists.
-const LEAD_CONSENT_TEXT = "I'll send you the essays as they're published. Nothing else.";
+// The exact promise shown beside the form. Server-side and authoritative (not
+// trusted from the client): it's the consent record, and it must NOT drift into
+// marketing/list language — this is a personal reply, not a subscription.
+export const LEAD_CONSENT_TEXT =
+  "Naveen reads every message himself and replies personally. You won't be added to anything.";
 
 const VALID_SOURCES = new Set(["landing_hero", "landing_footer"]);
-
-// Pragmatic email shape check — not RFC-perfect (nothing is), just enough to
-// reject obvious junk before it hits the DB. Capped length guards abuse.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MESSAGE_MAX = 2000;
 
 const leadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
@@ -34,14 +35,20 @@ const leadLimiter = rateLimit({
   message: { error: "Too many requests. Please try again later." },
 });
 
-async function sendViaResend(payload: {
-  to: string;
-  subject: string;
-  html: string;
-}): Promise<void> {
+/** Escape user text before it goes into an HTML email (the message is free
+ *  text and lands in Naveen's inbox — never inject markup into it). */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function sendViaResend(payload: { to: string; subject: string; html: string }): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    logger.warn("leads: RESEND_API_KEY not set — email not sent (lead still stored)");
+    logger.warn("leads: RESEND_API_KEY not set — email not sent (message still stored)");
     return;
   }
   const res = await fetch("https://api.resend.com/emails", {
@@ -59,31 +66,41 @@ async function sendViaResend(payload: {
   }
 }
 
-// Warm, plain confirmation — no essay links (they're not all published yet),
-// no other promises. Matches the EOS transactional-email look.
-function confirmationHtml(): string {
+// Short, personal confirmation to the visitor — from Naveen, no essays, no
+// other promises. Matches the EOS transactional-email look.
+export function confirmationHtml(): string {
   return `
     <div style="font-family:Georgia,serif;max-width:480px;margin:0 auto;padding:40px 24px;background:#fffff8;color:#1a1a2e;">
       <h1 style="font-size:32px;letter-spacing:0.25em;text-align:center;color:#b8962e;margin-bottom:8px;">EOS</h1>
       <p style="text-align:center;font-size:12px;letter-spacing:0.2em;color:#888;text-transform:uppercase;margin-bottom:40px;">a new dawn</p>
-      <p style="font-size:16px;line-height:1.7;">Thank you for your interest in Eos.</p>
-      <p style="font-size:16px;line-height:1.7;">I'll send you the essays as they're published. Nothing else.</p>
-      <p style="font-size:16px;line-height:1.7;">— The Eos team</p>
-      <p style="font-size:12px;color:#aaa;line-height:1.6;margin-top:32px;">You're receiving this because you asked for the Eos essays at eoscompanion.com. Reply to this email to be removed.</p>
+      <p style="font-size:16px;line-height:1.7;">Thanks for reaching out. I read every message myself, and I'll reply to you personally.</p>
+      <p style="font-size:16px;line-height:1.7;">— Naveen, founder of Eos</p>
     </div>`;
 }
 
-function founderNotifyHtml(email: string, source: string): string {
+// Founder-notify — carries the message so Naveen can read and reply directly.
+// Exported so a test can prove the message is included and escaped.
+export function founderNotifyHtml(email: string, message: string, source: string): string {
   const when = new Date().toISOString();
+  const msgBlock = message
+    ? `<p style="white-space:pre-wrap;border-left:3px solid #ddd;padding-left:12px;margin:12px 0;">${escapeHtml(message)}</p>`
+    : `<p style="color:#888;">(no message — email only)</p>`;
   return `
     <div style="font-family:system-ui,sans-serif;font-size:14px;color:#222;line-height:1.7;">
-      <p><strong>New Eos email signup</strong></p>
-      <p>Email: ${email}<br>Source: ${source}<br>When: ${when}</p>
+      <p><strong>Someone asked a question on the Eos landing page</strong></p>
+      <p>From: ${escapeHtml(email)}<br>Source: ${escapeHtml(source)}<br>When: ${when}</p>
+      ${msgBlock}
+      <p style="color:#888;">Reply straight to ${escapeHtml(email)}.</p>
     </div>`;
 }
 
 router.post("/leads", leadLimiter, async (req, res): Promise<void> => {
-  const body = (req.body ?? {}) as { email?: unknown; source?: unknown; website?: unknown };
+  const body = (req.body ?? {}) as {
+    email?: unknown;
+    message?: unknown;
+    source?: unknown;
+    website?: unknown;
+  };
 
   // Honeypot: a hidden field real users never see. Bots fill it. Pretend
   // success (no store, no email) so a scraper can't tell it was rejected.
@@ -98,43 +115,41 @@ router.post("/leads", leadLimiter, async (req, res): Promise<void> => {
     return;
   }
 
+  // Message is optional; trim and cap. Empty stays null (email-only reach out).
+  const rawMessage = typeof body.message === "string" ? body.message.trim().slice(0, MESSAGE_MAX) : "";
+  const message = rawMessage.length > 0 ? rawMessage : null;
+
   const source =
     typeof body.source === "string" && VALID_SOURCES.has(body.source) ? body.source : "landing_hero";
 
-  // Store first. onConflictDoNothing makes a repeat submit idempotent — the
-  // same person re-subscribing is a success, not a duplicate row or an error.
-  let isNew = true;
+  // Store first — one row per email (a returning person updates their latest
+  // message rather than piling up rows). A DB blip must not lose the message,
+  // so we log and continue: the founder-notify below still fires.
   try {
-    const inserted = await db
+    await db
       .insert(leadsTable)
-      .values({ email, source, consentText: LEAD_CONSENT_TEXT })
-      .onConflictDoNothing({ target: leadsTable.email })
-      .returning({ id: leadsTable.id });
-    isNew = inserted.length > 0;
+      .values({ email, message, source, consentText: LEAD_CONSENT_TEXT })
+      .onConflictDoUpdate({ target: leadsTable.email, set: { message, source } });
   } catch (err) {
-    // A DB hiccup must not fail the friendliest interaction on the site. Log
-    // and still return success; the confirmation send below is skipped.
-    logger.error({ err }, "leads: insert failed");
-    res.json({ ok: true });
-    return;
+    logger.error({ err }, "leads: insert failed (still delivering the message by email)");
   }
 
-  // Emails are fire-and-forget: never block the response, never surface a send
-  // failure to the visitor. Only email a genuinely new lead (no repeat sends).
-  if (isNew) {
-    void sendViaResend({
-      to: email,
-      subject: "The Eos essays are coming",
-      html: confirmationHtml(),
-    }).catch((err) => logger.error({ err }, "leads: confirmation email failed"));
+  // Unlike a newsletter opt-in, EVERY submission is a message to read — so the
+  // founder-notify and the personal confirmation fire on every valid, non-bot
+  // submission, not just the first. Fire-and-forget: never block the response,
+  // never surface a send failure to the visitor.
+  const notify = process.env.LEAD_NOTIFY_EMAIL?.trim() || "hello@eoscompanion.com";
+  void sendViaResend({
+    to: notify,
+    subject: "Someone asked a question on the Eos landing page",
+    html: founderNotifyHtml(email, message ?? "", source),
+  }).catch((err) => logger.error({ err }, "leads: founder-notify email failed"));
 
-    const notify = process.env.LEAD_NOTIFY_EMAIL?.trim() || "hello@eoscompanion.com";
-    void sendViaResend({
-      to: notify,
-      subject: "New Eos email signup",
-      html: founderNotifyHtml(email, source),
-    }).catch((err) => logger.error({ err }, "leads: founder-notify email failed"));
-  }
+  void sendViaResend({
+    to: email,
+    subject: "I got your message",
+    html: confirmationHtml(),
+  }).catch((err) => logger.error({ err }, "leads: confirmation email failed"));
 
   res.json({ ok: true });
 });

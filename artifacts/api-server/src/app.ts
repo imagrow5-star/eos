@@ -68,6 +68,13 @@ pool
   `)
   .catch((err) => logger.error({ err }, "Failed to ensure leads table"));
 
+// Safety-net: add the message column (the "Ask the founder" form; the table
+// predates it on already-deployed environments, so CREATE IF NOT EXISTS alone
+// wouldn't add it).
+pool
+  .query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS message text;`)
+  .catch((err) => logger.error({ err }, "Failed to ensure leads.message column"));
+
 // Safety-net: collapse duplicate profile rows for the same user. A race in
 // getOrCreateProfileForUser (fixed with an advisory lock, but prod data may
 // predate the fix) could insert two rows for one user_id. Keep the row the
