@@ -8,6 +8,7 @@ import { Feather, X } from "lucide-react";
 import { getGetJourneyQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ExampleChapter } from "./ExampleChapter";
 
 // ─── Types (mirror api-server routes/chapters.ts jsonb shapes) ────────────────
 
@@ -785,16 +786,21 @@ export function WeeklyChapterSection() {
   return (
     <div className="space-y-4">
       {coldStart && (
-        <div className="bg-card border border-primary/20 rounded-2xl p-6 text-center space-y-3">
-          <div className="w-10 h-10 mx-auto rounded-full bg-primary/12 border border-primary/35 flex items-center justify-center">
-            <Feather className="w-4 h-4 text-primary-strong/70" />
+        <>
+          {/* Show a real-looking sample first so a newcomer understands what a
+              chapter is before they've earned one; the note about theirs sits
+              beneath it. */}
+          <ExampleChapter />
+          <div className="bg-card border border-primary/20 rounded-2xl p-6 text-center space-y-3">
+            <div className="w-10 h-10 mx-auto rounded-full bg-primary/12 border border-primary/35 flex items-center justify-center">
+              <Feather className="w-4 h-4 text-primary-strong/70" />
+            </div>
+            <p className="font-serif text-[16px] text-foreground/85">Yours begins once we've talked for a few weeks.</p>
+            <p className="text-[12px] leading-relaxed text-muted-foreground max-w-[300px] mx-auto">
+              I'll write you one each Sunday, from your own words, so you can watch yourself change.
+            </p>
           </div>
-          <p className="font-serif text-[16px] text-foreground/85">Your letters aren't ready yet.</p>
-          <p className="text-[12px] leading-relaxed text-muted-foreground max-w-[300px] mx-auto">
-            Once we've talked for a few weeks, I'll start writing you a chapter each Sunday, built from your own
-            words, so you can watch yourself change.
-          </p>
-        </div>
+        </>
       )}
 
       {!coldStart && !current && (
