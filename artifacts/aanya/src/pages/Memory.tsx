@@ -259,6 +259,13 @@ export default function Memory() {
                       title={category.label}
                       count={categoryFacts.length}
                     >
+                      {/* Each chip's star / forget controls are 44px hit
+                          boxes (w-11 h-11) drawn around 12–14px glyphs. The
+                          negative margins pull the box back into the chip's
+                          own padding so the pill stays compact — the glyph
+                          barely moves, but a thumb can actually land on it
+                          (the raw 14px star and 12px X were the smallest tap
+                          targets in the app). */}
                       <div className="flex flex-wrap gap-2">
                         {categoryFacts.map((fact) => (
                           <span
@@ -273,7 +280,7 @@ export default function Memory() {
                               }
                               aria-pressed={fact.userMarkedImportant}
                               onClick={() => toggleImportant(fact)}
-                              className="shrink-0 transition-colors"
+                              className="shrink-0 w-11 h-11 -my-2.5 -ml-3 flex items-center justify-center rounded-full transition-colors"
                             >
                               <Star
                                 className={cn(
@@ -286,10 +293,12 @@ export default function Memory() {
                             </button>
                             {fact.fact}
                             {armedFactId === fact.id ? (
+                              // Destructive confirm: readable (was 9px) and a
+                              // full-height hit box, matching the star / X.
                               <button
                                 onClick={() => forgetFact(fact.id)}
                                 disabled={busyFactId === fact.id}
-                                className="text-[9px] uppercase tracking-[0.15em] text-amber-700 dark:text-amber-400/90 hover:text-amber-300 font-sans transition-colors disabled:opacity-50"
+                                className="shrink-0 h-11 -my-2.5 -mr-1.5 px-1.5 inline-flex items-center text-[11px] uppercase tracking-[0.15em] text-amber-700 dark:text-amber-400/90 hover:text-amber-300 font-sans transition-colors disabled:opacity-50"
                               >
                                 {busyFactId === fact.id ? "…" : "forget?"}
                               </button>
@@ -297,7 +306,7 @@ export default function Memory() {
                               <button
                                 aria-label={`Forget "${fact.fact}"`}
                                 onClick={() => setArmedFactId(fact.id)}
-                                className="opacity-35 hover:opacity-90 transition-opacity"
+                                className="shrink-0 w-11 h-11 -my-2.5 -mr-3 flex items-center justify-center rounded-full opacity-35 hover:opacity-90 transition-opacity"
                               >
                                 <X className="w-3 h-3" />
                               </button>

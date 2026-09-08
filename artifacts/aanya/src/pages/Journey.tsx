@@ -146,11 +146,14 @@ function CommitmentsSection() {
                       meta={c.scheduledDate ? format(parseISO(c.scheduledDate), "MMM d") : undefined}
                       actions={
                         <>
-                          <Button variant="ghost" size="icon" className="w-7 h-7 text-emerald-700 dark:text-emerald-400/60 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-full"
+                          {/* 44px (w-11) hit boxes around the 14px glyphs —
+                              Done and Remove sit side by side, so 28px
+                              buttons here meant thumbs hit the wrong one. */}
+                          <Button variant="ghost" size="icon" className="w-11 h-11 text-emerald-700 dark:text-emerald-400/60 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-full"
                             onClick={() => updateCommitment.mutate({ id: c.id, state: "done" })} title="Mark done">
                             <Check className="w-3.5 h-3.5" strokeWidth={3} />
                           </Button>
-                          <Button variant="ghost" size="icon" className="w-7 h-7 text-muted-foreground/40 hover:text-red-400/70 hover:bg-red-500/8 rounded-full"
+                          <Button variant="ghost" size="icon" className="w-11 h-11 text-muted-foreground/40 hover:text-red-400/70 hover:bg-red-500/8 rounded-full"
                             onClick={() => deleteCommitment.mutate(c.id)} title="Remove">
                             <Trash2 className="w-3.5 h-3.5" />
                           </Button>
@@ -277,12 +280,14 @@ function GoalsSection() {
                       <p className="text-[11px] text-muted-foreground/60 mt-0.5">{doneCount} / {goal.tasks.length} steps done</p>
                     )}
                   </div>
+                  {/* 44px hit boxes (see the commitment rows above) — expand
+                      and delete are adjacent, and delete is destructive. */}
                   <div className="flex items-center gap-1 shrink-0">
-                    <Button variant="ghost" size="icon" className="w-7 h-7 text-muted-foreground/50 hover:text-foreground rounded-full"
+                    <Button variant="ghost" size="icon" className="w-11 h-11 text-muted-foreground/50 hover:text-foreground rounded-full"
                       onClick={() => setExpandedId(isExpanded ? null : goal.id)}>
                       {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                     </Button>
-                    <Button variant="ghost" size="icon" className="w-7 h-7 text-muted-foreground/50 hover:text-red-400 rounded-full"
+                    <Button variant="ghost" size="icon" className="w-11 h-11 text-muted-foreground/50 hover:text-red-400 rounded-full"
                       onClick={() => deleteGoal.mutate(goal.id)}>
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>
@@ -298,18 +303,29 @@ function GoalsSection() {
                   {isExpanded && goal.tasks.length > 0 && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }} className="border-t border-primary/10 overflow-hidden">
+                      {/* The WHOLE row is the toggle (role=checkbox), not the
+                          16px circle alone — that circle was a 16px tap
+                          target. The circle stays a small glyph; the full-
+                          width row, py-3 (≥44px tall), is what a thumb hits. */}
                       {goal.tasks.sort((a, b) => a.order - b.order).map((task) => (
-                        <div key={task.id} className="flex items-start gap-3 px-4 py-2.5 hover:bg-primary/5 transition-colors">
-                          <button onClick={() => toggleTask.mutate({ goalId: goal.id, taskId: task.id, isComplete: !task.isComplete })}
+                        <button
+                          key={task.id}
+                          type="button"
+                          role="checkbox"
+                          aria-checked={task.isComplete}
+                          onClick={() => toggleTask.mutate({ goalId: goal.id, taskId: task.id, isComplete: !task.isComplete })}
+                          className="group w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-primary/5 transition-colors"
+                        >
+                          <span aria-hidden="true"
                             className={cn("mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-all",
-                              task.isComplete ? "bg-primary/20 border-primary/50" : "border-foreground/20 hover:border-primary/50")}>
+                              task.isComplete ? "bg-primary/20 border-primary/50" : "border-foreground/20 group-hover:border-primary/50")}>
                             {task.isComplete && <Check className="w-2.5 h-2.5 text-primary-strong" strokeWidth={3} />}
-                          </button>
-                          <p className={cn("text-[13px] leading-relaxed",
+                          </span>
+                          <span className={cn("text-[13px] leading-relaxed",
                             task.isComplete ? "text-muted-foreground/50 line-through" : "text-foreground/75")}>
                             {task.content}
-                          </p>
-                        </div>
+                          </span>
+                        </button>
                       ))}
                     </motion.div>
                   )}
