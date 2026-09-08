@@ -896,6 +896,38 @@ async function triggerReflectionSweep(): Promise<void> {
   }
 }
 
+// ─── Weekly review (Journey markers) trigger ──────────────────────────────────
+// Same shared-secret scheme. Runs AFTER the chapter sweep because the review's
+// then/now card reads this week's chapter. The api-server decides who is in
+// their Sunday-evening window and writes one row per (user, week).
+
+async function triggerWeeklyReviewSweep(): Promise<void> {
+  if (!SESSION_SECRET) {
+    log("SESSION_SECRET not set — skipping weekly review sweep trigger");
+    return;
+  }
+  try {
+    const stamp = new Date().toISOString().slice(0, 13); // YYYY-MM-DDTHH
+    const token = createHmac("sha256", SESSION_SECRET)
+      .update(`weekly-review-run:${stamp}`)
+      .digest("hex");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 240_000);
+    const resp = await fetch(`${APP_URL}/api/internal/weekly-reviews/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-internal-token": token },
+      // Honor the single-user test hook so local runs never fan out.
+      body: JSON.stringify(ONLY_USER !== null ? { userId: ONLY_USER } : {}),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const body: unknown = await resp.json().catch(() => null);
+    log("Weekly review sweep triggered", { status: resp.status, result: body as Record<string, unknown> | null });
+  } catch (err) {
+    logErr("Weekly review sweep trigger failed (non-fatal)", err);
+  }
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export async function run(): Promise<void> {
@@ -922,6 +954,7 @@ export async function run(): Promise<void> {
     await triggerChapterSweep();
     await triggerMorningPush();
     await triggerReflectionSweep();
+    await triggerWeeklyReviewSweep();
   }
 
   if (!RESEND_API_KEY && !DRY_RUN) {
