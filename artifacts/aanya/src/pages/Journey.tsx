@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { RowList, Row, DisclosureSection } from "@/components/ui/RowList";
+import { RowList, Row, DisclosureSection, DisclosurePreview } from "@/components/ui/RowList";
 import { apiFetch } from "@/lib/api";
 import { format, parseISO } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
@@ -116,8 +116,30 @@ function CommitmentsSection() {
     </DisclosureSection>
   );
 
+  // Preview: the newest open commitment, else the newest closed one.
+  const latest = open[0] ?? closed[0];
+  const LatestIcon = latest ? STATE_META[latest.state].icon : null;
+
   return (
-    <DisclosureSection title={<>What you&rsquo;re working on</>} count={total}>
+    <DisclosureSection
+      title={<>What you&rsquo;re working on</>}
+      count={total}
+      preview={
+        latest && LatestIcon ? (
+          <DisclosurePreview
+            icon={<LatestIcon className={cn("w-3.5 h-3.5", STATE_META[latest.state].color)} />}
+            text={latest.content}
+            meta={
+              latest.state === "done"
+                ? "done"
+                : latest.scheduledDate
+                  ? format(parseISO(latest.scheduledDate), "MMM d")
+                  : undefined
+            }
+          />
+        ) : undefined
+      }
+    >
       <p className="text-[12px] text-muted-foreground">
         Your own next steps, in your own time. Nothing here is graded.
       </p>
@@ -258,8 +280,30 @@ function GoalsSection() {
   const activeGoals = goals.filter((g) => !g.isComplete);
   const doneGoals = goals.filter((g) => g.isComplete);
 
+  // Preview: the newest active goal, else the newest completed one.
+  const latestGoal = activeGoals[0] ?? doneGoals[0];
+  const latestGoalMeta = !latestGoal
+    ? undefined
+    : latestGoal.isComplete
+      ? "done"
+      : latestGoal.tasks.length > 0
+        ? `${latestGoal.tasks.filter((t) => t.isComplete).length} / ${latestGoal.tasks.length} steps`
+        : undefined;
+
   return (
-    <DisclosureSection title="Goals" count={goals.length}>
+    <DisclosureSection
+      title="Goals"
+      count={goals.length}
+      preview={
+        latestGoal ? (
+          <DisclosurePreview
+            icon={<Target className="w-3.5 h-3.5 text-primary-strong/60" />}
+            text={latestGoal.title}
+            meta={latestGoalMeta}
+          />
+        ) : undefined
+      }
+    >
       {isLoading ? (
         <div className="h-20 flex items-center justify-center">
           <div className="w-5 h-5 rounded-full border border-primary/40 border-t-transparent animate-spin" />
@@ -411,8 +455,32 @@ function HabitsSection() {
     });
   };
 
+  // Preview: the newest routine and whether it's been done today.
+  const today = format(new Date(), "yyyy-MM-dd");
+  const latestHabit = habits[habits.length - 1];
+  const latestHabitDoneToday = Boolean(
+    latestHabit?.lastCompleted && format(parseISO(latestHabit.lastCompleted), "yyyy-MM-dd") === today,
+  );
+
   return (
-    <DisclosureSection title="Daily Routines" count={habits.length}>
+    <DisclosureSection
+      title="Daily Routines"
+      count={habits.length}
+      preview={
+        latestHabit ? (
+          <DisclosurePreview
+            icon={
+              <Check
+                className={cn("w-3.5 h-3.5", latestHabitDoneToday ? "text-primary-strong/70" : "text-foreground/25")}
+                strokeWidth={latestHabitDoneToday ? 3 : 2}
+              />
+            }
+            text={latestHabit.name}
+            meta={latestHabitDoneToday ? "done today" : "not yet today"}
+          />
+        ) : undefined
+      }
+    >
       {habits.length > 0 && (
         <p className="text-[10px] text-muted-foreground/50 uppercase tracking-[0.15em]">
           {habits.filter((h) => {
@@ -637,68 +705,28 @@ function AddWinCard() {
   );
 }
 
-// ─── Growth indicator card ────────────────────────────────────────────────────
-// The "1% better" compounding score. Never decreases — just plateaus on rest
-// days. Framed as progress, never as performance.
+// ─── Kind streak line ─────────────────────────────────────────────────────────
+// Days shown up, counted gently, as ONE quiet line under the markers (it was
+// a card, beside a Growth card; the page opened on two cards before any
+// content). Backed by the kind-streak semantics on the server: the count of
+// distinct days present — a missed day pauses the number, it never resets it.
+// It is a DIFFERENT number from the header's "N days in" (days since the
+// account started), so the line says how the two relate.
 
-function GrowthIndicatorCard({ score }: { score: number }) {
-  const label =
-    score < 10 ? "just beginning" :
-    score < 25 ? "roots taking hold" :
-    score < 45 ? "momentum building" :
-    score < 65 ? "noticeably stronger" :
-    score < 80 ? "real growth" :
-    "deep roots";
-
+function KindStreakLine({ days, since }: { days: number; since: number }) {
   return (
-    <div className="bg-card border border-primary/20 rounded-2xl p-5 relative overflow-hidden">
-      {/* Subtle background glow */}
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/4 to-transparent pointer-events-none" />
-
-      <div className="relative">
-        {/* Calm by design: the phrase carries the meaning, not a big number */}
-        <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Growth</p>
-        <p className="font-serif text-lg text-secondary italic mt-1">{label}</p>
-
-        <div className="h-1.5 bg-foreground/8 rounded-full overflow-hidden mt-3">
-          <motion.div
-            className="h-full rounded-full bg-gradient-to-r from-primary/50 to-secondary/70"
-            initial={{ width: 0 }}
-            animate={{ width: `${Math.max(score, 4)}%` }}
-            transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
-          />
-        </div>
-
-        <p className="text-[11px] text-muted-foreground mt-2.5 leading-relaxed">
-          Grows with every routine, win, and check-in. Never goes down. Rest days just pause the clock.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-// ─── Kind streak card ─────────────────────────────────────────────────────────
-// Days shown up, counted gently. Backed by the kind-streak semantics on the
-// server: the count of distinct days present — a missed day pauses the
-// number, it never resets it. It is a DIFFERENT number from the header's
-// "N days in" (days since the account started), and the old copy ("34 days,
-// gently") never said so, so the two read as a contradiction on one screen.
-// Now it says what it counts, and how it relates to the other.
-
-function KindStreakCard({ days, since }: { days: number; since: number }) {
-  return (
-    <div className="bg-card border border-primary/20 rounded-2xl p-5 flex items-center gap-4">
-      <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/25 flex items-center justify-center shrink-0">
-        <Flame className="w-4 h-4 text-primary-strong" />
-      </div>
+    <div className="flex items-start gap-2.5" data-testid="streak-line">
+      <Flame className="w-3.5 h-3.5 text-primary-strong/70 shrink-0 mt-[3px]" />
       <div className="min-w-0">
-        <p className="font-serif text-lg text-foreground/90 leading-tight">
+        <p className="font-serif text-[15px] text-foreground/85 leading-snug">
           {days === 0
             ? "Day one starts whenever you do"
             : `${days} ${days === 1 ? "day" : "days"} you showed up`}
+          {days > 0 && since > days && (
+            <span className="text-muted-foreground/70"> · of {since} since you started</span>
+          )}
         </p>
-        <p className="text-[12px] text-muted-foreground mt-0.5 leading-relaxed">
-          {days > 0 && since > days ? `Of ${since} since you started. ` : ""}
+        <p className="text-[11.5px] text-muted-foreground/70 leading-relaxed">
           Miss one? It just pauses, never resets.
         </p>
       </div>
@@ -724,7 +752,6 @@ export default function Journey() {
   }
 
   // Cast to access new fields before types regenerate
-  const growthScore = (journey as any).growthScore as number ?? 1;
   const habitMoodInsight = (journey as any).habitMoodInsight as string | null ?? null;
   const userName = (profile as any)?.userName as string | undefined;
 
@@ -733,6 +760,16 @@ export default function Journey() {
   const chartData = [...moodHistory]
     .sort((a, b) => a.date.localeCompare(b.date))
     .map((entry) => ({ name: format(parseISO(entry.date), "MMM d"), score: entry.score }));
+
+  // Closed-section previews: the most recent entry of each list, so the page
+  // has content without being a wall. Sorted here rather than trusting API
+  // order, same as the chart.
+  const latestMood = [...moodHistory].sort((a, b) => b.date.localeCompare(a.date))[0];
+  const latestWin = [...wins].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  const unlockedMilestones = journey.milestones.filter((m) => m.isUnlocked);
+  const latestMilestone = [...unlockedMilestones].sort((a, b) =>
+    (b.unlockedAt ?? "").localeCompare(a.unlockedAt ?? ""),
+  )[0];
 
   // Mood correlation — prefer server-computed insight, fall back to client calc
   const habitCorrelation = (() => {
@@ -753,7 +790,7 @@ export default function Journey() {
   })();
 
   return (
-    <div className="h-full overflow-y-auto px-6 py-10 pb-20 space-y-12">
+    <div className="h-full overflow-y-auto px-6 py-10 pb-20 space-y-8">
 
       {/* ── Header — chip, heading, warm lede ─────────────────────────────── */}
       <div className="space-y-4">
@@ -776,15 +813,27 @@ export default function Journey() {
             until a story exists) ──────────────────────────────────────── */}
         <WeekMarkers />
 
-        {/* ── Growth — calm, no loud number ─────────────────────────────────── */}
-        <GrowthIndicatorCard score={growthScore} />
-
-        {/* ── Kind streak ───────────────────────────────────────────────────── */}
-        <KindStreakCard days={journey.streak} since={journey.dayCounter} />
+        {/* ── Kind streak — one line, not a card ────────────────────────────── */}
+        <KindStreakLine days={journey.streak} since={journey.dayCounter} />
       </div>
 
       {/* ── Mood chart ─────────────────────────────────────────────────────── */}
-      <DisclosureSection title="How you've been feeling">
+      <DisclosureSection
+        title="How you've been feeling"
+        preview={
+          journey.moodCaption ? (
+            <DisclosurePreview
+              text={<span className="font-serif italic text-secondary">"{journey.moodCaption}"</span>}
+              meta={latestMood ? format(parseISO(latestMood.date), "MMM d") : undefined}
+            />
+          ) : latestMood ? (
+            <DisclosurePreview
+              text={`Last check-in: ${latestMood.score} of 10`}
+              meta={format(parseISO(latestMood.date), "MMM d")}
+            />
+          ) : undefined
+        }
+      >
         <div className="bg-card/50 border border-primary/15 rounded-2xl p-5 h-[210px] relative">
           {chartData.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
@@ -831,7 +880,19 @@ export default function Journey() {
       <div className="h-px bg-primary/12" />
 
       {/* ── Small things you did for yourself ──────────────────────────────── */}
-      <DisclosureSection title="Small things you did for yourself" count={wins.length}>
+      <DisclosureSection
+        title="Small things you did for yourself"
+        count={wins.length}
+        preview={
+          latestWin ? (
+            <DisclosurePreview
+              icon={<Heart className="w-3.5 h-3.5 text-primary-strong/50" />}
+              text={latestWin.content}
+              meta={format(parseISO(latestWin.createdAt), "MMM d")}
+            />
+          ) : undefined
+        }
+      >
         <div className="space-y-3">
           {wins.length === 0 && (
             <p className="text-sm text-muted-foreground font-serif italic px-1">
@@ -880,11 +941,20 @@ export default function Journey() {
       {journey.milestones.some((m) => m.isUnlocked) && (
         <DisclosureSection
           title="Milestones"
-          count={journey.milestones.filter((m) => m.isUnlocked).length}
+          count={unlockedMilestones.length}
+          preview={
+            latestMilestone ? (
+              <DisclosurePreview
+                icon={<Star className="w-3.5 h-3.5 text-primary-strong/50" />}
+                text={latestMilestone.label}
+                meta={latestMilestone.unlockedAt ? format(parseISO(latestMilestone.unlockedAt), "MMM d") : undefined}
+              />
+            ) : undefined
+          }
           className="pb-8"
         >
           <div className="grid grid-cols-2 gap-3">
-            {journey.milestones.filter((m) => m.isUnlocked).map((milestone) => (
+            {unlockedMilestones.map((milestone) => (
               <div key={milestone.id}
                 className="p-4 rounded-xl border bg-card border-primary/25 flex flex-col items-center justify-center text-center gap-2">
                 <div className="w-7 h-7 rounded-full flex items-center justify-center bg-primary/15 text-primary-strong">

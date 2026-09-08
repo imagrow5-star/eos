@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 export function DisclosureSection({
   title,
   count,
+  preview,
   children,
   defaultOpen = false,
   small = false,
@@ -31,6 +32,11 @@ export function DisclosureSection({
   title: React.ReactNode;
   /** Quiet item count shown beside the headline. */
   count?: number;
+  /** One quiet line under the headline while the section is CLOSED —
+   *  typically the most recent entry (see DisclosurePreview), so a closed
+   *  page still has content without being a wall. Hidden once open: the
+   *  content itself shows the entry then. */
+  preview?: React.ReactNode;
   children: React.ReactNode;
   defaultOpen?: boolean;
   /** Sub-section variant: the small uppercase group label (e.g. the fact
@@ -46,10 +52,11 @@ export function DisclosureSection({
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "w-full flex items-center text-left cursor-pointer group focus-visible:outline-none",
-          small ? "gap-2 pl-1" : "gap-2.5",
+          "w-full text-left cursor-pointer group focus-visible:outline-none",
+          small && "pl-1",
         )}
       >
+        <div className={cn("flex items-center", small ? "gap-2" : "gap-2.5")}>
         {small ? (
           <h3 className="text-[9px] uppercase tracking-[0.25em] text-primary-strong/60 group-hover:text-primary-strong transition-colors">
             {title}
@@ -76,6 +83,20 @@ export function DisclosureSection({
             open && "rotate-180",
           )}
         />
+        </div>
+        <AnimatePresence initial={false}>
+          {preview != null && !open && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+              className="overflow-hidden"
+            >
+              <div className={small ? "pt-1.5" : "pt-2.5"}>{preview}</div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </button>
       <AnimatePresence initial={false}>
         {open && (
@@ -93,6 +114,33 @@ export function DisclosureSection({
         )}
       </AnimatePresence>
     </section>
+  );
+}
+
+// ─── DisclosurePreview — the latest entry peeking out of a closed section ────
+// Styled like a Row header (same size, icon slot and quiet meta) so the
+// preview reads as the first row of the list the headline is hiding.
+export function DisclosurePreview({
+  icon,
+  text,
+  meta,
+}: {
+  icon?: React.ReactNode;
+  text: React.ReactNode;
+  meta?: React.ReactNode;
+}) {
+  return (
+    <span className="flex items-center gap-2.5 min-w-0">
+      {icon && <span className="shrink-0 flex items-center">{icon}</span>}
+      <span className="flex-1 min-w-0 truncate text-[13.5px] leading-snug text-foreground/60 group-hover:text-foreground/75 transition-colors">
+        {text}
+      </span>
+      {meta && (
+        <span className="shrink-0 text-[10.5px] uppercase tracking-wider text-muted-foreground/55 tabular-nums">
+          {meta}
+        </span>
+      )}
+    </span>
   );
 }
 
