@@ -71,8 +71,7 @@ async function sendViaResend(payload: { to: string; subject: string; html: strin
 export function confirmationHtml(): string {
   return `
     <div style="font-family:Georgia,serif;max-width:480px;margin:0 auto;padding:40px 24px;background:#fffff8;color:#1a1a2e;">
-      <h1 style="font-size:32px;letter-spacing:0.25em;text-align:center;color:#b8962e;margin-bottom:8px;">EOS</h1>
-      <p style="text-align:center;font-size:12px;letter-spacing:0.2em;color:#888;text-transform:uppercase;margin-bottom:40px;">a new dawn</p>
+      <h1 style="font-family:Georgia,serif;font-weight:400;font-size:30px;text-align:center;color:#37302A;margin:0 0 40px 0;">eos<span style="color:#567751;">.</span></h1>
       <p style="font-size:16px;line-height:1.7;">Thanks for reaching out. I read every message myself, and I'll reply to you personally.</p>
       <p style="font-size:16px;line-height:1.7;">— Naveen, founder of Eos</p>
     </div>`;

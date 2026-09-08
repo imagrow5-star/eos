@@ -73,7 +73,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
            column isn't full-bleed on wide screens ─────────────────────── */}
       <aside className="hidden md:flex md:flex-col w-56 shrink-0 h-full border-r border-border bg-card/40 px-4 py-6">
         <div className="flex flex-col items-start px-2 mb-8 select-none">
-          <span className="font-serif text-xl font-medium tracking-[0.4em] text-foreground/90">E O S</span>
+          <span className="font-serif text-xl font-medium text-foreground/90">eos<span className="text-primary">.</span></span>
           <div className="h-px w-8 bg-primary/50 my-1.5" />
         </div>
         <nav className="flex flex-col gap-1">

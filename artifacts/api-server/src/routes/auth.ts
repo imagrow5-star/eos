@@ -83,15 +83,14 @@ async function sendPasswordResetEmail(
       subject: "Reset your Eos password",
       html: `
         <div style="font-family:Georgia,serif;max-width:480px;margin:0 auto;padding:40px 24px;background:#fffff8;color:#1a1a2e;">
-          <h1 style="font-size:32px;letter-spacing:0.25em;text-align:center;color:#b8962e;margin-bottom:8px;">EOS</h1>
-          <p style="text-align:center;font-size:12px;letter-spacing:0.2em;color:#888;text-transform:uppercase;margin-bottom:40px;">a new dawn</p>
+          <h1 style="font-family:Georgia,serif;font-weight:400;font-size:30px;text-align:center;color:#37302A;margin:0 0 40px 0;">eos<span style="color:#567751;">.</span></h1>
           <p style="font-size:16px;line-height:1.6;">Hi there,</p>
           <p style="font-size:16px;line-height:1.6;">We received a request to reset the password for your Eos account. Click the button below to choose a new password. This link expires in 1 hour.</p>
           <div style="text-align:center;margin:36px 0;">
-            <a href="${resetUrl}" style="display:inline-block;background:#b8962e;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:14px;letter-spacing:0.1em;">Reset My Password</a>
+            <a href="${resetUrl}" style="display:inline-block;background:#4A6648;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:14px;letter-spacing:0.1em;">Reset My Password</a>
           </div>
           <p style="font-size:13px;color:#888;line-height:1.6;">If you didn't request this, you can safely ignore this email — your password won't change.</p>
-          <p style="font-size:13px;color:#888;line-height:1.6;">Or copy this link into your browser:<br><a href="${resetUrl}" style="color:#b8962e;word-break:break-all;">${resetUrl}</a></p>
+          <p style="font-size:13px;color:#888;line-height:1.6;">Or copy this link into your browser:<br><a href="${resetUrl}" style="color:#567751;word-break:break-all;">${resetUrl}</a></p>
         </div>
       `,
     }),
@@ -130,15 +129,14 @@ async function sendVerificationEmail(
       subject: "Verify your Eos email address",
       html: `
         <div style="font-family:Georgia,serif;max-width:480px;margin:0 auto;padding:40px 24px;background:#fffff8;color:#1a1a2e;">
-          <h1 style="font-size:32px;letter-spacing:0.25em;text-align:center;color:#b8962e;margin-bottom:8px;">EOS</h1>
-          <p style="text-align:center;font-size:12px;letter-spacing:0.2em;color:#888;text-transform:uppercase;margin-bottom:40px;">a new dawn</p>
+          <h1 style="font-family:Georgia,serif;font-weight:400;font-size:30px;text-align:center;color:#37302A;margin:0 0 40px 0;">eos<span style="color:#567751;">.</span></h1>
           <p style="font-size:16px;line-height:1.6;">Hi there,</p>
           <p style="font-size:16px;line-height:1.6;">Thank you for creating an Eos account. Please verify your email address to get started. This link stays valid for 7 days.</p>
           <div style="text-align:center;margin:36px 0;">
-            <a href="${verifyUrl}" style="display:inline-block;background:#b8962e;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:14px;letter-spacing:0.1em;">Verify My Email</a>
+            <a href="${verifyUrl}" style="display:inline-block;background:#4A6648;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:14px;letter-spacing:0.1em;">Verify My Email</a>
           </div>
           <p style="font-size:13px;color:#888;line-height:1.6;">If you didn't create an Eos account, you can safely ignore this email.</p>
-          <p style="font-size:13px;color:#888;line-height:1.6;">Or copy this link into your browser:<br><a href="${verifyUrl}" style="color:#b8962e;word-break:break-all;">${verifyUrl}</a></p>
+          <p style="font-size:13px;color:#888;line-height:1.6;">Or copy this link into your browser:<br><a href="${verifyUrl}" style="color:#567751;word-break:break-all;">${verifyUrl}</a></p>
         </div>
       `,
     }),
@@ -193,15 +191,14 @@ async function sendChangeEmailVerification(
       subject: "Confirm your new Eos email address",
       html: `
         <div style="font-family:Georgia,serif;max-width:480px;margin:0 auto;padding:40px 24px;background:#fffff8;color:#1a1a2e;">
-          <h1 style="font-size:32px;letter-spacing:0.25em;text-align:center;color:#b8962e;margin-bottom:8px;">EOS</h1>
-          <p style="text-align:center;font-size:12px;letter-spacing:0.2em;color:#888;text-transform:uppercase;margin-bottom:40px;">a new dawn</p>
+          <h1 style="font-family:Georgia,serif;font-weight:400;font-size:30px;text-align:center;color:#37302A;margin:0 0 40px 0;">eos<span style="color:#567751;">.</span></h1>
           <p style="font-size:16px;line-height:1.6;">Hi there,</p>
           <p style="font-size:16px;line-height:1.6;">We received a request to change the email address on your Eos account to this one. Click below to confirm this is your address. This link expires in 24 hours.</p>
           <div style="text-align:center;margin:36px 0;">
-            <a href="${verifyUrl}" style="display:inline-block;background:#b8962e;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:14px;letter-spacing:0.1em;">Confirm New Email</a>
+            <a href="${verifyUrl}" style="display:inline-block;background:#4A6648;color:#fff;text-decoration:none;padding:14px 32px;border-radius:12px;font-size:14px;letter-spacing:0.1em;">Confirm New Email</a>
           </div>
           <p style="font-size:13px;color:#888;line-height:1.6;">If you didn't request this change, you can safely ignore this email — nothing will change until you confirm.</p>
-          <p style="font-size:13px;color:#888;line-height:1.6;">Or copy this link into your browser:<br><a href="${verifyUrl}" style="color:#b8962e;word-break:break-all;">${verifyUrl}</a></p>
+          <p style="font-size:13px;color:#888;line-height:1.6;">Or copy this link into your browser:<br><a href="${verifyUrl}" style="color:#567751;word-break:break-all;">${verifyUrl}</a></p>
         </div>
       `,
     }),
@@ -246,8 +243,7 @@ async function sendEmailChangeSecurityAlert(
       subject: "Security alert: a new email address was requested for your Eos account",
       html: `
         <div style="font-family:Georgia,serif;max-width:480px;margin:0 auto;padding:40px 24px;background:#fffff8;color:#1a1a2e;">
-          <h1 style="font-size:32px;letter-spacing:0.25em;text-align:center;color:#b8962e;margin-bottom:8px;">EOS</h1>
-          <p style="text-align:center;font-size:12px;letter-spacing:0.2em;color:#888;text-transform:uppercase;margin-bottom:40px;">a new dawn</p>
+          <h1 style="font-family:Georgia,serif;font-weight:400;font-size:30px;text-align:center;color:#37302A;margin:0 0 40px 0;">eos<span style="color:#567751;">.</span></h1>
           <p style="font-size:16px;line-height:1.6;">Hi there,</p>
           <p style="font-size:16px;line-height:1.6;">Someone just requested to change the email address on your Eos account to a new address (<strong>${maskedNewEmail}</strong>). If that was you, no action is needed — nothing changes until the new address is confirmed, and this address stays in control until then.</p>
           <p style="font-size:16px;line-height:1.6;font-weight:bold;">If you did <em>not</em> request this, click below to cancel the change immediately and keep your account safe.</p>
@@ -847,8 +843,7 @@ async function sendSecurityAlertEmail(
       subject: "Security alert: password reset requested for your Eos account",
       html: `
         <div style="font-family:Georgia,serif;max-width:480px;margin:0 auto;padding:40px 24px;background:#fffff8;color:#1a1a2e;">
-          <h1 style="font-size:32px;letter-spacing:0.25em;text-align:center;color:#b8962e;margin-bottom:8px;">EOS</h1>
-          <p style="text-align:center;font-size:12px;letter-spacing:0.2em;color:#888;text-transform:uppercase;margin-bottom:40px;">a new dawn</p>
+          <h1 style="font-family:Georgia,serif;font-weight:400;font-size:30px;text-align:center;color:#37302A;margin:0 0 40px 0;">eos<span style="color:#567751;">.</span></h1>
           <p style="font-size:16px;line-height:1.6;">Hi there,</p>
           <p style="font-size:16px;line-height:1.6;">Someone just requested a password reset for your Eos account. If that was you, you can ignore this message — a separate email with the reset link was sent to you.</p>
           <p style="font-size:16px;line-height:1.6;font-weight:bold;">If you did <em>not</em> request this, click below to cancel the reset immediately and keep your account safe.</p>
