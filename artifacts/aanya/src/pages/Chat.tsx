@@ -32,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { useSpeechRecognition, speakText, stopSpeaking, unlockAudioOnGesture, unlockAudioContextOnGesture } from "@/lib/voice";
 import { shouldAutoplayChatReply } from "@/lib/ttsAutoplay";
 import { countryName, suggestCountry, searchCountries, type Country } from "@/lib/countries";
+import { commitUserNameChange, USER_NAME_MAX } from "@/lib/profileName";
 // Type-only import — erased at build time. The realtimeVoice module itself
 // (which drags in the ~600 KB ElevenLabs/LiveKit WebRTC stack) is loaded via
 // dynamic import() only when the user actually starts a voice call, so it
@@ -913,6 +914,12 @@ export default function Chat() {
   const [settingsAge, setSettingsAge] = useState("");
   const [settingsAgeNote, setSettingsAgeNote] = useState<string | null>(null);
   const [settingsCountryQuery, setSettingsCountryQuery] = useState("");
+  // "Your name" settings row — synced from the profile like settingsAge.
+  const [settingsName, setSettingsName] = useState("");
+  const [settingsNameNote, setSettingsNameNote] = useState<string | null>(null);
+  useEffect(() => {
+    setSettingsName(profile?.userName ?? "");
+  }, [profile?.userName]);
   useEffect(() => {
     setSettingsAge(profile?.ageYears ? String(profile.ageYears) : "");
   }, [profile?.ageYears]);
@@ -2536,6 +2543,32 @@ export default function Chat() {
     );
   };
 
+  // ─── Settings: your name ──────────────────────────────────────────────────
+  // Validation + the voice-session invalidation live in lib/profileName.ts so
+  // they're unit-tested against the REAL prefetcher: a call session minted
+  // before the rename carries a frozen prompt and a primed profile with the
+  // old name (api-server routes/voice-agent.ts), and must never be handed out
+  // after it.
+  const handleSaveName = () => {
+    const r = commitUserNameChange({
+      raw: settingsName,
+      current: profile?.userName ?? "",
+      prefetcher: voiceSessionPrefetcher,
+      save: (userName, afterSaved) =>
+        updateProfile.mutate(
+          { data: { userName } },
+          {
+            onSuccess: () => {
+              afterSaved();
+              refreshProfile();
+            },
+            onError: () => setSettingsNameNote("Couldn't save your name. Try again."),
+          },
+        ),
+    });
+    setSettingsNameNote(r.note);
+  };
+
   // ─── Settings: about you (age + country) ──────────────────────────────────
 
   const handleSaveAge = () => {
@@ -3703,6 +3736,54 @@ export default function Chat() {
             <div>
               <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
                 About you
+              </p>
+
+              {/* Your name — what the companion calls you. First row: it's the
+                  most identity-defining field here. Same pattern as Age
+                  below (input + tick, Enter saves, inline note). Required,
+                  1–40 chars: the product addresses people by name constantly
+                  and "there" is a worse experience than enforcing a field.
+                  Memory's "When we met" card keeps the ORIGINAL name as a
+                  record; the rename shows beneath it. */}
+              <div className="mb-5">
+                <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                  Your name
+                </p>
+                <div className="flex gap-2 items-center">
+                  <Input
+                    value={settingsName}
+                    onChange={(e) => {
+                      setSettingsName(e.target.value);
+                      setSettingsNameNote(null);
+                    }}
+                    onKeyDown={(e) => e.key === "Enter" && handleSaveName()}
+                    placeholder="Your name"
+                    autoComplete="given-name"
+                    maxLength={USER_NAME_MAX}
+                    className="bg-background/60 border-primary/20 text-sm text-foreground placeholder:text-muted-foreground h-9 flex-1"
+                  />
+                  <Button
+                    size="sm"
+                    className="h-9 bg-primary/15 text-primary-strong hover:bg-primary/25 border border-primary/25 px-4"
+                    onClick={handleSaveName}
+                    disabled={updateProfile.isPending}
+                    aria-label="Save your name"
+                  >
+                    <Check className="w-4 h-4" />
+                  </Button>
+                </div>
+                {settingsNameNote && (
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400/70 mt-1.5 leading-relaxed">{settingsNameNote}</p>
+                )}
+                <p className="text-[10.5px] text-muted-foreground/45 mt-2 leading-relaxed">
+                  What {profile?.companionName || "Eos"} calls you.
+                </p>
+              </div>
+
+              {/* Gender — now needs its own label, since the name row sits
+                  above it under the section heading. */}
+              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-2">
+                Gender
               </p>
               <div className="flex gap-1.5 flex-wrap">
                 {([["man", "Male"], ["woman", "Female"], ["custom", "In my own words"]] as const).map(([val, label]) => (

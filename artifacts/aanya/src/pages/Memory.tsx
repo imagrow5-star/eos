@@ -158,7 +158,16 @@ export default function Memory() {
     support: "You came here looking for support.",
   };
   const metLines: string[] = [];
-  if (profile?.userName) metLines.push(`You told me your name is ${profile.userName}.`);
+  // The name line is the ORIGIN record: the name they gave when we met, held
+  // even after a rename in Settings (originalUserName is captured once and
+  // never overwritten; null only for profiles that haven't been captured yet,
+  // which fall back to the live name). A rename adds one honest line beneath,
+  // so the card reads as a record rather than a stale bug.
+  const originalName = profile?.originalUserName || profile?.userName;
+  if (originalName) metLines.push(`You told me your name is ${originalName}.`);
+  if (originalName && profile?.userName && profile.userName !== originalName) {
+    metLines.push(`You go by ${profile.userName} now.`);
+  }
   if (profile?.userPath && pathLine[profile.userPath]) metLines.push(pathLine[profile.userPath]!);
   if (profile?.companionName && profile.companionName !== "Eos") {
     metLines.push(`You chose to call me ${profile.companionName}.`);

@@ -34,6 +34,11 @@ export interface OnboardingAnswerInput {
 export interface Profile {
   id: number;
   userName: string;
+  /**
+     * The name they gave when we met — captured once, never overwritten by a rename
+     * @nullable
+     */
+  originalUserName?: string | null;
   companionName: string;
   /** friend | romantic */
   relationshipType: string;

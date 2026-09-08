@@ -14,6 +14,7 @@ import { ensureProfileThemeColumns, isMissingThemeColumnError } from "../service
 import { logger } from "../lib/logger.js";
 import { sanitizeGenderWords } from "../services/systemPrompt.js";
 import { ageToBand, normalizeCountryForStorage, AGE_BANDS } from "../lib/basics.js";
+import { normalizeUserName, USER_NAME_ERROR } from "../lib/userName.js";
 
 const router: IRouter = Router();
 
@@ -89,6 +90,8 @@ function buildProfilePayload(
   return {
     id: profile.id,
     userName: profile.userName,
+    // Null until captured (see PUT); readers fall back to userName.
+    originalUserName: profile.originalUserName ?? null,
     companionName: profile.companionName,
     relationshipType: profile.relationshipType,
     energy: profile.energy,
@@ -172,7 +175,26 @@ router.put("/profile", async (req, res): Promise<void> => {
   const updates: Partial<typeof profileTable.$inferInsert> = {};
   const data = parsed.data;
 
-  if (data.userName != null) updates.userName = data.userName;
+  // userName: the name the companion calls them. Required, 1–40 chars (the
+  // Settings "Your name" row; onboarding writes this field through its own
+  // cleaner). The raw value used to be stored untouched.
+  if (data.userName != null) {
+    const name = normalizeUserName(data.userName);
+    if (name === null) {
+      res.status(400).json({ error: USER_NAME_ERROR });
+      return;
+    }
+    updates.userName = name;
+    // Origin record for Memory's "When we met": captured exactly ONCE — the
+    // first time the name actually changes and nothing is held yet — and
+    // never overwritten after. For accounts that predate renaming, the name
+    // they hold right now IS the one they gave at the start (no other path
+    // could have changed it), so that's what gets kept. A profile with no
+    // name yet keeps the first name they set.
+    if (profile.originalUserName == null && name !== profile.userName) {
+      updates.originalUserName = profile.userName.trim() || name;
+    }
+  }
   if (data.companionName != null) updates.companionName = data.companionName;
   // "romantic" was retired (persona refinement, 2026-08) — normalize any
   // straggler client still sending it to the one persona that exists.

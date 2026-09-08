@@ -51,6 +51,7 @@ export const SubmitOnboardingAnswerResponse = zod.object({
 export const GetProfileResponse = zod.object({
   "id": zod.number(),
   "userName": zod.string(),
+  "originalUserName": zod.string().nullish().describe('The name they gave when we met — captured once, never overwritten by a rename; null until captured'),
   "companionName": zod.string(),
   "relationshipType": zod.string().describe('friend | romantic'),
   "energy": zod.string().describe('playful | calm | deep'),
@@ -102,6 +103,7 @@ export const UpdateProfileBody = zod.object({
 export const UpdateProfileResponse = zod.object({
   "id": zod.number(),
   "userName": zod.string(),
+  "originalUserName": zod.string().nullish().describe('The name they gave when we met — captured once, never overwritten by a rename; null until captured'),
   "companionName": zod.string(),
   "relationshipType": zod.string().describe('friend | romantic'),
   "energy": zod.string().describe('playful | calm | deep'),
