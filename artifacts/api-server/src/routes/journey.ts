@@ -147,7 +147,7 @@ router.get("/journey", async (req, res): Promise<void> => {
   if (newestMood != null && oldestMood != null && recentMoods.length >= 3) {
     const diff = newestMood - oldestMood;
     if (diff > 0) {
-      moodCaption = `Up ${diff.toFixed(0)} ${diff === 1 ? "point" : "points"} from where you started — that's real.`;
+      moodCaption = `Up ${diff.toFixed(0)} ${diff === 1 ? "point" : "points"} from where you started. That's real.`;
     } else if (diff < 0) {
       moodCaption = "Healing moves in waves. The low moments are part of it too.";
     } else {
