@@ -67,7 +67,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <div
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
-      className="flex flex-col md:flex-row h-[100dvh] w-full bg-background overflow-hidden relative"
+      // px-safe: landscape notch/island insets (0 in portrait). Bottom and
+      // status-bar insets are handled by the nav below and index.html.
+      className="flex flex-col md:flex-row h-[100dvh] w-full bg-background overflow-hidden relative px-safe"
     >
       {/* ── Desktop left rail — replaces the bottom bar on md+ so the chat
            column isn't full-bleed on wide screens ─────────────────────── */}
@@ -107,7 +109,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </button>
       </aside>
 
-      <main className="flex-1 min-w-0 overflow-hidden relative z-10 pb-[60px] md:pb-0">
+      {/* pb-nav-safe = nav content height + home-indicator inset (index.css),
+          so screens clear the nav on every phone — one definition, not a
+          hard-coded 60px that drifts. */}
+      <main className="flex-1 min-w-0 overflow-hidden relative z-10 pb-nav-safe md:pb-0">
         {children}
       </main>
 
@@ -115,8 +120,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
       {/* Four equal columns (flex-1): one destination per tab, evenly spaced.
           Sign out used to live here as a fifth, detached item — it's an action,
           not a destination, so it moved to the Settings panel. With only the
-          four one-word-ish labels left, equal columns fit down to ~360px. */}
-      <nav className="md:hidden absolute bottom-0 left-0 right-0 h-[60px] bg-card/90 backdrop-blur-xl border-t border-primary/20 z-20 px-2 flex items-center pb-safe">
+          four one-word-ish labels left, equal columns fit down to ~360px.
+          h-nav-safe + pb-safe: the nav GROWS by the home-indicator inset and
+          pads the same amount, so the icons keep a 60px content box and the
+          extra height sits under the indicator instead of the labels. (In the
+          installed iOS PWA the page runs under the indicator; pb-safe used to
+          be an undefined class, so this was a no-op.) */}
+      <nav className="md:hidden absolute bottom-0 left-0 right-0 h-nav-safe bg-card/90 backdrop-blur-xl border-t border-primary/20 z-20 px-2 flex items-center pb-safe">
         {navItems.map((item) => {
           const isActive = location === item.href;
           return (
