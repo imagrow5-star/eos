@@ -3292,11 +3292,15 @@ export default function Chat() {
       </AnimatePresence>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <header className="h-16 flex items-center justify-between px-5 border-b border-border bg-muted/95 backdrop-blur-xl z-20 shrink-0 relative">
-        {/* Companion presence — left. flex-1 + min-w-0 so a long companion
-            name truncates instead of sliding under the centred wordmark /
-            the Settings pill on a narrow phone. */}
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+      {/* Three-zone grid: companion presence | wordmark | actions. Equal 1fr
+          side columns keep the wordmark truly centred and give it its own
+          track, so the companion name truncates in its column instead of
+          colliding with the mark — which is why the wordmark can now show at
+          every width, phones included. */}
+      <header className="h-16 grid grid-cols-[1fr_auto_1fr] items-center px-5 border-b border-border bg-muted/95 backdrop-blur-xl z-20 shrink-0 relative">
+        {/* Companion presence — left column. min-w-0 so a long companion name
+            truncates rather than pushing the wordmark off-centre. */}
+        <div className="flex items-center gap-2.5 min-w-0">
           <div className="relative shrink-0">
             <div className={cn(
               "w-8 h-8 rounded-full bg-card border flex items-center justify-center transition-all",
@@ -3329,18 +3333,16 @@ export default function Chat() {
           </div>
         </div>
 
-        {/* Eos wordmark — centered. Hidden on phones: at ~390px it collided
-            with the companion name and the Settings pill (all three landed on
-            top of each other). It's decoration — the brand already shows on the
-            splash and, on desktop, the sidebar — so it only appears from sm up
-            where there's room. pointer-events-none keeps it from eating taps. */}
-        <div className="hidden sm:flex absolute left-1/2 -translate-x-1/2 flex-col items-center select-none pointer-events-none gap-0">
-          <span className="font-serif text-[19px] font-medium tracking-[0.42em] text-foreground/90">E O S</span>
+        {/* Canonical wordmark — its own centre column, so it shows at every
+            width (its collision on phones is what the grid fixes).
+            pointer-events-none keeps it from eating taps. */}
+        <div className="flex flex-col items-center select-none pointer-events-none gap-0 px-2">
+          <span className="font-serif text-[19px] font-medium text-foreground/90">eos<span className="text-primary">.</span></span>
           <div className="h-px w-9 bg-primary/50 my-[3px]" />
         </div>
 
-        {/* Right actions */}
-        <div className="flex items-center gap-1 shrink-0">
+        {/* Right actions — right column, pinned to the end. */}
+        <div className="flex items-center gap-1 shrink-0 justify-self-end">
           {/* Settings — the one header action, so it carries the accent: soft
               green fill + green border (same family as active nav pills), not
               the old 45%-muted outline that vanished into the header. This is

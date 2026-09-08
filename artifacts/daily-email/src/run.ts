@@ -610,9 +610,7 @@ function buildHtml(userId: number, noteText: string): string {
 
     <!-- Wordmark -->
     <div style="text-align:center;margin-bottom:40px;">
-      <h1 style="font-family:Georgia,'Times New Roman',serif;font-size:26px;letter-spacing:0.32em;color:#EFE6D6;margin:0 0 10px 0;font-weight:400;text-transform:uppercase;">EOS</h1>
-      <div style="width:30px;height:1px;background-color:#C79A5B;margin:0 auto 10px;opacity:0.55;"></div>
-      <p style="font-family:Georgia,'Times New Roman',serif;font-size:11px;letter-spacing:0.22em;color:#8A8194;margin:0;font-style:italic;">a new dawn</p>
+      <h1 style="font-family:Georgia,'Times New Roman',serif;font-size:30px;color:#EFE6D6;margin:0;font-weight:400;">eos<span style="color:#8FB08E;">.</span></h1>
     </div>
 
     <!-- Note card -->
@@ -626,7 +624,7 @@ function buildHtml(userId: number, noteText: string): string {
         Your conversations are completely private — visible only to you.
       </p>
       <p style="font-family:Georgia,'Times New Roman',serif;font-size:11px;color:#8A8194;margin:0;">
-        <a href="${APP_URL}" style="color:#C79A5B;text-decoration:none;letter-spacing:0.05em;">Open Eos</a>
+        <a href="${APP_URL}" style="color:#8FB08E;text-decoration:none;letter-spacing:0.05em;">Open Eos</a>
         &nbsp;&nbsp;·&nbsp;&nbsp;
         <a href="${unsubUrl}" style="color:#8A8194;text-decoration:underline;opacity:0.55;">Stop these emails</a>
       </p>
