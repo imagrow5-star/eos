@@ -234,18 +234,19 @@ export function Pricing({
   // document top level (no Shell), so they must be able to GROW past the
   // viewport and let the document scroll — min-h-[100dvh]. The in-app /pricing
   // route (neither prop set) renders inside Shell's <main>, which is a bounded,
-  // overflow-hidden box with a 60px bottom-nav inset (height set in
-  // layout/Shell.tsx): there the page must fill that box and scroll
-  // INTERNALLY (h-full), or a min-height taller than the clipped box just
-  // overflows with no way to scroll — the plans below the fold become
-  // unreachable. Extra bottom padding in-Shell clears the fixed nav.
+  // overflow-hidden box with the bottom nav laid over it: there the page must
+  // fill that box and scroll INTERNALLY (h-full), or a min-height taller than
+  // the clipped box just overflows with no way to scroll — the plans below
+  // the fold become unreachable. Extra bottom padding in-Shell clears the
+  // nav: --nav-h + --safe-bottom (index.css) are the nav's content height
+  // plus the home-indicator inset, one definition for every consumer.
   const inShell = !signedOut && !gated;
   return (
     <div
       className={cn(
         "bg-background px-5 py-10 overflow-y-auto",
         inShell
-          ? "h-full pb-[calc(60px+env(safe-area-inset-bottom,0px)+2.5rem)] md:pb-10"
+          ? "h-full pb-[calc(var(--nav-h)+var(--safe-bottom)+2.5rem)] md:pb-10"
           : "min-h-[100dvh]",
       )}
     >

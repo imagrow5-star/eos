@@ -13,6 +13,43 @@
    provider (src/lib/theme.tsx) and pre-paint by public/theme-init.js. */
 @custom-variant dark (&:is([data-mode='dark'] *));
 
+/* ── Screen-edge insets: iOS notch / Dynamic Island / home indicator ──────
+   env(safe-area-inset-*) only reports non-zero values once the viewport meta
+   carries viewport-fit=cover (index.html). The values are routed through
+   custom properties so every consumer reads ONE definition — and so a
+   browser test can override them (Chromium can't emulate the insets).
+   The status bar itself is handled by index.html's
+   apple-mobile-web-app-status-bar-style=default: iOS reserves that band and
+   paints it from theme-color, so no top inset is needed in CSS.
+
+   --nav-h is the mobile bottom nav's CONTENT height — the single source of
+   truth that three files used to hard-code (one had drifted to 72px). */
+:root {
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --nav-h: 60px;
+}
+/* pb-safe was referenced but never defined (Tailwind v4 ships no such
+   utility), so the bottom nav's "home-indicator padding" was a no-op. */
+@utility pb-safe {
+  padding-bottom: var(--safe-bottom);
+}
+/* Landscape: keep content clear of the notch / island on either side. */
+@utility px-safe {
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+/* Bottom nav: content height PLUS the home-indicator band beneath it, so
+   the icons keep their 60px and the extra sits under the indicator. */
+@utility h-nav-safe {
+  height: calc(var(--nav-h) + var(--safe-bottom));
+}
+/* Anything that must clear the bottom nav (Shell's main, in-Shell pages). */
+@utility pb-nav-safe {
+  padding-bottom: calc(var(--nav-h) + var(--safe-bottom));
+}
+
 @theme inline {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));

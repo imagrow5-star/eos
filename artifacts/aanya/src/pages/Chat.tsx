@@ -3420,11 +3420,12 @@ export default function Chat() {
                 SCROLLING lives on this inner wrapper — capped below the
                 viewport height so every field stays reachable on laptop and
                 mobile alike. The extra bottom padding on mobile clears the
-                60px bottom nav (z-20; height set in layout/Shell.tsx), which
-                sits OVER this panel (z-10) — without it the last rows (Delete
-                account, export) hide behind the nav. pb-safe respects the
-                home-indicator inset too. */}
-            <div className="max-h-[calc(100dvh-7rem)] overflow-y-auto overscroll-contain px-5 py-5 pb-[calc(60px+env(safe-area-inset-bottom,0px)+1.25rem)] md:pb-5 space-y-6">
+                bottom nav (z-20), which sits OVER this panel (z-10) — without
+                it the last rows (Delete account, export) hide behind the nav.
+                --nav-h + --safe-bottom come from index.css: the nav's content
+                height plus the home-indicator inset, one definition for every
+                consumer. */}
+            <div className="max-h-[calc(100dvh-7rem)] overflow-y-auto overscroll-contain px-5 py-5 pb-[calc(var(--nav-h)+var(--safe-bottom)+1.25rem)] md:pb-5 space-y-6">
             {/* ← Back — a real exit at the top of the panel. The header's pill
                 also closes Settings, but it reads as a toggle; this is an
                 unambiguous way out, and it sticks to the top so it's reachable

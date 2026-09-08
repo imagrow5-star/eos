@@ -2,7 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
+    <!-- viewport-fit=cover: without it, env(safe-area-inset-*) reads 0 and the
+         bottom nav can't clear the home indicator in the installed PWA. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>Eos. A private place to say what you're feeling.</title>
     <meta name="description" content="Eos is a private place to think out loud, by voice or text, through a breakup, loneliness, or a heavy week. It remembers what matters to you. Your conversations are encrypted, never sold, and never used to train AI. Not therapy, and not a person." />
     <meta name="robots" content="index, follow" />
@@ -18,7 +20,16 @@
     <!-- Calm cream default (sage, light); src/lib/theme.tsx re-points this after boot -->
     <meta name="theme-color" content="#FBF7EF" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- "default", not "black-translucent": translucent lets the page run UNDER
+         the status bar (so the 64px chat header — wordmark, Voice, Settings —
+         sat beneath the Dynamic Island in the installed PWA) and draws WHITE
+         clock/battery text, invisible on this cream shell. With "default" iOS
+         reserves the status-bar band, paints it from the theme-color meta
+         (kept in sync with light/dark by src/lib/theme.tsx) and picks
+         contrasting text, so the header starts below the island and no
+         top-inset arithmetic is needed. NOTE: iOS reads this at "Add to Home
+         Screen" time — an existing install must be removed and re-added. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Eos" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
