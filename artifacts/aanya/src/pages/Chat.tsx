@@ -3341,13 +3341,48 @@ export default function Chat() {
           <div className="h-px w-9 bg-primary/50 my-[3px]" />
         </div>
 
-        {/* Right actions — right column, pinned to the end. */}
-        <div className="flex items-center gap-1 shrink-0 justify-self-end">
-          {/* Settings — the one header action, so it carries the accent: soft
-              green fill + green border (same family as active nav pills), not
-              the old 45%-muted outline that vanished into the header. This is
-              where users personalize Eos (name, tone, theme, voice) — it must
-              read as a real button at first glance, still calm. */}
+        {/* Right actions — right column, pinned to the end. Two 44px buttons
+            with an 8px gap = 96px, which fits the right 1fr track down to
+            320px (header px-5 → 280px content; centre column ~56px; each side
+            track ~112px), so the equal side tracks — and the centred
+            wordmark — hold on every phone width. */}
+        <div className="flex items-center gap-2 shrink-0 justify-self-end">
+          {/* Voice call — the product's main feature, so it lives where every
+              messaging app puts its call button: top-right of the
+              conversation. It used to be a labelled pill inside the composer
+              row, where at 390px it plus mic plus send left ~145px for the
+              text field (the placeholder truncated to "Tell me what's"), and
+              a phone icon 4px from a mic icon — one free dictation, one
+              paywalled call — read as the same thing. Same treatment as
+              Settings: 44px icon-only on phones, icon + label from sm.
+              Hidden during a call: the call overlay owns "End call", and two
+              ways to hang up is one too many. Same flag guard as before, so
+              the header never grows a dead button if the flag flips off. */}
+          {voiceCallEnabled && !continuousVoice && (
+            <button
+              type="button"
+              onClick={toggleContinuousVoice}
+              // Call INTENT: quietly prefetch the session bootstrap (voice
+              // token + signed URL) AND the lazy voice SDK chunk so pressing
+              // the button skips both. Deduped + 60s freshness in
+              // lib/voiceSessionPrefetch.ts; touchstart covers mobile,
+              // hover/focus cover desktop.
+              onPointerEnter={warmVoiceCallPath}
+              onFocus={warmVoiceCallPath}
+              onTouchStart={warmVoiceCallPath}
+              aria-label="Start voice call"
+              title="Start voice call"
+              className="flex items-center justify-center gap-1.5 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 px-2.5 sm:px-3.5 py-1.5 rounded-full text-[12px] font-medium tracking-wider uppercase transition-all duration-200 shadow-sm bg-primary/12 text-primary-strong border border-primary/30 hover:bg-primary/20 hover:border-primary/45 active:scale-95"
+            >
+              <Phone className="w-3.5 h-3.5" strokeWidth={2.5} />
+              <span className="hidden sm:inline">Voice</span>
+            </button>
+          )}
+          {/* Settings — carries the same accent: soft green fill + green
+              border (same family as active nav pills), not the old 45%-muted
+              outline that vanished into the header. This is where users
+              personalize Eos (name, tone, theme, voice) — it must read as a
+              real button at first glance, still calm. */}
           <button
             onClick={() => (showSettings ? closeSettings() : openSettings())}
             aria-label={showSettings ? "Close settings" : "Open settings"}
@@ -4895,30 +4930,10 @@ export default function Chat() {
                       )}
                     />
                     <div className="flex items-center gap-1">
-                      {/* ── Voice Call button — hidden behind VOICE_CALL_ENABLED
-                           while the ElevenLabs realtime agent is being set up, so
-                           testers never hit a disconnecting call. The per-message
-                           "Listen" TTS and the Mic dictation button below are
-                           unaffected. ── */}
-                      {voiceCallEnabled && (
-                        <button
-                          type="button"
-                          onClick={toggleContinuousVoice}
-                          // Call INTENT: quietly prefetch the session bootstrap
-                          // (voice token + signed URL) AND the lazy voice SDK
-                          // chunk so pressing the button skips both. Deduped +
-                          // 60s freshness in lib/voiceSessionPrefetch.ts;
-                          // touchstart covers mobile, hover/focus cover desktop.
-                          onPointerEnter={warmVoiceCallPath}
-                          onFocus={warmVoiceCallPath}
-                          onTouchStart={warmVoiceCallPath}
-                          title="Start voice call"
-                          className="flex items-center gap-1.5 pl-3 pr-3.5 py-2 rounded-full bg-primary/12 text-primary-strong/80 border border-primary/20 text-[11.5px] font-medium tracking-widest uppercase shrink-0 hover:bg-primary/18 hover:text-primary-strong active:scale-95 transition-all"
-                        >
-                          <Phone className="w-3.5 h-3.5" strokeWidth={2.5} />
-                          Voice
-                        </button>
-                      )}
+                      {/* The Voice Call button lives in the header now (see the
+                          header's right zone) — in this row it squeezed the
+                          text field to ~145px on a 390px phone. Only the free
+                          dictation mic and Send remain here. */}
 
                       {/* ── Mic button — tap to speak, fills the input ── */}
                       <Button
