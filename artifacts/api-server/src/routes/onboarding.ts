@@ -265,6 +265,9 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
     case "name": {
       const cleaned = extractName(answer, 2);
       updates.userName = cleaned || answer.trim().slice(0, 40);
+      // The origin record behind Memory's "When we met" — set here, once, and
+      // never overwritten (a later Settings rename keeps this).
+      if (profile.originalUserName == null) updates.originalUserName = updates.userName;
       break;
     }
 

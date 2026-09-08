@@ -8,6 +8,13 @@ export const profileTable = pgTable("profile", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => usersTable.id),
   userName: encryptedText("user_name", "profile.user_name").notNull().default(""), // encrypted at rest
+  // The name they gave when we met — the origin record behind Memory's "When
+  // we met" card. Captured ONCE (onboarding name step, or the first Settings
+  // rename for accounts that predate renaming) and never overwritten, so a
+  // later rename can't rewrite what they said at the start. Null = not yet
+  // captured; readers fall back to userName. Encrypted like userName; the AAD
+  // is per-column, so this can only be populated through the ORM.
+  originalUserName: encryptedText("original_user_name", "profile.original_user_name"),
   // "Eos" is also set explicitly on every insert (getOrCreateProfileForUser);
   // this default only guards rows created outside the app. The DB column keeps
   // its old default until the next `drizzle-kit push`.

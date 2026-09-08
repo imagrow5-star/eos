@@ -361,6 +361,9 @@ components:
           type: integer
         userName:
           type: string
+        originalUserName:
+          type: ["string", "null"]
+          description: "The name they gave when we met — captured once, never overwritten by a rename (Memory's 'When we met' card); null until captured"
         companionName:
           type: string
         relationshipType:
