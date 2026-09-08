@@ -29,6 +29,10 @@ const EmailVerificationGate = lazy(() =>
 const ConsentGate = lazy(() =>
   import("@/pages/ConsentGate").then((m) => ({ default: m.ConsentGate })),
 );
+// Weekly review, stage 1: an unlinked preview of the story shell with
+// prototype content. Nothing links here; it exists to be tapped through on a
+// phone before markers appear on Journey.
+const WeekPreview = lazy(() => import("@/pages/WeekPreview"));
 const Privacy = lazy(() =>
   import("@/pages/Privacy").then((m) => ({ default: m.Privacy })),
 );
@@ -98,6 +102,7 @@ function AppRouter() {
         <Route path="/chapters" component={Chapters} />
         <Route path="/memory" component={Memory} />
         <Route path="/pricing">{() => <Pricing />}</Route>
+        <Route path="/week/preview" component={WeekPreview} />
         <Route>
           <div className="flex h-full items-center justify-center text-muted-foreground">
             Page not found
