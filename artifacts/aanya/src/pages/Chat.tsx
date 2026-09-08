@@ -3354,7 +3354,10 @@ export default function Chat() {
             className={cn(
               // Icon-only on phones (label hidden below sm) so it can't crowd
               // the companion name; full "Settings"/"Close" label from sm up.
-              "flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-full text-[12px] font-medium tracking-wider uppercase transition-all duration-200 shadow-sm",
+              // 44px minimum hit area on phones — the icon-only pill measured
+              // ~34×28px, too small for a thumb on the header's ONLY action.
+              // The compact pill shape returns from sm up (mouse precision).
+              "flex items-center justify-center gap-1.5 min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 px-2.5 sm:px-3.5 py-1.5 rounded-full text-[12px] font-medium tracking-wider uppercase transition-all duration-200 shadow-sm",
               showSettings
                 ? "bg-primary/20 text-primary-strong border border-primary/45"
                 : "bg-primary/12 text-primary-strong border border-primary/30 hover:bg-primary/20 hover:border-primary/45",
@@ -3382,10 +3385,11 @@ export default function Chat() {
                 SCROLLING lives on this inner wrapper — capped below the
                 viewport height so every field stays reachable on laptop and
                 mobile alike. The extra bottom padding on mobile clears the
-                72px bottom nav (z-20), which sits OVER this panel (z-10) —
-                without it the last rows (Delete account, export) hide behind
-                the nav. pb-safe respects the home-indicator inset too. */}
-            <div className="max-h-[calc(100dvh-7rem)] overflow-y-auto overscroll-contain px-5 py-5 pb-[calc(72px+env(safe-area-inset-bottom,0px)+1.25rem)] md:pb-5 space-y-6">
+                60px bottom nav (z-20; height set in layout/Shell.tsx), which
+                sits OVER this panel (z-10) — without it the last rows (Delete
+                account, export) hide behind the nav. pb-safe respects the
+                home-indicator inset too. */}
+            <div className="max-h-[calc(100dvh-7rem)] overflow-y-auto overscroll-contain px-5 py-5 pb-[calc(60px+env(safe-area-inset-bottom,0px)+1.25rem)] md:pb-5 space-y-6">
             {/* ← Back — a real exit at the top of the panel. The header's pill
                 also closes Settings, but it reads as a toggle; this is an
                 unambiguous way out, and it sticks to the top so it's reachable
