@@ -521,7 +521,7 @@ export async function generateMorningNoteContent(
     contextLines.push(`About ${profile.userName || "them"}:\n${facts.map((f) => `• ${f.fact}`).join("\n")}`);
   }
   if (wins.length > 0) {
-    contextLines.push(`Recent wins:\n${wins.map((w) => `• ${w.content}`).join("\n")}`);
+    contextLines.push(`Recent wins, in ${profile.userName ? `${profile.userName}'s` : "their"} own words:\n${wins.map((w) => `• ${w.content}`).join("\n")}`);
   }
   if (pendingFollowUps.length > 0) {
     contextLines.push(
@@ -653,23 +653,21 @@ interface ExtractedMemory {
 // inserting a near-duplicate (the pollution the Memory Manifest was showing).
 const DEDUP_CANDIDATE_WINDOW = 50;
 
-export async function extractMemory(
-  profile: Profile,
+// Prompt for the structured-memory pass (facts, signals, wins, mood). Pure +
+// exported so the wins voice contract can be unit-tested: wins are read back
+// to the user on Journey ("Small things you did for yourself") and feed the
+// weekly review, so each one must be the user's OWN first-person memory, never
+// a third-person case note.
+export function buildMemoryExtractPrompt(
   recentMessages: { role: string; content: string }[],
-  opts?: { userMarkedImportant?: boolean; dedupFinder?: DedupFinder },
-): Promise<void> {
-  // Sprint 2B: when the user explicitly asked Eos to remember, every fact we
-  // pull from that message is flagged important (the +10 boost). Default false
-  // — ordinary extraction never marks anything.
-  const markImportant = opts?.userMarkedImportant === true;
-  const anthropic = getAnthropic();
-  if (!anthropic) return;
-
+  userName: string,
+  companionName: string,
+): string {
   const conversation = recentMessages
-    .map((m) => `${m.role === "user" ? profile.userName || "User" : profile.companionName}: ${m.content}`)
+    .map((m) => `${m.role === "user" ? userName : companionName}: ${m.content}`)
     .join("\n");
 
-  const extractPrompt = `From this conversation, extract structured memory. Return valid JSON only — no explanation.
+  return `From this conversation, extract structured memory. Return valid JSON only — no explanation.
 
 Conversation:
 ${conversation}
@@ -678,7 +676,7 @@ Extract and return this JSON shape:
 {
   "facts": [{"fact": "...", "category": "life|interest|routine|person|work|value|soother|preference|event|goal"}],
   "signals": ["personality/communication style observations about the user"],
-  "wins": ["things the user reports doing or accomplishing in real life"],
+  "wins": ["things the user actually did in real life, each written in the user's own first-person voice"],
   "moodScore": <1-10 estimate of user's current emotional state, 1=very low, 10=excellent>,
   "changeTalk": <true if user expressed wanting to change, move forward, or get out of the pain>
 }
@@ -696,11 +694,34 @@ Rules:
   "goal"      — a specific future aspiration, dream, or plan they named
   "life"      — general life fact that doesn't fit any category above
 - signals: ONLY communication style, humor level, openness, support needs — NOT facts about their life
-- wins: ONLY things they actually did in the real world (went to the gym, called a friend, cooked dinner, slept 8 hours)
+- wins: ONLY things they actually did in the real world (went for a walk, called a friend, cooked dinner, slept 8 hours). These are read back to the user as their OWN memories, so write each one in the FIRST PERSON, as the user would remember it — plain words, no clinical distance, and keep the feeling when they gave one:
+  - "I walked two days running, even though it felt heavy."
+  - "I texted Mum back instead of leaving it another day."
+  - "I cooked properly tonight instead of ordering in."
+  NEVER "the user…", NEVER "they…" or "${userName}…", NEVER a case-note summary ("reports engaging in physical activity", "demonstrated self-care").
 - moodScore: honest estimate, not inflated
 - changeTalk: true if they said things like "I want to get better", "I'm ready to try", "I need to move on"
 
 Return empty arrays if nothing fits. Do NOT make things up.`;
+}
+
+export async function extractMemory(
+  profile: Profile,
+  recentMessages: { role: string; content: string }[],
+  opts?: { userMarkedImportant?: boolean; dedupFinder?: DedupFinder },
+): Promise<void> {
+  // Sprint 2B: when the user explicitly asked Eos to remember, every fact we
+  // pull from that message is flagged important (the +10 boost). Default false
+  // — ordinary extraction never marks anything.
+  const markImportant = opts?.userMarkedImportant === true;
+  const anthropic = getAnthropic();
+  if (!anthropic) return;
+
+  const extractPrompt = buildMemoryExtractPrompt(
+    recentMessages,
+    profile.userName || "User",
+    profile.companionName,
+  );
 
   try {
     const response = await anthropic.messages.create({
@@ -1033,7 +1054,7 @@ ${commitmentsContext}
 Return ONLY valid JSON in this exact shape — no explanation, no markdown:
 {
   "newCommitment": {
-    "content": "the specific action(s), concrete and in the user's own terms — a multi-step plan stays ONE commitment",
+    "content": "the specific action(s), concrete, in the user's own first-person voice ('I'll call the GP on Tuesday morning') — a multi-step plan stays ONE commitment",
     "cue": "when or where trigger (e.g. 'after morning coffee', 'tomorrow 4:00 AM', or empty string)",
     "scheduledDate": "YYYY-MM-DD the action is planned for, or null if no specific day was named",
     "scheduledTime": "HH:MM 24-hour clock time if the user named one, or null",
