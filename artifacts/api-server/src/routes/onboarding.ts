@@ -16,6 +16,7 @@ import { generateOnboardingAcknowledgment } from "../services/ai.js";
 import { parseAgeText, ageToBand, resolveCountryAnswer, AGE_BANDS, isValidCountryCode } from "../lib/basics.js";
 import { isValidLanguage } from "../services/settings/languages.js";
 import { ENGLISH_ACCENT_CODES, NON_ENGLISH_ACCENT, isVoiceAllowed, resolveVoiceGender } from "../services/settings/voiceCatalog.js";
+import { presentCaseName } from "../lib/userName.js";
 
 const router: IRouter = Router();
 
@@ -264,7 +265,8 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
 
     case "name": {
       const cleaned = extractName(answer, 2);
-      updates.userName = cleaned || answer.trim().slice(0, 40);
+      // extractName title-cases; the raw fallback gets the same casing rule.
+      updates.userName = cleaned || presentCaseName(answer.trim().slice(0, 40));
       // The origin record behind Memory's "When we met" — set here, once, and
       // never overwritten (a later Settings rename keeps this).
       if (profile.originalUserName == null) updates.originalUserName = updates.userName;

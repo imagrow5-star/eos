@@ -68,6 +68,24 @@ pool
   `)
   .catch((err) => logger.error({ err }, "Failed to ensure leads table"));
 
+// Safety-net: weekly review stories (Journey markers + the story they open).
+// Authoritative definition: lib/db/src/schema/weeklyReviews.ts.
+pool
+  .query(`
+    CREATE TABLE IF NOT EXISTS weekly_reviews (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES users(id),
+      week_start text NOT NULL,
+      week_end text NOT NULL,
+      fragment text NOT NULL,
+      cards text NOT NULL,
+      viewed_at timestamp,
+      created_at timestamp NOT NULL DEFAULT now()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS weekly_reviews_user_week_idx ON weekly_reviews (user_id, week_start);
+  `)
+  .catch((err) => logger.error({ err }, "Failed to ensure weekly_reviews table"));
+
 // Safety-net: add the message column (the "Ask the founder" form; the table
 // predates it on already-deployed environments, so CREATE IF NOT EXISTS alone
 // wouldn't add it).

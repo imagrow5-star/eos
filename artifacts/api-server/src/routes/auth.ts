@@ -1239,6 +1239,7 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
     await client.query(`DELETE FROM voice_usage       WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM subscriptions     WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM personalization_state WHERE user_id = $1`, [userId]);
+    await client.query(`DELETE FROM weekly_reviews    WHERE user_id = $1`, [userId]); // the person's own words — deleted means deleted
     await client.query(`DELETE FROM profile           WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM users             WHERE id = $1`, [userId]);
     await client.query("COMMIT");

@@ -42,6 +42,7 @@ import {
 } from "../services/googleAuth.js";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
+import { presentCaseName } from "../lib/userName.js";
 
 const router: IRouter = Router();
 
@@ -184,7 +185,7 @@ router.get("/auth/google/callback", googleAuthLimiter, async (req, res): Promise
       if (identity.name?.trim()) {
         await db
           .update(profileTable)
-          .set({ userName: identity.name.trim().slice(0, 40) })
+          .set({ userName: presentCaseName(identity.name.trim().slice(0, 40)) })
           .where(eq(profileTable.id, profile.id));
       }
     } else if (!user.emailVerifiedAt) {

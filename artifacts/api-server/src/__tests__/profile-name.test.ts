@@ -43,10 +43,12 @@ describe("normalizeUserName", () => {
   });
 
   it("caps at 40 characters (after trimming)", () => {
-    const forty = "a".repeat(USER_NAME_MAX);
+    // Capitalised on purpose: an all-lowercase name is title-cased (see
+    // user-name-case.test.ts); this test is about length only.
+    const forty = "A" + "a".repeat(USER_NAME_MAX - 1);
     expect(normalizeUserName(forty)).toBe(forty);
     expect(normalizeUserName(`  ${forty}  `)).toBe(forty);
-    expect(normalizeUserName("a".repeat(USER_NAME_MAX + 1))).toBeNull();
+    expect(normalizeUserName("A" + "a".repeat(USER_NAME_MAX))).toBeNull();
   });
 });
 

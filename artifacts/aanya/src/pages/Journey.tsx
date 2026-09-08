@@ -30,6 +30,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { WeekMarkers } from "@/components/week/WeekMarkers";
 
 // ─── Day label helpers ────────────────────────────────────────────────────────
 
@@ -678,9 +679,13 @@ function GrowthIndicatorCard({ score }: { score: number }) {
 
 // ─── Kind streak card ─────────────────────────────────────────────────────────
 // Days shown up, counted gently. Backed by the kind-streak semantics on the
-// server: a missed day pauses the number — it never resets it.
+// server: the count of distinct days present — a missed day pauses the
+// number, it never resets it. It is a DIFFERENT number from the header's
+// "N days in" (days since the account started), and the old copy ("34 days,
+// gently") never said so, so the two read as a contradiction on one screen.
+// Now it says what it counts, and how it relates to the other.
 
-function KindStreakCard({ days }: { days: number }) {
+function KindStreakCard({ days, since }: { days: number; since: number }) {
   return (
     <div className="bg-card border border-primary/20 rounded-2xl p-5 flex items-center gap-4">
       <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/25 flex items-center justify-center shrink-0">
@@ -688,9 +693,12 @@ function KindStreakCard({ days }: { days: number }) {
       </div>
       <div className="min-w-0">
         <p className="font-serif text-lg text-foreground/90 leading-tight">
-          {days === 0 ? "Day one starts whenever you do" : `${days} ${days === 1 ? "day" : "days"}, gently`}
+          {days === 0
+            ? "Day one starts whenever you do"
+            : `${days} ${days === 1 ? "day" : "days"} you showed up`}
         </p>
         <p className="text-[12px] text-muted-foreground mt-0.5 leading-relaxed">
+          {days > 0 && since > days ? `Of ${since} since you started. ` : ""}
           Miss one? It just pauses, never resets.
         </p>
       </div>
@@ -764,11 +772,15 @@ export default function Journey() {
           </p>
         </div>
 
+        {/* ── Weekly review markers — above everything else (renders nothing
+            until a story exists) ──────────────────────────────────────── */}
+        <WeekMarkers />
+
         {/* ── Growth — calm, no loud number ─────────────────────────────────── */}
         <GrowthIndicatorCard score={growthScore} />
 
         {/* ── Kind streak ───────────────────────────────────────────────────── */}
-        <KindStreakCard days={journey.streak} />
+        <KindStreakCard days={journey.streak} since={journey.dayCounter} />
       </div>
 
       {/* ── Mood chart ─────────────────────────────────────────────────────── */}

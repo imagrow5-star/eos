@@ -74,6 +74,7 @@ interface SummaryBody {
   subscriptionCount: number;
   voiceUsageCount: number;
   crisisEventCount: number;
+  weeklyReviewCount: number;
   firstMessageAt: string | null;
   lastMessageAt: string | null;
 }
@@ -388,6 +389,8 @@ describe("GET /api/account/export/summary", () => {
       ["voiceUsageCount", "voiceUsage"],
       // Crisis floor — detection log (pattern names + country, never content).
       ["crisisEventCount", "crisisEvents"],
+      // Weekly review stories behind the Journey markers.
+      ["weeklyReviewCount", "weeklyReviews"],
     ];
 
     for (const [countKey, arrayKey] of pairs) {

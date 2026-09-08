@@ -76,6 +76,45 @@
   --wk-muted: hsl(var(--muted-foreground));
   --wk-green: hsl(var(--primary));
 }
+/* ── Weekly review markers (Journey) — eos-week-v2.html .rings/.ring/.disc ──
+   On the APP palette: the discs sit on the page, and the ring is drawn as a
+   gradient beneath a background-coloured mask, so the mask must be the page's
+   own background or a halo shows. Dawn is fixed; green follows the mode. */
+:root { --week-dawn: #F2C87F; --week-green: #53714F; }
+[data-mode='dark'] { --week-green: hsl(var(--primary)); }
+.week-markers {
+  display: flex; gap: 16px; overflow-x: auto; scrollbar-width: none;
+  font-family: var(--font-serif);
+}
+.week-markers::-webkit-scrollbar { display: none; }
+.week-marker {
+  flex: 0 0 auto; width: 82px; text-align: center; cursor: pointer;
+  background: none; border: 0; padding: 0; color: inherit; font: inherit;
+}
+.week-disc {
+  width: 78px; height: 78px; border-radius: 50%; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 10px; padding: 11px; background: hsl(var(--background));
+}
+/* Unviewed: a 3px dawn→green conic ring (gradient under a page-coloured mask). */
+.week-disc.is-new::before {
+  content: ''; position: absolute; inset: -3px; border-radius: 50%;
+  background: conic-gradient(from 210deg, var(--week-dawn), var(--week-green) 55%, var(--week-dawn));
+}
+.week-disc.is-new::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; background: hsl(var(--background));
+}
+/* Viewed: a plain hairline. */
+.week-disc.is-seen { border: 1px solid color-mix(in srgb, hsl(var(--foreground)) 15%, transparent); }
+.week-disc em {
+  position: relative; z-index: 2; font-style: normal; font-size: 12.5px; line-height: 1.25;
+  color: hsl(var(--foreground)); opacity: .8; text-align: center;
+}
+.week-disc.is-seen em { opacity: .32; }
+.week-marker > span { display: block; font-size: 12.5px; color: hsl(var(--muted-foreground)); }
+.week-marker.is-new > span { color: hsl(var(--foreground)); }
+.week-rule { height: 1px; background: color-mix(in srgb, hsl(var(--foreground)) 8%, transparent); }
+
 /* Card entrance: a small rise and fade — nothing more. */
 @keyframes week-rise {
   from { opacity: 0; transform: translateY(13px); }

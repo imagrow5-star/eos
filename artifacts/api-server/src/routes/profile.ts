@@ -14,7 +14,7 @@ import { ensureProfileThemeColumns, isMissingThemeColumnError } from "../service
 import { logger } from "../lib/logger.js";
 import { sanitizeGenderWords } from "../services/systemPrompt.js";
 import { ageToBand, normalizeCountryForStorage, AGE_BANDS } from "../lib/basics.js";
-import { normalizeUserName, USER_NAME_ERROR } from "../lib/userName.js";
+import { normalizeUserName, presentCaseName, USER_NAME_ERROR } from "../lib/userName.js";
 
 const router: IRouter = Router();
 
@@ -44,7 +44,7 @@ async function readOrCreateProfile(userId: number): Promise<Profile> {
     .from(profileTable)
     .where(eq(profileTable.userId, userId))
     .limit(1);
-  if (existing) return existing;
+  if (existing) return healNameCase(existing);
 
   // No row yet. There is no unique constraint on profile.user_id, so two
   // concurrent first requests used to race past the SELECT above and each
@@ -67,6 +67,26 @@ async function readOrCreateProfile(userId: number): Promise<Profile> {
       .returning();
     return created!;
   });
+}
+
+/**
+ * One-time repair for names stored all-lowercase before presentCaseName
+ * existed at the write paths ("naveen" rendered everywhere the product says
+ * the name). Every profile read passes through here; the UPDATE runs once
+ * per affected row and never again, because every write path now applies
+ * the same rule. The origin record (originalUserName) gets the same casing
+ * fix — it is the same name, not a different one, and "You told me your name
+ * is naveen." reads as the same bug.
+ */
+async function healNameCase(p: Profile): Promise<Profile> {
+  const userName = presentCaseName(p.userName);
+  const originalUserName = p.originalUserName == null ? null : presentCaseName(p.originalUserName);
+  if (userName === p.userName && originalUserName === p.originalUserName) return p;
+  const updates: Partial<typeof profileTable.$inferInsert> = {};
+  if (userName !== p.userName) updates.userName = userName;
+  if (originalUserName !== p.originalUserName) updates.originalUserName = originalUserName;
+  await db.update(profileTable).set(updates).where(eq(profileTable.id, p.id));
+  return { ...p, userName, originalUserName };
 }
 
 async function recordVisit(profileId: number, userId: number, currentVisitDates: string[]) {
