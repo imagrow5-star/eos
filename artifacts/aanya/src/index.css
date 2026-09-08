@@ -50,6 +50,50 @@
   padding-bottom: calc(var(--nav-h) + var(--safe-bottom));
 }
 
+/* ── Weekly review story (components/week) ──────────────────────────────────
+   The story has its own tokens, scoped to .week-story: LIGHT is the
+   prototype's palette exactly (eos-week-v2.html) — it is deliberately not the
+   app's cream/ink, which differ by a few points; DARK derives from the app's
+   night palette, because a full-bleed cream card at 2am is wrong for this
+   product. The dawn glow stays in both. Alpha steps are color-mixed from the
+   ink so they follow the mode. */
+.week-story {
+  --wk-cream: #FAF4EA;
+  --wk-ink: #302922;
+  --wk-muted: #8A8079;
+  --wk-green: #53714F;
+  --wk-dawn: #F2C87F;
+  --wk-ink-40: color-mix(in srgb, var(--wk-ink) 40%, transparent);
+  --wk-ink-14: color-mix(in srgb, var(--wk-ink) 14%, transparent);
+  --wk-ink-13: color-mix(in srgb, var(--wk-ink) 13%, transparent);
+  --wk-glow: color-mix(in srgb, var(--wk-dawn) 42%, transparent);
+  background: var(--wk-cream);
+  color: var(--wk-ink);
+}
+[data-mode='dark'] .week-story {
+  --wk-cream: hsl(var(--background));
+  --wk-ink: hsl(var(--foreground));
+  --wk-muted: hsl(var(--muted-foreground));
+  --wk-green: hsl(var(--primary));
+}
+/* Card entrance: a small rise and fade — nothing more. */
+@keyframes week-rise {
+  from { opacity: 0; transform: translateY(13px); }
+  to   { opacity: 1; transform: none; }
+}
+.week-slide { animation: week-rise .55s cubic-bezier(.2, .7, .3, 1) both; }
+/* The live progress bar IS the card timer: duration set inline by the shell;
+   tap-and-hold sets animation-play-state: paused. */
+@keyframes week-fill { to { width: 100%; } }
+.week-bar-live { animation: week-fill 7000ms linear forwards; }
+.week-bar-done { width: 100%; }
+.week-glow { background: radial-gradient(circle, var(--wk-glow), transparent 66%); }
+@media (prefers-reduced-motion: reduce) {
+  /* Fade only. The bar keeps filling: it is a timer, not decoration. */
+  @keyframes week-fade { from { opacity: 0; } to { opacity: 1; } }
+  .week-slide { animation: week-fade .3s ease-out both; }
+}
+
 @theme inline {
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
