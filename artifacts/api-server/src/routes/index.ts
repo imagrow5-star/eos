@@ -11,6 +11,7 @@ import chatRouter from "./chat";
 import memoryRouter from "./memory";
 import reflectionRouter from "./reflection";
 import journeyRouter from "./journey";
+import weeklyReviewsRouter from "./weeklyReviews";
 import ttsRouter from "./tts";
 import voicesRouter from "./voices";
 import goalsRouter from "./goals";
@@ -75,6 +76,7 @@ router.use(chatRouter);
 router.use(memoryRouter);
 router.use(reflectionRouter);
 router.use(journeyRouter);
+router.use(weeklyReviewsRouter); // Journey's weekly-review markers + viewed state
 router.use(ttsRouter);
 router.use(voicesRouter);
 router.use(goalsRouter);

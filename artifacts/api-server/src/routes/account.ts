@@ -70,8 +70,9 @@ function buildHtmlReport(data: {
   weeklyChapters: ExportRow[];
   sealedNotes: ExportRow[];
   crisisEvents: ExportRow[];
+  weeklyReviews: ExportRow[];
 }): string {
-  const { exportedAt, range, profile, messages, memoryFacts, memoryFeelings, wins, habits, habitCompletions, goals, moodScores, commitments, reminders, personalitySignals, personalizationState, weeklyChapters, sealedNotes, crisisEvents } = data;
+  const { exportedAt, range, profile, messages, memoryFacts, memoryFeelings, wins, habits, habitCompletions, goals, moodScores, commitments, reminders, personalitySignals, personalizationState, weeklyChapters, sealedNotes, crisisEvents, weeklyReviews } = data;
   const companionName = esc(profile?.companion_name ?? "Eos");
   const userPath = pathLabel(profile?.user_path as string);
 
@@ -198,6 +199,34 @@ function buildHtmlReport(data: {
           <span class="goal-status">${n.status === "resolved" ? `opened${n.resolved_at ? ` ${fmtDate(n.resolved_at as string)}` : ""}` : "still sealed"}</span>
           <span class="ts">written ${fmtDate(n.created_at as string)}</span>
         </div>`)
+        .join("\n");
+
+  // ── Weekly reviews ────────────────────────────────────────────────────────────
+  // The Journey marker stories: the marker fragment plus each card's text — the
+  // user's own words as they were shown back. Cards carry no scores or moods,
+  // so there is nothing else to render.
+  const cardLine = (c: Record<string, unknown>): string => {
+    switch (c.kind) {
+      case "thenNow": {
+        const then = (c.then ?? {}) as Record<string, unknown>;
+        const now = (c.now ?? {}) as Record<string, unknown>;
+        return `<li><span class="win-title">${esc(String(c.eyebrow ?? ""))}</span> &ldquo;${esc(String(then.quote ?? ""))}&rdquo; <span class="ts">${esc(String(then.stamp ?? ""))}</span> &rarr; &ldquo;${esc(String(now.quote ?? ""))}&rdquo; <span class="ts">${esc(String(now.stamp ?? ""))}</span></li>`;
+      }
+      case "pattern":
+        return `<li><span class="win-title">${esc(String(c.eyebrow ?? ""))}</span> &ldquo;${esc(String(c.phrase ?? ""))}&rdquo; <span class="ts">${esc(String(c.said ?? ""))}</span></li>`;
+      case "forward":
+        return `<li>${esc(String(c.text ?? ""))}${c.sub ? ` <span class="ts">${esc(String(c.sub))}</span>` : ""}</li>`;
+      default:
+        return `<li><span class="win-title">${esc(String(c.eyebrow ?? ""))}</span> ${esc(String(c.text ?? ""))}</li>`;
+    }
+  };
+  const weeklyReviewsHtml = weeklyReviews.length === 0
+    ? `<p class="empty">No weekly reviews yet.</p>`
+    : weeklyReviews
+        .map((r) => {
+          const cards = Array.isArray(r.cards) ? (r.cards as Array<Record<string, unknown>>) : [];
+          return `<p><span class="win-title">Week of ${fmtDate(r.week_start as string)}</span> &ldquo;${esc(String(r.fragment ?? ""))}&rdquo; <span class="ts">${r.viewed_at ? `opened ${fmtDate(r.viewed_at as string)}` : "not opened yet"}</span></p><ul>${cards.map(cardLine).join("")}</ul>`;
+        })
         .join("\n");
 
   // ── Crisis support moments ────────────────────────────────────────────────────
@@ -461,6 +490,11 @@ function buildHtmlReport(data: {
   </div>
 
   <div class="section">
+    <div class="section-title">Weekly reviews (${weeklyReviews.length})</div>
+    ${weeklyReviewsHtml}
+  </div>
+
+  <div class="section">
     <div class="section-title">Moments support resources were shown (${crisisEvents.length})</div>
     ${crisisEventsHtml}
   </div>
@@ -546,6 +580,7 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
   const pushEventsRange = buildRangeClause("sent_at", false, range, 2);
   const voiceUsageRange = buildRangeClause("call_started_at", false, range, 2);
   const crisisEventsRange = buildRangeClause("detected_at", false, range, 2);
+  const weeklyReviewsRange = buildRangeClause("created_at", false, range, 2);
 
   const [
     messagesResult,
@@ -571,6 +606,7 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
     subscriptionsResult,
     voiceUsageResult,
     crisisEventsResult,
+    weeklyReviewsResult,
   ] = await Promise.all([
     pool.query(
       `SELECT role, content, is_morning_note, created_at FROM messages WHERE user_id = $1${messagesRange.clause} ORDER BY created_at ASC`,
@@ -682,6 +718,13 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
        FROM crisis_events WHERE user_id = $1${crisisEventsRange.clause} ORDER BY detected_at ASC`,
       [userId, ...crisisEventsRange.params],
     ),
+    // Weekly review stories behind the Journey markers — the fragment shown on
+    // the marker and the cards of the story it opens (both encrypted at rest).
+    pool.query(
+      `SELECT week_start, week_end, fragment, cards, viewed_at, created_at
+       FROM weekly_reviews WHERE user_id = $1${weeklyReviewsRange.clause} ORDER BY week_start ASC`,
+      [userId, ...weeklyReviewsRange.params],
+    ),
   ]);
 
   // ── Decrypt for export ─────────────────────────────────────────────────────
@@ -784,6 +827,14 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
       ...r,
       pattern_matched: dText(r.pattern_matched, "crisis_events.pattern_matched"),
     })),
+    weeklyReviews: weeklyReviewsResult.rows.map((r) => {
+      const cardsText = dText(r.cards, "weekly_reviews.cards");
+      let cards: unknown = cardsText;
+      if (typeof cardsText === "string") {
+        try { cards = JSON.parse(cardsText); } catch { /* leave as stored */ }
+      }
+      return { ...r, fragment: dText(r.fragment, "weekly_reviews.fragment"), cards };
+    }),
   };
 }
 
@@ -921,6 +972,7 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
       subscriptionResult,
       voiceUsageCountResult,
       crisisEventCountResult,
+      weeklyReviewCountResult,
     ] = await Promise.all([
       pool.query(
         `SELECT COUNT(*) AS count,
@@ -1011,6 +1063,10 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
         `SELECT COUNT(*) AS count FROM crisis_events WHERE user_id = $1`,
         [userId],
       ),
+      pool.query(
+        `SELECT COUNT(*) AS count FROM weekly_reviews WHERE user_id = $1`,
+        [userId],
+      ),
     ]);
 
     res.json({
@@ -1035,6 +1091,7 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
       subscriptionCount: parseInt(subscriptionResult.rows[0].count, 10),
       voiceUsageCount: parseInt(voiceUsageCountResult.rows[0].count, 10),
       crisisEventCount: parseInt(crisisEventCountResult.rows[0].count, 10),
+      weeklyReviewCount: parseInt(weeklyReviewCountResult.rows[0].count, 10),
       firstMessageAt: msgResult.rows[0].first_at ?? null,
       lastMessageAt:  msgResult.rows[0].last_at  ?? null,
     });

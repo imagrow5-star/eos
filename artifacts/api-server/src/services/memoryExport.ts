@@ -55,6 +55,8 @@ export interface ExportSourcePayload {
   storyThreads: Row[];
   crisisEvents: Row[];
   subscriptions: Row[];
+  /** Weekly review stories (Journey markers): fragment + cards, decrypted. */
+  weeklyReviews?: Row[];
 }
 
 /** Account-level facts that live on the users row (not the profile row). */
@@ -153,6 +155,15 @@ export function shapeMemoryExport(payload: ExportSourcePayload, basics: AccountB
       themes: c.themes,
       generated_at: c.generated_at,
       revealed_at: c.revealed_at,
+    })),
+
+    weekly_reviews: (payload.weeklyReviews ?? []).map((r) => ({
+      week_start: r.week_start,
+      week_end: r.week_end,
+      fragment: r.fragment,
+      cards: r.cards,
+      viewed_at: r.viewed_at,
+      created_at: r.created_at,
     })),
 
     sealed_notes: payload.sealedNotes.map((n) => ({

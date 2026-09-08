@@ -18,3 +18,4 @@ export * from "./push";
 export * from "./billing";
 export * from "./crisisEvents";
 export * from "./leads";
+export * from "./weeklyReviews";
