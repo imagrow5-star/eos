@@ -18,7 +18,9 @@
  *  - quotes are verbatim: the fragment must be a substring of a stored
  *    message; then/now pairs come from the chapter engine's verbatim gate;
  *  - minimum three real cards or no story — never padded;
- *  - the grief/crisis guardrail suppresses "did" and "forward".
+ *  - the grief/crisis guardrail suppresses "forward" — the forward-looking
+ *    register. "did" stays: a win is the person's own first-person account
+ *    of something they did, not praise, and someone grieving still did it.
  */
 
 import { type StoryCard as WeekCard, FRAGMENT_MAX } from "./stories.js";
@@ -365,8 +367,9 @@ export function composeStory(src: WeekSources, proposal: ModelProposal = {}): Co
   const moment = validateMoment(proposal.moment);
   if (moment) cards.push({ kind: "moment", eyebrow: range, text: moment });
 
-  // 2 — did (suppressed under the guardrail).
-  if (!src.guardrail && src.wins.length > 0) {
+  // 2 — did. Not suppressed under the guardrail: it is their own account of
+  // something they did, in their words.
+  if (src.wins.length > 0) {
     const latest = [...src.wins].sort((a, b) => b.localDate.localeCompare(a.localDate))[0]!;
     const text = toSecondPerson(latest.content);
     if (text.length >= 8) {

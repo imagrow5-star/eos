@@ -3,7 +3,7 @@
  *
  * Pins the hard rules structurally:
  *  - fewer than five messages → no story; fewer than three cards → no story;
- *  - the grief/crisis guardrail suppresses "did" and "forward";
+ *  - the grief/crisis guardrail suppresses "forward" but keeps "did";
  *  - the moment card is rejected when it names a feeling, praises, or reads
  *    between the lines;
  *  - the fragment is verbatim or nothing;
@@ -222,9 +222,14 @@ describe("composeStory", () => {
     expect((r.story!.cards[0] as { eyebrow: string }).eyebrow).toBe("On Thursday");
   });
 
-  it("the grief/crisis guardrail suppresses 'did' and 'forward'", () => {
+  it("the grief/crisis guardrail suppresses 'forward' but keeps 'did' — their own account of what they did", () => {
     const r = composeStory(sources({ guardrail: true }));
-    expect(r.story!.cards.map((c) => c.kind)).toEqual(["thenNow", "open", "pattern"]);
+    expect(r.story!.cards.map((c) => c.kind)).toEqual(["did", "thenNow", "open", "pattern"]);
+  });
+
+  it("under the guardrail, a week with a win and a recurring word still makes a story", () => {
+    const r = composeStory(sources({ guardrail: true, quotePairs: [] }));
+    expect(r.story!.cards.map((c) => c.kind)).toEqual(["did", "open", "pattern"]);
   });
 
   it("fewer than three real cards is no story — never padded", () => {

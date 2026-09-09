@@ -6,7 +6,7 @@
  *  1. A real week of messages, a win and an open commitment → one story row,
  *     with the marker fragment verbatim from a message.
  *  2. One row per (user, week): the second run is "exists"; force replaces.
- *  3. Bereavement path and a crisis line this week trip the guardrail; the
+ *  3. Bereavement path and a crisis line this week trip the guardrail (no "forward", "did" kept); the
  *     crisis line never reaches the fragment.
  *  4. The sweep respects the Sunday-evening window; the internal route is
  *     HMAC-gated.
@@ -174,12 +174,12 @@ describe.skipIf(!DB)("generateWeeklyReviewForUser", () => {
     });
   });
 
-  it("the bereavement path suppresses 'did' and 'forward'", async () => {
+  it("the bereavement path suppresses 'forward' and keeps 'did'", async () => {
     await db.update(profileTable).set({ userPath: "bereavement" }).where(eq(profileTable.userId, userId));
     const r = await generateWeeklyReviewForUser(userId, { now: SUNDAY_EVENING, force: true });
     expect(r.reviewId).toBeTypeOf("number");
     const [view] = await listStoriesOfKind(userId, "week", 6);
-    expect(view!.cards.map((c) => c.kind)).toEqual(["thenNow", "open", "pattern"]);
+    expect(view!.cards.map((c) => c.kind)).toEqual(["did", "thenNow", "open", "pattern"]);
     await db.update(profileTable).set({ userPath: "breakup" }).where(eq(profileTable.userId, userId));
   });
 
@@ -188,7 +188,7 @@ describe.skipIf(!DB)("generateWeeklyReviewForUser", () => {
     const r = await generateWeeklyReviewForUser(userId, { now: SUNDAY_EVENING, force: true });
     expect(r.reviewId).toBeTypeOf("number");
     const [view] = await listStoriesOfKind(userId, "week", 6);
-    expect(view!.cards.map((c) => c.kind)).toEqual(["thenNow", "open", "pattern"]);
+    expect(view!.cards.map((c) => c.kind)).toEqual(["did", "thenNow", "open", "pattern"]);
     expect(view!.fragment).not.toMatch(/kill myself/);
     expect(JSON.stringify(view!.cards)).not.toMatch(/kill myself/);
     await pool.query(`DELETE FROM messages WHERE id = $1`, [crisisId]);
