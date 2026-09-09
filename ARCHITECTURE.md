@@ -13,7 +13,7 @@ Eos is one web application made of two halves that ship together:
 
 In production the backend serves the compiled frontend files itself, so the whole product lives on **one web address** (eoscompanion.com). Every frontend request to `/api/...` goes to the same server.
 
-There is also a third, separate program: **the daily-email job** (`artifacts/daily-email`), which runs on a schedule (hourly), sends the daily morning emails, and pings two "internal" API endpoints that trigger the weekly chapter generation and the morning push notifications.
+There is also a third, separate program: **the scheduler** (`artifacts/daily-email`, the name is historical), which runs hourly and pings three "internal" API endpoints that trigger the weekly chapter, the weekly reflection, and the Journey stories. Eos has no outbound channel: nothing it makes is emailed or pushed; it waits in the app.
 
 ---
 
@@ -110,7 +110,7 @@ What is *not* encrypted (worth knowing): emails and password hashes (hashes are 
 |---|---|---|
 | `artifacts/api-server` | **Production backend** | Express server: auth, chat, voice, memory, chapters, push, export; serves the built frontend. |
 | `artifacts/aanya` | **Production frontend** | The React app users see (Aanya was the product's earlier name). |
-| `artifacts/daily-email` | **Scheduled job** | Hourly run (Render Cron Job `eos-hourly-sweeps`, defined in `render.yaml`, cron `0 * * * *`): sends the daily morning email (6–9 AM in each user's timezone, once per day) and "you said 4 PM" commitment-nudge emails, and triggers the weekly-chapter, morning-push, weekly-reflection and stories sweeps via internal HMAC-protected endpoints. Every email has a one-click unsubscribe link. |
+| `artifacts/daily-email` | **Scheduler** | Hourly run (Render Cron Job `eos-hourly-sweeps`, defined in `render.yaml`, cron `0 * * * *`): triggers the weekly-chapter, weekly-reflection and stories sweeps via internal HMAC-protected endpoints. Sends nothing to anyone; needs only `APP_URL` and `SESSION_SECRET`. |
 | `artifacts/eos-video` | Side project | A Remotion-style promo/demo video built in React. Not part of the running product. |
 | `artifacts/mockup-sandbox` | Side project | A UI mockup playground with its own copy of the component library. Not part of the running product. |
 | `lib/db` | Shared library | Database schema (Drizzle), the encryption layer, and the shared connection pool. |
@@ -130,7 +130,7 @@ What is *not* encrypted (worth knowing): emails and password hashes (hashes are 
 | Variable | What it is | What breaks if missing |
 |---|---|---|
 | `DATABASE_URL` | Postgres connection string | Server won't start at all. |
-| `SESSION_SECRET` | Secret that signs login sessions, voice tokens, internal job tokens, and unsubscribe links | Server won't start. **Changing it logs everyone out and breaks in-flight voice calls / emailed unsubscribe links.** |
+| `SESSION_SECRET` | Secret that signs login sessions, voice tokens, and internal job tokens | Server won't start. **Changing it logs everyone out and breaks in-flight voice calls.** |
 | `DATA_ENCRYPTION_KEY` | Master encryption key for user content (32 bytes, base64/hex) | Server refuses to boot. **Losing it permanently destroys all encrypted user data.** |
 | `PORT` | Port to listen on | Server won't start (host platforms set this automatically). |
 | `APP_URL` | Public URL used inside emails | In production the server throws when building any email link; without it (on Replit) links fall back to `REPLIT_DOMAINS`. Wrong/missing = verification and reset emails point to the wrong place → nobody can sign up. |
@@ -140,19 +140,18 @@ What is *not* encrypted (worth knowing): emails and password hashes (hashes are 
 | Variable | Feature | Behavior when missing |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | All AI replies | App switches to canned "mock" replies; memory/extraction silently stops. Users would notice immediately. |
-| `RESEND_API_KEY` | All email (verification, reset, daily notes) | Emails are skipped and links only logged to the server console — **new users can never verify**, so effectively signup is broken in production. |
+| `RESEND_API_KEY` | Transactional email only (verification, reset, account changes) | Emails are skipped and links only logged to the server console — **new users can never verify**, so effectively signup is broken in production. |
 | `RESEND_FROM_EMAIL` | Email "from" address | Falls back to `Eos <hello@eoscompanion.com>`. |
 | `ELEVENLABS_API_KEY` | Voice: TTS playback + voice calls | `/api/tts` returns 503; voice-call setup fails with a clear reason; romantic voices unavailable. |
 | `ELEVENLABS_AGENT_ID` | Real-time voice calls | Voice call button reports "not configured". |
 | `ELEVENLABS_VOICE_ID` | Optional global TTS fallback voice | Falls back to Rachel (hardcoded default). |
-| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web push notifications | Push endpoints throw; subscribe/test push fails. (Each environment needs its own pair.) |
 | `VOICE_LLM_MODEL` | Voice-call model override | Defaults to `claude-haiku-4-5`. Set to a Sonnet model ID to roll back voice quality/latency tradeoff. |
 | `VOICE_CALL_ENABLED` | Kill switch for voice calls | Anything but `"false"` = enabled. |
 | `FRONTEND_DIR` | Where the built frontend lives | Defaults to `../aanya/dist/public`; if wrong, the API works but the site serves no pages ("API only" warning in logs). |
 | `AUTH_RATE_LIMIT_MAX`, `FORGOT_RATE_LIMIT_MAX` | Auth rate-limit tuning | Default 20 and 5 per 15 min. Mainly for tests. |
 | `LOG_LEVEL` | Log verbosity | Defaults to `info`. |
 
-**Daily-email job only:** `DATABASE_URL`, `SESSION_SECRET` (must match the API server's — it derives the internal-endpoint tokens and unsubscribe links from it), `ANTHROPIC_API_KEY`, `RESEND_API_KEY`, `APP_URL`, plus `DAILY_EMAIL_DRY_RUN=true` (preview without sending) and `DAILY_EMAIL_ONLY_USER=<id>` (limit to one user for testing).
+**Scheduler only:** `APP_URL` and `SESSION_SECRET` (must match the API server's — it derives the internal-endpoint tokens from it), plus `SCHEDULER_DRY_RUN=true` (log what would be called, call nothing) and `SCHEDULER_ONLY_USER=<id>` (scope every sweep to one user). No database access, no encryption key, no model or email keys.
 
 **Frontend build only:** `BASE_PATH` (the URL sub-path the app is built for — normally `/`) and `PORT` are required by `artifacts/aanya/vite.config.ts` even for a plain build; a fresh checkout's `pnpm build` fails without them.
 
@@ -174,9 +173,7 @@ What is *not* encrypted (worth knowing): emails and password hashes (hashes are 
 | "Voice call connects but the companion talks like a stranger" | The voice token maps the call to the user — check `voice-llm: missing or invalid user token` in logs (`routes/voice-llm.ts`); confirm `SESSION_SECRET` matches between environments. |
 | "Listen button does nothing" | `/api/tts` — check `ELEVENLABS_API_KEY`, ElevenLabs quota, and logs for `ElevenLabs API returned error`. `routes/tts.ts`. |
 | "I said something twice in the transcript / duplicate messages" | Voice dedup logic in `persistVoiceTurn` (`routes/voice-llm.ts`); one-time repair sweep in `app.ts`. |
-| "No daily email arrived" | Daily-email job logs (runs hourly; sends only 7–9 AM local time, once/day); user's `timezone` and `daily_email_opt_out` in `profile`; `artifacts/daily-email/src/run.ts`. |
 | "No weekly chapter appeared" | Chapters generate Sunday evening/Monday morning local time via the internal sweep — logs for `chapter sweep finished`; `services/chapters/generate.ts`. |
-| "Push notifications stopped" | Subscriptions are auto-pruned after repeated failures or key rotation; cap is 2 pushes/user/day. `services/push.ts`. |
 | "Site shows a blank page but API works" | Frontend bundle missing — logs for `Frontend bundle not found`; check the build + `FRONTEND_DIR`. `app.ts`. |
 | "Something crashed / users see 'Something went wrong'" | All unhandled API errors log as `Unhandled API error` with a stack trace (pino JSON logs). Every Anthropic call logs an `ai_usage` line — grep those to watch cost per feature. |
 | "Is user data encrypted?" | `lib/db/src/crypto.ts` + `encryptedColumns.ts`; boot check in `api-server/src/index.ts`. |
