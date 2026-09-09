@@ -10,6 +10,57 @@
 import { pool, decryptText, encryptText } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 
+/**
+ * Boot-time safety net for the story tables and columns, one statement per
+ * query (autocommit) so no lock is held across statements, and each ALTER
+ * only when the column is missing: ALTER TABLE takes AccessExclusiveLock even
+ * with IF NOT EXISTS, and doing that on goals / habits in the same
+ * transaction as other DDL deadlocked against a concurrent account-deletion
+ * transaction (which holds FK row locks on those tables) in CI.
+ */
+export async function ensureStoryTables(): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS stories (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES users(id),
+      kind text NOT NULL,
+      period_start text NOT NULL,
+      period_end text NOT NULL,
+      subject_id integer,
+      fragment text NOT NULL,
+      cards text NOT NULL,
+      viewed_at timestamp,
+      created_at timestamp NOT NULL DEFAULT now()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS stories_user_kind_period_idx ON stories (user_id, kind, period_start)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS story_drops (
+      id serial PRIMARY KEY,
+      user_id integer NOT NULL REFERENCES users(id),
+      kind text NOT NULL,
+      subject_id integer,
+      stage text NOT NULL,
+      text text NOT NULL,
+      reasons jsonb NOT NULL DEFAULT '[]'::jsonb,
+      created_at timestamp NOT NULL DEFAULT now()
+    )`);
+  const columns: Array<[string, string, string]> = [
+    ["goals", "let_go_at", "timestamp"],
+    ["goals", "last_spoke_at", "timestamp"],
+    ["goals", "let_go_offered_at", "timestamp"],
+    ["goal_tasks", "completed_at", "timestamp"],
+    ["habits", "last_spoke_at", "timestamp"],
+  ];
+  for (const [table, column, type] of columns) {
+    const { rows } = await pool.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`,
+      [table, column],
+    );
+    if (rows.length > 0) continue;
+    await pool.query(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${column} ${type}`);
+  }
+}
+
 export async function migrateWeeklyReviewsToStories(): Promise<void> {
   const exists = await pool.query(`SELECT to_regclass('public.weekly_reviews') AS t`);
   if (!exists.rows[0]?.t) return;

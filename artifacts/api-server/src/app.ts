@@ -8,7 +8,7 @@ import pinoHttp from "pino-http";
 import { pool } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
-import { migrateWeeklyReviewsToStories } from "./services/storiesMigration";
+import { ensureStoryTables, migrateWeeklyReviewsToStories } from "./services/storiesMigration";
 import { shouldServeLanding } from "./lib/landingRoute";
 import path from "node:path";
 import fs from "node:fs";
@@ -70,40 +70,12 @@ pool
   .catch((err) => logger.error({ err }, "Failed to ensure leads table"));
 
 // Safety-net: the story system (Journey markers + the stories they open).
-// Authoritative definition: lib/db/src/schema/stories.ts. The weekly_reviews
-// table (stage 2–3 of the weekly review) is superseded; it is dropped once
-// its rows have been carried across (see migrateWeeklyReviewsToStories).
-pool
-  .query(`
-    CREATE TABLE IF NOT EXISTS stories (
-      id serial PRIMARY KEY,
-      user_id integer NOT NULL REFERENCES users(id),
-      kind text NOT NULL,
-      period_start text NOT NULL,
-      period_end text NOT NULL,
-      subject_id integer,
-      fragment text NOT NULL,
-      cards text NOT NULL,
-      viewed_at timestamp,
-      created_at timestamp NOT NULL DEFAULT now()
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS stories_user_kind_period_idx ON stories (user_id, kind, period_start);
-    CREATE TABLE IF NOT EXISTS story_drops (
-      id serial PRIMARY KEY,
-      user_id integer NOT NULL REFERENCES users(id),
-      kind text NOT NULL,
-      subject_id integer,
-      stage text NOT NULL,
-      text text NOT NULL,
-      reasons jsonb NOT NULL DEFAULT '[]'::jsonb,
-      created_at timestamp NOT NULL DEFAULT now()
-    );
-    ALTER TABLE goals ADD COLUMN IF NOT EXISTS let_go_at timestamp;
-    ALTER TABLE goals ADD COLUMN IF NOT EXISTS last_spoke_at timestamp;
-    ALTER TABLE goals ADD COLUMN IF NOT EXISTS let_go_offered_at timestamp;
-    ALTER TABLE goal_tasks ADD COLUMN IF NOT EXISTS completed_at timestamp;
-    ALTER TABLE habits ADD COLUMN IF NOT EXISTS last_spoke_at timestamp;
-  `)
+// Authoritative definition: lib/db/src/schema/stories.ts. Runs one statement
+// at a time and only ALTERs a table when a column is actually missing — a
+// batched ALTER on hot tables (goals, habits) takes AccessExclusiveLock while
+// holding earlier locks, which deadlocked against a concurrent account
+// deletion in CI. Carries weekly_reviews across, then drops it.
+ensureStoryTables()
   .then(() => migrateWeeklyReviewsToStories())
   .catch((err) => logger.error({ err }, "Failed to ensure story tables"));
 
