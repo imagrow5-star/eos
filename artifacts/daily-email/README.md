@@ -4,7 +4,7 @@ A one-shot Node.js script that sends personalized morning notes to all eligible 
 
 ## How it works
 
-- **Runs as a Replit Scheduled Deployment** (separate from the main API server deployment)
+- **Runs as a Render Cron Job** (`eos-hourly-sweeps`, defined in the repo-root `render.yaml`), separate from the web service
 - Cron: `0 * * * *` — every hour on the hour
 - Each run checks every user's local time and only sends emails to users whose clock shows **6–9 AM** in their timezone
 - Skips users who have already received an email today, opted out, or have no personal data yet
@@ -16,19 +16,29 @@ A one-shot Node.js script that sends personalized morning notes to all eligible 
    pnpm --filter @workspace/daily-email run build
    ```
 
-2. **In the Replit Publishing panel**, create a new deployment:
-   - Deployment type: **Scheduled**
-   - Build command: `pnpm --filter @workspace/daily-email run build`
-   - Run command: `node --enable-source-maps artifacts/daily-email/dist/index.mjs`
-   - Cron schedule: `0 * * * *`
+2. **In the Render dashboard**, either apply the repo's `render.yaml` as a Blueprint
+   (New → Blueprint → this repo) or create a Cron Job by hand with the same values:
+   - Build command: `npx --yes pnpm@10 install --frozen-lockfile && npx --yes pnpm@10 --filter @workspace/daily-email run build`
+   - Start command: `node --enable-source-maps artifacts/daily-email/dist/index.mjs`
+   - Schedule: `0 * * * *`
+   - Region: the web service's region (Oregon)
 
-3. **Environment variables** — the scheduled deployment needs the same secrets as the API Server:
-   - `DATABASE_URL`
+3. **Environment variables** — the cron job needs the same secrets as the web service.
+   `SESSION_SECRET` and the data-encryption key must be byte-for-byte identical to the
+   web service's, or the internal triggers return 401 and encrypted columns fail to read.
+   - `DATABASE_URL` (and `DATABASE_SSL` if the web service sets it)
+   - `SESSION_SECRET`
+   - `DATA_ENCRYPTION_KEY` (or the KMS set: `DATA_ENCRYPTION_KEY_WRAPPED` + AWS credentials)
    - `ANTHROPIC_API_KEY`
    - `RESEND_API_KEY`
    - `RESEND_FROM_EMAIL`
-   - `SESSION_SECRET`
-   - `APP_URL` (optional — defaults to `https://eoscompanion.com`)
+   - `LOG_HASH_SALT`
+   - `APP_URL` (`https://eoscompanion.com`)
+   - `NODE_ENV=production`, `NODE_VERSION=22`
+
+4. **First run**: open the cron job → **Trigger Run**. The log should show four
+   "… triggered" lines with `status: 200` (chapters, push, reflection, stories),
+   then `Daily email job complete`.
 
 ## Local test run
 

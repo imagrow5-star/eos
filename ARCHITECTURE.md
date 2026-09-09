@@ -110,7 +110,7 @@ What is *not* encrypted (worth knowing): emails and password hashes (hashes are 
 |---|---|---|
 | `artifacts/api-server` | **Production backend** | Express server: auth, chat, voice, memory, chapters, push, export; serves the built frontend. |
 | `artifacts/aanya` | **Production frontend** | The React app users see (Aanya was the product's earlier name). |
-| `artifacts/daily-email` | **Scheduled job** | Hourly run (Replit Scheduled Deployment, cron `0 * * * *`): sends the daily morning email (6–9 AM in each user's timezone, once per day) and "you said 4 PM" commitment-nudge emails, and triggers the weekly-chapter + morning-push sweeps via internal HMAC-protected endpoints. Every email has a one-click unsubscribe link. |
+| `artifacts/daily-email` | **Scheduled job** | Hourly run (Render Cron Job `eos-hourly-sweeps`, defined in `render.yaml`, cron `0 * * * *`): sends the daily morning email (6–9 AM in each user's timezone, once per day) and "you said 4 PM" commitment-nudge emails, and triggers the weekly-chapter, morning-push, weekly-reflection and stories sweeps via internal HMAC-protected endpoints. Every email has a one-click unsubscribe link. |
 | `artifacts/eos-video` | Side project | A Remotion-style promo/demo video built in React. Not part of the running product. |
 | `artifacts/mockup-sandbox` | Side project | A UI mockup playground with its own copy of the component library. Not part of the running product. |
 | `lib/db` | Shared library | Database schema (Drizzle), the encryption layer, and the shared connection pool. |

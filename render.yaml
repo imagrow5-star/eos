@@ -1,0 +1,69 @@
+# Render Blueprint — the hourly scheduler.
+#
+# The web service (eoscompanion.com, `eos-oug8.onrender.com`) was created by
+# hand in the Render dashboard and is deliberately NOT described here: a
+# Blueprint only manages services it created, and listing an existing one
+# under the same name would make Render try to create a second copy. This
+# file adds the one thing the dashboard does not have yet — the cron job
+# that replaced the Replit Scheduled Deployment.
+#
+# What the job does, every hour on the hour (artifacts/daily-email/src/run.ts):
+#   - triggers the api-server's internal sweeps over HMAC-protected endpoints:
+#     weekly chapters, morning push, weekly reflection, stories (the daily
+#     Goals / Routines cards and the Sunday weekly story);
+#   - the morning-email pass (6–9 AM in each person's timezone, once a day)
+#     and the timed commitment-nudge emails.
+# The api-server decides who is inside their local window; every step is
+# idempotent per (user, day/week), so an hourly cadence is safe.
+#
+# Toolchain: this is a pnpm-10 workspace (catalog: and overrides live in
+# pnpm-workspace.yaml, which pnpm 9 cannot read), so the build pins pnpm 10
+# through npx rather than relying on runtime detection. Node 22 matches CI.
+#
+# Secrets: the values below marked `sync: false` are prompted for when the
+# Blueprint is first applied and are stored in the env group, never in git.
+# Two of them MUST be identical to the web service's: SESSION_SECRET (the
+# internal endpoints verify an HMAC derived from it) and the data-encryption
+# key (the job reads encrypted columns directly).
+
+services:
+  - type: cron
+    name: eos-hourly-sweeps
+    runtime: node
+    region: oregon            # same region as the web service (private DB URL only resolves in-region)
+    plan: starter
+    branch: main
+    schedule: "0 * * * *"     # every hour on the hour, UTC
+    buildCommand: npx --yes pnpm@10 install --frozen-lockfile && npx --yes pnpm@10 --filter @workspace/daily-email run build
+    startCommand: node --enable-source-maps artifacts/daily-email/dist/index.mjs
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: APP_URL
+        value: https://eoscompanion.com
+      - fromGroup: eos-scheduler-secrets
+
+envVarGroups:
+  - name: eos-scheduler-secrets
+    envVars:
+      # Copy each of these from the web service's Environment tab.
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: DATA_ENCRYPTION_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false
+      - key: LOG_HASH_SALT
+        sync: false
+      # Only if the web service sets them:
+      #   DATABASE_SSL                 (require / verify — see lib/db/src/index.ts)
+      #   DATA_ENCRYPTION_KEY_WRAPPED + AWS_REGION + AWS_ACCESS_KEY_ID +
+      #   AWS_SECRET_ACCESS_KEY        (KMS mode instead of DATA_ENCRYPTION_KEY)
