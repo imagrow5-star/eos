@@ -11,7 +11,7 @@ import chatRouter from "./chat";
 import memoryRouter from "./memory";
 import reflectionRouter from "./reflection";
 import journeyRouter from "./journey";
-import weeklyReviewsRouter from "./weeklyReviews";
+import weeklyReviewsRouter, { weeklyReviewsInternalRouter } from "./weeklyReviews";
 import ttsRouter from "./tts";
 import voicesRouter from "./voices";
 import goalsRouter from "./goals";
@@ -52,6 +52,9 @@ router.use(pushInternalRouter);
 // Weekly reflection sweep — same hourly caller, same HMAC scheme; idempotent
 // per (user, week) so calling every hour is safe.
 router.use(reflectionInternalRouter);
+// Weekly review (Journey markers) sweep — same caller, runs after the chapter
+// sweep; one row per (user, week) so hourly calls are safe.
+router.use(weeklyReviewsInternalRouter);
 // Billing webhook — called by Dodo's servers; authenticated per-delivery by
 // the Standard Webhooks HMAC over the raw body (raw-body mount in app.ts).
 router.use(billingWebhookRouter);
