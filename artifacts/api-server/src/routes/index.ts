@@ -4,7 +4,6 @@ import { attachEntitlements } from "../middleware/entitlements.js";
 import healthRouter from "./health";
 import authRouter from "./auth";
 import googleAuthRouter from "./googleAuth";
-import emailRouter from "./email";
 import onboardingRouter from "./onboarding";
 import profileRouter from "./profile";
 import chatRouter from "./chat";
@@ -22,7 +21,6 @@ import humeLlmRouter from "./humeLlm";
 import voiceAgentRouter from "./voice-agent";
 import chaptersRouter, { chaptersInternalRouter } from "./chapters";
 import { reflectionInternalRouter } from "./reflection-internal";
-import pushRouter, { pushInternalRouter } from "./push";
 import billingRouter, { billingPublicRouter } from "./billing";
 import billingWebhookRouter from "./billingWebhook";
 import elevenLabsWebhookRouter from "./elevenLabsWebhook";
@@ -35,7 +33,6 @@ const router: IRouter = Router();
 router.use(healthRouter);
 router.use(authRouter);
 router.use(googleAuthRouter); // "Continue with Google" (additional sign-in option)
-router.use(emailRouter);  // one-click unsubscribe — no auth
 router.use(leadsRouter);  // landing-page email capture (waitlist) — no auth
 // ElevenLabs Conversational AI custom-LLM callback — called by ElevenLabs
 // servers (no browser session); authenticated per-call via HMAC voice token.
@@ -44,11 +41,9 @@ router.use(voiceLlmRouter);
 // per-call by the HMAC voice token (Bearer or custom_session_id), then
 // delegates to the same voice brain as the ElevenLabs route.
 router.use(humeLlmRouter);
-// Weekly-chapter sweep — called hourly by the daily-email scheduled job;
+// Weekly-chapter sweep — called hourly by the scheduler (artifacts/daily-email);
 // authenticated per-call via HMAC internal token (no browser session).
 router.use(chaptersInternalRouter);
-// Morning push-nudge sweep — same caller, same HMAC scheme.
-router.use(pushInternalRouter);
 // Weekly reflection sweep — same hourly caller, same HMAC scheme; idempotent
 // per (user, week) so calling every hour is safe.
 router.use(reflectionInternalRouter);
@@ -88,7 +83,6 @@ router.use(commitmentsRouter);
 router.use(accountRouter);
 router.use(voiceAgentRouter);
 router.use(chaptersRouter);
-router.use(pushRouter);
 router.use(billingRouter); // /billing/me + /billing/cancel (own subscription only)
 router.use(settingsRouter); // language + voice picker preferences (Sprint 1.5)
 

@@ -11,7 +11,6 @@ export default defineConfig({
     // Keep test runs from sending real emails (see the setup file's rationale)
     setupFiles: [
       "src/__tests__/setup/suppress-resend.ts",
-      "src/__tests__/setup/vapid-env.ts",
       "src/__tests__/setup/encryption-env.ts",
       "src/__tests__/setup/rate-limit-env.ts",
       "src/__tests__/setup/subscription-gate-env.ts",

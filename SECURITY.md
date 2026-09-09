@@ -10,7 +10,7 @@ Last updated: August 2026.
 ## 1. Architecture in one paragraph
 
 Eos is an Express API (`artifacts/api-server`) over Postgres, a React client
-(`artifacts/aanya`), and an hourly job (`artifacts/daily-email`). Sensitive
+(`artifacts/aanya`), and an hourly scheduler (`artifacts/daily-email`) that only calls internal endpoints. Sensitive
 user content is encrypted at the application layer before it reaches the
 database, with AES-256-GCM under a single 32-byte master key. Ciphertext is
 stored in the same columns as `enc:v1:<base64(iv ‖ tag ‖ ciphertext)>`, with
@@ -46,7 +46,7 @@ to the design and stated in the "not protected" list below.
 ## 3. Key custody
 
 Two modes, resolved once at boot by `initDataKey()` (`lib/db/src/crypto.ts`),
-awaited by both `api-server/src/index.ts` and `daily-email/src/run.ts`:
+awaited by `api-server/src/index.ts` (the scheduler never reads the database):
 
 - **Raw mode** — `DATA_ENCRYPTION_KEY` holds the 32-byte key (base64/hex).
   Anyone who can read the environment holds the key.

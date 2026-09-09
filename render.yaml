@@ -8,29 +8,27 @@
 # that replaced the Replit Scheduled Deployment.
 #
 # What the job does, every hour on the hour (artifacts/daily-email/src/run.ts):
-#   - triggers the api-server's internal sweeps over HMAC-protected endpoints:
-#     weekly chapters, morning push, weekly reflection, stories (the daily
-#     Goals / Routines cards and the Sunday weekly story);
-#   - the morning-email pass (6–9 AM in each person's timezone, once a day)
-#     and the timed commitment-nudge emails.
-# The api-server decides who is inside their local window; every step is
-# idempotent per (user, day/week), so an hourly cadence is safe.
+# it calls three of the api-server's internal sweep endpoints, in order —
+# weekly chapters, weekly reflection, then stories (the daily Goals / Routines
+# cards and the Sunday weekly story). The api-server decides who is inside
+# their local window and every sweep is idempotent per (user, day/week), so an
+# hourly cadence is safe. The job sends nothing to anyone: Eos has no outbound
+# channel, no emails and no notifications. It never reads the database.
 #
 # Toolchain: this is a pnpm-10 workspace (catalog: and overrides live in
 # pnpm-workspace.yaml, which pnpm 9 cannot read), so the build pins pnpm 10
 # through npx rather than relying on runtime detection. Node 22 matches CI.
 #
-# Secrets: the values below marked `sync: false` are prompted for when the
-# Blueprint is first applied and are stored in the env group, never in git.
-# Two of them MUST be identical to the web service's: SESSION_SECRET (the
-# internal endpoints verify an HMAC derived from it) and the data-encryption
-# key (the job reads encrypted columns directly).
+# Secrets: the one value marked `sync: false` is prompted for when the
+# Blueprint is first applied and is stored in the env group, never in git.
+# It MUST be identical to the web service's SESSION_SECRET — the internal
+# endpoints verify an HMAC derived from it. Nothing else is shared.
 
 services:
   - type: cron
     name: eos-hourly-sweeps
     runtime: node
-    region: oregon            # same region as the web service (private DB URL only resolves in-region)
+    region: oregon            # same region as the web service
     plan: starter
     branch: main
     schedule: "0 * * * *"     # every hour on the hour, UTC
@@ -48,22 +46,6 @@ services:
 envVarGroups:
   - name: eos-scheduler-secrets
     envVars:
-      # Copy each of these from the web service's Environment tab.
-      - key: DATABASE_URL
-        sync: false
+      # Copy from the web service's Environment tab, byte for byte.
       - key: SESSION_SECRET
         sync: false
-      - key: DATA_ENCRYPTION_KEY
-        sync: false
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: RESEND_API_KEY
-        sync: false
-      - key: RESEND_FROM_EMAIL
-        sync: false
-      - key: LOG_HASH_SALT
-        sync: false
-      # Only if the web service sets them:
-      #   DATABASE_SSL                 (require / verify — see lib/db/src/index.ts)
-      #   DATA_ENCRYPTION_KEY_WRAPPED + AWS_REGION + AWS_ACCESS_KEY_ID +
-      #   AWS_SECRET_ACCESS_KEY        (KMS mode instead of DATA_ENCRYPTION_KEY)

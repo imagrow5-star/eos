@@ -5,18 +5,16 @@
  *     story-thread retelling scrub and chapter-quote-dismissal cleanup
  *   • CORS allow-listing (reflect-any-origin is gone)
  *   • security headers (helmet CSP on the API)
- *   • env-only VAPID keys (database access must never grant push capability)
  */
 import { describe, it, expect, afterAll } from "vitest";
 import request from "supertest";
 import pg from "pg";
 import app, { isAllowedOrigin } from "../app.js";
 import { decryptJson } from "@workspace/db";
-import { ensureVapidKeys } from "../services/push.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
-// ─── Helpers (same pattern as push.test.ts — each file is self-contained) ────
+// ─── Helpers (each file is self-contained) ───────────────────────────────────
 
 const TS = Date.now();
 const emails: string[] = [];
@@ -281,22 +279,5 @@ describe("DELETE /api/chat/messages/:id", () => {
     expect(after[0].questionMessageId).toBeNull();
     expect(after[0].summary).toBe("told the story of leaving"); // neutral paraphrase kept
     expect(after[1]).toEqual(retellings[1]); // untouched entry survives byte-for-byte
-  });
-});
-
-// ─── VAPID keys from environment only ─────────────────────────────────────────
-
-describe("VAPID keys (env-only)", () => {
-  it("ensureVapidKeys returns exactly the environment pair", async () => {
-    const keys = await ensureVapidKeys();
-    expect(keys.publicKey).toBe(process.env.VAPID_PUBLIC_KEY);
-    expect(keys.privateKey).toBe(process.env.VAPID_PRIVATE_KEY);
-  });
-
-  it("serves the env public key to clients", async () => {
-    const { agent } = await signupUser("vapid-env");
-    const res = await agent.get("/api/push/vapid-public-key");
-    expect(res.status).toBe(200);
-    expect(res.body.publicKey).toBe(process.env.VAPID_PUBLIC_KEY);
   });
 });

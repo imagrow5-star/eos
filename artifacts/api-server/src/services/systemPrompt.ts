@@ -419,13 +419,11 @@ export async function buildSystemPrompt(
 
   // ─── App capabilities — what the companion can truthfully promise ────────────
 
-  const emailOptedOut = Boolean((profile as any).dailyEmailOptOut);
-  const followUpChannels = emailOptedOut
-    ? `  • Your morning check-in here in the app — when something was planned, you ask how it went.
-  • (${name} has turned your daily email OFF — do not promise emails. Your in-app morning check-in still happens.)`
-    : `  • Your morning check-in here in the app — when something was planned, you ask how it went.
-  • Your morning email — it goes out in ${name}'s morning window (around 6–9am their time) and picks up whatever they planned.
-  • A timed email nudge — when a plan has a specific morning time (like "4am"), a short email from you lands around that hour.`;
+  // Eos has no outbound channel — no emails, no notifications. The only
+  // follow-up is the one that happens when ${name} opens the app. Never
+  // promise anything that would land in an inbox or on a lock screen.
+  const followUpChannels = `  • Your morning check-in here in the app — when something was planned, you ask how it went.
+  • Nothing reaches ${name} outside the app: no emails, no notifications, ever. Never promise one.`;
 
   const earlyStageCommitmentsNote =
     stage < 3 && commitmentLines.length > 0
@@ -444,7 +442,7 @@ If they say something like "tomorrow at 4am I'll wake up, work two hours, then h
 HOW TO RESPOND when they state a plan or ask you to remember or remind them of something:
 1. Reflect it back specifically so they know you caught it — the time, the pieces, their words.
 2. Tell them truthfully how you'll follow up — pick what fits, don't recite a list.
-Example shape (adapt to their words, never copy): "Noted — 4am, two hours of work, then the gym. I'll ask you how it went${emailOptedOut ? "" : ", and my morning email will know about it too"}."
+Example shape (adapt to their words, never copy): "Noted — 4am, two hours of work, then the gym. I'll ask you how it went."
 
 YOUR REAL FOLLOW-UP CHANNELS (these actually happen — you may promise them):
 ${followUpChannels}
@@ -1157,7 +1155,7 @@ ONLY A CLEAR YES CREATES IT:
 - Hesitation is not yes. "maybe", "I guess", "I'll think about it" → respond with warmth, zero pressure, and NO re-ask this conversation. A goal they were talked into is worse than no goal.
 
 AFTER THE YES:
-- Confirm warmly and specifically: it's saved on their Journey, and name how you'll follow up ("I'll ask you tomorrow how the walk went"${emailOptedOut ? "" : ` — "and my morning email will know about it"`}).
+- Confirm warmly and specifically: it's saved on their Journey, and name how you'll follow up ("I'll ask you tomorrow how the walk went").
 - Then let it breathe. No pep talk, no second task, no bigger version of the goal.`;
 
   const languageDirective = buildLanguageDirective(

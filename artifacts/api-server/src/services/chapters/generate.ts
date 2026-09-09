@@ -56,7 +56,6 @@ import {
   type WorkingThrough,
   type WorkingThroughEntry,
 } from "./storyThreads.js";
-import { sendPushToUser } from "../push.js";
 
 // ─── Public shapes (stored as jsonb on weekly_chapters) ───────────────────────
 
@@ -1163,7 +1162,7 @@ export async function runWeeklySweep(
   if (dryRun) {
     result.dryRun = true;
     result.decisions = [];
-    logger.info({ dryRun: true, candidates: users.length }, "DRY RUN — weekly chapter sweep: nothing will be generated, written, or pushed");
+    logger.info({ dryRun: true, candidates: users.length }, "DRY RUN — weekly chapter sweep: nothing will be generated or written");
   }
   const recordDecision = (userId: number, decision: string) => {
     result.decisions!.push({ userId, decision });
@@ -1206,21 +1205,9 @@ export async function runWeeklySweep(
     try {
       const r = await generateChapterForUser(u.userId, { now, force: opts.force });
       if (r.chapterId) {
+        // Nothing is sent: the chapter waits on the Chapters tab until the
+        // person opens it. Eos has no outbound channel.
         result.generated++;
-        // r.chapterId is set only on a REAL insert → this fires at most once
-        // per user per week. The atomic daily cap still applies underneath.
-        try {
-          await sendPushToUser(u.userId, "chapter_ready", {
-            title: "Eos",
-            body: "Your chapter is ready — a letter from your week, in your own words.",
-            url: "/chapters",
-          });
-        } catch (err) {
-          try {
-            const uh = hashUserIdForLog(u.userId);
-            if (uh) logger.warn({ err, uh }, "chapter: ready-push failed");
-          } catch { /* logging must never crash the caller */ }
-        }
       } else if (r.skipped) result.skipped[r.skipped] = (result.skipped[r.skipped] ?? 0) + 1;
     } catch (err) {
       result.failed++;
