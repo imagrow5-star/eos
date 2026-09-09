@@ -90,6 +90,10 @@ export function WeekStory({ story, onClose }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
   const holdTimer = useRef<number | null>(null);
   const heldRef = useRef(false);
+  // The browser interrupted a hold (touchcancel / pointercancel — a system
+  // gesture, an incoming call, a tab switch). The pause stays; the next tap
+  // only resumes, it never navigates.
+  const interruptedRef = useRef(false);
 
   const clearHoldTimer = () => {
     if (holdTimer.current !== null) {
@@ -98,9 +102,7 @@ export function WeekStory({ story, onClose }: Props) {
     }
   };
 
-  const onPointerDown = useCallback((e: React.PointerEvent) => {
-    if (e.button !== 0 && e.pointerType === "mouse") return;
-    e.preventDefault();
+  const pressStart = useCallback(() => {
     heldRef.current = false;
     clearHoldTimer();
     holdTimer.current = window.setTimeout(() => {
@@ -109,22 +111,79 @@ export function WeekStory({ story, onClose }: Props) {
     }, HOLD_THRESHOLD_MS);
   }, []);
 
-  const onPointerUp = useCallback((e: React.PointerEvent) => {
+  const pressEnd = useCallback((clientX: number) => {
     clearHoldTimer();
+    if (interruptedRef.current) {
+      interruptedRef.current = false;
+      heldRef.current = false;
+      dispatch({ type: "holdEnd" });
+      return;
+    }
     const rect = stageRef.current?.getBoundingClientRect();
-    const zone = rect ? zoneForX(e.clientX - rect.left, rect.width) : "forward";
+    const zone = rect ? zoneForX(clientX - rect.left, rect.width) : "forward";
     const action = resolveRelease(heldRef.current, zone);
     heldRef.current = false;
     dispatch(action);
   }, []);
 
-  const onPointerCancel = useCallback(() => {
+  const pressCancel = useCallback(() => {
     clearHoldTimer();
     if (heldRef.current) {
       heldRef.current = false;
-      dispatch({ type: "holdEnd" });
+      interruptedRef.current = true; // stay paused until the next tap
     }
   }, []);
+
+  // Mouse and pen go through pointer events. Touch is handled by the native
+  // touch listeners below, so it is ignored here to avoid double handling.
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.pointerType === "touch") return;
+    if (e.button !== 0) return;
+    e.preventDefault();
+    pressStart();
+  }, [pressStart]);
+
+  const onPointerUp = useCallback((e: React.PointerEvent) => {
+    if (e.pointerType === "touch") return;
+    pressEnd(e.clientX);
+  }, [pressEnd]);
+
+  const onPointerCancel = useCallback((e: React.PointerEvent) => {
+    if (e.pointerType === "touch") return;
+    pressCancel();
+  }, [pressCancel]);
+
+  // Touch: native, non-passive listeners. preventDefault on touchstart is
+  // what stops a phone from turning a long press into text selection, the
+  // iOS callout or Android's context menu (each of which cancels the touch
+  // and would end the pause), and stops the synthesized mouse events. Tested
+  // with real touch events, not mouse emulation.
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length > 1) return;
+      e.preventDefault();
+      pressStart();
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      e.preventDefault();
+      const t = e.changedTouches[0];
+      pressEnd(t ? t.clientX : 0);
+    };
+    const onTouchCancel = () => pressCancel();
+    const onContextMenu = (e: Event) => e.preventDefault();
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
+    el.addEventListener("touchend", onTouchEnd, { passive: false });
+    el.addEventListener("touchcancel", onTouchCancel);
+    el.addEventListener("contextmenu", onContextMenu);
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchCancel);
+      el.removeEventListener("contextmenu", onContextMenu);
+    };
+  }, [pressStart, pressEnd, pressCancel]);
 
   useEffect(() => clearHoldTimer, []);
 
@@ -193,7 +252,7 @@ export function WeekStory({ story, onClose }: Props) {
       <div
         ref={stageRef}
         className="relative flex-1 min-h-0"
-        style={{ touchAction: "none" }}
+        style={{ touchAction: "none", WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none" } as React.CSSProperties}
         onPointerDown={onPointerDown}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerCancel}
