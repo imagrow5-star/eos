@@ -512,7 +512,8 @@ describe("DELETE /api/auth/account", () => {
       "subscriptions", // billing foundation (phase 1) — Paddle cancel API call TODO lives in the handler
       "voice_usage",   // billing foundation (phase 1) — per-call voice metering records
       "crisis_events", // crisis floor — detection log (pattern names + country, never content)
-      "weekly_reviews", // weekly review stories (Journey markers) — fragment + cards, encrypted
+      "stories",     // stories behind the Journey markers — fragment + cards, encrypted
+      "story_drops", // story drafts the gates refused — text encrypted
     ]);
 
     // ── INDIRECT tables: store the user's id WITHOUT a `user_id` column, so the

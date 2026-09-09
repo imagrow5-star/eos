@@ -30,10 +30,17 @@ export type WeekCard =
   /** 5 — a word or phrase they keep using, with how often. Their words only. */
   | { kind: "pattern"; eyebrow: string; phrase: string; said: string }
   /** 6 — forward: a continuity line; `sub` names the existence of a sealed note, or null. Suppressed under the crisis guardrail. */
-  | { kind: "forward"; text: string; sub: string | null };
+  | { kind: "forward"; text: string; sub: string | null }
+  /** Goals story — the eyebrow is the goal's name; the text is the card's prose (state A or B, or the one-time let-go offer). */
+  | { kind: "goal"; eyebrow: string; text: string }
+  /** Routines story — the eyebrow is the routine's name; `pattern` is "Most days this week" / "Four of the last seven", never a chain. */
+  | { kind: "routine"; eyebrow: string; text: string; pattern: string | null };
+
+export type StoryKind = "week" | "month" | "first" | "goals" | "routines";
 
 export interface WeekStory {
   id: string;
+  kind: StoryKind;
   /** Marker label under the circle: "This week", "Last week", "August", "14 Aug". */
   label: string;
   /** The verbatim fragment inside the marker — something they said that week. */

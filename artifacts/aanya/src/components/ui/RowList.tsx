@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,7 @@ export function DisclosureSection({
   defaultOpen = false,
   small = false,
   className,
+  openRequest,
 }: {
   /** Section headline — styled like the page's h2s (or quiet uppercase
    *  labels with `small`). ReactNode so callers can interpolate names. */
@@ -39,14 +40,23 @@ export function DisclosureSection({
   preview?: React.ReactNode;
   children: React.ReactNode;
   defaultOpen?: boolean;
+  /** Bump this number to open the section from outside (a marker tap, say)
+   *  and scroll it into view. */
+  openRequest?: number;
   /** Sub-section variant: the small uppercase group label (e.g. the fact
    *  categories inside "Things … knows") instead of a full h2. */
   small?: boolean;
   className?: string;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const sectionRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!openRequest) return;
+    setOpen(true);
+    sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [openRequest]);
   return (
-    <section className={cn(small ? "space-y-3" : "space-y-4", className)}>
+    <section ref={sectionRef} className={cn(small ? "space-y-3" : "space-y-4", className)}>
       <button
         type="button"
         aria-expanded={open}

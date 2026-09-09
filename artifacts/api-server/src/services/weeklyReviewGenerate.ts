@@ -7,7 +7,7 @@
  * proposals (the "moment" sentence and a marker excerpt) and hands everything
  * to the pure composer (weeklyReviewCompose.ts), which validates the
  * proposals and shapes the cards. The result is written through
- * insertWeeklyReview, so the store's schema rules apply on top.
+ * insertStory (kind "week"), so the store's schema rules apply on top.
  *
  * Cadence: the hourly daily-email job calls /internal/weekly-reviews/run;
  * a user is generated for once their local time is Sunday evening (18:00+)
@@ -30,7 +30,7 @@ import {
   chapterQuoteDismissalsTable,
   crisisEventsTable,
   memoryFactsTable,
-  weeklyReviewsTable,
+  storiesTable,
 } from "@workspace/db";
 import { isNotNull } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
@@ -39,7 +39,7 @@ import { getAnthropic, logAiUsage } from "./ai.js";
 import { isCrisisText } from "./crisis/detector.js";
 import { localYmd, ymdAddDays, type ChapterTheme } from "./chapters/generate.js";
 import { fetchPendingSealedNote } from "./chapters/sealedNotes.js";
-import { insertWeeklyReview, weekBounds } from "./weeklyReview.js";
+import { insertStory, weekBounds } from "./stories.js";
 import {
   composeStory,
   type WeekSources,
@@ -341,9 +341,9 @@ export async function generateWeeklyReviewForUser(
 
   if (!opts.force) {
     const [existing] = await db
-      .select({ id: weeklyReviewsTable.id })
-      .from(weeklyReviewsTable)
-      .where(and(eq(weeklyReviewsTable.userId, userId), eq(weeklyReviewsTable.weekStart, weekStart)))
+      .select({ id: storiesTable.id })
+      .from(storiesTable)
+      .where(and(eq(storiesTable.userId, userId), eq(storiesTable.kind, "week"), eq(storiesTable.periodStart, weekStart)))
       .limit(1);
     if (existing) return { userId, weekStart, weekEnd, skipped: "exists" };
   }
@@ -359,10 +359,11 @@ export async function generateWeeklyReviewForUser(
   const composed = composeStory(gathered.sources, proposal);
   if (composed.skipped) return { userId, weekStart, weekEnd, skipped: composed.skipped };
 
-  const row = await insertWeeklyReview({
+  const row = await insertStory({
     userId,
-    weekStart,
-    weekEnd,
+    kind: "week",
+    periodStart: weekStart,
+    periodEnd: weekEnd,
     fragment: composed.story.fragment,
     cards: composed.story.cards,
   });

@@ -61,6 +61,25 @@ export function WeekCard({ card }: { card: WeekCardData }) {
         </>
       );
 
+    case "goal":
+      return (
+        <>
+          <div className={EYEBROW}>{card.eyebrow}</div>
+          <div className="text-[26px] leading-[1.35]">{card.text}</div>
+        </>
+      );
+
+    case "routine":
+      return (
+        <>
+          <div className={EYEBROW}>{card.eyebrow}</div>
+          <div className="text-[26px] leading-[1.35]">{card.text}</div>
+          {card.pattern && (
+            <div className="mt-[20px] text-[14px] leading-[normal] text-[var(--wk-muted)]">{card.pattern}</div>
+          )}
+        </>
+      );
+
     case "forward":
       return (
         <>

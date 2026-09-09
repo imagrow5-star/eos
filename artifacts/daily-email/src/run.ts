@@ -896,24 +896,25 @@ async function triggerReflectionSweep(): Promise<void> {
   }
 }
 
-// ─── Weekly review (Journey markers) trigger ──────────────────────────────────
-// Same shared-secret scheme. Runs AFTER the chapter sweep because the review's
-// then/now card reads this week's chapter. The api-server decides who is in
-// their Sunday-evening window and writes one row per (user, week).
+// ─── Story sweeps (Journey markers) trigger ───────────────────────────────────
+// Same shared-secret scheme. Runs AFTER the chapter sweep because the weekly
+// story's then/now card reads this week's chapter. The api-server decides who
+// is in their window (Sunday evening for the week; each morning for Goals and
+// Routines) and writes one row per (user, kind, period).
 
-async function triggerWeeklyReviewSweep(): Promise<void> {
+async function triggerStorySweeps(): Promise<void> {
   if (!SESSION_SECRET) {
-    log("SESSION_SECRET not set — skipping weekly review sweep trigger");
+    log("SESSION_SECRET not set — skipping story sweeps trigger");
     return;
   }
   try {
     const stamp = new Date().toISOString().slice(0, 13); // YYYY-MM-DDTHH
     const token = createHmac("sha256", SESSION_SECRET)
-      .update(`weekly-review-run:${stamp}`)
+      .update(`stories-run:${stamp}`)
       .digest("hex");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 240_000);
-    const resp = await fetch(`${APP_URL}/api/internal/weekly-reviews/run`, {
+    const resp = await fetch(`${APP_URL}/api/internal/stories/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-internal-token": token },
       // Honor the single-user test hook so local runs never fan out.
@@ -922,9 +923,9 @@ async function triggerWeeklyReviewSweep(): Promise<void> {
     });
     clearTimeout(timer);
     const body: unknown = await resp.json().catch(() => null);
-    log("Weekly review sweep triggered", { status: resp.status, result: body as Record<string, unknown> | null });
+    log("Story sweeps triggered", { status: resp.status, result: body as Record<string, unknown> | null });
   } catch (err) {
-    logErr("Weekly review sweep trigger failed (non-fatal)", err);
+    logErr("Story sweeps trigger failed (non-fatal)", err);
   }
 }
 
@@ -954,7 +955,7 @@ export async function run(): Promise<void> {
     await triggerChapterSweep();
     await triggerMorningPush();
     await triggerReflectionSweep();
-    await triggerWeeklyReviewSweep();
+    await triggerStorySweeps();
   }
 
   if (!RESEND_API_KEY && !DRY_RUN) {
