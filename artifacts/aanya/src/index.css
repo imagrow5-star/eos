@@ -96,16 +96,18 @@
   display: flex; align-items: center; justify-content: center;
   margin: 0 auto 10px; padding: 9px; background: hsl(var(--background));
 }
-/* Unviewed: a 3px dawn→green conic ring (gradient under a page-coloured mask). */
+/* Unviewed: a 4px dawn→green conic ring (gradient under a page-coloured
+   mask). Wider than the prototype's 3px and with the green carrying more of
+   the circle, so the new state reads at a glance on a phone in daylight. */
 .week-disc.is-new::before {
-  content: ''; position: absolute; inset: -3px; border-radius: 50%;
-  background: conic-gradient(from 210deg, var(--week-dawn), var(--week-green) 55%, var(--week-dawn));
+  content: ''; position: absolute; inset: -4px; border-radius: 50%;
+  background: conic-gradient(from 200deg, var(--week-dawn), var(--week-green) 35% 75%, var(--week-dawn));
 }
 .week-disc.is-new::after {
   content: ''; position: absolute; inset: 0; border-radius: 50%; background: hsl(var(--background));
 }
-/* Viewed: a plain hairline. */
-.week-disc.is-seen { border: 1px solid color-mix(in srgb, hsl(var(--foreground)) 15%, transparent); }
+/* Viewed: a plain outline — quiet, but unmistakably a circle. */
+.week-disc.is-seen { border: 1.5px solid color-mix(in srgb, hsl(var(--foreground)) 32%, transparent); }
 /* Readable at a glance: a touch larger and darker than the prototype's
    12.5px / .8 (a three-line goal name at that weight was hard to read).
    Three lines fit the disc; a longer name clamps rather than spilling. */
