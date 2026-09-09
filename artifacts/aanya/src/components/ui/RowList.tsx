@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ─── RowList / Row — the app-wide compact list pattern ───────────────────────
@@ -151,6 +151,46 @@ export function DisclosurePreview({
         </span>
       )}
     </span>
+  );
+}
+
+// ─── LinkRow — a quiet row that opens a dedicated screen ─────────────────────
+// Title, a quiet count, the most recent entry as a one-line preview, and a
+// right chevron: the same shape as a Row, but a tap navigates instead of
+// expanding in place. Used by Memory's category rows.
+export function LinkRow({
+  title,
+  count,
+  preview,
+  icon,
+  onClick,
+}: {
+  title: React.ReactNode;
+  count?: number;
+  preview?: React.ReactNode;
+  icon?: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full text-left px-4 py-3 flex items-center gap-3 cursor-pointer transition-colors hover:bg-primary/5 active:bg-primary/10 focus-visible:outline-none focus-visible:bg-primary/8"
+    >
+      {icon && <span className="shrink-0 flex items-center">{icon}</span>}
+      <span className="flex-1 min-w-0">
+        <span className="flex items-center gap-2">
+          <span className="text-[15px] leading-snug text-foreground/90 font-serif">{title}</span>
+          {typeof count === "number" && count > 0 && (
+            <span className="text-[10.5px] uppercase tracking-wider text-muted-foreground/55 tabular-nums mt-0.5">{count}</span>
+          )}
+        </span>
+        {preview && (
+          <span className="block mt-1 text-[13.5px] leading-snug text-foreground/60 truncate">{preview}</span>
+        )}
+      </span>
+      <ChevronRight className="w-4 h-4 shrink-0 text-foreground/30" />
+    </button>
   );
 }
 

@@ -80,7 +80,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
         <nav className="flex flex-col gap-1">
           {navItems.map((item) => {
-            const isActive = location === item.href;
+            const isActive = location === item.href || (item.href !== "/" && location.startsWith(`${item.href}/`));
             return (
               <Link
                 key={item.href}
@@ -128,7 +128,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           be an undefined class, so this was a no-op.) */}
       <nav className="md:hidden absolute bottom-0 left-0 right-0 h-nav-safe bg-card/90 backdrop-blur-xl border-t border-primary/20 z-20 px-2 flex items-center pb-safe">
         {navItems.map((item) => {
-          const isActive = location === item.href;
+          const isActive = location === item.href || (item.href !== "/" && location.startsWith(`${item.href}/`));
           return (
             <Link
               key={item.href}

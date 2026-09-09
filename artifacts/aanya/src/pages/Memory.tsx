@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { RowList, Row, DisclosureSection } from "@/components/ui/RowList";
-import { useGetProfile, useGetMemoryFacts, useGetPersonalitySignals, getGetMemoryFactsQueryKey } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { RowList, LinkRow } from "@/components/ui/RowList";
+import { useGetProfile, useGetMemoryFacts, useGetPersonalitySignals } from "@workspace/api-client-react";
 import { motion } from "framer-motion";
-import { Sparkles, X, Star, RotateCcw } from "lucide-react";
+import { Sparkles, RotateCcw } from "lucide-react";
+import { useLocation } from "wouter";
+import { groupFacts, FEELINGS_ROW } from "@/lib/memoryCategories";
+import { useFeelings } from "@/lib/useFeelings";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
 import ReflectionsSection from "@/components/ReflectionsSection";
@@ -12,51 +14,7 @@ export default function Memory() {
   const { data: profile } = useGetProfile();
   const { data: facts = [] } = useGetMemoryFacts();
   const { data: signals = [] } = useGetPersonalitySignals();
-  const queryClient = useQueryClient();
-
-  // "Forget this" (Phase A privacy) — first tap arms, second tap deletes.
-  const [armedFactId, setArmedFactId] = useState<number | null>(null);
-  const [busyFactId, setBusyFactId] = useState<number | null>(null);
-
-  // "Remember this" star (Sprint 2B) — optimistic toggle; the promise is she
-  // holds it, so there's no dialog and no "saved!" chirp. On failure we revert
-  // the star and surface one small, quiet line (the app's inline-notice pattern).
-  const [starError, setStarError] = useState<string | null>(null);
-  const toggleImportant = async (fact: (typeof facts)[number]) => {
-    const key = getGetMemoryFactsQueryKey();
-    const next = !fact.userMarkedImportant;
-    const prev = queryClient.getQueryData<typeof facts>(key);
-    // Optimistic: flip the star now.
-    queryClient.setQueryData<typeof facts>(key, (old) =>
-      (old ?? []).map((f) => (f.id === fact.id ? { ...f, userMarkedImportant: next } : f)),
-    );
-    try {
-      const r = await apiFetch(`${import.meta.env.BASE_URL}api/memory/facts/${fact.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userMarkedImportant: next }),
-      });
-      if (!r.ok) throw new Error("patch failed");
-    } catch {
-      queryClient.setQueryData(key, prev); // revert the star
-      setStarError("Couldn't save that, try again");
-      window.setTimeout(() => setStarError(null), 2500);
-    }
-  };
-  const forgetFact = async (id: number) => {
-    setBusyFactId(id);
-    try {
-      const r = await apiFetch(`${import.meta.env.BASE_URL}api/memory/facts/${id}`, {
-        method: "DELETE",
-      });
-      if (r.ok) {
-        await queryClient.invalidateQueries({ queryKey: getGetMemoryFactsQueryKey() });
-      }
-    } finally {
-      setBusyFactId(null);
-      setArmedFactId(null);
-    }
-  };
+  const [, navigate] = useLocation();
 
   // ── "Reset my memory (dev)" — founder-gated (Sprint: dedup & reset) ─────────
   // The button only renders for allowlisted accounts; eligibility is decided
@@ -105,41 +63,15 @@ export default function Memory() {
     }
   };
 
-  // ── Feelings-in-context (Sprint 2C) ────────────────────────────────────────
-  // Read-only: the second memory layer beside facts. Fetched via raw apiFetch
-  // (the endpoint returns plain JSON, no generated client type).
-  interface FeelingRow {
-    id: number;
-    feeling: string;
-    category: string;
-  }
-  const [feelings, setFeelings] = useState<FeelingRow[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await apiFetch(`${import.meta.env.BASE_URL}api/memory/feelings`);
-        if (!r.ok) return;
-        const data = (await r.json()) as FeelingRow[];
-        if (!cancelled && Array.isArray(data)) setFeelings(data);
-      } catch {
-        /* offline / not ready — leave the section absent */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data: feelings = [] } = useFeelings();
 
   const companionName = profile?.companionName || "Eos";
 
-  const categories = [
-    { id: "preference", label: "Preferences" },
-    { id: "person", label: "People" },
-    { id: "event", label: "Moments" },
-    { id: "goal", label: "Hopes" },
-    { id: "life", label: "Life" },
-  ];
+  // One row per category, each with its count and its most recent entry.
+  // The five categories extraction files but the old page never showed
+  // (interest, routine, work, value, soother) fold into the nearest row, or
+  // stand alone once there are enough of them — see lib/memoryCategories.
+  const rows = groupFacts(facts);
 
   const hasNoData = facts.length === 0 && signals.length === 0 && feelings.length === 0;
 
@@ -175,12 +107,6 @@ export default function Memory() {
 
   return (
     <div className="h-full overflow-y-auto px-6 py-10 pb-20 space-y-12">
-      {/* Quiet inline notice — only when a star toggle failed to save. */}
-      {starError && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-card border border-primary/20 rounded-full px-4 py-2 text-xs text-foreground/80 shadow-lg">
-          {starError}
-        </div>
-      )}
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="space-y-3">
         <h1 className="font-serif text-[28px] text-foreground/90 tracking-wide">
@@ -224,137 +150,31 @@ export default function Memory() {
           </p>
         </div>
       ) : (
-        <>
-          {/* ── Personality read — hidden until Sprint 4 ─────────────────── */}
-          {/* Hidden until Sprint 4 (Personality Synthesis) — raw personality signals aren't useful UX;
-              they're the substrate that gets synthesized into durable traits. Data continues to
-              extract + store + dedupe in the background. */}
-          {/* Soft placeholder in the section's old slot, so existing users who saw
-              "Her read on you" yesterday get a gentle transition rather than a
-              vanished section. */}
-          <section className="space-y-4">
-            <p className="text-sm text-muted-foreground/70 font-serif italic leading-relaxed max-w-md">
-              {companionName} is still learning who you are. As it gets to know you
-              deeper, this section will show what it's understood.
-            </p>
-          </section>
-
-          {/* Gold hairline */}
-          {facts.length > 0 && (
-            <div className="h-px bg-primary/15" />
-          )}
-
-          {/* ── Things Eos knows ─────────────────────────────────────────── */}
-          {/* Same two-tap layer as the feelings: headline first, then the
-              category labels (Preferences / People / Moments / Hopes / Life)
-              each open on their own tap to reveal the facts. */}
-          {facts.length > 0 && (
-            <DisclosureSection
-              title={<>Things {companionName} knows</>}
-              count={facts.length}
-              className="pb-4"
-            >
-              <div className="space-y-5">
-                {categories.map((category) => {
-                  const categoryFacts = facts.filter(
-                    (f) => f.category === category.id
-                  );
-                  if (categoryFacts.length === 0) return null;
-
-                  return (
-                    <DisclosureSection
-                      key={category.id}
-                      small
-                      title={category.label}
-                      count={categoryFacts.length}
-                    >
-                      {/* Each chip's star / forget controls are 44px hit
-                          boxes (w-11 h-11) drawn around 12–14px glyphs. The
-                          negative margins pull the box back into the chip's
-                          own padding so the pill stays compact — the glyph
-                          barely moves, but a thumb can actually land on it
-                          (the raw 14px star and 12px X were the smallest tap
-                          targets in the app). */}
-                      <div className="flex flex-wrap gap-2">
-                        {categoryFacts.map((fact) => (
-                          <span
-                            key={fact.id}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-card border border-primary/15 rounded-full text-[13px] text-foreground/75 font-serif"
-                          >
-                            <button
-                              aria-label={
-                                fact.userMarkedImportant
-                                  ? `Unmark "${fact.fact}" as important`
-                                  : `Mark "${fact.fact}" as important`
-                              }
-                              aria-pressed={fact.userMarkedImportant}
-                              onClick={() => toggleImportant(fact)}
-                              className="shrink-0 w-11 h-11 -my-2.5 -ml-3 flex items-center justify-center rounded-full transition-colors"
-                            >
-                              <Star
-                                className={cn(
-                                  "w-3.5 h-3.5 transition-colors",
-                                  fact.userMarkedImportant
-                                    ? "text-primary-strong fill-primary"
-                                    : "text-foreground/25 hover:text-primary-strong/60",
-                                )}
-                              />
-                            </button>
-                            {fact.fact}
-                            {armedFactId === fact.id ? (
-                              // Destructive confirm: readable (was 9px) and a
-                              // full-height hit box, matching the star / X.
-                              <button
-                                onClick={() => forgetFact(fact.id)}
-                                disabled={busyFactId === fact.id}
-                                className="shrink-0 h-11 -my-2.5 -mr-1.5 px-1.5 inline-flex items-center text-[11px] uppercase tracking-[0.15em] text-amber-700 dark:text-amber-400/90 hover:text-amber-300 font-sans transition-colors disabled:opacity-50"
-                              >
-                                {busyFactId === fact.id ? "…" : "forget?"}
-                              </button>
-                            ) : (
-                              <button
-                                aria-label={`Forget "${fact.fact}"`}
-                                onClick={() => setArmedFactId(fact.id)}
-                                className="shrink-0 w-11 h-11 -my-2.5 -mr-3 flex items-center justify-center rounded-full opacity-35 hover:opacity-90 transition-opacity"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            )}
-                          </span>
-                        ))}
-                      </div>
-                    </DisclosureSection>
-                  );
-                })}
-              </div>
-            </DisclosureSection>
-          )}
-
-          {/* ── How things have felt (Sprint 2C — feelings in context) ──────── */}
-          {/* Two-tap layer: the section is JUST its headline until tapped
-              (DisclosureSection), then the rows appear, then a row tap
-              reveals its full sentence. */}
-          {feelings.length > 0 && (
-            <DisclosureSection
-              title="How things have felt"
-              count={feelings.length}
-              className="pb-4"
-            >
-              {/* The feeling sentence carries the emotion in the user's own
-                  frame — no category tag (that read as a clinical diagnosis
-                  label, cutting against Sprint 2C's "not a diagnosis"
-                  principle). `category` still ships in the API for
-                  ranking/grouping; it's just not surfaced here. */}
-              {/* No expanded detail: the sentence IS the row. Long ones tap
-                  open to un-truncate; short ones are static (Row handles it). */}
-              <RowList>
-                {feelings.map((f) => (
-                  <Row key={f.id} title={f.feeling} />
-                ))}
-              </RowList>
-            </DisclosureSection>
-          )}
-        </>
+        // ── The categories — one quiet row each, tap to open its screen ────
+        // No heading count: the rows carry their own. No "still learning"
+        // line: the facts below it said otherwise.
+        <div className="space-y-4">
+          <h2 className="font-serif text-xl text-foreground/85">Things {companionName} knows</h2>
+          <RowList>
+            {rows.map((row) => (
+              <LinkRow
+                key={row.id}
+                title={row.label}
+                count={row.count}
+                preview={row.preview ?? undefined}
+                onClick={() => navigate(`/memory/${row.id}`)}
+              />
+            ))}
+            {feelings.length > 0 && (
+              <LinkRow
+                title={FEELINGS_ROW.label}
+                count={feelings.length}
+                preview={feelings[0]?.feeling}
+                onClick={() => navigate(`/memory/${FEELINGS_ROW.id}`)}
+              />
+            )}
+          </RowList>
+        </div>
       )}
 
       {/* ── Reset my memory (dev, founder-gated) ───────────────────────────── */}
