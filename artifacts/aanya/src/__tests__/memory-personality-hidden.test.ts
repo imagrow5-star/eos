@@ -4,9 +4,9 @@
  *
  * The aanya suite runs in a node environment with no jsdom/testing-library, so
  * (like the api-server Tier 3 log guardrail) this asserts against the page
- * SOURCE rather than a rendered DOM: it proves the signal-rendering JSX is gone,
- * the soft placeholder took its place, and every other Memory section still
- * renders. If Sprint 4 restores a personality section, update this guard.
+ * SOURCE rather than a rendered DOM: it proves the signal-rendering JSX is gone
+ * and every other Memory section still renders. If Sprint 4 restores a
+ * personality section, update this guard.
  */
 
 import { describe, it, expect } from "vitest";
@@ -29,22 +29,17 @@ describe("Memory Manifest — personality signals hidden until Sprint 4", () => 
     expect(source).not.toContain('"Confirmed" : "Observing"');
   });
 
-  it("shows the soft placeholder in the section's old slot", () => {
-    expect(source).toContain("still learning who you are");
-    expect(source).toContain("this section will show what it's understood");
-  });
-
-  it("documents why it's hidden (Sprint 4 rationale)", () => {
-    expect(source).toContain("Hidden until Sprint 4 (Personality Synthesis)");
+  it("has no placeholder line about still learning — the facts below it said otherwise", () => {
+    expect(source).not.toContain("still learning who you are");
   });
 
   it("keeps every other Memory section intact", () => {
-    // Fact categories still present…
-    for (const label of ["Preferences", "People", "Moments", "Hopes", "Life"]) {
-      expect(source).toContain(`label: "${label}"`);
-    }
-    // …and the surrounding sections still render.
+    // The category rows now come from lib/memoryCategories (five base rows
+    // plus the folded / promoted hidden ones); the page renders them as
+    // LinkRows without a count on the heading.
+    expect(source).toContain("groupFacts(facts)");
     expect(source).toContain("Things {companionName} knows");
+    expect(source).not.toMatch(/Things \{companionName\} knows[^\n]*count=/);
     expect(source).toContain("Reset my memory (dev)"); // founder-gated control untouched
   });
 

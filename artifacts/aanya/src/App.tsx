@@ -17,6 +17,7 @@ const Chat = lazy(() => import("@/pages/Chat"));
 const Journey = lazy(() => import("@/pages/Journey"));
 const Chapters = lazy(() => import("@/pages/Chapters"));
 const Memory = lazy(() => import("@/pages/Memory"));
+const MemoryCategory = lazy(() => import("@/pages/MemoryCategory"));
 const AuthScreen = lazy(() =>
   import("@/pages/AuthScreen").then((m) => ({ default: m.AuthScreen })),
 );
@@ -100,6 +101,7 @@ function AppRouter() {
         <Route path="/" component={Chat} />
         <Route path="/journey" component={Journey} />
         <Route path="/chapters" component={Chapters} />
+        <Route path="/memory/:category" component={MemoryCategory} />
         <Route path="/memory" component={Memory} />
         <Route path="/pricing">{() => <Pricing />}</Route>
         <Route path="/week/preview" component={WeekPreview} />
