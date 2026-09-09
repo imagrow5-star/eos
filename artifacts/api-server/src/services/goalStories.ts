@@ -371,13 +371,22 @@ export async function gateCards(
   return out;
 }
 
-/** A goal or routine name for the disc: three short lines fit, so names
- *  are cut at 26 characters with an ellipsis. */
-export const NAME_FRAGMENT_MAX = 26;
+/** A goal or routine name for the disc: three short lines fit, so a long
+ *  name is cut at a word boundary within 24 characters — whole words, no
+ *  trailing dots (an ellipsis inside a circle reads as broken). */
+export const NAME_FRAGMENT_MAX = 24;
 export function fragmentFor(name: string): string {
   const t = name.trim().replace(/\s+/g, " ");
   const max = Math.min(NAME_FRAGMENT_MAX, FRAGMENT_MAX);
-  return t.length <= max ? t : `${t.slice(0, max - 1).trimEnd()}…`;
+  if (t.length <= max) return t;
+  const words = t.split(" ");
+  let out = "";
+  for (const w of words) {
+    const next = out ? `${out} ${w}` : w;
+    if (next.length > max) break;
+    out = next;
+  }
+  return out || t.slice(0, max);
 }
 
 // ── Model (Anthropic) ───────────────────────────────────────────────────────

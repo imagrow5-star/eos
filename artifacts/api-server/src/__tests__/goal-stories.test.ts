@@ -201,8 +201,10 @@ describe("gateCards", () => {
 
   it("fragmentFor fits the disc", () => {
     expect(fragmentFor("Run again")).toBe("Run again");
-    expect(fragmentFor("A".repeat(60))).toHaveLength(26);
-    expect(fragmentFor("Ten minutes outside before work")).toBe("Ten minutes outside befor…");
+    expect(fragmentFor("Sort out the spare room")).toBe("Sort out the spare room");
+    expect(fragmentFor("Ten minutes outside before work")).toBe("Ten minutes outside");
+    expect(fragmentFor("A".repeat(60))).toHaveLength(24); // no word boundary to cut at
+    expect(fragmentFor("Write three lines before bed every night")).toBe("Write three lines before");
   });
 });
 

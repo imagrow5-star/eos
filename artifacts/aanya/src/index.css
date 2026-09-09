@@ -94,7 +94,7 @@
 .week-disc {
   width: 78px; height: 78px; border-radius: 50%; position: relative;
   display: flex; align-items: center; justify-content: center;
-  margin: 0 auto 10px; padding: 11px; background: hsl(var(--background));
+  margin: 0 auto 10px; padding: 9px; background: hsl(var(--background));
 }
 /* Unviewed: a 3px dawn→green conic ring (gradient under a page-coloured mask). */
 .week-disc.is-new::before {
@@ -106,14 +106,15 @@
 }
 /* Viewed: a plain hairline. */
 .week-disc.is-seen { border: 1px solid color-mix(in srgb, hsl(var(--foreground)) 15%, transparent); }
+/* Readable at a glance: a touch larger and darker than the prototype's
+   12.5px / .8 (a three-line goal name at that weight was hard to read).
+   Three lines fit the disc; a longer name clamps rather than spilling. */
 .week-disc em {
-  position: relative; z-index: 2; font-style: normal; font-size: 12.5px; line-height: 1.25;
-  color: hsl(var(--foreground)); opacity: .8; text-align: center;
-  /* Three lines fit the disc; a long goal or routine name clamps rather than
-     spilling onto the label. */
+  position: relative; z-index: 2; font-style: normal; font-size: 13px; line-height: 1.2;
+  color: hsl(var(--foreground)); opacity: .95; text-align: center;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
-.week-disc.is-seen em { opacity: .32; }
+.week-disc.is-seen em { opacity: .5; }
 .week-marker > span { display: block; font-size: 12.5px; color: hsl(var(--muted-foreground)); }
 .week-marker.is-new > span { color: hsl(var(--foreground)); }
 .week-rule { height: 1px; background: color-mix(in srgb, hsl(var(--foreground)) 8%, transparent); }
