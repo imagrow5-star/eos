@@ -105,8 +105,9 @@
 .week-disc.is-new::after {
   content: ''; position: absolute; inset: 0; border-radius: 50%; background: hsl(var(--background));
 }
-/* Viewed: a 1.5px solid border at 30% ink. A circle, not a hairline. */
-.week-disc.is-seen { border: 1.5px solid color-mix(in srgb, hsl(var(--foreground)) 30%, transparent); }
+/* Viewed: a 2px solid border at 40% ink. A viewed story is still a story
+   someone can open — a present circle, just without the ring. */
+.week-disc.is-seen { border: 2px solid color-mix(in srgb, hsl(var(--foreground)) 40%, transparent); }
 /* The words inside: full ink when new, 70% when seen. Three lines fit the
    disc; a longer name clamps rather than spilling. */
 .week-disc em {
