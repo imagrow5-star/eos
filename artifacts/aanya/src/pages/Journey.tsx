@@ -246,9 +246,9 @@ function CommitmentsSection() {
 // ─── Goals section ────────────────────────────────────────────────────────────
 
 interface GoalTask { id: number; content: string; isComplete: boolean; order: number; }
-interface Goal { id: number; title: string; description: string; isComplete: boolean; tasks: GoalTask[]; createdAt: string; }
+interface Goal { id: number; title: string; description: string; isComplete: boolean; letGoAt: string | null; tasks: GoalTask[]; createdAt: string; }
 
-function GoalsSection() {
+function GoalsSection({ openRequest }: { openRequest?: number }) {
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [goalTitle, setGoalTitle] = useState("");
@@ -271,14 +271,23 @@ function GoalsSection() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["goals"] }),
   });
 
+  // Letting go is a real, unpenalised option: the goal stays here, dimmed
+  // and retrievable, and stops speaking in the Goals story.
+  const letGo = useMutation({
+    mutationFn: ({ id, back }: { id: number; back: boolean }) =>
+      apiFetch(`${import.meta.env.BASE_URL}api/goals/${id}/${back ? "bring-back" : "let-go"}`, { method: "POST" }).then((r) => r.json()),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["goals"] }),
+  });
+
   const toggleTask = useMutation({
     mutationFn: ({ goalId, taskId, isComplete }: { goalId: number; taskId: number; isComplete: boolean }) =>
       apiFetch(`${import.meta.env.BASE_URL}api/goals/${goalId}/tasks/${taskId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isComplete }) }).then((r) => r.json()),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["goals"] }),
   });
 
-  const activeGoals = goals.filter((g) => !g.isComplete);
-  const doneGoals = goals.filter((g) => g.isComplete);
+  const activeGoals = goals.filter((g) => !g.isComplete && !g.letGoAt);
+  const doneGoals = goals.filter((g) => g.isComplete && !g.letGoAt);
+  const letGoGoals = goals.filter((g) => !!g.letGoAt);
 
   // Preview: the newest active goal, else the newest completed one.
   const latestGoal = activeGoals[0] ?? doneGoals[0];
@@ -294,6 +303,7 @@ function GoalsSection() {
     <DisclosureSection
       title="Goals"
       count={goals.length}
+      openRequest={openRequest}
       preview={
         latestGoal ? (
           <DisclosurePreview
@@ -375,9 +385,31 @@ function GoalsSection() {
                     </motion.div>
                   )}
                 </AnimatePresence>
+                {isExpanded && (
+                  <div className="border-t border-primary/10 px-4 py-2 flex justify-end">
+                    <Button variant="ghost" size="sm" className="h-9 text-[12px] text-muted-foreground/70 hover:text-foreground"
+                      onClick={() => letGo.mutate({ id: goal.id, back: false })} disabled={letGo.isPending}>
+                      Let this one go
+                    </Button>
+                  </div>
+                )}
               </div>
             );
           })}
+          {letGoGoals.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-[10px] text-muted-foreground/50 uppercase tracking-[0.2em] pl-1">Let go</p>
+              {letGoGoals.map((goal) => (
+                <div key={goal.id} className="bg-card/40 border border-primary/8 rounded-xl px-4 py-2 flex items-center gap-3 opacity-60">
+                  <p className="flex-1 min-w-0 text-sm text-foreground/60 truncate">{goal.title}</p>
+                  <Button variant="ghost" size="sm" className="h-9 text-[12px] text-muted-foreground/70 hover:text-foreground shrink-0"
+                    onClick={() => letGo.mutate({ id: goal.id, back: true })} disabled={letGo.isPending}>
+                    Bring it back
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
           {doneGoals.length > 0 && (
             <div className="space-y-2">
               <p className="text-[10px] text-muted-foreground/50 uppercase tracking-[0.2em] pl-1">Completed</p>
@@ -422,7 +454,20 @@ function GoalsSection() {
 
 // ─── Habit section (prominent) ────────────────────────────────────────────────
 
-function HabitsSection() {
+// The pattern, never the chain: "Every day this week", "Most days this
+// week", "Four of the last seven". No consecutive-day count anywhere on the
+// row — a missed day has no measurable effect on forming a habit, so the row
+// never shows one.
+const NUMBER_WORDS = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven"];
+function patternPhrase(recentCompletions: string[]): string | null {
+  const n = new Set(recentCompletions).size;
+  if (n === 0) return null;
+  if (n >= 7) return "Every day this week";
+  if (n >= 5) return "Most days this week";
+  return `${NUMBER_WORDS[n]} of the last seven`;
+}
+
+function HabitsSection({ openRequest }: { openRequest?: number }) {
   const queryClient = useQueryClient();
   const { data: habits = [], isLoading } = useGetHabits();
   const completeHabit = useCompleteHabit();
@@ -432,8 +477,6 @@ function HabitsSection() {
   const [name, setName] = useState("");
   const [whenThen, setWhenThen] = useState("");
   const [reason, setReason] = useState("");
-
-  const last7 = getLast7Dates();
 
   const handleComplete = (id: number) => {
     completeHabit.mutate({ id }, {
@@ -466,6 +509,7 @@ function HabitsSection() {
     <DisclosureSection
       title="Daily Routines"
       count={habits.length}
+      openRequest={openRequest}
       preview={
         latestHabit ? (
           <DisclosurePreview
@@ -519,9 +563,7 @@ function HabitsSection() {
             const today = format(new Date(), "yyyy-MM-dd");
             const isCompletedToday = habit.lastCompleted &&
               format(parseISO(habit.lastCompleted), "yyyy-MM-dd") === today;
-
-            const completedSet = new Set(habit.recentCompletions);
-            const last7Rate = Math.round((last7.filter((d) => completedSet.has(d)).length / 7) * 100);
+            const pattern = patternPhrase(habit.recentCompletions);
 
             return (
               <motion.div
@@ -533,7 +575,6 @@ function HabitsSection() {
                   isCompletedToday ? "border-primary/30 bg-primary/5" : "border-primary/15",
                 )}
               >
-                {/* Name + streak + complete button */}
                 <div className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -543,17 +584,6 @@ function HabitsSection() {
                       )}>
                         {habit.name}
                       </h3>
-                      {habit.streak > 0 && (
-                        <span className={cn(
-                          "inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border",
-                          habit.streak >= 7
-                            ? "bg-primary/15 border-primary/30 text-primary-strong"
-                            : "bg-primary/8 border-primary/20 text-primary-strong/80",
-                        )}>
-                          <Flame className="w-2.5 h-2.5" />
-                          {habit.streak}d streak
-                        </span>
-                      )}
                       {isCompletedToday && (
                         <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-700 dark:text-emerald-400/80 font-medium">
                           <Check className="w-2.5 h-2.5" strokeWidth={3} />
@@ -566,6 +596,11 @@ function HabitsSection() {
                     <p className="text-[12px] text-muted-foreground/60 mt-1 leading-relaxed italic">
                       {habit.whenThen}
                     </p>
+
+                    {/* The pattern, never a chain */}
+                    {pattern && (
+                      <p className="text-[11px] text-muted-foreground/60 mt-2">{pattern}</p>
+                    )}
                   </div>
 
                   {/* Complete button */}
@@ -582,47 +617,6 @@ function HabitsSection() {
                   >
                     <Check className="w-4 h-4" strokeWidth={isCompletedToday ? 3 : 2} />
                   </Button>
-                </div>
-
-                {/* 7-day dot grid */}
-                <div className="mt-4">
-                  <div className="flex items-center gap-1.5">
-                    {last7.map((dateStr, i) => {
-                      const done = completedSet.has(dateStr);
-                      const isToday = dateStr === today;
-                      const dayLabel = DAY_LABELS[getDayOfWeekIndex(dateStr)];
-                      return (
-                        <div key={i} className="flex-1 flex flex-col items-center gap-1.5">
-                          <div className={cn(
-                            "w-full aspect-square max-w-[28px] rounded-md transition-all",
-                            done
-                              ? "bg-primary/60 shadow-[0_0_6px_hsl(var(--primary)/0.3)]"
-                              : isToday
-                                ? "bg-foreground/8 border border-primary/20 border-dashed"
-                                : "bg-foreground/6",
-                          )} />
-                          <span className={cn(
-                            "text-[9px] font-medium uppercase",
-                            isToday ? "text-primary-strong/70" : "text-muted-foreground/40",
-                          )}>
-                            {dayLabel}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Completion rate + forgiving streak note */}
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-[10px] text-muted-foreground/45">
-                      {last7Rate}% this week
-                    </span>
-                    {habit.streak > 0 && (
-                      <span className="text-[10px] text-muted-foreground/40 italic">
-                        missing one day won't break it
-                      </span>
-                    )}
-                  </div>
                 </div>
               </motion.div>
             );
@@ -705,35 +699,6 @@ function AddWinCard() {
   );
 }
 
-// ─── Kind streak line ─────────────────────────────────────────────────────────
-// Days shown up, counted gently, as ONE quiet line under the markers (it was
-// a card, beside a Growth card; the page opened on two cards before any
-// content). Backed by the kind-streak semantics on the server: the count of
-// distinct days present — a missed day pauses the number, it never resets it.
-// It is a DIFFERENT number from the header's "N days in" (days since the
-// account started), so the line says how the two relate.
-
-function KindStreakLine({ days, since }: { days: number; since: number }) {
-  return (
-    <div className="flex items-start gap-2.5" data-testid="streak-line">
-      <Flame className="w-3.5 h-3.5 text-primary-strong/70 shrink-0 mt-[3px]" />
-      <div className="min-w-0">
-        <p className="font-serif text-[15px] text-foreground/85 leading-snug">
-          {days === 0
-            ? "Day one starts whenever you do"
-            : `${days} ${days === 1 ? "day" : "days"} you showed up`}
-          {days > 0 && since > days && (
-            <span className="text-muted-foreground/70"> · of {since} since you started</span>
-          )}
-        </p>
-        <p className="text-[11.5px] text-muted-foreground/70 leading-relaxed">
-          Miss one? It just pauses, never resets.
-        </p>
-      </div>
-    </div>
-  );
-}
-
 // ─── Main Journey page ────────────────────────────────────────────────────────
 
 export default function Journey() {
@@ -742,6 +707,8 @@ export default function Journey() {
   const { data: habits = [] } = useGetHabits();
   const { data: wins = [] } = useGetWins();
   const { data: profile } = useGetProfile();
+  // A Goals / Routines marker with nothing to say opens the row below instead.
+  const [openRequests, setOpenRequests] = useState({ goals: 0, routines: 0 });
 
   if (journeyLoading || !journey) {
     return (
@@ -809,12 +776,9 @@ export default function Journey() {
           </p>
         </div>
 
-        {/* ── Weekly review markers — above everything else (renders nothing
-            until a story exists) ──────────────────────────────────────── */}
-        <WeekMarkers />
+        {/* ── Story markers — Goals, Routines, then the weeks ──────────────── */}
+        <WeekMarkers onOpenSection={(section) => setOpenRequests((r) => ({ ...r, [section]: r[section] + 1 }))} />
 
-        {/* ── Kind streak — one line, not a card ────────────────────────────── */}
-        <KindStreakLine days={journey.streak} since={journey.dayCounter} />
       </div>
 
       {/* ── Mood chart ─────────────────────────────────────────────────────── */}
@@ -927,12 +891,12 @@ export default function Journey() {
       <div className="h-px bg-primary/12" />
 
       {/* ── Daily Routines ─────────────────────────────────────────────────── */}
-      <HabitsSection />
+      <HabitsSection openRequest={openRequests.routines} />
 
       <div className="h-px bg-primary/12" />
 
       {/* ── Goals ──────────────────────────────────────────────────────────── */}
-      <GoalsSection />
+      <GoalsSection openRequest={openRequests.goals} />
 
       <div className="h-px bg-primary/12" />
 

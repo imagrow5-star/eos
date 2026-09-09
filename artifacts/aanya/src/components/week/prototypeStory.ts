@@ -10,6 +10,7 @@ import type { WeekStory } from "./types";
 
 export const PROTOTYPE_STORY: WeekStory = {
   id: "prototype-2026-09-08",
+  kind: "week",
   label: "This week",
   fragment: "“she just said finally”",
   range: "2–8 September",

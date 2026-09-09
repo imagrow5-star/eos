@@ -21,7 +21,7 @@
  *  - the grief/crisis guardrail suppresses "did" and "forward".
  */
 
-import { type WeekCard, FRAGMENT_MAX } from "./weeklyReview.js";
+import { type StoryCard as WeekCard, FRAGMENT_MAX } from "./stories.js";
 import { nearIdentical } from "./chapters/quotes.js";
 
 // ── Inputs ──────────────────────────────────────────────────────────────────

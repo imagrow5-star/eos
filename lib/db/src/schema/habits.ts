@@ -24,6 +24,9 @@ export const habitsTable = pgTable("habits", {
   // so legacy rows are valid immediately (no backfill required).
   timesReferenced: integer("times_referenced").notNull().default(1),
   lastReferencedAt: timestamp("last_referenced_at"),
+  // Story system: the last time a Routines story carried a card about this
+  // routine (rotation, so none of them nags).
+  lastSpokeAt: timestamp("last_spoke_at"),
 });
 
 export const habitCompletionsTable = pgTable("habit_completions", {

@@ -111,7 +111,7 @@ router.put("/goals/:id/tasks/:taskId", async (req, res): Promise<void> => {
   // user's task by guessing sequential ids (review finding).
   const [task] = await db
     .update(goalTasksTable)
-    .set({ isComplete })
+    .set({ isComplete, completedAt: isComplete ? new Date() : null })
     .where(and(eq(goalTasksTable.id, taskId), eq(goalTasksTable.goalId, goalId)))
     .returning();
 
@@ -134,6 +134,47 @@ router.put("/goals/:id/tasks/:taskId", async (req, res): Promise<void> => {
   }
 
   res.json(task);
+});
+
+// ─── POST /goals/:id/let-go · /goals/:id/bring-back ───────────────────────────
+// Letting go is a real, unpenalised option: the goal stays on the row (dimmed,
+// retrievable), it stops speaking in the Goals story, and nothing is deleted.
+
+async function setLetGo(userId: number, goalId: number, letGo: boolean) {
+  const [goal] = await db
+    .update(goalsTable)
+    .set({ letGoAt: letGo ? new Date() : null })
+    .where(and(eq(goalsTable.id, goalId), eq(goalsTable.userId, userId)))
+    .returning({ id: goalsTable.id, letGoAt: goalsTable.letGoAt });
+  return goal ?? null;
+}
+
+router.post("/goals/:id/let-go", async (req, res): Promise<void> => {
+  const goalId = parseInt(req.params.id ?? "0", 10);
+  if (!goalId) {
+    res.status(400).json({ error: "Invalid id" });
+    return;
+  }
+  const goal = await setLetGo(req.userId, goalId, true);
+  if (!goal) {
+    res.status(404).json({ error: "Goal not found" });
+    return;
+  }
+  res.json({ ok: true, letGoAt: goal.letGoAt });
+});
+
+router.post("/goals/:id/bring-back", async (req, res): Promise<void> => {
+  const goalId = parseInt(req.params.id ?? "0", 10);
+  if (!goalId) {
+    res.status(400).json({ error: "Invalid id" });
+    return;
+  }
+  const goal = await setLetGo(req.userId, goalId, false);
+  if (!goal) {
+    res.status(404).json({ error: "Goal not found" });
+    return;
+  }
+  res.json({ ok: true, letGoAt: null });
 });
 
 export default router;

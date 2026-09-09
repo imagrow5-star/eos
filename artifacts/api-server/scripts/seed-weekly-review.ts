@@ -14,7 +14,7 @@
 
 import { eq } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
-import { seedPrototypeReviews } from "../src/services/weeklyReview.js";
+import { seedPrototypeReviews } from "../src/services/stories.js";
 
 const email = process.argv[2]?.trim().toLowerCase();
 if (!email) {

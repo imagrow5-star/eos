@@ -19,8 +19,8 @@ import { eq } from "drizzle-orm";
 import { db, messagesTable, winsTable, commitmentsTable, profileTable, weeklyChaptersTable } from "@workspace/db";
 import app from "../app.js";
 import { generateWeeklyReviewForUser, runWeeklyReviewSweep, targetWeek, inGenerationWindow } from "../services/weeklyReviewGenerate.js";
-import { listWeeklyReviews } from "../services/weeklyReview.js";
-import { weeklyReviewRunToken } from "../routes/weeklyReviews.js";
+import { listStoriesOfKind } from "../services/stories.js";
+import { storiesRunToken } from "../routes/stories.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const DB = Boolean(process.env.DATABASE_URL);
@@ -75,7 +75,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (DB && userId) {
     await pool.query(`DELETE FROM user_sessions WHERE sess::jsonb->>'userId' = $1`, [String(userId)]);
-    for (const t of ["weekly_reviews", "weekly_chapters", "commitments", "wins", "messages", "email_verification_tokens", "profile"]) {
+    for (const t of ["stories", "story_drops", "weekly_chapters", "commitments", "wins", "messages", "email_verification_tokens", "profile"]) {
       await pool.query(`DELETE FROM ${t} WHERE user_id = $1`, [userId]);
     }
     await pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
@@ -109,8 +109,8 @@ describe.skipIf(!DB)("generateWeeklyReviewForUser", () => {
     expect(r.reviewId).toBeTypeOf("number");
     expect(r.weekStart).toBe("2026-08-31");
 
-    const [view] = await listWeeklyReviews(userId);
-    expect(view!.weekStart).toBe("2026-08-31");
+    const [view] = await listStoriesOfKind(userId, "week", 6);
+    expect(view!.periodStart).toBe("2026-08-31");
     expect(view!.viewed).toBe(false);
     expect(view!.cards.map((c) => c.kind)).toEqual(["did", "open", "pattern", "forward"]);
     expect(view!.cards[0]).toEqual({ kind: "did", eyebrow: "On Thursday", text: "You walked two days running, even though it felt heavy." });
@@ -131,7 +131,7 @@ describe.skipIf(!DB)("generateWeeklyReviewForUser", () => {
     expect(again.skipped).toBe("exists");
     const forced = await generateWeeklyReviewForUser(userId, { now: SUNDAY_EVENING, force: true });
     expect(forced.reviewId).toBeTypeOf("number");
-    const all = await listWeeklyReviews(userId);
+    const all = await listStoriesOfKind(userId, "week", 6);
     expect(all.length).toBe(1);
   });
 
@@ -163,7 +163,7 @@ describe.skipIf(!DB)("generateWeeklyReviewForUser", () => {
     });
     const r = await generateWeeklyReviewForUser(userId, { now: SUNDAY_EVENING, force: true });
     expect(r.reviewId).toBeTypeOf("number");
-    const [view] = await listWeeklyReviews(userId);
+    const [view] = await listStoriesOfKind(userId, "week", 6);
     expect(view!.cards.map((c) => c.kind)).toEqual(["did", "thenNow", "open", "pattern", "forward"]);
     expect(view!.cards[0]).toMatchObject({ kind: "did", eyebrow: "On Thursday" });
     expect(view!.cards[1]).toEqual({
@@ -178,7 +178,7 @@ describe.skipIf(!DB)("generateWeeklyReviewForUser", () => {
     await db.update(profileTable).set({ userPath: "bereavement" }).where(eq(profileTable.userId, userId));
     const r = await generateWeeklyReviewForUser(userId, { now: SUNDAY_EVENING, force: true });
     expect(r.reviewId).toBeTypeOf("number");
-    const [view] = await listWeeklyReviews(userId);
+    const [view] = await listStoriesOfKind(userId, "week", 6);
     expect(view!.cards.map((c) => c.kind)).toEqual(["thenNow", "open", "pattern"]);
     await db.update(profileTable).set({ userPath: "breakup" }).where(eq(profileTable.userId, userId));
   });
@@ -187,7 +187,7 @@ describe.skipIf(!DB)("generateWeeklyReviewForUser", () => {
     const crisisId = await addMessage("I want to kill myself, I can't do this anymore", "2026-09-05T23:00:00Z");
     const r = await generateWeeklyReviewForUser(userId, { now: SUNDAY_EVENING, force: true });
     expect(r.reviewId).toBeTypeOf("number");
-    const [view] = await listWeeklyReviews(userId);
+    const [view] = await listStoriesOfKind(userId, "week", 6);
     expect(view!.cards.map((c) => c.kind)).toEqual(["thenNow", "open", "pattern"]);
     expect(view!.fragment).not.toMatch(/kill myself/);
     expect(JSON.stringify(view!.cards)).not.toMatch(/kill myself/);
@@ -211,17 +211,18 @@ describe.skipIf(!DB)("sweep + internal route", () => {
     expect(ignored.generated).toBe(1);
   });
 
-  it("POST /api/internal/weekly-reviews/run is HMAC-gated", async () => {
-    const no = await request(app).post("/api/internal/weekly-reviews/run").send({ userId });
+  it("POST /api/internal/stories/run is HMAC-gated", async () => {
+    const no = await request(app).post("/api/internal/stories/run").send({ userId });
     expect(no.status).toBe(401);
-    const bad = await request(app).post("/api/internal/weekly-reviews/run").set("x-internal-token", "nope").send({ userId });
+    const bad = await request(app).post("/api/internal/stories/run").set("x-internal-token", "nope").send({ userId });
     expect(bad.status).toBe(401);
-    const token = weeklyReviewRunToken(process.env.SESSION_SECRET!, new Date());
+    const token = storiesRunToken(process.env.SESSION_SECRET!, new Date());
     const ok = await request(app)
-      .post("/api/internal/weekly-reviews/run")
+      .post("/api/internal/stories/run")
       .set("x-internal-token", token)
       .send({ userId, ignoreWindow: true });
     expect(ok.status).toBe(200);
-    expect(ok.body.considered).toBe(1);
+    expect(ok.body.week.considered).toBe(1);
+    expect(ok.body.subjects.considered).toBe(1);
   });
 });

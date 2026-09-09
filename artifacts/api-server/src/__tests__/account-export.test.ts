@@ -616,7 +616,7 @@ describe("GET /api/account/export?format=html", () => {
       weeklyChapters: "Weekly chapters",
       sealedNotes: "Sealed notes",
       crisisEvents: "support resources were shown",
-      weeklyReviews: "Weekly reviews",
+      stories: "Stories",
     };
 
     // Payload keys that are intentionally NOT their own report section, with the
@@ -637,6 +637,8 @@ describe("GET /api/account/export?format=html", () => {
         "Browser push endpoint records (device tokens) — technical delivery plumbing with no readable content; present in the JSON export.",
       pushEvents:
         "Notification delivery log (kind + timestamp) — administrative cap-enforcement records; present in the JSON export.",
+      storyDrops:
+        "Story drafts the language gates refused — never shown in the app; kept so the prompt can be tuned; present in the JSON export.",
       subscriptions:
         "Billing foundation (phase 1): membership status metadata (tier/status/dates) — empty until billing launches; present in the JSON export. A rendered Membership section arrives with phase 2.",
       voiceUsage:
