@@ -2,6 +2,8 @@ import { Router, type IRouter } from "express";
 import crypto from "crypto";
 import { logger } from "../lib/logger.js";
 import { listMarkerStories, markStoryViewed } from "../services/stories.js";
+import { eq } from "drizzle-orm";
+import { db, usersTable } from "@workspace/db";
 import { runWeeklyReviewSweep } from "../services/weeklyReviewGenerate.js";
 import { runSubjectStoriesSweep } from "../services/goalStories.js";
 
@@ -25,6 +27,32 @@ const router: IRouter = Router();
 router.get("/stories", async (req, res): Promise<void> => {
   const stories = await listMarkerStories(req.userId);
   res.json({ stories });
+});
+
+// ─── POST /stories/refresh — generate today's stories for the signed-in user ──
+// The hourly job is the normal ticker, but it is a separate scheduled
+// deployment and can lag or be stale; Journey calls this on its first load
+// of the day so the ring appears when someone opens the page, not an hour
+// later. Idempotent per (user, kind, day) — a story that exists today is
+// "exists", so at most one model round per kind per day — and throttled per
+// user so a reload can't spend model calls when there was nothing to say.
+// The window is ignored (the person is looking at the row now); force never.
+
+const REFRESH_THROTTLE_MS = 10 * 60 * 1000;
+const lastRefresh = new Map<number, number>();
+
+router.post("/stories/refresh", async (req, res): Promise<void> => {
+  const userId = req.userId;
+  const now = Date.now();
+  const last = lastRefresh.get(userId) ?? 0;
+  if (now - last < REFRESH_THROTTLE_MS) {
+    res.json({ throttled: true, retryAfterSeconds: Math.ceil((REFRESH_THROTTLE_MS - (now - last)) / 1000) });
+    return;
+  }
+  lastRefresh.set(userId, now);
+  const opts = { onlyUserId: userId, ignoreWindow: true };
+  const [week, subjects] = await Promise.all([runWeeklyReviewSweep(opts), runSubjectStoriesSweep(opts)]);
+  res.json({ throttled: false, week, subjects });
 });
 
 router.post("/stories/:id/viewed", async (req, res): Promise<void> => {
@@ -54,18 +82,25 @@ export function storiesRunToken(secret: string, d: Date): string {
   return crypto.createHmac("sha256", secret).update(`stories-run:${stamp}`).digest("hex");
 }
 
+function legacyRunToken(secret: string, d: Date): string {
+  const stamp = d.toISOString().slice(0, 13);
+  return crypto.createHmac("sha256", secret).update(`weekly-review-run:${stamp}`).digest("hex");
+}
+
 function tokenMatches(provided: string, secret: string, now: Date): boolean {
+  const a = Buffer.from(provided);
   for (const d of [now, new Date(now.getTime() - 3_600_000)]) {
-    const a = Buffer.from(provided);
-    const b = Buffer.from(storiesRunToken(secret, d));
-    if (a.length === b.length && crypto.timingSafeEqual(a, b)) return true;
+    for (const expected of [storiesRunToken(secret, d), legacyRunToken(secret, d)]) {
+      const b = Buffer.from(expected);
+      if (a.length === b.length && crypto.timingSafeEqual(a, b)) return true;
+    }
   }
   return false;
 }
 
 export const storiesInternalRouter: IRouter = Router();
 
-storiesInternalRouter.post("/internal/stories/run", async (req, res): Promise<void> => {
+async function runStorySweeps(req: import("express").Request, res: import("express").Response): Promise<void> {
   const secret = process.env.SESSION_SECRET;
   if (!secret) {
     res.status(500).json({ error: "SESSION_SECRET not configured" });
@@ -78,7 +113,16 @@ storiesInternalRouter.post("/internal/stories/run", async (req, res): Promise<vo
   }
   const body = (req.body ?? {}) as Record<string, unknown>;
   const isProd = process.env.NODE_ENV === "production";
-  const onlyUserId = Number.isInteger(body.userId) ? (body.userId as number) : undefined;
+  let onlyUserId = Number.isInteger(body.userId) ? (body.userId as number) : undefined;
+  // Operators know emails, not ids: an email scopes the run the same way.
+  if (onlyUserId === undefined && typeof body.email === "string" && body.email.trim()) {
+    const [u] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, body.email.trim().toLowerCase())).limit(1);
+    if (!u) {
+      res.status(404).json({ error: "no user with that email" });
+      return;
+    }
+    onlyUserId = u.id;
+  }
   // Operator affordances, same policy as the chapter sweep: force never in
   // production; ignoreWindow in production only when scoped to one user.
   if (body.force === true && isProd) {
@@ -96,6 +140,12 @@ storiesInternalRouter.post("/internal/stories/run", async (req, res): Promise<vo
     logger.info(result, "story sweeps finished");
   } catch { /* logging must never crash the caller */ }
   res.json(result);
-});
+}
+
+storiesInternalRouter.post("/internal/stories/run", runStorySweeps);
+// The stage-3 endpoint name, kept as an alias: a scheduled-job deployment
+// built before the rename still triggers every sweep. Same token scheme,
+// but with the old prefix — the alias accepts either.
+storiesInternalRouter.post("/internal/weekly-reviews/run", runStorySweeps);
 
 export default router;

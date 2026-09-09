@@ -22,7 +22,7 @@
  * discs sit on the Journey page and their mask must match its background.
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -67,6 +67,25 @@ export function WeekMarkers({ onOpenSection }: { onOpenSection?: (section: Subje
     staleTime: 60_000,
     retry: false,
   });
+
+  // First load of the session: ask the server for today's Goals / Routines
+  // (and a due weekly) story. Idempotent and throttled server-side; the row
+  // refetches only when something was actually written, so the ring appears
+  // the moment there is something new — not an hour later when the
+  // scheduled job gets round to it.
+  const refreshed = useRef(false);
+  useEffect(() => {
+    if (refreshed.current) return;
+    refreshed.current = true;
+    void apiFetch(`${import.meta.env.BASE_URL}api/stories/refresh`, { method: "POST" })
+      .then(async (r) => {
+        if (!r.ok) return;
+        const body = (await r.json()) as { throttled?: boolean; week?: { generated?: number }; subjects?: { goalsGenerated?: number; routinesGenerated?: number } };
+        const wrote = (body.week?.generated ?? 0) + (body.subjects?.goalsGenerated ?? 0) + (body.subjects?.routinesGenerated ?? 0);
+        if (wrote > 0) void queryClient.invalidateQueries({ queryKey: STORIES_QUERY_KEY });
+      })
+      .catch(() => {});
+  }, [queryClient]);
 
   const stories = data?.stories ?? [];
   const markers = useMemo<Marker[]>(() => {
