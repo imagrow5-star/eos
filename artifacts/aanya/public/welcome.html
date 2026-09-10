@@ -214,6 +214,52 @@
   .sample .caption{text-align:center;max-width:540px;margin:26px auto 0;color:var(--ink-soft);font-size:15.5px}
   @media(max-width:600px){.chat{padding:20px 16px}.msg{max-width:88%}}
 
+  /* ── Hear it — one small control above the transcript. A round play button
+     in the product's green, a hairline progress track, the elapsed time in the
+     caption's muted grey. No cover art, no volume, no rate: press, listen.
+     Hidden by the script if the recording can't load, so the page never
+     shows a dead control. */
+  .listen{
+    max-width:540px;margin:0 auto 16px;display:flex;align-items:center;gap:14px;
+    padding:0 4px;
+  }
+  .listen[hidden]{display:none}
+  .listen-btn{
+    flex:none;width:44px;height:44px;border-radius:50%;
+    border:1.5px solid rgba(95,127,92,.55);background:var(--card);color:var(--green-deep);
+    display:inline-flex;align-items:center;justify-content:center;cursor:pointer;
+    box-shadow:var(--shadow-sm);transition:border-color .2s,box-shadow .2s,transform .2s;
+    -webkit-tap-highlight-color:transparent;touch-action:manipulation;padding:0;
+  }
+  .listen-btn:hover{border-color:var(--green);box-shadow:0 0 0 4px rgba(95,127,92,.10)}
+  .listen-btn:focus-visible{outline:none;border-color:var(--green);box-shadow:0 0 0 4px rgba(95,127,92,.18)}
+  .listen-btn:active{transform:scale(.96)}
+  .listen-btn svg{width:16px;height:16px;display:block}
+  .listen-btn .i-pause{display:none}
+  .listen.is-playing .i-play{display:none}
+  .listen.is-playing .i-pause{display:block}
+  .listen-body{flex:1;min-width:0}
+  .listen-text{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:0 0 8px}
+  .listen-text .t{font-size:14.5px;color:var(--ink-soft)}
+  .listen-text .time{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .listen-track{
+    position:relative;height:20px;cursor:pointer;touch-action:none;
+  }
+  .listen-track::before{
+    content:"";position:absolute;left:0;right:0;top:9px;height:2px;border-radius:2px;
+    background:var(--hair);
+  }
+  .listen-fill{
+    position:absolute;left:0;top:9px;height:2px;border-radius:2px;width:0;
+    background:var(--green);
+  }
+  .listen-fill::after{
+    content:"";position:absolute;right:-4px;top:-3px;width:8px;height:8px;border-radius:50%;
+    background:var(--green);opacity:0;transition:opacity .2s;
+  }
+  .listen.is-playing .listen-fill::after,.listen-track:hover .listen-fill::after{opacity:1}
+  @media(max-width:600px){.listen{gap:12px}.listen-btn{width:42px;height:42px}}
+
   /* ── Sections ── */
   /* overflow:hidden clips the decorative blobs that bleed past the edges;
      without it they widen the page and cause horizontal scroll on phones */
@@ -443,6 +489,22 @@
 <section class="sample">
   <div class="wrap">
     <p class="label rv">A conversation, three weeks in</p>
+    <!-- Hear it: one short recording of a real voice conversation with Eos.
+         Never autoplays; the script wires the button and hides the whole row
+         if the file can't load. The transcript below stays regardless. -->
+    <div class="listen rv" id="listen" style="--d:.03s">
+      <audio id="listen-audio" preload="metadata" playsinline src="audio/sample-conversation.mp3?v=1"></audio>
+      <button type="button" class="listen-btn" id="listen-btn" aria-label="Play a recording of a conversation with Eos" aria-pressed="false">
+        <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8v10.4c0 .6.7 1 1.2.7l8-5.2c.5-.3.5-1.1 0-1.4l-8-5.2c-.5-.3-1.2.1-1.2.7z" fill="currentColor"/></svg>
+        <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3.2" height="11" rx="1" fill="currentColor"/><rect x="9.3" y="2.5" width="3.2" height="11" rx="1" fill="currentColor"/></svg>
+      </button>
+      <div class="listen-body">
+        <p class="listen-text"><span class="t">Hear a real one, voice only</span><span class="time" id="listen-time" aria-live="off">0:00</span></p>
+        <div class="listen-track" id="listen-track" role="slider" aria-label="Position in the recording" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+          <div class="listen-fill" id="listen-fill"></div>
+        </div>
+      </div>
+    </div>
     <div class="chat rv" style="--d:.06s" role="img"
          aria-label="A sample conversation with Eos. You: can't sleep again. Eos: Third night this week. Is it the same thing keeping you up, or something new? You: same thing, the interview. Eos: The one on Thursday. You said you'd rather not want it so much. You: yeah, I keep rehearsing it. Eos: What would happen if you stopped rehearsing and just went?">
       <div class="msg you">can't sleep again</div>
@@ -752,6 +814,80 @@
       });
     });
   });
+})();
+</script>
+<script>
+// ── Hear it — the sample-conversation recording ─────────────────────────────
+// Plain <audio> with a custom control so it matches the page. Nothing plays
+// until the person presses; the row removes itself if the file is missing.
+(function(){
+  var row = document.getElementById('listen');
+  var audio = document.getElementById('listen-audio');
+  var btn = document.getElementById('listen-btn');
+  var time = document.getElementById('listen-time');
+  var track = document.getElementById('listen-track');
+  var fill = document.getElementById('listen-fill');
+  if (!row || !audio || !btn) return;
+
+  function fmt(sec){
+    if (!isFinite(sec) || sec < 0) sec = 0;
+    var m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function hide(){ row.hidden = true; }
+  function setPlaying(on){
+    row.classList.toggle('is-playing', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.setAttribute('aria-label', on ? 'Pause the recording' : 'Play a recording of a conversation with Eos');
+  }
+  function render(){
+    var d = audio.duration, t = audio.currentTime;
+    var showTotal = !row.classList.contains('is-playing') && t === 0;
+    time.textContent = showTotal && isFinite(d) ? fmt(d) : fmt(t) + (isFinite(d) ? ' / ' + fmt(d) : '');
+    var pct = isFinite(d) && d > 0 ? Math.min(100, (t / d) * 100) : 0;
+    fill.style.width = pct + '%';
+    track.setAttribute('aria-valuenow', String(Math.round(pct)));
+  }
+
+  audio.addEventListener('error', hide);
+  audio.addEventListener('loadedmetadata', render);
+  audio.addEventListener('timeupdate', render);
+  audio.addEventListener('play', function(){ setPlaying(true); render(); });
+  audio.addEventListener('pause', function(){ setPlaying(false); render(); });
+  audio.addEventListener('ended', function(){ audio.currentTime = 0; setPlaying(false); render(); });
+
+  btn.addEventListener('click', function(){
+    if (audio.paused) {
+      var p = audio.play();
+      if (p && p.catch) p.catch(function(){ setPlaying(false); });
+    } else {
+      audio.pause();
+    }
+  });
+
+  // Tap or drag on the hairline to move within the recording.
+  function seekTo(clientX){
+    var r = track.getBoundingClientRect();
+    if (!isFinite(audio.duration) || r.width === 0) return;
+    var x = Math.min(Math.max(clientX - r.left, 0), r.width);
+    audio.currentTime = (x / r.width) * audio.duration;
+    render();
+  }
+  var dragging = false;
+  track.addEventListener('pointerdown', function(e){ dragging = true; track.setPointerCapture(e.pointerId); seekTo(e.clientX); });
+  track.addEventListener('pointermove', function(e){ if (dragging) seekTo(e.clientX); });
+  track.addEventListener('pointerup', function(){ dragging = false; });
+  track.addEventListener('pointercancel', function(){ dragging = false; });
+  track.addEventListener('keydown', function(e){
+    if (!isFinite(audio.duration)) return;
+    var step = Math.max(1, audio.duration / 20);
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { audio.currentTime = Math.min(audio.duration, audio.currentTime + step); e.preventDefault(); render(); }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { audio.currentTime = Math.max(0, audio.currentTime - step); e.preventDefault(); render(); }
+  });
+
+  // If the browser already knows the file is unusable (or it 404s before any
+  // listener attached), drop the row now rather than showing a dead button.
+  if (audio.error) hide();
 })();
 </script>
 </body>
