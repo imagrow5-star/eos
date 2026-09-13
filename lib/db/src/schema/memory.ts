@@ -2,7 +2,7 @@ import { pgTable, serial, text, boolean, timestamp, integer, real } from "drizzl
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
-import { encryptedText } from "../encryptedColumns";
+import { encryptedText, encryptedInteger } from "../encryptedColumns";
 
 export const memoryFactsTable = pgTable("memory_facts", {
   id: serial("id").primaryKey(),
@@ -52,7 +52,9 @@ export const winsTable = pgTable("wins", {
 export const moodScoresTable = pgTable("mood_scores", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => usersTable.id),
-  score: integer("score").notNull(), // 1-10
+  // 1-10. Encrypted at rest (security review): a mood timeline is among the
+  // most sensitive things here. Never ORDER BY or aggregate it in SQL.
+  score: encryptedInteger("score", "mood_scores.score").notNull(),
   date: text("date").notNull(), // YYYY-MM-DD
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

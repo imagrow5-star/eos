@@ -9,7 +9,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
-import { encryptedJsonb, encryptedText } from "../encryptedColumns";
+import { encryptedJsonb, encryptedText, encryptedInteger } from "../encryptedColumns";
 
 // ─── Weekly growth chapters ───────────────────────────────────────────────────
 // One row per user per analyzed week (Mon–Sun). Entirely additive — nothing in
@@ -35,8 +35,10 @@ export const weeklyChaptersTable = pgTable(
     threadOpening: encryptedText("thread_opening", "weekly_chapters.thread_opening").notNull().default(""),
     thresholdQuestion: encryptedText("threshold_question", "weekly_chapters.threshold_question").notNull(),
     thresholdAnswer: encryptedText("threshold_answer", "weekly_chapters.threshold_answer"),
-    thresholdMood: integer("threshold_mood"), // 1–10, optional one-tap slider
-    thresholdLoneliness: integer("threshold_loneliness"), // 1–10, optional
+    // 1–10 slider answers, optional. Encrypted at rest (security review):
+    // a weekly loneliness score is as sensitive as the words around it.
+    thresholdMood: encryptedInteger("threshold_mood", "weekly_chapters.threshold_mood"),
+    thresholdLoneliness: encryptedInteger("threshold_loneliness", "weekly_chapters.threshold_loneliness"),
     thresholdSkipped: boolean("threshold_skipped").notNull().default(false),
     themes: encryptedJsonb("themes", "weekly_chapters.themes").notNull(), // ChapterTheme[] — see api-server services/chapters — encrypted at rest
     goalReview: encryptedJsonb("goal_review", "weekly_chapters.goal_review"), // { items: [...] } | null — encrypted at rest

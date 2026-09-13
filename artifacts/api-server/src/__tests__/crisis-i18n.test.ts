@@ -437,7 +437,9 @@ describe("end-to-end — German user", () => {
     expect(
       decryptText(events.rows[0].pattern_matched, "crisis_events.pattern_matched").startsWith("de_"),
     ).toBe(true);
-    expect(events.rows[0].country_served).toBe("DE");
+    // country_served is encrypted at rest too (security review).
+    expect(isEncrypted(events.rows[0].country_served)).toBe(true);
+    expect(decryptText(events.rows[0].country_served, "crisis_events.country_served")).toBe("DE");
   });
 
   it("an English-only user is untouched: English card, English patterns", async () => {

@@ -89,6 +89,13 @@ async function crisisEventsFor(userId: number) {
   for (const row of r.rows) {
     expect(isEncrypted(row.pattern_matched)).toBe(true);
     row.pattern_matched = decryptText(row.pattern_matched, "crisis_events.pattern_matched");
+    // Security review: country, channel and the dismissal flag are encrypted
+    // too — a dump shows the shape of nothing. Decrypt them for the assertions.
+    for (const col of ["country_served", "source", "block_dismissed"] as const) {
+      expect(isEncrypted(row[col])).toBe(true);
+      row[col] = decryptText(row[col], `crisis_events.${col}`);
+    }
+    row.block_dismissed = row.block_dismissed === "true";
   }
   return r.rows as Array<{
     id: number;

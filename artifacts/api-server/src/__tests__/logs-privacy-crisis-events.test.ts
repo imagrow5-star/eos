@@ -15,7 +15,9 @@ vi.mock("@workspace/db", () => {
   const chain: Record<string, unknown> = {};
   chain.select = () => chain;
   chain.from = () => chain;
-  chain.where = () => Promise.resolve([{ count: "999" }]);
+  // block_dismissed is encrypted at rest, so the helper counts decrypted rows
+  // in JS: hand it plenty of dismissed rows.
+  chain.where = () => Promise.resolve(Array.from({ length: 999 }, () => ({ blockDismissed: true })));
   return {
     db: chain,
     crisisEventsTable: { userId: {}, blockDismissed: {}, dismissedAt: {} },

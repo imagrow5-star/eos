@@ -29,14 +29,17 @@ single source of truth. Summary: message content; memory facts and feelings;
 personality signals; wins; sealed notes (prompt, text, crisis flag); habit,
 goal, commitment and task free text; weekly-chapter narrative fields (jsonb);
 story-thread retellings; personalization phrase arrays; profile display name
-and custom gender; and crisis-event pattern names
-(`crisis_events.pattern_matched` — the name alone reveals crisis state).
+and custom gender; the mood timeline (`mood_scores.score`) and the weekly
+mood/loneliness slider answers; and the crisis-event log's pattern name,
+country served, channel and dismissal flag (`crisis_events.*` — the shape of
+a crisis event alone reveals crisis state; only its two timestamps stay
+plaintext for the rolling windows).
 
 Deliberately plaintext (SQL filters/sorts on them; they reveal nothing said):
-enums and counters (roles, states, streaks), timestamps, mood scores, dates,
-country codes served for helplines, dismissal flags, billing/subscription
-records, push subscription endpoints, email addresses, and password hashes
-(bcrypt — hashed, not encrypted).
+enums and counters (roles, states, streaks), timestamps, dates,
+billing/subscription records, email addresses, and password hashes
+(bcrypt — hashed, not encrypted). Still plaintext and on the list to encrypt:
+reminder text, landing-form messages, story-thread labels, feeling categories.
 
 Metadata that remains observable to a database-level attacker even with
 encryption: row counts, timing patterns (when a user talks, when a crisis
@@ -133,9 +136,11 @@ NOT protected — an honest list for the reviewer:
   an organizational promise backed by no admin tooling existing, not a
   cryptographic guarantee;
 - third-party processors in the request path: Anthropic receives message
-  content to generate replies (no training, bounded retention); ElevenLabs
-  processes voice audio/transcripts (retention pinned to delete-after-
-  processing by a boot guard); Resend sees email content;
+  content to generate replies (no training, bounded retention); Hume
+  processes voice audio/transcripts (zero data retention is an account
+  setting on Hume's side — nothing in this repo enforces or verifies it;
+  the legacy ElevenLabs path still pins retention by a boot guard); Resend
+  sees account-email content;
 - metadata (section 2): counts, timestamps, lengths, and the existence of
   crisis events per user remain visible to a database-level attacker;
 - Postgres logical backups made by the hosting provider contain the same

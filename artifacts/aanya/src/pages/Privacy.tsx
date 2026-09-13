@@ -93,8 +93,9 @@ export function Privacy() {
               kept and nothing is used to train their models.
             </li>
             <li>
-              <span className="text-foreground/80">Resend</span>: delivers the emails you asked
-              for (like the morning note). They see your email address and the email content.
+              <span className="text-foreground/80">Resend</span>: delivers account emails only,
+              like verifying your address or resetting a password. Eos never emails you otherwise.
+              They see your email address and the email content.
             </li>
             <li>
               <span className="text-foreground/80">Render</span>: the secure hosting and

@@ -755,6 +755,19 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
   const dText = (v: unknown, aad: string): unknown =>
     v == null ? v : decryptText(v as string, aad);
   const dJson = (v: unknown, aad: string): unknown => (v == null ? v : decryptJson(v, aad));
+  // Encrypted integers/booleans are stored as text; legacy rows may still be
+  // the raw number/boolean (pre-conversion) or the cast digit/"true" string.
+  const dInt = (v: unknown, aad: string): number | null => {
+    if (v == null) return null;
+    if (typeof v === "number") return v;
+    const n = Number(decryptText(String(v), aad));
+    return Number.isFinite(n) ? n : null;
+  };
+  const dBool = (v: unknown, aad: string): boolean | null => {
+    if (v == null) return null;
+    if (typeof v === "boolean") return v;
+    return decryptText(String(v), aad) === "true";
+  };
 
   const rawProfile = profileResult.rows[0];
   const profileRow = rawProfile
@@ -798,7 +811,7 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
       title: dText(r.title, "goals.title"),
       description: dText(r.description, "goals.description"),
     })),
-    moodScores: moodResult.rows,
+    moodScores: moodResult.rows.map((r) => ({ ...r, score: dInt(r.score, "mood_scores.score") })),
     commitments: commitmentsResult.rows.map((r) => ({
       ...r,
       content: dText(r.content, "commitments.content"),
@@ -814,6 +827,8 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
       ...r,
       thread_opening: dText(r.thread_opening, "weekly_chapters.thread_opening"),
       threshold_question: dText(r.threshold_question, "weekly_chapters.threshold_question"),
+      threshold_mood: dInt(r.threshold_mood, "weekly_chapters.threshold_mood"),
+      threshold_loneliness: dInt(r.threshold_loneliness, "weekly_chapters.threshold_loneliness"),
       threshold_answer: dText(r.threshold_answer, "weekly_chapters.threshold_answer"),
       themes: dJson(r.themes, "weekly_chapters.themes"),
       goal_review: dJson(r.goal_review, "weekly_chapters.goal_review"),
@@ -846,6 +861,9 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
     crisisEvents: crisisEventsResult.rows.map((r) => ({
       ...r,
       pattern_matched: dText(r.pattern_matched, "crisis_events.pattern_matched"),
+      country_served: dText(r.country_served, "crisis_events.country_served"),
+      source: dText(r.source, "crisis_events.source"),
+      block_dismissed: dBool(r.block_dismissed, "crisis_events.block_dismissed"),
     })),
     stories: storiesResult.rows.map((r) => {
       const cardsText = dText(r.cards, "stories.cards");
