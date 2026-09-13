@@ -27,8 +27,25 @@ import {
   encryptTextArray,
 } from "./crypto";
 
+/**
+ * Every encrypted column, recorded at the moment its schema definition runs.
+ * `kind` is the on-disk shape the migration and rotation engines must handle
+ * (a boolean or integer is stored as encrypted text). The api-server's
+ * `SPECS` registry, which drives the boot encryption sweep AND the key
+ * rotation script, is checked against this list by a test: a column that is
+ * encrypted here but missing there would be skipped by rotation and become
+ * unreadable once the old key is retired. Because the entries are pushed by
+ * the column constructors themselves, this list cannot go stale.
+ */
+export type EncryptedColumnKind = "text" | "jsonb" | "textarray";
+export const ENCRYPTED_COLUMNS: ReadonlyArray<{ aad: string; kind: EncryptedColumnKind }> = [];
+function register(aad: string, kind: EncryptedColumnKind): void {
+  (ENCRYPTED_COLUMNS as Array<{ aad: string; kind: EncryptedColumnKind }>).push({ aad, kind });
+}
+
 /** text column, encrypted at rest. */
 export function encryptedText(name: string, aad: string) {
+  register(aad, "text");
   return customType<{ data: string; driverData: string }>({
     dataType() {
       return "text";
@@ -50,6 +67,7 @@ export function encryptedText(name: string, aad: string) {
  * object/array for legacy plaintext rows).
  */
 export function encryptedJsonb<T = unknown>(name: string, aad: string) {
+  register(aad, "jsonb");
   return customType<{ data: T; driverData: string }>({
     dataType() {
       return "jsonb";
@@ -79,6 +97,7 @@ export function encryptedJsonb<T = unknown>(name: string, aad: string) {
  * boolean→text migration cast.
  */
 export function encryptedBoolean(name: string, aad: string) {
+  register(aad, "text");
   return customType<{ data: boolean; driverData: string }>({
     dataType() {
       return "text";
@@ -105,6 +124,7 @@ export function encryptedBoolean(name: string, aad: string) {
  * migration cast.
  */
 export function encryptedInteger(name: string, aad: string) {
+  register(aad, "text");
   return customType<{ data: number; driverData: string }>({
     dataType() {
       return "text";
@@ -125,6 +145,7 @@ export function encryptedInteger(name: string, aad: string) {
 
 /** text[] column, element-wise encrypted at rest. */
 export function encryptedTextArray(name: string, aad: string) {
+  register(aad, "textarray");
   return customType<{ data: string[]; driverData: string[] }>({
     dataType() {
       return "text[]";
