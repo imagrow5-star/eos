@@ -51,15 +51,24 @@ export const SPECS: TableSpec[] = [
   // plaintext legacy rows — it is listed so the ROTATION script (which
   // iterates these SPECS) covers it, and as the registry of encrypted columns.
   { table: "memory_feelings", idCol: "id", cols: [{ name: "feeling", kind: "text", aad: "memory_feelings.feeling" }] },
-  // Crisis floor event log: the pattern NAME alone reveals a user's crisis
-  // state, so it is encrypted like content (audit follow-up). country_served,
-  // source, and the dismissal columns stay plaintext — SQL filters on them
-  // and they don't identify what was said.
+  // Crisis floor event log: the pattern name, the country served, the channel
+  // and the dismissal flag are all encrypted (security review). Only the two
+  // timestamps stay plaintext — the rolling windows filter on them in SQL;
+  // everything else is filtered in JS (services/crisis/events.ts).
   {
     table: "crisis_events",
     idCol: "id",
-    cols: [{ name: "pattern_matched", kind: "text", aad: "crisis_events.pattern_matched" }],
+    cols: [
+      { name: "pattern_matched", kind: "text", aad: "crisis_events.pattern_matched" },
+      { name: "country_served", kind: "text", aad: "crisis_events.country_served" },
+      { name: "source", kind: "text", aad: "crisis_events.source" },
+      // boolean → text by ensureColumnTypes(); plaintext "true"/"false" until encrypted.
+      { name: "block_dismissed", kind: "text", aad: "crisis_events.block_dismissed" },
+    ],
   },
+  // The mood timeline: integer → text by ensureColumnTypes(); digit strings
+  // until encrypted. Never aggregated in SQL.
+  { table: "mood_scores", idCol: "id", cols: [{ name: "score", kind: "text", aad: "mood_scores.score" }] },
   { table: "personality_signals", idCol: "id", cols: [{ name: "signal", kind: "text", aad: "personality_signals.signal" }] },
   { table: "wins", idCol: "id", cols: [{ name: "content", kind: "text", aad: "wins.content" }] },
   {
@@ -69,7 +78,7 @@ export const SPECS: TableSpec[] = [
       { name: "prompt", kind: "text", aad: "sealed_notes.prompt" },
       { name: "text", kind: "text", aad: "sealed_notes.text" },
       // Encrypted boolean flag: the column is converted boolean→text by
-      // ensureCrisisFlagColumnType() below BEFORE this sweep runs, so the
+      // ensureColumnTypes() below BEFORE this sweep runs, so the
       // detector sees plaintext "true"/"false" strings and encrypts them
       // like any other text value.
       { name: "crisis_flagged", kind: "text", aad: "sealed_notes.crisis_flagged" },
@@ -113,6 +122,9 @@ export const SPECS: TableSpec[] = [
       { name: "thread_opening", kind: "text", aad: "weekly_chapters.thread_opening" },
       { name: "threshold_question", kind: "text", aad: "weekly_chapters.threshold_question" },
       { name: "threshold_answer", kind: "text", aad: "weekly_chapters.threshold_answer" },
+      // integer → text by ensureColumnTypes(); digit strings until encrypted.
+      { name: "threshold_mood", kind: "text", aad: "weekly_chapters.threshold_mood" },
+      { name: "threshold_loneliness", kind: "text", aad: "weekly_chapters.threshold_loneliness" },
       { name: "themes", kind: "jsonb", aad: "weekly_chapters.themes" },
       { name: "goal_review", kind: "jsonb", aad: "weekly_chapters.goal_review" },
       { name: "micro_offer", kind: "jsonb", aad: "weekly_chapters.micro_offer" },
@@ -171,34 +183,53 @@ function deepEqual(a: unknown, b: unknown): boolean {
 export type MigrationCounts = Record<string, { migrated: number; skippedConcurrent: number }>;
 
 /**
- * One-time column-type conversion for sealed_notes.crisis_flagged
- * (boolean → text) so the flag can be encrypted like any other text value.
- * Idempotent: the guard checks information_schema and does nothing once the
- * column is already text. Values survive as plaintext "true"/"false" (the
- * ::text cast), which the sweep right after encrypts and reads pass through
- * until then — no row is ever nulled or dropped. Runs under the migration's
- * advisory lock, so concurrent instances can't both rewrite the table.
- * Fresh databases skip this entirely: drizzle-kit push creates the column as
- * text from the schema definition.
+ * One-time column-type conversions (boolean/integer → text) so a value can be
+ * encrypted like any other text value. Idempotent: each guard checks
+ * information_schema and does nothing once the column is already text.
+ * Values survive as plaintext strings (the ::text cast), which the sweep
+ * right after encrypts and reads pass through until then — no row is ever
+ * nulled or dropped. Runs under the migration's advisory lock, so concurrent
+ * instances can't both rewrite a table. Fresh databases skip this entirely:
+ * drizzle-kit push creates the columns as text from the schema definition.
  */
-async function ensureCrisisFlagColumnType(client: {
-  query: (text: string) => Promise<unknown>;
-}): Promise<void> {
-  await client.query(`
-    DO $$
-    BEGIN
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'sealed_notes'
-          AND column_name = 'crisis_flagged'
-          AND data_type = 'boolean'
-      ) THEN
-        ALTER TABLE sealed_notes ALTER COLUMN crisis_flagged DROP DEFAULT;
-        ALTER TABLE sealed_notes ALTER COLUMN crisis_flagged TYPE text USING crisis_flagged::text;
-        ALTER TABLE sealed_notes ALTER COLUMN crisis_flagged SET DEFAULT 'false';
-      END IF;
-    END $$;
-  `);
+export const COLUMN_TYPE_CONVERSIONS: ReadonlyArray<{
+  table: string;
+  column: string;
+  fromType: "boolean" | "integer";
+  /** Re-applied after the cast, as a text literal; omitted = no default. */
+  defaultText?: string;
+}> = [
+  { table: "sealed_notes", column: "crisis_flagged", fromType: "boolean", defaultText: "false" },
+  // Security review: the mood timeline, the weekly slider answers, and the
+  // crisis-event shape (country, channel, dismissal) were plaintext.
+  { table: "mood_scores", column: "score", fromType: "integer" },
+  { table: "weekly_chapters", column: "threshold_mood", fromType: "integer" },
+  { table: "weekly_chapters", column: "threshold_loneliness", fromType: "integer" },
+  { table: "crisis_events", column: "block_dismissed", fromType: "boolean", defaultText: "false" },
+];
+
+async function ensureColumnTypes(client: { query: (text: string) => Promise<unknown> }): Promise<void> {
+  for (const c of COLUMN_TYPE_CONVERSIONS) {
+    // Identifiers come from the static list above, never from input.
+    const setDefault = c.defaultText !== undefined
+      ? `ALTER TABLE ${c.table} ALTER COLUMN ${c.column} SET DEFAULT '${c.defaultText}';`
+      : "";
+    await client.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = '${c.table}'
+            AND column_name = '${c.column}'
+            AND data_type = '${c.fromType}'
+        ) THEN
+          ALTER TABLE ${c.table} ALTER COLUMN ${c.column} DROP DEFAULT;
+          ALTER TABLE ${c.table} ALTER COLUMN ${c.column} TYPE text USING ${c.column}::text;
+          ${setDefault}
+        END IF;
+      END $$;
+    `);
+  }
 }
 
 async function migrateTable(spec: TableSpec): Promise<{ migrated: number; skippedConcurrent: number }> {
@@ -280,6 +311,13 @@ async function migrateTable(spec: TableSpec): Promise<{ migrated: number; skippe
           for (const c of spec.cols) {
             const orig = target.originals[c.name];
             if (orig === null || orig === undefined) continue;
+            // Only verify what this pass rewrote. A column that was already
+            // ciphertext in the original (a table where one column was
+            // encrypted in an earlier release and another only now) was
+            // skipped above, and its original is not plaintext to compare to.
+            if (c.kind === "text" && isEncrypted(orig)) continue;
+            if (c.kind === "jsonb" && typeof orig === "string" && isEncrypted(orig)) continue;
+            if (c.kind === "textarray" && Array.isArray(orig) && (orig as string[]).every((el) => isEncrypted(el))) continue;
             let ok: boolean;
             if (c.kind === "text") {
               ok = decryptText(now[c.name] as string, c.aad) === orig;
@@ -334,7 +372,7 @@ export async function runDataEncryptionMigration(): Promise<MigrationCounts | nu
     }
     try {
       // Column-shape prerequisite first (idempotent, guarded, same lock).
-      await ensureCrisisFlagColumnType(lockClient);
+      await ensureColumnTypes(lockClient);
       const counts: MigrationCounts = {};
       for (const spec of SPECS) {
         counts[spec.table] = await migrateTable(spec);

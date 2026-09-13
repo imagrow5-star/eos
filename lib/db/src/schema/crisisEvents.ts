@@ -1,5 +1,5 @@
 import { pgTable, serial, text, boolean, timestamp, integer } from "drizzle-orm/pg-core";
-import { encryptedText } from "../encryptedColumns";
+import { encryptedText, encryptedBoolean } from "../encryptedColumns";
 import { usersTable } from "./users";
 import { messagesTable } from "./messages";
 
@@ -29,9 +29,15 @@ export const crisisEventsTable = pgTable("crisis_events", {
   // ciphertexts of the same name differ (random IV); dedup happens in JS
   // (see api-server services/crisis/events.ts).
   patternMatched: encryptedText("pattern_matched", "crisis_events.pattern_matched").notNull(),
-  countryServed: text("country_served").notNull(), // ISO-2 or "fallback"
-  source: text("source").notNull().default("chat"), // chat | voice
-  blockDismissed: boolean("block_dismissed").notNull().default(false),
+  // Which country's helplines were served, chat|voice, and whether the card
+  // was dismissed: all encrypted at rest (security review). Only the two
+  // timestamps stay plaintext — the rolling windows filter on them in SQL.
+  // NEVER compare these three in SQL; filter in JS (services/crisis/events.ts).
+  countryServed: encryptedText("country_served", "crisis_events.country_served").notNull(), // ISO-2 or "fallback"
+  // The DB default only ever lands via raw SQL (tests, backfills) as a plaintext
+  // "chat" that the next boot sweep encrypts; the app always writes source.
+  source: encryptedText("source", "crisis_events.source").notNull().default("chat"), // chat | voice
+  blockDismissed: encryptedBoolean("block_dismissed", "crisis_events.block_dismissed").notNull().default(false),
   dismissedAt: timestamp("dismissed_at"), // powers the rolling 7-day review-flag window
 });
 

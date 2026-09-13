@@ -1,10 +1,10 @@
 # Eos
 
 > Eos is a private AI companion you talk to by voice or text.
-> It remembers you across conversations. Everything is
-> encrypted, never sold, and never used to train AI. Eos is
-> built for everyday companionship — a friend to talk to, not
-> a therapist and not a romantic partner.
+> It remembers you across conversations. What you say is
+> encrypted where it is stored, never sold, and never used to
+> train AI. Eos is built for everyday companionship — a friend
+> to talk to, not a therapist and not a romantic partner.
 
 ## Pricing
 

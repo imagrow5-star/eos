@@ -94,6 +94,35 @@ export function encryptedBoolean(name: string, aad: string) {
   })(name);
 }
 
+/**
+ * Integer column, encrypted at rest (stored as text: "enc:v1:…" of the
+ * decimal string). For small scores — a mood 1–10, a slider answer — where
+ * the number itself is the sensitive fact. NEVER aggregate or order on it in
+ * SQL; read the rows and work in JS (they are per-user and small).
+ *
+ * Legacy plaintext passthrough covers both shapes: a raw integer (column not
+ * yet converted to text) and the digit strings produced by the integer→text
+ * migration cast.
+ */
+export function encryptedInteger(name: string, aad: string) {
+  return customType<{ data: number; driverData: string }>({
+    dataType() {
+      return "text";
+    },
+    toDriver(value: number): string {
+      return encryptText(String(Math.trunc(value)), aad);
+    },
+    fromDriver(value: unknown): number {
+      if (typeof value === "number") return value; // pre-conversion column
+      if (typeof value === "string") {
+        const n = Number(decryptText(value, aad));
+        return Number.isFinite(n) ? n : 0;
+      }
+      return 0;
+    },
+  })(name);
+}
+
 /** text[] column, element-wise encrypted at rest. */
 export function encryptedTextArray(name: string, aad: string) {
   return customType<{ data: string[]; driverData: string[] }>({

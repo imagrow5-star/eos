@@ -24,7 +24,9 @@ export async function recordChatCrisisEvent(args: {
   patternMatched: string;
   countryServed: string;
 }): Promise<void> {
-  await db.insert(crisisEventsTable).values({ ...args, source: "chat" });
+  // blockDismissed is written explicitly: the column is encrypted, and the DB
+  // default would land as a plaintext "false".
+  await db.insert(crisisEventsTable).values({ ...args, source: "chat", blockDismissed: false });
 }
 
 /** Fire-and-forget-safe; dedups repeated detections of one spoken turn. */
@@ -37,18 +39,13 @@ export async function recordVoiceCrisisEvent(args: {
   // pattern_matched is encrypted with a random IV, so SQL equality can never
   // match it. Fetch the (tiny) recent window and compare the decrypted values
   // here — the ORM layer hands them back as plaintext.
+  // source is encrypted too — filter it in JS, never in SQL.
   const recent = await db
-    .select({ patternMatched: crisisEventsTable.patternMatched })
+    .select({ patternMatched: crisisEventsTable.patternMatched, source: crisisEventsTable.source })
     .from(crisisEventsTable)
-    .where(
-      and(
-        eq(crisisEventsTable.userId, args.userId),
-        eq(crisisEventsTable.source, "voice"),
-        gte(crisisEventsTable.detectedAt, since),
-      ),
-    );
-  if (recent.some((r) => r.patternMatched === args.patternMatched)) return;
-  await db.insert(crisisEventsTable).values({ ...args, source: "voice" });
+    .where(and(eq(crisisEventsTable.userId, args.userId), gte(crisisEventsTable.detectedAt, since)));
+  if (recent.some((r) => r.source === "voice" && r.patternMatched === args.patternMatched)) return;
+  await db.insert(crisisEventsTable).values({ ...args, source: "voice", blockDismissed: false });
 }
 
 /** Newest undismissed VOICE event in the recent window — what the on-call
@@ -58,24 +55,21 @@ export async function pendingVoiceCrisisEvent(
   windowMs = 15 * 60 * 1000,
 ): Promise<{ id: number; countryServed: string; detectedAt: Date } | null> {
   const since = new Date(Date.now() - windowMs);
-  const [row] = await db
+  // source and block_dismissed are encrypted at rest — the window filters in
+  // SQL on the plaintext timestamp; the rest is decided in JS on a small set.
+  const rows = await db
     .select({
       id: crisisEventsTable.id,
       countryServed: crisisEventsTable.countryServed,
       detectedAt: crisisEventsTable.detectedAt,
+      source: crisisEventsTable.source,
+      blockDismissed: crisisEventsTable.blockDismissed,
     })
     .from(crisisEventsTable)
-    .where(
-      and(
-        eq(crisisEventsTable.userId, userId),
-        eq(crisisEventsTable.source, "voice"),
-        eq(crisisEventsTable.blockDismissed, false),
-        gte(crisisEventsTable.detectedAt, since),
-      ),
-    )
-    .orderBy(desc(crisisEventsTable.detectedAt))
-    .limit(1);
-  return row ?? null;
+    .where(and(eq(crisisEventsTable.userId, userId), gte(crisisEventsTable.detectedAt, since)))
+    .orderBy(desc(crisisEventsTable.detectedAt));
+  const row = rows.find((r) => r.source === "voice" && !r.blockDismissed);
+  return row ? { id: row.id, countryServed: row.countryServed, detectedAt: row.detectedAt } : null;
 }
 
 /**
@@ -85,17 +79,13 @@ export async function pendingVoiceCrisisEvent(
  */
 export async function checkDismissalReviewFlag(userId: number): Promise<boolean> {
   const since = new Date(Date.now() - DISMISSAL_REVIEW_WINDOW_DAYS * 24 * 3600 * 1000);
-  const [row] = await db
-    .select({ count: sql<string>`count(*)` })
+  // block_dismissed is encrypted at rest — count in JS over the window
+  // (filtered in SQL on the plaintext dismissed_at).
+  const rows = await db
+    .select({ blockDismissed: crisisEventsTable.blockDismissed })
     .from(crisisEventsTable)
-    .where(
-      and(
-        eq(crisisEventsTable.userId, userId),
-        eq(crisisEventsTable.blockDismissed, true),
-        gte(crisisEventsTable.dismissedAt, since),
-      ),
-    );
-  const dismissals = Number(row?.count ?? "0");
+    .where(and(eq(crisisEventsTable.userId, userId), gte(crisisEventsTable.dismissedAt, since)));
+  const dismissals = rows.filter((r) => r.blockDismissed).length;
   if (dismissals >= DISMISSAL_REVIEW_THRESHOLD) {
     // Review flag: repeated dismissal of crisis resources is a signal a human
     // should look at supportively — it is NEVER an enforcement action.
