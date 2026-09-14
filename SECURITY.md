@@ -24,12 +24,18 @@ is a choke point, not a per-callsite discipline; the few raw-SQL readers
 
 The registry is `SPECS` in
 `artifacts/api-server/src/services/dataEncryptionMigration.ts` — it drives
-the boot migration for legacy rows AND the key-rotation engine, so it is the
-single source of truth. Summary: message content; memory facts and feelings;
+the boot migration for legacy rows AND the key-rotation engine. The ground
+truth is `ENCRYPTED_COLUMNS` in `lib/db`, filled in by the encrypted column
+constructors as the schema loads; `__tests__/encryption-registry.test.ts`
+fails the build if the two ever differ, because a column the schema
+encrypts but `SPECS` omits is skipped by rotation and lost when the old key
+is retired (five columns sat in exactly that state until the security
+review). Summary: message content; memory facts and feelings;
 personality signals; wins; sealed notes (prompt, text, crisis flag); habit,
 goal, commitment and task free text; weekly-chapter narrative fields (jsonb);
-story-thread retellings; personalization phrase arrays; profile display name
-and custom gender; the mood timeline (`mood_scores.score`) and the weekly
+story-thread retellings; stories (the Journey circle fragment and card JSON)
+and every card the story gates dropped; reflection reports; personalization
+phrase arrays; profile display name, original name and custom gender; the mood timeline (`mood_scores.score`) and the weekly
 mood/loneliness slider answers; and the crisis-event log's pattern name,
 country served, channel and dismissal flag (`crisis_events.*` — the shape of
 a crisis event alone reveals crisis state; only its two timestamps stay

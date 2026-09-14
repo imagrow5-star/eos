@@ -38,3 +38,4 @@ export const db = drizzle(pool, { schema });
 
 export * from "./schema";
 export * from "./crypto";
+export { ENCRYPTED_COLUMNS, type EncryptedColumnKind } from "./encryptedColumns";

@@ -17,6 +17,7 @@ description: Field-level AES-256-GCM encryption pattern, its SQL-blindness conse
 # Migration & rotation contract
 - Boot migration: batches, plaintext-detector predicates, per-row optimistic guard (`AND col = original`), same-txn SELECT-back + decrypt + deep-compare, COMMIT only if all match; advisory lock; counts-only logging; idempotent (re-run leaves ciphertext byte-identical).
 - Key rotation (`scripts/rotate-data-key.ts` in api-server): OLD via `OLD_DATA_ENCRYPTION_KEY` env, NEW from `DATA_ENCRYPTION_KEY`; skips rows already on NEW; run pass 1 → restart server (kills old-key writer AND old cached key) → pass 2 for stragglers. The running server caches the key at first use — rotating without restart breaks live reads.
+- Registry drift guard: `ENCRYPTED_COLUMNS` (lib/db, pushed by the encrypted* constructors) vs api-server `SPECS`, compared by `encryption-registry.test.ts`. Adding an encrypted column to the schema without a SPECS entry fails the suite — the only way rotation silently skips a column is if that test is deleted.
 - Old-key recovery source if env is gone: the still-running server's `/proc/<pid>/environ`.
 
 # Key handling incident (July 2026)

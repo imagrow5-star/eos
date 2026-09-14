@@ -42,8 +42,12 @@ const BATCH_SIZE = 200;
 const LOCK_KEY = "data-encryption-migration";
 
 // Every sensitive column in the system. Must stay in lockstep with the
-// encryptedText/encryptedJsonb/encryptedTextArray columns in lib/db schema.
-// Exported for the key-rotation script (scripts/rotate-data-key.ts).
+// encrypted* columns in the lib/db schema: `__tests__/encryption-registry.test.ts`
+// compares this list against `ENCRYPTED_COLUMNS` (which the column
+// constructors fill in as the schema loads) and fails on any column present
+// in one and not the other. A column missing here is skipped by the
+// key-rotation engine (services/dataKeyRotation.ts) and would be lost the day
+// the old key is retired — that happened once, silently, to five columns.
 export const SPECS: TableSpec[] = [
   { table: "messages", idCol: "id", cols: [{ name: "content", kind: "text", aad: "messages.content" }] },
   { table: "memory_facts", idCol: "id", cols: [{ name: "fact", kind: "text", aad: "memory_facts.fact" }] },
@@ -134,6 +138,19 @@ export const SPECS: TableSpec[] = [
     ],
   },
   { table: "story_threads", idCol: "id", cols: [{ name: "retellings", kind: "jsonb", aad: "story_threads.retellings" }] },
+  // Stories (the Journey markers): the circle fragment and the card JSON are
+  // the person's own words. story_drops keeps every card a gate refused.
+  {
+    table: "stories",
+    idCol: "id",
+    cols: [
+      { name: "fragment", kind: "text", aad: "stories.fragment" },
+      { name: "cards", kind: "text", aad: "stories.cards" },
+    ],
+  },
+  { table: "story_drops", idCol: "id", cols: [{ name: "text", kind: "text", aad: "story_drops.text" }] },
+  // The finished reflection report (Markdown built from the export payload).
+  { table: "reflection_reports", idCol: "id", cols: [{ name: "content", kind: "text", aad: "reflection_reports.content" }] },
   {
     table: "personalization_state",
     idCol: "user_id",
@@ -144,6 +161,7 @@ export const SPECS: TableSpec[] = [
     idCol: "id",
     cols: [
       { name: "user_name", kind: "text", aad: "profile.user_name" },
+      { name: "original_user_name", kind: "text", aad: "profile.original_user_name" },
       { name: "user_gender_custom", kind: "text", aad: "profile.user_gender_custom" },
     ],
   },
