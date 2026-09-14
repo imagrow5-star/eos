@@ -1,4 +1,4 @@
-import { desc, eq, gte, sql, and } from "drizzle-orm";
+import { desc, eq, gte, sql, and, isNull } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   profileTable,
@@ -174,7 +174,9 @@ export async function calculateStage(profile: Profile): Promise<number> {
 
   // Stage 2: 3+ unique visit days AND 8+ memory facts
   const returnDays = profile.visitDates.length;
-  const factsWhere = userId != null ? eq(memoryFactsTable.userId, userId) : undefined;
+  const factsWhere = userId != null
+    ? and(eq(memoryFactsTable.userId, userId), isNull(memoryFactsTable.retiredAt))
+    : isNull(memoryFactsTable.retiredAt);
   const [factCountRow] = await db
     .select({ count: sql<string>`count(*)` })
     .from(memoryFactsTable)

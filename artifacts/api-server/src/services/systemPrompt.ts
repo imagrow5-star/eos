@@ -1,4 +1,4 @@
-import { eq, and, desc, gte, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, gte, sql, inArray, isNull } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   memoryFactsTable,
@@ -175,7 +175,8 @@ export async function buildSystemPrompt(
       // Importance ranking (Sprint 2A): fetch ALL facts (typical user <200) and
       // rank in app code below — an old-but-important fact must be able to beat
       // a newer trivial one, which "ORDER BY created_at LIMIT 30" could not.
-      db.select().from(memoryFactsTable).where(eq(memoryFactsTable.userId, userId)),
+      // Retired facts (no longer true, nothing replaced them) never reach a prompt.
+      db.select().from(memoryFactsTable).where(and(eq(memoryFactsTable.userId, userId), isNull(memoryFactsTable.retiredAt))),
       // Sprint 2C — feelings-in-context. Same fetch-all-then-rank shape as facts
       // (they share the importance columns and scorer). Guarded so a
       // freshly-published prod without the table yet degrades to none, never

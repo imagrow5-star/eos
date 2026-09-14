@@ -50,7 +50,15 @@ const LOCK_KEY = "data-encryption-migration";
 // the old key is retired — that happened once, silently, to five columns.
 export const SPECS: TableSpec[] = [
   { table: "messages", idCol: "id", cols: [{ name: "content", kind: "text", aad: "messages.content" }] },
-  { table: "memory_facts", idCol: "id", cols: [{ name: "fact", kind: "text", aad: "memory_facts.fact" }] },
+  {
+    table: "memory_facts",
+    idCol: "id",
+    cols: [
+      { name: "fact", kind: "text", aad: "memory_facts.fact" },
+      // The wording a fact had before the conversation updated it (nullable).
+      { name: "previous_fact", kind: "text", aad: "memory_facts.previous_fact" },
+    ],
+  },
   // memory_feelings shipped after the encryption rollout, so it has no
   // plaintext legacy rows — it is listed so the ROTATION script (which
   // iterates these SPECS) covers it, and as the registry of encrypted columns.

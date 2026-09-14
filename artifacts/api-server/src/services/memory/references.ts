@@ -6,7 +6,7 @@
 // user's reply. Facts are encrypted at rest, so matching happens in app code
 // on decrypted rows (drizzle decrypts on read).
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, memoryFactsTable, memoryFeelingsTable } from "@workspace/db";
 import { logger } from "../../lib/logger.js";
 import { hashUserIdForLog } from "../../lib/logging/hashUserIdForLog.js";
@@ -49,7 +49,7 @@ export async function recordMemoryReferences(
       db
         .select({ id: memoryFactsTable.id, content: memoryFactsTable.fact })
         .from(memoryFactsTable)
-        .where(eq(memoryFactsTable.userId, userId)),
+        .where(and(eq(memoryFactsTable.userId, userId), isNull(memoryFactsTable.retiredAt))),
       db
         .select({ id: memoryFeelingsTable.id, content: memoryFeelingsTable.feeling })
         .from(memoryFeelingsTable)

@@ -9,7 +9,7 @@ import { backfillLanguageSunset } from "./services/settings/languageSunset";
 import { scrubMessageAnnotations } from "./services/messageAnnotationScrub";
 import { migrateRomanticPersona } from "./services/settings/romanticPersonaMigration";
 import { ensureProfileThemeColumns, ensureReflectionReportsTable, ensureMorningNoteColumns, ensureDodoBillingColumns, ensureHumeVoiceColumn,
-  ensureLoginLockoutColumns, dropRetiredPushTables, ensureDemoSessionsTable } from "./services/schemaGuard";
+  ensureLoginLockoutColumns, dropRetiredPushTables, ensureDemoSessionsTable, ensureMemoryFactLifecycleColumns } from "./services/schemaGuard";
 import { backfillMemoryImportance } from "./services/memory/backfill";
 import { runDedupBackfill } from "./services/memory/dedupBackfill";
 import { warnIfAgentEnvIncomplete } from "./services/voiceAgentRouting";
@@ -137,6 +137,14 @@ await ensureLoginLockoutColumns().catch((e) =>
     { err: e },
     "login lockout column guard failed at boot — logins will fail until users.failed_login_attempts / locked_until exist",
   ),
+);
+
+// Add the memory-fact lifecycle columns (previous_fact, updated_at,
+// retired_at) if a deploy predates them. Idempotent. Every fact read filters
+// on retired_at, so on failure the error is loud: chat would 42703 until a
+// later boot applies it.
+await ensureMemoryFactLifecycleColumns().catch((e) =>
+  logger.error({ err: e }, "memory_facts lifecycle column guard failed at boot — fact reads will fail until the columns exist"),
 );
 
 // Create the landing-page demo log if a deploy predates it. Idempotent. On

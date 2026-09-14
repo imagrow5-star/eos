@@ -104,8 +104,8 @@ const lexFinder: DedupFinder = async (candidate, existing) => {
       best = e;
     }
   }
-  if (best && bestScore >= 0.3) return { isDuplicate: true, matchingId: best.id, reasoning: "lexical stand-in" };
-  return { isDuplicate: false, matchingId: null, reasoning: "no match" };
+  if (best && bestScore >= 0.3) return { isDuplicate: true, relation: "duplicate", matchingId: best.id, reasoning: "lexical stand-in" };
+  return { isDuplicate: false, relation: "different", matchingId: null, reasoning: "no match" };
 };
 
 describe.skipIf(!DB)("extraction-time dedup", () => {

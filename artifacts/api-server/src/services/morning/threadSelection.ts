@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql, isNull } from "drizzle-orm";
 import { db, commitmentsTable, memoryFactsTable, goalsTable } from "@workspace/db";
 
 // ─── Morning-note thread selection (shared) ───────────────────────────────────
@@ -95,7 +95,7 @@ export async function selectReferenceFacts(userId: number, limit = 10): Promise<
       lastSurfacedAt: memoryFactsTable.lastSurfacedAt,
     })
     .from(memoryFactsTable)
-    .where(eq(memoryFactsTable.userId, userId))
+    .where(and(eq(memoryFactsTable.userId, userId), isNull(memoryFactsTable.retiredAt)))
     .orderBy(desc(memoryFactsTable.createdAt))
     .limit(limit * 3); // over-fetch, then filter events out
 
