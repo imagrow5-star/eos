@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { RowList, Row, DisclosureSection, DisclosurePreview } from "@/components/ui/RowList";
+import { ForgetButton, EditToggle } from "@/components/ForgetButton";
 import { apiFetch } from "@/lib/api";
 import { format, parseISO } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
@@ -25,6 +26,7 @@ import {
   getGetHabitsQueryKey,
   getGetWinsQueryKey,
   getGetJourneyQueryKey,
+  getGetMoodHistoryQueryKey,
 } from "@workspace/api-client-react";
 
 import { Button } from "@/components/ui/button";
@@ -709,6 +711,27 @@ export default function Journey() {
   const { data: profile } = useGetProfile();
   // A Goals / Routines marker with nothing to say opens the row below instead.
   const [openRequests, setOpenRequests] = useState({ goals: 0, routines: 0 });
+  // Forget one win or one mood day (memory audit, item 4): Edit reveals the
+  // two-tap × on each row, Done puts it away. A win the model recorded and
+  // a score it estimated are both just rows the person can remove.
+  const [editingWins, setEditingWins] = useState(false);
+  const [editingMoods, setEditingMoods] = useState(false);
+  const [showAllMoods, setShowAllMoods] = useState(false);
+  const queryClient = useQueryClient();
+  const forgetWin = async (id: number) => {
+    const r = await apiFetch(`${import.meta.env.BASE_URL}api/memory/wins/${id}`, { method: "DELETE" });
+    if (r.ok) {
+      await queryClient.invalidateQueries({ queryKey: getGetWinsQueryKey() });
+      await queryClient.invalidateQueries({ queryKey: getGetJourneyQueryKey() });
+    }
+  };
+  const forgetMood = async (date: string) => {
+    const r = await apiFetch(`${import.meta.env.BASE_URL}api/memory/moods/${date.slice(0, 10)}`, { method: "DELETE" });
+    if (r.ok) {
+      await queryClient.invalidateQueries({ queryKey: getGetMoodHistoryQueryKey() });
+      await queryClient.invalidateQueries({ queryKey: getGetJourneyQueryKey() });
+    }
+  };
 
   if (journeyLoading || !journey) {
     return (
@@ -830,6 +853,39 @@ export default function Journey() {
           The dips are part of it. Feeling low on a day isn't going backwards. It's a day, and you kept going.
         </p>
 
+        {/* The days themselves — each an estimate Eos made, each removable */}
+        {moodHistory.length > 0 && (() => {
+          const days = [...moodHistory].sort((a, b) => b.date.localeCompare(a.date));
+          const shown = showAllMoods ? days : days.slice(0, 7);
+          return (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between px-1">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground/60">Check-ins</p>
+                <EditToggle editing={editingMoods} onToggle={() => setEditingMoods((v) => !v)} />
+              </div>
+              <RowList>
+                {shown.map((m) => (
+                  <Row
+                    key={m.date}
+                    title={format(parseISO(m.date), "MMMM d")}
+                    meta={`${m.score} of 10`}
+                    actions={editingMoods ? <ForgetButton label={`${format(parseISO(m.date), "MMMM d")}, ${m.score} of 10`} onConfirm={() => forgetMood(m.date)} /> : undefined}
+                  />
+                ))}
+              </RowList>
+              {days.length > 7 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllMoods((v) => !v)}
+                  className="px-1 text-[12px] text-muted-foreground hover:text-foreground font-serif"
+                >
+                  {showAllMoods ? "Show fewer" : `Show all ${days.length}`}
+                </button>
+              )}
+            </div>
+          );
+        })()}
+
         {/* Habit-mood insight — server-computed correlation or client fallback */}
         {habitCorrelation && (
           <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-emerald-500/6 border border-emerald-500/15">
@@ -864,6 +920,11 @@ export default function Journey() {
             </p>
           )}
           {wins.length > 0 && (
+            <div className="flex justify-end -mb-1">
+              <EditToggle editing={editingWins} onToggle={() => setEditingWins((v) => !v)} />
+            </div>
+          )}
+          {wins.length > 0 && (
             <RowList>
               {wins.map((win) => (
                 <Row
@@ -871,6 +932,7 @@ export default function Journey() {
                   icon={<Heart className="w-3.5 h-3.5 text-primary-strong/50" />}
                   title={win.content}
                   meta={format(parseISO(win.createdAt), "MMM d")}
+                  actions={editingWins ? <ForgetButton label={win.content} onConfirm={() => forgetWin(win.id)} /> : undefined}
                 >
                   <p className="text-[10px] uppercase tracking-wider text-muted-foreground/50">
                     {format(parseISO(win.createdAt), "MMMM d, yyyy")}

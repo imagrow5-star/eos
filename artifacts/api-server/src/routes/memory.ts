@@ -358,6 +358,95 @@ router.patch("/memory/facts/:factId", async (req, res): Promise<void> => {
   res.json(GetMemoryFactsResponseItem.parse(updated));
 });
 
+// ─── Forget one feeling, win, mood day or impression (memory audit, item 4) ──
+// Facts had a forget; feelings, wins, mood scores and personality signals
+// only had the founder reset. Each is now a hard delete of ONE row,
+// ownership-checked, and a live voice call rebuilds its prompt on the next
+// turn — the same rule as forgetting a fact.
+
+function parseId(raw: unknown): number | null {
+  const id = Number(Array.isArray(raw) ? raw[0] : raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+router.delete("/memory/feelings/:id", async (req, res): Promise<void> => {
+  const userId = req.userId;
+  const id = parseId(req.params.id);
+  if (id == null) {
+    res.status(400).json({ error: "invalid id" });
+    return;
+  }
+  const deleted = await db
+    .delete(memoryFeelingsTable)
+    .where(and(eq(memoryFeelingsTable.id, id), eq(memoryFeelingsTable.userId, userId)))
+    .returning({ id: memoryFeelingsTable.id });
+  if (deleted.length === 0) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  invalidateFrozenSystem(userId);
+  res.json({ ok: true });
+});
+
+router.delete("/memory/wins/:id", async (req, res): Promise<void> => {
+  const userId = req.userId;
+  const id = parseId(req.params.id);
+  if (id == null) {
+    res.status(400).json({ error: "invalid id" });
+    return;
+  }
+  const deleted = await db
+    .delete(winsTable)
+    .where(and(eq(winsTable.id, id), eq(winsTable.userId, userId)))
+    .returning({ id: winsTable.id });
+  if (deleted.length === 0) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  invalidateFrozenSystem(userId);
+  res.json({ ok: true });
+});
+
+// Mood scores are one row per day, keyed by the YYYY-MM-DD the person's
+// timezone gave that day — the day is the item.
+router.delete("/memory/moods/:date", async (req, res): Promise<void> => {
+  const userId = req.userId;
+  const raw = Array.isArray(req.params.date) ? req.params.date[0] : req.params.date;
+  if (typeof raw !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    res.status(400).json({ error: "invalid date" });
+    return;
+  }
+  const deleted = await db
+    .delete(moodScoresTable)
+    .where(and(eq(moodScoresTable.date, raw), eq(moodScoresTable.userId, userId)))
+    .returning({ id: moodScoresTable.id });
+  if (deleted.length === 0) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  invalidateFrozenSystem(userId);
+  res.json({ ok: true });
+});
+
+router.delete("/memory/signals/:id", async (req, res): Promise<void> => {
+  const userId = req.userId;
+  const id = parseId(req.params.id);
+  if (id == null) {
+    res.status(400).json({ error: "invalid id" });
+    return;
+  }
+  const deleted = await db
+    .delete(personalitySignalsTable)
+    .where(and(eq(personalitySignalsTable.id, id), eq(personalitySignalsTable.userId, userId)))
+    .returning({ id: personalitySignalsTable.id });
+  if (deleted.length === 0) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  invalidateFrozenSystem(userId);
+  res.json({ ok: true });
+});
+
 // ─── Personality signals ─────────────────────────────────────────────────────
 
 router.get("/memory/signals", async (req, res): Promise<void> => {

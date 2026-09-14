@@ -4,7 +4,7 @@ import { useGetProfile, useGetMemoryFacts, useGetPersonalitySignals } from "@wor
 import { motion } from "framer-motion";
 import { Sparkles, RotateCcw } from "lucide-react";
 import { useLocation } from "wouter";
-import { groupFacts, FEELINGS_ROW } from "@/lib/memoryCategories";
+import { groupFacts, FEELINGS_ROW, SIGNALS_ROW } from "@/lib/memoryCategories";
 import { useFeelings } from "@/lib/useFeelings";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api";
@@ -171,6 +171,14 @@ export default function Memory() {
                 count={feelings.length}
                 preview={feelings[0]?.feeling}
                 onClick={() => navigate(`/memory/${FEELINGS_ROW.id}`)}
+              />
+            )}
+            {signals.length > 0 && (
+              <LinkRow
+                title={SIGNALS_ROW.label}
+                count={signals.length}
+                preview={signals[0]?.signal}
+                onClick={() => navigate(`/memory/${SIGNALS_ROW.id}`)}
               />
             )}
           </RowList>
