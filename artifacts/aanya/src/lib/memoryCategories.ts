@@ -49,9 +49,13 @@ export const HIDDEN_CATEGORIES: ReadonlyArray<{ id: string; label: string; foldI
 export const PROMOTE_AT = 5;
 
 export const FEELINGS_ROW = { id: "feelings", label: "How things have felt" } as const;
+/** Personality signals: Eos's own read on how the person talks and what
+ *  they need — inferred, never said. Shown so they can be forgotten. */
+export const SIGNALS_ROW = { id: "signals", label: "Impressions" } as const;
 
 export function categoryLabel(id: string): string | null {
   if (id === FEELINGS_ROW.id) return FEELINGS_ROW.label;
+  if (id === SIGNALS_ROW.id) return SIGNALS_ROW.label;
   return BASE_CATEGORIES.find((c) => c.id === id)?.label ?? HIDDEN_CATEGORIES.find((c) => c.id === id)?.label ?? null;
 }
 

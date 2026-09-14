@@ -5,20 +5,26 @@
  * per row, newest first, un-truncating on tap. A starred fact carries a
  * small star glyph and nothing else. One "Edit" affordance, top right,
  * reveals the star toggle and the two-tap forget on every row; "Done" puts
- * them away. The feelings screen is read-only (no API to star or forget a
- * feeling), so it has no Edit.
+ * them away. The feelings and impressions screens have the same Edit and
+ * forget (no star — only facts rank by a star).
  */
 
 import { useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, Star, X } from "lucide-react";
-import { useGetMemoryFacts, getGetMemoryFactsQueryKey } from "@workspace/api-client-react";
+import {
+  useGetMemoryFacts,
+  getGetMemoryFactsQueryKey,
+  useGetPersonalitySignals,
+  getGetPersonalitySignalsQueryKey,
+} from "@workspace/api-client-react";
 import { RowList, Row } from "@/components/ui/RowList";
+import { ForgetButton } from "@/components/ForgetButton";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { factsForCategory, categoryLabel, FEELINGS_ROW } from "@/lib/memoryCategories";
-import { useFeelings } from "@/lib/useFeelings";
+import { factsForCategory, categoryLabel, FEELINGS_ROW, SIGNALS_ROW } from "@/lib/memoryCategories";
+import { useFeelings, FEELINGS_QUERY_KEY } from "@/lib/useFeelings";
 
 export default function MemoryCategory() {
   const { category = "" } = useParams<{ category: string }>();
@@ -26,11 +32,14 @@ export default function MemoryCategory() {
   const queryClient = useQueryClient();
   const { data: facts = [], isLoading: factsLoading } = useGetMemoryFacts();
   const { data: feelings = [], isLoading: feelingsLoading } = useFeelings();
+  const { data: signals = [], isLoading: signalsLoading } = useGetPersonalitySignals();
 
   const isFeelings = category === FEELINGS_ROW.id;
+  const isSignals = category === SIGNALS_ROW.id;
+  const isItems = isFeelings || isSignals;
   const label = categoryLabel(category);
-  const row = isFeelings ? null : factsForCategory(facts, category);
-  const loading = isFeelings ? feelingsLoading : factsLoading;
+  const row = isItems ? null : factsForCategory(facts, category);
+  const loading = isFeelings ? feelingsLoading : isSignals ? signalsLoading : factsLoading;
 
   const [editing, setEditing] = useState(false);
   const [armedFactId, setArmedFactId] = useState<number | null>(null);
@@ -73,7 +82,17 @@ export default function MemoryCategory() {
     }
   };
 
-  const count = isFeelings ? feelings.length : row?.count ?? 0;
+  // Feelings and impressions: one forget each, same two taps, no star.
+  const forgetItem = async (kind: "feelings" | "signals", id: number) => {
+    const r = await apiFetch(`${import.meta.env.BASE_URL}api/memory/${kind}/${id}`, { method: "DELETE" });
+    if (r.ok) {
+      await queryClient.invalidateQueries({
+        queryKey: kind === "feelings" ? [...FEELINGS_QUERY_KEY] : getGetPersonalitySignalsQueryKey(),
+      });
+    }
+  };
+
+  const count = isFeelings ? feelings.length : isSignals ? signals.length : row?.count ?? 0;
 
   return (
     <div className="h-full overflow-y-auto px-6 py-6 pb-20 space-y-6">
@@ -99,7 +118,7 @@ export default function MemoryCategory() {
             <span className="text-[10.5px] uppercase tracking-wider text-muted-foreground/55 tabular-nums">{count}</span>
           )}
         </div>
-        {!isFeelings && count > 0 && (
+        {count > 0 && (
           <button
             type="button"
             onClick={() => {
@@ -112,6 +131,12 @@ export default function MemoryCategory() {
           </button>
         )}
       </div>
+
+      {isSignals && (
+        <p className="text-[13px] text-muted-foreground/70 leading-relaxed px-1 -mt-2">
+          Eos's own read on how you talk and what you need. Inferred, not something you said. Forget any that are wrong.
+        </p>
+      )}
 
       {/* ── The list ──────────────────────────────────────────────────────── */}
       {loading ? (
@@ -128,7 +153,22 @@ export default function MemoryCategory() {
         // static (Row handles it).
         <RowList>
           {feelings.map((f) => (
-            <Row key={f.id} title={f.feeling} />
+            <Row
+              key={f.id}
+              title={f.feeling}
+              actions={editing ? <ForgetButton label={f.feeling} onConfirm={() => forgetItem("feelings", f.id)} /> : undefined}
+            />
+          ))}
+        </RowList>
+      ) : isSignals ? (
+        <RowList>
+          {signals.map((s) => (
+            <Row
+              key={s.id}
+              title={s.signal}
+              meta={s.isActive ? undefined : "not yet used"}
+              actions={editing ? <ForgetButton label={s.signal} onConfirm={() => forgetItem("signals", s.id)} /> : undefined}
+            />
           ))}
         </RowList>
       ) : (
