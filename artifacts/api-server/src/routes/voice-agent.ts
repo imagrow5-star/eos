@@ -15,6 +15,7 @@ import { voiceSessionUsageLimits } from "../middleware/usageLimits.js";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { resolveHelplines, buildHelplineBlockText } from "../services/crisis/helplines.js";
+import { helplineTierForPattern } from "../services/crisis/semanticDetector.js";
 import { pendingVoiceCrisisEvent, dismissVoiceCrisisEvent } from "../services/crisis/events.js";
 import { resolveAgentRouting } from "../services/voiceAgentRouting.js";
 import { prewarmFrozenSystem, primeCallProfile } from "./voice-llm.js";
@@ -335,7 +336,9 @@ router.get("/voice-agent/crisis-status", async (req, res): Promise<void> => {
       id: event.id,
       countryServed: resolved.countryServed,
       lines: resolved.lines,
-      blockText: buildHelplineBlockText(resolved.lines, language),
+      // Same two-intro rule as the chat card: a backstop-only detection
+      // opens with the line that acknowledges Eos is still asking.
+      blockText: buildHelplineBlockText(resolved.lines, language, helplineTierForPattern(event.patternMatched)),
     },
   });
 });

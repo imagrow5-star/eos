@@ -20,6 +20,7 @@
 
 import { getAnthropic, logAiUsage } from "../ai.js";
 import { logger } from "../../lib/logger.js";
+import type { HelplineBlockTier } from "./helplines.js";
 
 /** The exact classifier instruction (reviewed/approved — do not reword). */
 export const CRISIS_SEMANTIC_SYSTEM_PROMPT = `You are a safety classifier for a mental-health companion app. Your only job is to answer one binary question about the user message that follows.
@@ -51,6 +52,16 @@ export interface CrisisOutcome {
   /** For crisis_events.pattern_matched — the regex pattern name, or
    *  "semantic_backstop" for a backstop-only catch. Undefined when inactive. */
   pattern?: string;
+  /** Which first line the helpline card opens with: "clear" for a regex hit,
+   *  "ambiguous" for a backstop-only catch (the card still fires on this
+   *  turn either way — see helplines.ts). Undefined when inactive. */
+  tier?: HelplineBlockTier;
+}
+
+/** The card tier for a recorded pattern name (also used when the pattern is
+ *  read back from a crisis_events row, e.g. the on-call voice overlay). */
+export function helplineTierForPattern(pattern: string | null | undefined): HelplineBlockTier {
+  return pattern === SEMANTIC_PATTERN_NAME ? "ambiguous" : "clear";
 }
 
 /**
@@ -64,8 +75,8 @@ export function resolveCrisisOutcome(
   regex: { matched: boolean; pattern?: string },
   semantic: { matched: boolean },
 ): CrisisOutcome {
-  if (regex.matched) return { active: true, pattern: regex.pattern };
-  if (semantic.matched) return { active: true, pattern: SEMANTIC_PATTERN_NAME };
+  if (regex.matched) return { active: true, pattern: regex.pattern, tier: "clear" };
+  if (semantic.matched) return { active: true, pattern: SEMANTIC_PATTERN_NAME, tier: "ambiguous" };
   return { active: false };
 }
 

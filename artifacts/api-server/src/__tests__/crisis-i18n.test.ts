@@ -10,6 +10,8 @@
  */
 
 import { describe, it, expect, afterAll } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import request from "supertest";
 import pg from "pg";
 import { eq } from "drizzle-orm";
@@ -21,6 +23,7 @@ import {
   HELPLINE_BLOCK_COPY,
   helplineBlockCopy,
   buildHelplineBlockText,
+  allHelplineBlockMarkers,
   markerForLanguage,
   resolveHelplines,
 } from "../services/crisis/helplines.js";
@@ -276,8 +279,46 @@ describe("helpline block localization", () => {
     );
     for (const [code, copy] of Object.entries(HELPLINE_BLOCK_COPY)) {
       expect(copy.intro.length, code).toBeGreaterThan(10);
+      expect(copy.introAmbiguous.length, code).toBeGreaterThan(10);
+      expect(copy.introAmbiguous, code).not.toBe(copy.intro);
       expect(copy.outro.length, code).toBeGreaterThan(5);
     }
+  });
+
+  it("opens with the ambiguous intro when only the semantic backstop fired", () => {
+    // Same lines, same closing line — only the first line changes, so the
+    // card never contradicts the question Eos is asking on that turn.
+    const { lines } = resolveHelplines("US");
+    const clear = buildHelplineBlockText(lines, "en");
+    const ambiguous = buildHelplineBlockText(lines, "en", "ambiguous");
+    expect(clear.startsWith("—\nSomeone who can be with you right now")).toBe(true);
+    expect(ambiguous.startsWith("—\nWhichever it is — these are here if you ever want them:")).toBe(true);
+    expect(ambiguous.startsWith(markerForLanguage("en", "ambiguous"))).toBe(true);
+    expect(ambiguous.split("\n").slice(2)).toEqual(clear.split("\n").slice(2));
+
+    const de = buildHelplineBlockText(resolveHelplines("DE").lines, "de", "ambiguous");
+    expect(de.startsWith("—\nWas auch immer es ist")).toBe(true);
+    expect(de.endsWith("Ich gehe nirgendwohin. Lass dir Zeit.")).toBe(true);
+  });
+
+  it("the frontend splitter knows every marker the server can emit", () => {
+    // aanya/src/lib/crisisBlock.ts mirrors HELPLINE_BLOCK_COPY by hand; this
+    // reads its two string arrays so a new intro can't ship without the
+    // client learning to split on it.
+    const clientSource = readFileSync(
+      fileURLToPath(new URL("../../../aanya/src/lib/crisisBlock.ts", import.meta.url)),
+      "utf8",
+    );
+    const clientIntros = new Set(
+      [...clientSource.matchAll(/^\s+"((?:[^"\\]|\\.)*)",\s*\/\/ [a-z]{2}$/gm)].map((m) => m[1]!),
+    );
+    const serverMarkers = allHelplineBlockMarkers();
+    expect(serverMarkers).toHaveLength(22);
+    for (const marker of serverMarkers) {
+      const intro = marker.slice("—\n".length);
+      expect(clientIntros.has(intro), intro).toBe(true);
+    }
+    expect(clientIntros.size).toBe(serverMarkers.length);
   });
 
   it("builds a localized block with untranslated helpline lines", () => {

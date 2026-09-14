@@ -122,18 +122,21 @@ describe("resolveCrisisOutcome — union; semantic never suppresses regex", () =
     expect(resolveCrisisOutcome({ matched: true, pattern: "want_to_die" }, { matched: false })).toEqual({
       active: true,
       pattern: "want_to_die",
+      tier: "clear",
     });
   });
   it("semantic-only hit → active, recorded as semantic_backstop", () => {
     expect(resolveCrisisOutcome({ matched: false }, { matched: true })).toEqual({
       active: true,
       pattern: SEMANTIC_PATTERN_NAME,
+      tier: "ambiguous",
     });
   });
   it("regex hit + semantic 'no' → STILL active (semantic can't suppress)", () => {
     expect(resolveCrisisOutcome({ matched: true, pattern: "suicide_reference" }, { matched: false })).toEqual({
       active: true,
       pattern: "suicide_reference",
+      tier: "clear",
     });
   });
   it("both negative → inactive", () => {
@@ -143,6 +146,7 @@ describe("resolveCrisisOutcome — union; semantic never suppresses regex", () =
     expect(resolveCrisisOutcome({ matched: true, pattern: "self_harm" }, { matched: true })).toEqual({
       active: true,
       pattern: "self_harm",
+      tier: "clear",
     });
   });
 });
