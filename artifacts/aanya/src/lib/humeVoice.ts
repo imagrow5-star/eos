@@ -65,6 +65,10 @@ export type HumeCallHandlers = {
 export type HumeCallControls = {
   endSession: () => Promise<void>;
   setVolume: (opts: { volume: number }) => void;
+  /** Stop the microphone only — the socket and playback stay up, so a reply
+   *  already being spoken finishes. Used by the landing-page demo's hard
+   *  stop; nothing in the app calls it. Idempotent. */
+  stopInput: () => void;
 };
 
 /** Close-event → human-readable cause (null = clean close). Exported for tests. */
@@ -122,11 +126,14 @@ export async function startHumeCall(
     if (!ended) sendSettings();
   });
 
+  const stopInput = () => {
+    try { recorder?.state !== "inactive" && recorder?.stop(); } catch { /* already stopped */ }
+    try { stream?.getTracks().forEach((t) => t.stop()); } catch { /* already stopped */ }
+  };
   const teardown = () => {
     if (ended) return;
     ended = true;
-    try { recorder?.state !== "inactive" && recorder?.stop(); } catch { /* already stopped */ }
-    try { stream?.getTracks().forEach((t) => t.stop()); } catch { /* already stopped */ }
+    stopInput();
     try { player.dispose(); } catch { /* never played */ }
     try { socket.close(); } catch { /* already closed */ }
   };
@@ -240,5 +247,6 @@ export async function startHumeCall(
     setVolume: ({ volume }) => {
       try { player.setVolume(volume); } catch { /* player not initialized */ }
     },
+    stopInput,
   };
 }

@@ -41,6 +41,7 @@
 import type { Request, RequestHandler } from "express";
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { verifyVoiceToken } from "../lib/voiceToken.js";
+import { verifyDemoVoiceToken } from "../lib/demoVoiceToken.js";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -222,7 +223,13 @@ function humeSessionTokenKey(req: Request): string {
   const auth =
     (bearer ? verifyVoiceToken(bearer) : null) ??
     (typeof query === "string" ? verifyVoiceToken(query) : null);
-  return auth ? `u:${auth.userId}` : ipKeyGenerator(req.ip ?? "");
+  if (auth) return `u:${auth.userId}`;
+  // Landing-page voice demo calls carry a call token instead (one call, one
+  // key) — otherwise every demo would share Hume's own address as its key.
+  const demo =
+    (bearer ? verifyDemoVoiceToken(bearer) : null) ??
+    (typeof query === "string" ? verifyDemoVoiceToken(query) : null);
+  return demo ? `d:${demo.callId}` : ipKeyGenerator(req.ip ?? "");
 }
 
 export const humeTurnUsageLimits: RequestHandler[] = limiterPair({

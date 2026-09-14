@@ -23,16 +23,21 @@
  */
 import { hkdfSync } from "node:crypto";
 
-export type SecretPurpose = "internal-sweep" | "voice-token";
+export type SecretPurpose = "internal-sweep" | "voice-token" | "demo-ip";
 
 const LABEL: Record<SecretPurpose, string> = {
   "internal-sweep": "eos-internal-sweep-v1",
   "voice-token": "eos-voice-token-v1",
+  // Keyed hash of a landing-page visitor's IP for the one-voice-demo-per-day
+  // rule (services/demoVoice.ts). A salt, not a credential: the derived
+  // fallback is fine to keep, so no boot warning asks for the dedicated var.
+  "demo-ip": "eos-demo-ip-v1",
 };
 
 const DEDICATED: Record<SecretPurpose, string> = {
   "internal-sweep": "INTERNAL_SWEEP_SECRET",
   "voice-token": "VOICE_TOKEN_SECRET",
+  "demo-ip": "DEMO_IP_HASH_SECRET",
 };
 
 /** 32 bytes derived from SESSION_SECRET for one purpose, as lowercase hex. */

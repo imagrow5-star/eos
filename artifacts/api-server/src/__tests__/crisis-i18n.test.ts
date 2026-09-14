@@ -301,6 +301,22 @@ describe("helpline block localization", () => {
     expect(de.endsWith("Ich gehe nirgendwohin. Lass dir Zeit.")).toBe(true);
   });
 
+  it("docs/crisis-card-copy-review.md carries the exact shipped lines", () => {
+    // The founder sends that file to native speakers; a stale copy would get
+    // the wrong sentences reviewed. Each language section lists intro,
+    // ambiguous intro and outro as "1. …", "2. …", "3. …".
+    const doc = readFileSync(
+      fileURLToPath(new URL("../../../../docs/crisis-card-copy-review.md", import.meta.url)),
+      "utf8",
+    );
+    for (const [code, copy] of Object.entries(HELPLINE_BLOCK_COPY)) {
+      const section = doc.split(/^## /m).find((s) => s.includes(`(${code})`) || (code === "en" && s.startsWith("English")));
+      expect(section, code).toBeDefined();
+      const lines = [...section!.matchAll(/^([123])\. (.*)$/gm)].map((m) => m[2]!);
+      expect(lines, code).toEqual([copy.intro, copy.introAmbiguous, copy.outro]);
+    }
+  });
+
   it("the frontend splitter knows every marker the server can emit", () => {
     // aanya/src/lib/crisisBlock.ts mirrors HELPLINE_BLOCK_COPY by hand; this
     // reads its two string arrays so a new intro can't ship without the

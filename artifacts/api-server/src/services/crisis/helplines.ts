@@ -76,7 +76,8 @@ export function resolveHelplines(
 // Intro + outro of the helpline card, in the user's language. Helpline NAMES
 // and NUMBERS never translate — only the two warm lines around them. English
 // is the fallback for any unknown code. Drafted by hand (not machine
-// translation); native-speaker review is a founder follow-up.
+// translation); native-speaker review is a founder follow-up — the review
+// sheet is docs/crisis-card-copy-review.md (checked against this table).
 // KEPT IN SYNC BY HAND with the marker list in aanya/src/lib/crisisBlock.ts —
 // the frontend splits messages on "—\n" + intro to render the card
 // (encryption-registry-style lockstep is enforced by crisis-i18n.test.ts).

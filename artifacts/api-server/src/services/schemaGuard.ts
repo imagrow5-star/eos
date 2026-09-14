@@ -167,3 +167,29 @@ export async function dropRetiredPushTables(): Promise<void> {
   await db.execute(sql`DROP TABLE IF EXISTS push_config`);
   logger.info("schema guard: retired push tables absent");
 }
+
+/**
+ * Idempotent schema guard for the landing-page demo log (demo_sessions —
+ * lib/db/src/schema/demoSessions.ts). The voice demo's per-IP-per-day rule
+ * and its daily spend cap both read this table, so without it the voice
+ * button simply never appears (availability fails closed). Deploys don't
+ * run drizzle-kit push; CREATE TABLE IF NOT EXISTS is a no-op after the
+ * first boot.
+ */
+export async function ensureDemoSessionsTable(): Promise<void> {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS demo_sessions (
+      id serial PRIMARY KEY,
+      kind text NOT NULL,
+      started_at timestamp NOT NULL DEFAULT now(),
+      ended_at timestamp,
+      seconds integer NOT NULL,
+      ended_reason text,
+      ip_hash text
+    )
+  `);
+  await db.execute(
+    sql`CREATE INDEX IF NOT EXISTS demo_sessions_started_at_idx ON demo_sessions (started_at)`,
+  );
+  logger.info("schema guard: demo_sessions table present");
+}

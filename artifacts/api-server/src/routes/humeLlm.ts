@@ -1,8 +1,10 @@
 import { Router, type IRouter } from "express";
 import { stripExpressionTags } from "../lib/expressionTags.js";
 import { verifyVoiceToken } from "../lib/voiceToken.js";
+import { verifyDemoVoiceToken } from "../lib/demoVoiceToken.js";
 import { humeTurnUsageLimits } from "../middleware/usageLimits.js";
 import { voiceCompletionHandler } from "./voice-llm.js";
+import { demoVoiceCompletionHandler } from "./demoVoice.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -163,6 +165,23 @@ router.post(
     const authHeader = req.header("authorization");
     const bearer = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : undefined;
     const queryToken = req.query?.custom_session_id;
+
+    // Landing-page voice demo: a demo CALL token (lib/demoVoiceToken.ts —
+    // six parts, so it can never verify as a user token) routes the turn to
+    // the demo brain: same persona and crisis floor, no person, nothing
+    // stored. Expired past the minute plus grace → 401, and Hume speaks
+    // nothing further: the hard stop holds even if the page misbehaves.
+    const demo =
+      (bearer ? verifyDemoVoiceToken(bearer) : null) ??
+      (typeof queryToken === "string" ? verifyDemoVoiceToken(queryToken) : null);
+    if (demo) {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const messages = normalizeHumeMessages(body.messages);
+      const lastUser = [...messages].reverse().find((m) => m.role === "user");
+      await demoVoiceCompletionHandler(req, res, demo, messages, lastUser ? formatVoiceTone(lastUser.prosody) : null);
+      return;
+    }
+
     const token =
       (bearer && verifyVoiceToken(bearer) ? bearer : undefined) ??
       (typeof queryToken === "string" && verifyVoiceToken(queryToken) ? queryToken : undefined);
