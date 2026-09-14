@@ -1401,8 +1401,6 @@ router.delete("/auth/account", async (req, res): Promise<void> => {
     await client.query(`DELETE FROM chapter_quote_dismissals WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM chapter_offer_events WHERE user_id = $1`, [userId]);
     await client.query(`DELETE FROM story_threads     WHERE user_id = $1`, [userId]);
-    await client.query(`DELETE FROM push_subscriptions WHERE user_id = $1`, [userId]);
-    await client.query(`DELETE FROM push_events       WHERE user_id = $1`, [userId]);
     // billing_events is intentionally NOT deleted here: it holds provider
     // event ids only (no personal data) and is the processed-webhook audit
     // trail. The Dodo cancel call happened BEFORE this transaction (see

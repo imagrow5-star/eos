@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { pool, decryptText, decryptJson, decryptTextArray } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { accountExportUsageLimits, accountExportSummaryUsageLimits } from "../middleware/usageLimits.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { EMBEDDED_FONTS_CSS } from "./report-fonts.js";
 
@@ -587,8 +588,6 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
   const offerEventsRange = buildRangeClause("created_at", false, range, 2);
   const sealedNotesRange = buildRangeClause("created_at", false, range, 2);
   const storyThreadsRange = buildRangeClause("created_at", false, range, 2);
-  const pushSubsRange = buildRangeClause("created_at", false, range, 2);
-  const pushEventsRange = buildRangeClause("sent_at", false, range, 2);
   const voiceUsageRange = buildRangeClause("call_started_at", false, range, 2);
   const crisisEventsRange = buildRangeClause("detected_at", false, range, 2);
   const storiesRange = buildRangeClause("created_at", false, range, 2);
@@ -613,8 +612,6 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
     chapterOfferEventsResult,
     sealedNotesResult,
     storyThreadsResult,
-    pushSubscriptionsResult,
-    pushEventsResult,
     subscriptionsResult,
     voiceUsageResult,
     crisisEventsResult,
@@ -697,17 +694,6 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
       `SELECT slug, label, state, frozen_streak, retellings, first_seen_week, last_seen_week, raised_at, support_suggested_at, created_at, updated_at
        FROM story_threads WHERE user_id = $1${storyThreadsRange.clause} ORDER BY created_at ASC`,
       [userId, ...storyThreadsRange.params],
-    ),
-    // p256dh/auth are the browser's crypto key material — delivery plumbing, not
-    // readable user data; the endpoint + timestamps are what identify the device.
-    pool.query(
-      `SELECT endpoint, user_agent, created_at, last_success_at, failure_count
-       FROM push_subscriptions WHERE user_id = $1${pushSubsRange.clause} ORDER BY created_at ASC`,
-      [userId, ...pushSubsRange.params],
-    ),
-    pool.query(
-      `SELECT kind, sent_at FROM push_events WHERE user_id = $1${pushEventsRange.clause} ORDER BY sent_at ASC`,
-      [userId, ...pushEventsRange.params],
     ),
     // Billing foundation (phase 1): the user's subscription record (their
     // single membership-status row — always included regardless of range,
@@ -859,8 +845,6 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
       label: dText(r.label, "story_threads.label"),
       retellings: dJson(r.retellings, "story_threads.retellings"),
     })),
-    pushSubscriptions: pushSubscriptionsResult.rows,
-    pushEvents: pushEventsResult.rows,
     subscriptions: subscriptionsResult.rows,
     voiceUsage: voiceUsageResult.rows,
     crisisEvents: crisisEventsResult.rows.map((r) => ({
@@ -911,7 +895,7 @@ function readRange(req: { query: Record<string, unknown> }): DateRange | { error
   return { from: from ?? undefined, to: to ?? undefined };
 }
 
-router.get("/account/export", async (req, res): Promise<void> => {
+router.get("/account/export", ...accountExportUsageLimits, async (req, res): Promise<void> => {
   const userId = (req as any).userId as number;
   const format = (req.query.format as string | undefined)?.toLowerCase();
 
@@ -955,7 +939,7 @@ router.get("/account/export", async (req, res): Promise<void> => {
 // download prompt) so it can be rendered directly inside the app — e.g. in an
 // iframe overlay. Content is identical to the downloadable report.
 
-router.get("/account/report", async (req, res): Promise<void> => {
+router.get("/account/report", ...accountExportUsageLimits, async (req, res): Promise<void> => {
   const userId = (req as any).userId as number;
 
   const range = readRange(req);
@@ -986,7 +970,7 @@ router.get("/account/report", async (req, res): Promise<void> => {
 // Returns lightweight counts used to show a preview card before the user
 // downloads the full JSON export.
 
-router.get("/account/export/summary", async (req, res): Promise<void> => {
+router.get("/account/export/summary", ...accountExportSummaryUsageLimits, async (req, res): Promise<void> => {
   const userId = (req as any).userId as number;
 
   try {
@@ -1011,8 +995,6 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
       chapterOfferEventResult,
       sealedNoteResult,
       storyThreadResult,
-      pushSubscriptionResult,
-      pushEventResult,
       subscriptionResult,
       voiceUsageCountResult,
       crisisEventCountResult,
@@ -1089,14 +1071,6 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
         [userId],
       ),
       pool.query(
-        `SELECT COUNT(*) AS count FROM push_subscriptions WHERE user_id = $1`,
-        [userId],
-      ),
-      pool.query(
-        `SELECT COUNT(*) AS count FROM push_events WHERE user_id = $1`,
-        [userId],
-      ),
-      pool.query(
         `SELECT COUNT(*) AS count FROM subscriptions WHERE user_id = $1`,
         [userId],
       ),
@@ -1135,8 +1109,6 @@ router.get("/account/export/summary", async (req, res): Promise<void> => {
       chapterOfferEventCount: parseInt(chapterOfferEventResult.rows[0].count, 10),
       sealedNoteCount: parseInt(sealedNoteResult.rows[0].count, 10),
       storyThreadCount: parseInt(storyThreadResult.rows[0].count, 10),
-      pushSubscriptionCount: parseInt(pushSubscriptionResult.rows[0].count, 10),
-      pushEventCount: parseInt(pushEventResult.rows[0].count, 10),
       subscriptionCount: parseInt(subscriptionResult.rows[0].count, 10),
       voiceUsageCount: parseInt(voiceUsageCountResult.rows[0].count, 10),
       crisisEventCount: parseInt(crisisEventCountResult.rows[0].count, 10),

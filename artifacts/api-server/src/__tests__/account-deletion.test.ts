@@ -515,8 +515,6 @@ describe("DELETE /api/auth/account", () => {
       "chapter_offer_events",
       "sealed_notes",
       "story_threads",
-      "push_subscriptions",
-      "push_events",
       "subscriptions", // billing foundation (phase 1) — Paddle cancel API call TODO lives in the handler
       "voice_usage",   // billing foundation (phase 1) — per-call voice metering records
       "crisis_events", // crisis floor — detection log (pattern names + country, never content)

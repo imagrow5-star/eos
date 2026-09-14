@@ -16,7 +16,7 @@ import { generateOnboardingAcknowledgment } from "../services/ai.js";
 import { parseAgeText, ageToBand, resolveCountryAnswer, AGE_BANDS, isValidCountryCode } from "../lib/basics.js";
 import { isValidLanguage } from "../services/settings/languages.js";
 import { ENGLISH_ACCENT_CODES, NON_ENGLISH_ACCENT, isVoiceAllowed, resolveVoiceGender } from "../services/settings/voiceCatalog.js";
-import { presentCaseName } from "../lib/userName.js";
+import { presentCaseName, normalizeCompanionName } from "../lib/userName.js";
 
 const router: IRouter = Router();
 
@@ -274,8 +274,9 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
     }
 
     case "companionName": {
-      const cleaned = extractName(answer, 3);
-      updates.companionName = cleaned.length > 0 && cleaned.length <= 30 ? cleaned : "Eos";
+      // Same bound and cleaning as Settings (lib/userName.ts); onboarding
+      // falls back to "Eos" rather than failing the step.
+      updates.companionName = normalizeCompanionName(extractName(answer, 3)) ?? "Eos";
       break;
     }
 

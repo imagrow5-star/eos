@@ -166,6 +166,18 @@ keeps. Operator guidance:
   the same on demand. Changing the password also discards pending reset
   links; changing it, changing the email, and deleting the account all
   require the current password, so a stolen cookie can do none of them.
+- **Per-user ceilings on every paid or heavy route**
+  (`middleware/usageLimits.ts`): chat, voice, speech, reflection, the
+  morning note, the contextual greeting, the memory export and the account
+  export/report/preview all have hourly (and where it matters daily)
+  budgets keyed on the signed-in user, so a stuck client or a stolen cookie
+  cannot run up the model bill or hammer the heavy export queries.
+- **Prompt-injection bounds**: the companion's name (which lands in every
+  system prompt) is 1–30 characters with control characters stripped,
+  enforced server-side in Settings and onboarding.
+- **Retired push tables dropped**: `push_subscriptions`, `push_events` and
+  `push_config` (which held a VAPID private key in plaintext) are removed
+  at boot by an idempotent guard now that Eos has no outbound channel.
 - **Frame protection**: `/api` responses carry `frame-ancestors 'self'`;
   every page the server serves (the app, the landing page, the legal
   pages, static assets) carries `X-Frame-Options: SAMEORIGIN` and

@@ -235,3 +235,48 @@ export const humeTurnUsageLimits: RequestHandler[] = limiterPair({
   keyGenerator: humeSessionTokenKey,
   shape: "openai",
 });
+
+// The in-app morning note and the contextual greeting each make a PAID model
+// call and had no ceiling at all (security review): a stuck client or a
+// stolen cookie could loop them. Real use is once a day and once per app
+// open respectively; the ceilings sit well above that.
+export const morningNoteUsageLimits: RequestHandler[] = limiterPair({
+  hourEnv: "MORNING_NOTE_LIMIT_PER_HOUR",
+  hourDefault: 6,
+  dayEnv: "MORNING_NOTE_LIMIT_PER_DAY",
+  dayDefault: 20,
+  hourMessage: "Your morning note is ready when you are. Give it a little while before asking again.",
+  dayMessage: "Today's morning note has been written. A fresh one comes tomorrow.",
+});
+
+export const contextualGreetingUsageLimits: RequestHandler[] = limiterPair({
+  hourEnv: "CONTEXTUAL_GREETING_LIMIT_PER_HOUR",
+  hourDefault: 20,
+  dayEnv: "CONTEXTUAL_GREETING_LIMIT_PER_DAY",
+  dayDefault: 80,
+  hourMessage: "Give it a moment before opening the conversation again.",
+  dayMessage: "That's enough fresh openings for today. The conversation itself is always open.",
+});
+
+// The account export, the report page and the export preview are pure DB
+// reads, but the full export fans out to ~thirty queries per call and the
+// preview to ~twenty aggregates, and none had a ceiling (security review).
+// A person exports once; the preview opens with the settings panel. Sized
+// for that, keyed per user, env-overridable for the dedicated test.
+export const accountExportUsageLimits: RequestHandler[] = [
+  makeLimiter({
+    windowMs: HOUR_MS,
+    limit: envLimit("ACCOUNT_EXPORT_LIMIT_PER_HOUR", 6),
+    message: "You've just exported your data. You can take another copy in a little while. Everything's safe in the meantime.",
+    keyGenerator: sessionUserKey,
+  }),
+];
+
+export const accountExportSummaryUsageLimits: RequestHandler[] = [
+  makeLimiter({
+    windowMs: HOUR_MS,
+    limit: envLimit("ACCOUNT_EXPORT_SUMMARY_LIMIT_PER_HOUR", 30),
+    message: "Give it a moment before refreshing your export preview.",
+    keyGenerator: sessionUserKey,
+  }),
+];
