@@ -75,8 +75,15 @@ describe.skipIf(!DB)("reminders, leads, story-thread labels and feeling categori
     );
     expect(raw.rows).toHaveLength(4);
     for (const r of raw.rows) expect(r.v).toMatch(/^enc:v1:/);
+    // Probe with the whole phrases: base64 ciphertext is drawn from a random
+    // IV and can contain any short letter run ("mum" did, once, in CI), but it
+    // never contains a space. The one-word category is checked for exact
+    // equality instead.
     const dump = JSON.stringify(raw.rows);
-    for (const word of ["mum", "airport", "shame", "read this"]) expect(dump).not.toContain(word);
+    for (const phrase of ["call mum about the scan", "the airport goodbye", "will you read this"]) {
+      expect(dump).not.toContain(phrase);
+    }
+    for (const r of raw.rows) expect(r.v).not.toBe("shame");
 
     const [r2] = await db.select().from(remindersTable).where(eq(remindersTable.id, rem!.id));
     expect(r2!.content).toBe("call mum about the scan");
