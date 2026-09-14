@@ -45,6 +45,7 @@ import {
   CompleteHabitResponse,
 } from "@workspace/api-zod";
 import { todayInTimezone, formatDate } from "../services/stage.js";
+import { cleanMemoryText, WIN_TEXT_MAX } from "../lib/memoryText.js";
 
 const router: IRouter = Router();
 
@@ -383,9 +384,15 @@ router.post("/memory/wins", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  // Same one-line, bounded rule as everything the memory system stores.
+  const content = cleanMemoryText(parsed.data.content, WIN_TEXT_MAX);
+  if (!content) {
+    res.status(400).json({ error: "Say a little more than that." });
+    return;
+  }
   const [win] = await db
     .insert(winsTable)
-    .values({ userId, content: parsed.data.content })
+    .values({ userId, content })
     .returning();
   res.status(201).json(CreateWinResponse.parse(win));
 });

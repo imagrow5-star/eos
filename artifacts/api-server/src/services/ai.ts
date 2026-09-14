@@ -21,6 +21,14 @@ import { kindStreak } from "../lib/kindStreak.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { recordMemoryReferences } from "./memory/references.js";
 import { rankFactsByImportance } from "./memory/importance.js";
+import {
+  cleanMemoryText,
+  normalizeFactCategory,
+  FACT_TEXT_MAX,
+  FEELING_TEXT_MAX,
+  SIGNAL_TEXT_MAX,
+  WIN_TEXT_MAX,
+} from "../lib/memoryText.js";
 import { detectRememberIntent } from "./memory/rememberTriggers.js";
 import {
   defaultDedupFinder,
@@ -781,11 +789,13 @@ export async function supersedeFact(
     .from(memoryFactsTable)
     .where(and(eq(memoryFactsTable.id, factId), eq(memoryFactsTable.userId, userId), isNull(memoryFactsTable.retiredAt)));
   if (!old) return false;
+  const fact = cleanMemoryText(next.fact, FACT_TEXT_MAX);
+  if (!fact) return false;
   await db
     .update(memoryFactsTable)
     .set({
-      fact: next.fact,
-      category: next.category,
+      fact,
+      category: normalizeFactCategory(next.category),
       // previous_fact is encrypted with its own AAD, so the old wording is
       // read back and written explicitly — never copied column to column.
       previousFact: old.fact,
@@ -892,7 +902,7 @@ export async function extractMemory(
       const existing: DedupEntry[] = [...existingById.values()].filter((e) => liveIds.has(e.id));
 
       const replaceInPlace = async (id: number, f: { fact: string; category: string }): Promise<boolean> => {
-        const ok = await supersedeFact(userId, id, { fact: f.fact, category: f.category || "life", markImportant });
+        const ok = await supersedeFact(userId, id, { fact: f.fact, category: f.category, markImportant });
         if (ok) {
           const e = existing.find((x) => x.id === id);
           if (e) e.content = f.fact;
@@ -901,8 +911,12 @@ export async function extractMemory(
         return ok;
       };
 
-      for (const f of extracted.facts) {
-        if (!f.fact || f.fact.length < 5) continue;
+      for (const raw of extracted.facts) {
+        // One bounded, plain line and one of the ten categories — whatever
+        // the model returned (lib/memoryText.ts). Under the floor → nothing.
+        const cleaned = cleanMemoryText(raw?.fact, FACT_TEXT_MAX);
+        if (!cleaned) continue;
+        const f = { fact: cleaned, category: normalizeFactCategory(raw.category), supersedes: raw.supersedes };
 
         // 1. The model named the fact this one replaces.
         const supersedes = asId(f.supersedes);
@@ -930,7 +944,7 @@ export async function extractMemory(
         }
         const [inserted] = await db
           .insert(memoryFactsTable)
-          .values({ fact: f.fact, category: f.category || "life", userId, userMarkedImportant: markImportant })
+          .values({ fact: f.fact, category: f.category, userId, userMarkedImportant: markImportant })
           .returning({ id: memoryFactsTable.id });
         if (inserted) {
           existing.unshift({ id: inserted.id, content: f.fact });
@@ -949,8 +963,9 @@ export async function extractMemory(
         .select()
         .from(personalitySignalsTable)
         .where(eq(personalitySignalsTable.userId, userId));
-      for (const signal of extracted.signals) {
-        if (!signal || signal.length < 5) continue;
+      for (const rawSignal of extracted.signals) {
+        const signal = cleanMemoryText(rawSignal, SIGNAL_TEXT_MAX);
+        if (!signal) continue;
         const needle = signal.toLowerCase().slice(0, 15);
         const current = existingSignals.find((e) => e.signal.toLowerCase().includes(needle));
 
@@ -973,8 +988,9 @@ export async function extractMemory(
     }
 
     if (extracted.wins && extracted.wins.length > 0) {
-      for (const win of extracted.wins) {
-        if (!win || win.length < 5) continue;
+      for (const rawWin of extracted.wins) {
+        const win = cleanMemoryText(rawWin, WIN_TEXT_MAX);
+        if (!win) continue;
         await db.insert(winsTable).values({ content: win, userId });
       }
     }
@@ -1107,8 +1123,10 @@ export async function extractFeelings(
     const existing: DedupEntry[] = recentFeelings.map((r) => ({ id: r.id, content: r.feeling }));
 
     let inserted = 0;
-    for (const f of extracted.feelings) {
-      if (!f.feeling || f.feeling.length < 8) continue;
+    for (const raw of extracted.feelings) {
+      const feeling = cleanMemoryText(raw?.feeling, FEELING_TEXT_MAX, 8);
+      if (!feeling) continue;
+      const f = { ...raw, feeling };
       const emotion = (f.emotion ?? "other").toLowerCase();
       const category = KNOWN_EMOTIONS.has(emotion) ? emotion : "other";
       // Clamp intensity → emotionalWeight; feelings default to a moderate 0.5.
