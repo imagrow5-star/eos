@@ -65,7 +65,7 @@
   <p>You tell Eos things you might not tell anyone. This page is where I set out, without softening, what happens to those things: what I can see, what I can't, what's encrypted and how, who holds the key, who else touches your data, and what I'd do if something went wrong. I run Eos, so "I" on this page is me.</p>
 
   <h2>What I can see, and what I can't</h2>
-  <p>The short version: I can see <b>that</b> you use Eos. I can't see <b>what</b> you say to it. The table is the long version.</p>
+  <p>The short version: I can see <b>that</b> you use Eos. What you say to it is encrypted, and there's no way for me to read it without deliberately setting out to. The table is the long version.</p>
 
   <div class="tablewrap">
   <table>
@@ -143,10 +143,11 @@
   <p>Two companies process your words, each for exactly one job. Neither trains on them, neither sells them, and both are named here so you can read their own policies.</p>
 
   <h3>Anthropic</h3>
-  <p>Eos thinks with Claude, made by Anthropic. To write each reply, Eos sends Anthropic <b>your message, the conversation so far, and the memories and profile details Eos keeps to reply well</b>. The same happens when Eos writes your weekly chapter, a reflection, a story, or a morning note, and when it checks a message for signs of crisis. Anthropic does not use anything sent through Eos to train its models. It may hold the data briefly for abuse monitoring, up to about 30 days, and then it's gone from their side.</p>
+  <p>Eos thinks with Claude, made by Anthropic, through Anthropic's API under their commercial terms. That matters: the consumer Claude app has its own, different rules, and none of them apply here. To write each reply, Eos sends Anthropic <b>your message, the conversation so far, and the memories and profile details Eos keeps to reply well</b>. The same happens when Eos writes your weekly chapter, a reflection, a story, or a morning note, and when it checks a message for signs of crisis. Under those terms Anthropic does not use anything sent through Eos to train its models, and deletes it from their systems within 30 days, unless a specific item is flagged for a safety review, in which case they may keep that item longer.</p>
   <ul>
+    <li><a href="https://www.anthropic.com/legal/commercial-terms" rel="noopener">Anthropic's commercial terms</a>, the ones that apply to Eos</li>
+    <li><a href="https://privacy.anthropic.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data" rel="noopener">How long Anthropic keeps API data</a></li>
     <li><a href="https://www.anthropic.com/legal/privacy" rel="noopener">Anthropic's privacy policy</a></li>
-    <li><a href="https://www.anthropic.com/legal/commercial-terms" rel="noopener">Anthropic's commercial terms</a>, which cover how customer data is used and kept</li>
   </ul>
 
   <h3>Hume</h3>
@@ -167,7 +168,7 @@
     <li><b>Everything.</b> Settings → delete account, with your password. Every message, memory, chapter, note, story, mood, and your account itself are erased in one transaction, immediately. Every signed-in device is signed out. No recycle bin, no thirty-day grace period.</li>
   </ul>
   <p>Two honest footnotes. The hosting provider keeps automated backups of the database for a limited time; a deleted row can survive in those until they expire, still encrypted, then it's gone there too. And the record that a payment happened is kept, because accounting requires it; it holds no content.</p>
-  <p>On the processors' side: Anthropic's copy ages out within about 30 days on its own. Hume never had one.</p>
+  <p>On the processors' side: Anthropic's copy is deleted within 30 days on its own. Hume never had one.</p>
 
   <h2>If there's a breach</h2>
   <p>Here is what a stolen copy of the database would give someone: the email addresses of everyone with an account, when each person joined and was active, their settings and membership status, and ciphertext for everything else. It would not give them a single conversation, memory, or mood.</p>
@@ -180,7 +181,7 @@
   <p>The worst case is the key and the database being taken together. If that ever happened, I would say so, in those words.</p>
 
   <h2>Reporting a vulnerability</h2>
-  <p>If you find a security problem in Eos, I want to hear about it, and I'd rather hear from you than find out another way. Write to <a href="mailto:hello@eoscompanion.com">hello@eoscompanion.com</a> with what you found and how to reproduce it. I'll reply within three days, keep you informed while it's fixed, and credit you here if you'd like.</p>
+  <p>If you find a security problem in Eos, I want to hear about it, and I'd rather hear from you than find out another way. Write to <a href="mailto:hello@eoscompanion.com">hello@eoscompanion.com</a> with what you found and how to reproduce it. I'll reply as quickly as I can, usually within a few days, keep you informed while it's fixed, and credit you here if you'd like.</p>
   <p>Good-faith research is welcome: I won't take legal action against anyone who reports a problem responsibly, keeps other people's data out of it, and gives me reasonable time to fix it. Please don't test against other people's accounts. There is no bug bounty, only thanks. The machine-readable version of this is at <a href="/.well-known/security.txt">/.well-known/security.txt</a>.</p>
 
   <h2>The rest of it</h2>
