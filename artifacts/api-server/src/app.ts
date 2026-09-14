@@ -654,6 +654,17 @@ if (fs.existsSync(frontendIndex)) {
   );
 }
 
+// ─── Plain 404 for anything left unmatched outside /api ──────────────────────
+// Reached by a non-GET to a page path, or by any page path when the built
+// bundle is absent (API-only deployments, CI). Express's own fallback would
+// answer with its HTML error page AND replace Content-Security-Policy with
+// that page's policy, silently dropping the frame-ancestors set by
+// pageFrameGuard. A plain-text 404 keeps the headers exactly as set.
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api")) return next();
+  res.status(404).type("text/plain").send("Not found");
+});
+
 // ─── JSON error handler for the API (must be registered last) ─────────────────
 // Catches errors thrown anywhere on an /api request — including body-parser
 // JSON syntax errors raised by the global express.json() middleware — and
