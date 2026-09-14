@@ -18,19 +18,24 @@
  * emails, no push notifications. Everything the sweeps produce waits in the
  * app until the person opens it.
  *
- * Auth: each call carries an HMAC-SHA256 of "<prefix>:<YYYY-MM-DDTHH>" under
- * SESSION_SECRET (the api-server accepts the previous hour too, so clock edges
- * are safe). The secret must be the web service's — nothing else is shared.
+ * Auth: each call carries an HMAC-SHA256 of "<prefix>:<YYYY-MM-DDTHH>:<sha256(body)>"
+ * under INTERNAL_SWEEP_SECRET (the api-server accepts the previous hour too,
+ * so clock edges are safe). The body is signed, so a captured token is good
+ * for exactly one request. Until INTERNAL_SWEEP_SECRET is set on both
+ * services, the key is derived from SESSION_SECRET with HKDF — the same
+ * derivation as api-server lib/secrets.ts — so the two deployments agree
+ * either way. The sweep secret is the ONLY thing shared with the web service.
  *
  * Env:
- *   APP_URL              — the api-server's public origin (required in production)
- *   SESSION_SECRET       — must match the api-server's
+ *   APP_URL                — the api-server's public origin (required in production)
+ *   INTERNAL_SWEEP_SECRET  — must match the api-server's (preferred)
+ *   SESSION_SECRET         — fallback: derives the sweep key; remove once the above is set
  *   SCHEDULER_DRY_RUN    — "1"/"true": log what would be called, call nothing
  *   SCHEDULER_ONLY_USER  — <id>: scope every sweep to one user (local runs)
  *   DAILY_EMAIL_DRY_RUN / DAILY_EMAIL_ONLY_USER — the old names, still honoured
  */
 
-import { createHmac } from "node:crypto";
+import { createHash, createHmac, hkdfSync } from "node:crypto";
 
 // ─── Logging ──────────────────────────────────────────────────────────────────
 // Structured one-liners. Never log a user id: the guardrail test in
@@ -53,7 +58,8 @@ export const logErr = (msg: string, err: unknown, data?: Record<string, unknown>
 
 export interface SchedulerConfig {
   appUrl: string;
-  sessionSecret: string;
+  /** The internal sweep key: INTERNAL_SWEEP_SECRET, or derived from SESSION_SECRET. */
+  sweepSecret: string;
   dryRun: boolean;
   onlyUser: number | null;
 }
@@ -73,12 +79,25 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): SchedulerConfi
   const onlyParsed = onlyRaw && /^\d+$/.test(onlyRaw) ? Number(onlyRaw) : NaN;
   return {
     appUrl: (env.APP_URL ?? "https://eoscompanion.com").replace(/\/$/, ""),
-    sessionSecret: env.SESSION_SECRET ?? "",
+    sweepSecret: resolveSweepSecret(env),
     dryRun: truthy(env.SCHEDULER_DRY_RUN) || truthy(env.DAILY_EMAIL_DRY_RUN),
     // A typo'd id must never silently widen to "everyone": NaN → no scope, and
     // the run refuses below rather than fanning out.
     onlyUser: onlyRaw ? (Number.isInteger(onlyParsed) && onlyParsed > 0 ? onlyParsed : -1) : null,
   };
+}
+
+/**
+ * Mirrors api-server lib/secrets.ts exactly: the dedicated secret wins; else
+ * 32 bytes from HKDF-SHA256(SESSION_SECRET, info "eos-internal-sweep-v1") as
+ * hex. Empty when neither is set.
+ */
+export function resolveSweepSecret(env: NodeJS.ProcessEnv = process.env): string {
+  const dedicated = env.INTERNAL_SWEEP_SECRET?.trim();
+  if (dedicated) return dedicated;
+  const session = env.SESSION_SECRET;
+  if (!session) return "";
+  return Buffer.from(hkdfSync("sha256", session, "", "eos-internal-sweep-v1", 32)).toString("hex");
 }
 
 // ─── The sweeps ───────────────────────────────────────────────────────────────
@@ -97,9 +116,11 @@ export const SWEEPS: readonly Sweep[] = [
   { name: "Story sweeps", path: "/api/internal/stories/run", tokenPrefix: "stories-run", timeoutMs: 240_000 },
 ];
 
-export function sweepToken(secret: string, prefix: string, d: Date = new Date()): string {
+/** HMAC over the prefix, the UTC hour and the exact body string being sent. */
+export function sweepToken(secret: string, prefix: string, body: string, d: Date = new Date()): string {
   const stamp = d.toISOString().slice(0, 13); // YYYY-MM-DDTHH
-  return createHmac("sha256", secret).update(`${prefix}:${stamp}`).digest("hex");
+  const digest = createHash("sha256").update(body).digest("hex");
+  return createHmac("sha256", secret).update(`${prefix}:${stamp}:${digest}`).digest("hex");
 }
 
 export interface SweepOutcome {
@@ -111,16 +132,18 @@ export interface SweepOutcome {
 async function callSweep(sweep: Sweep, cfg: SchedulerConfig, fetchImpl: typeof fetch): Promise<SweepOutcome> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), sweep.timeoutMs);
+  // The single-user hook scopes the sweep so local runs never fan out. The
+  // token signs these exact bytes, so build the string once and send it as is.
+  const body = JSON.stringify(cfg.onlyUser !== null ? { userId: cfg.onlyUser } : {});
   try {
     const resp = await fetchImpl(`${cfg.appUrl}${sweep.path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-internal-token": sweepToken(cfg.sessionSecret, sweep.tokenPrefix) },
-      // The single-user hook scopes the sweep so local runs never fan out.
-      body: JSON.stringify(cfg.onlyUser !== null ? { userId: cfg.onlyUser } : {}),
+      headers: { "Content-Type": "application/json", "x-internal-token": sweepToken(cfg.sweepSecret, sweep.tokenPrefix, body) },
+      body,
       signal: controller.signal,
     });
-    const body: unknown = await resp.json().catch(() => null);
-    log(`${sweep.name} triggered`, { status: resp.status, result: body as Record<string, unknown> | null });
+    const result: unknown = await resp.json().catch(() => null);
+    log(`${sweep.name} triggered`, { status: resp.status, result: result as Record<string, unknown> | null });
     return { name: sweep.name, status: resp.status, ok: resp.ok };
   } catch (err) {
     logErr(`${sweep.name} trigger failed (non-fatal)`, err);
@@ -141,8 +164,8 @@ export async function run(opts: { fetchImpl?: typeof fetch; env?: NodeJS.Process
     log("SCHEDULER_ONLY_USER is not a positive integer — refusing to run unscoped");
     return [];
   }
-  if (!cfg.sessionSecret) {
-    log("SESSION_SECRET not set — nothing can be triggered");
+  if (!cfg.sweepSecret) {
+    log("INTERNAL_SWEEP_SECRET (or SESSION_SECRET) not set — nothing can be triggered");
     return [];
   }
   if (cfg.dryRun) {

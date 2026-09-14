@@ -1,5 +1,4 @@
 import { Router, type IRouter } from "express";
-import crypto from "crypto";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import {
   db,
@@ -22,6 +21,7 @@ import {
   type GoalReviewItem,
 } from "../services/chapters/generate.js";
 import { logger } from "../lib/logger.js";
+import { requireInternalToken, internalBodyProblem, isProduction } from "../lib/internalAuth.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 
 const router: IRouter = Router();
@@ -484,44 +484,22 @@ router.post("/chapters/:id/offer", async (req, res): Promise<void> => {
 });
 
 // ─── Internal machine endpoint (mounted BEFORE auth) ──────────────────────────
-// Called hourly by the daily-email scheduled job. Authenticated by an
-// HMAC token derived from SESSION_SECRET and the current UTC hour — same
-// shared-secret style as the unsubscribe/voice-token links, no session needed.
+// Called hourly by the scheduler. Authenticated by lib/internalAuth.ts: an
+// HMAC under INTERNAL_SWEEP_SECRET over the prefix, the UTC hour and the
+// request body, so a captured token cannot be replayed with a different body.
 
-function hourStamp(d: Date): string {
-  return d.toISOString().slice(0, 13); // YYYY-MM-DDTHH
-}
-
-export function chaptersRunToken(secret: string, d: Date): string {
-  return crypto.createHmac("sha256", secret).update(`chapters-run:${hourStamp(d)}`).digest("hex");
-}
-
-function tokenMatches(provided: string, secret: string, now: Date): boolean {
-  for (const d of [now, new Date(now.getTime() - 3_600_000)]) {
-    const expected = chaptersRunToken(secret, d);
-    const a = Buffer.from(provided);
-    const b = Buffer.from(expected);
-    if (a.length === b.length && crypto.timingSafeEqual(a, b)) return true;
-  }
-  return false;
-}
+const CHAPTERS_RUN_FIELDS = ["userId", "force", "ignoreWindow", "dryRun"] as const;
 
 export const chaptersInternalRouter: IRouter = Router();
 
-chaptersInternalRouter.post("/internal/chapters/run", async (req, res): Promise<void> => {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret) {
-    res.status(500).json({ error: "SESSION_SECRET not configured" });
+chaptersInternalRouter.post("/internal/chapters/run", requireInternalToken("chapters-run"), async (req, res): Promise<void> => {
+  const bodyProblem = internalBodyProblem(req.body, CHAPTERS_RUN_FIELDS);
+  if (bodyProblem) {
+    res.status(400).json({ error: bodyProblem });
     return;
   }
-  const token = req.header("x-internal-token") ?? "";
-  if (!token || !tokenMatches(token, secret, new Date())) {
-    res.status(401).json({ error: "unauthorized" });
-    return;
-  }
-
   const body = (req.body ?? {}) as Record<string, unknown>;
-  const isProd = process.env.NODE_ENV === "production";
+  const isProd = isProduction();
   const onlyUserId = Number.isInteger(body.userId) ? (body.userId as number) : undefined;
   // force/ignoreWindow are operator/testing affordances: force never in prod;
   // ignoreWindow in prod only when scoped to a single user. Reject explicitly
@@ -537,12 +515,13 @@ chaptersInternalRouter.post("/internal/chapters/run", async (req, res): Promise<
   const force = body.force === true;
   const ignoreWindow = body.ignoreWindow === true;
   // dryRun: preview-only sweep — logs one decision per candidate user,
-  // writes nothing, pushes nothing, never calls the model. Safe anywhere.
+  // writes nothing, never calls the model. Safe anywhere.
   const dryRun = body.dryRun === true;
 
   const result = await runWeeklySweep({ onlyUserId, force, ignoreWindow, dryRun });
-  // Privacy (Tier 3): the dry-run `decisions[]` carries raw userIds — hash them
-  // for the log only; the returned `result` object is left untouched.
+  // Privacy (Tier 3): the dry-run `decisions[]` carries raw userIds. They are
+  // hashed for the log, and in production they are not returned at all — the
+  // counts are the answer; the per-user list is a local debugging aid.
   try {
     logger.info(
       {
@@ -552,7 +531,7 @@ chaptersInternalRouter.post("/internal/chapters/run", async (req, res): Promise<
       "chapter sweep finished",
     );
   } catch { /* logging must never crash the caller */ }
-  res.json(result);
+  res.json(isProd ? { ...result, decisions: undefined } : result);
 });
 
 export type { ChapterTheme, MicroOffer, GoalReviewItem };

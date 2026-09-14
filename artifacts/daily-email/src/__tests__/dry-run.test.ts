@@ -2,16 +2,19 @@
  * The scheduler's contract, end to end through the real run():
  *   • dry run calls nothing;
  *   • a live run calls exactly the three sweeps, in order (chapters before
- *     stories), each with a valid hour-stamped HMAC for its own prefix;
+ *     stories), each with a valid hour-stamped HMAC for its own prefix, signed
+ *     over the exact body sent;
+ *   • INTERNAL_SWEEP_SECRET is used when set; otherwise the key is derived
+ *     from SESSION_SECRET exactly as the api-server derives it;
  *   • the single-user hook scopes every call, and a malformed one refuses to
  *     run rather than silently fanning out to everyone;
- *   • no SESSION_SECRET → nothing is called;
+ *   • no secret at all → nothing is called;
  *   • one failing endpoint never stops the next sweep.
  */
 
 import { describe, it, expect } from "vitest";
-import { createHmac } from "node:crypto";
-import { run, sweepToken, SWEEPS } from "../run";
+import { createHash, createHmac, hkdfSync } from "node:crypto";
+import { run, sweepToken, resolveSweepSecret, SWEEPS } from "../run";
 
 interface Call {
   url: string;
@@ -32,7 +35,7 @@ function fakeFetch(handler?: (url: string) => { status: number; body?: unknown }
   return { impl, calls };
 }
 
-const BASE = { APP_URL: "https://app.example.invalid/", SESSION_SECRET: "test-secret" };
+const BASE = { APP_URL: "https://app.example.invalid/", INTERNAL_SWEEP_SECRET: "test-sweep-secret" };
 
 describe("scheduler", () => {
   it("dry run calls nothing", async () => {
@@ -57,19 +60,33 @@ describe("scheduler", () => {
       "https://app.example.invalid/api/internal/stories/run",
     ]);
     const stamp = new Date().toISOString().slice(0, 13);
+    const digest = createHash("sha256").update("{}").digest("hex");
     for (const [i, s] of SWEEPS.entries()) {
-      const expected = createHmac("sha256", "test-secret").update(`${s.tokenPrefix}:${stamp}`).digest("hex");
+      const expected = createHmac("sha256", "test-sweep-secret").update(`${s.tokenPrefix}:${stamp}:${digest}`).digest("hex");
       expect(f.calls[i]!.token).toBe(expected);
-      expect(f.calls[i]!.token).toBe(sweepToken("test-secret", s.tokenPrefix));
+      expect(f.calls[i]!.token).toBe(sweepToken("test-sweep-secret", s.tokenPrefix, "{}"));
       expect(f.calls[i]!.body).toEqual({});
     }
     expect(out.every((o) => o.ok)).toBe(true);
   });
 
-  it("the single-user hook scopes every call", async () => {
+  it("the single-user hook scopes every call, and the token signs that body", async () => {
     const f = fakeFetch();
     await run({ fetchImpl: f.impl, env: { ...BASE, SCHEDULER_ONLY_USER: "42" } });
     expect(f.calls.map((c) => c.body)).toEqual([{ userId: 42 }, { userId: 42 }, { userId: 42 }]);
+    expect(f.calls[0]!.token).toBe(sweepToken("test-sweep-secret", "chapters-run", '{"userId":42}'));
+    expect(f.calls[0]!.token).not.toBe(sweepToken("test-sweep-secret", "chapters-run", "{}"));
+  });
+
+  it("without INTERNAL_SWEEP_SECRET the key is derived from SESSION_SECRET (HKDF, api-server's label)", async () => {
+    const derived = Buffer.from(hkdfSync("sha256", "session-only", "", "eos-internal-sweep-v1", 32)).toString("hex");
+    expect(resolveSweepSecret({ SESSION_SECRET: "session-only" })).toBe(derived);
+    expect(resolveSweepSecret({ SESSION_SECRET: "session-only", INTERNAL_SWEEP_SECRET: "dedicated" })).toBe("dedicated");
+    expect(resolveSweepSecret({})).toBe("");
+
+    const f = fakeFetch();
+    await run({ fetchImpl: f.impl, env: { APP_URL: BASE.APP_URL, SESSION_SECRET: "session-only" } });
+    expect(f.calls[0]!.token).toBe(sweepToken(derived, "chapters-run", "{}"));
   });
 
   it("a malformed single-user hook refuses to run instead of fanning out", async () => {

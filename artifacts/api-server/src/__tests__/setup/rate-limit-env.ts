@@ -7,6 +7,7 @@
  */
 process.env.AUTH_RATE_LIMIT_MAX ??= "100000";
 process.env.FORGOT_RATE_LIMIT_MAX ??= "100000";
+process.env.INTERNAL_RATE_LIMIT_MAX ??= "100000";
 
 // Per-user usage ceilings on paid-API endpoints (middleware/usageLimits.ts).
 // Same pattern: high defaults here; usage-limits.test.ts sets small values

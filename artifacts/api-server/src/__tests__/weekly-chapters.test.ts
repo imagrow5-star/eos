@@ -49,7 +49,7 @@ import {
   type ChapterTheme,
   type MicroOffer,
 } from "../services/chapters/generate.js";
-import { chaptersRunToken } from "../routes/chapters.js";
+import { internalToken } from "./helpers/internalToken.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const HAS_AI = Boolean(process.env.ANTHROPIC_API_KEY);
@@ -464,11 +464,11 @@ describe("internal sweep endpoint", () => {
 
   it("runs a scoped sweep with a valid token (fresh user → cold_start skip)", async () => {
     const { userId } = await makeUser("sweep");
-    const token = chaptersRunToken(process.env.SESSION_SECRET!, new Date());
+    const body = { userId, ignoreWindow: true };
     const res = await request(app)
       .post("/api/internal/chapters/run")
-      .set("x-internal-token", token)
-      .send({ userId, ignoreWindow: true });
+      .set("x-internal-token", internalToken("chapters-run", body))
+      .send(body);
     expect(res.status).toBe(200);
     expect(typeof res.body.generated).toBe("number");
     expect(res.body.generated).toBe(0);
@@ -478,12 +478,12 @@ describe("internal sweep endpoint", () => {
   });
 
   it("accepts the previous hour's token (clock-edge tolerance)", async () => {
-    const token = chaptersRunToken(process.env.SESSION_SECRET!, new Date(Date.now() - 3_600_000));
     // Scope to a non-existent user so nothing actually generates
+    const body = { userId: 999999999 };
     const res = await request(app)
       .post("/api/internal/chapters/run")
-      .set("x-internal-token", token)
-      .send({ userId: 999999999 });
+      .set("x-internal-token", internalToken("chapters-run", body, new Date(Date.now() - 3_600_000)))
+      .send(body);
     expect(res.status).toBe(200);
   });
 });

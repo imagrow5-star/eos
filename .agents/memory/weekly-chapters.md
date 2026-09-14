@@ -16,7 +16,7 @@ Weekly per-user "chapter" on the Journey tab: sealed card (threshold question + 
 - All user-visible numbers go through `countToPhrase` — chapter prose is digit-free by design.
 
 ## Trigger design
-- No cron of its own: the hourly daily-email job POSTs `/api/internal/chapters/run` with `x-internal-token` = HMAC(SESSION_SECRET, `chapters-run:<UTC hour stamp>`); server accepts current+previous hour; `force` rejected in prod; `ignoreWindow` in prod only when scoped to one user.
+- No cron of its own: the hourly daily-email job POSTs `/api/internal/chapters/run` with `x-internal-token` = HMAC(INTERNAL_SWEEP_SECRET, `chapters-run:<UTC hour stamp>:<sha256(raw body)>`) via `lib/internalAuth.ts` `requireInternalToken`; server accepts current+previous hour; unknown body keys → 400; dry-run `decisions[]` not returned in production; `force` rejected in prod; `ignoreWindow` in prod only when scoped to one user.
 - Generation window: user-local Sunday ≥18:00 or Monday ≤09:59; analyzed week = last full Mon→Sun; idempotent via UNIQUE(userId, weekStart).
 - Eligibility: ≥3 weeks since first message, ≥5 user messages in week, ≥3 quotable candidates; else warm cold-start / quiet-week skip.
 - Notification = mention in the morning email only (`emailMentionedAt`); push notifications deferred to Phase 2.

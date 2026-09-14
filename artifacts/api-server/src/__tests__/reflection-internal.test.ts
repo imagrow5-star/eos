@@ -19,7 +19,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
 import pg from "pg";
-import { reflectionRunToken } from "../routes/reflection-internal.js";
+import { internalToken } from "./helpers/internalToken.js";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL);
 const RUN = "/api/internal/reflection/weekly-run";
@@ -51,8 +51,9 @@ describe.skipIf(!HAS_DB)("POST /api/internal/reflection/weekly-run", () => {
     await pool.end();
   });
 
-  function token(): string {
-    return reflectionRunToken(process.env.SESSION_SECRET as string, new Date());
+  /** Posts to the sweep with a token signed over exactly this body. */
+  function post(body: Record<string, unknown>) {
+    return request(app).post(RUN).set("x-internal-token", internalToken("reflection-run", body)).send(body);
   }
 
   async function makeUser(tag: string, opts: { messages: number; recentReport?: boolean }): Promise<number> {
@@ -88,7 +89,7 @@ describe.skipIf(!HAS_DB)("POST /api/internal/reflection/weekly-run", () => {
 
   it("selects a due, active-enough user (dry-run, scoped)", async () => {
     const uid = await makeUser("due", { messages: 6 });
-    const res = await request(app).post(RUN).set("x-internal-token", token()).send({ userId: uid, dryRun: true });
+    const res = await post({ userId: uid, dryRun: true });
     expect(res.status).toBe(200);
     expect(res.body.dryRun).toBe(true);
     expect(res.body.candidates).toBe(1);
@@ -100,7 +101,7 @@ describe.skipIf(!HAS_DB)("POST /api/internal/reflection/weekly-run", () => {
 
   it("skips a user below the minimum-content bar", async () => {
     const uid = await makeUser("thin", { messages: 2 });
-    const res = await request(app).post(RUN).set("x-internal-token", token()).send({ userId: uid, dryRun: true });
+    const res = await post({ userId: uid, dryRun: true });
     expect(res.status).toBe(200);
     expect(res.body.candidates).toBe(0);
     expect(res.body.decisions).toEqual([]);
@@ -108,14 +109,14 @@ describe.skipIf(!HAS_DB)("POST /api/internal/reflection/weekly-run", () => {
 
   it("skips a user who already has a report this period (idempotent)", async () => {
     const uid = await makeUser("already", { messages: 8, recentReport: true });
-    const res = await request(app).post(RUN).set("x-internal-token", token()).send({ userId: uid, dryRun: true });
+    const res = await post({ userId: uid, dryRun: true });
     expect(res.status).toBe(200);
     expect(res.body.candidates).toBe(0);
   });
 
   it("a real run attempts generation and records unavailable without an API key (stores nothing)", async () => {
     const uid = await makeUser("realrun", { messages: 6 });
-    const res = await request(app).post(RUN).set("x-internal-token", token()).send({ userId: uid });
+    const res = await post({ userId: uid });
     expect(res.status).toBe(200);
     expect(res.body.candidates).toBe(1);
     // No ANTHROPIC_API_KEY in the test env → the service returns "unavailable".

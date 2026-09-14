@@ -15,7 +15,7 @@ import request from "supertest";
 import pg from "pg";
 import app from "../app.js";
 import { runWeeklySweep } from "../services/chapters/generate.js";
-import { chaptersRunToken } from "../routes/chapters.js";
+import { internalToken } from "./helpers/internalToken.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -165,11 +165,11 @@ describe("weekly chapter sweep dry run", () => {
 
     const before = await snapshotWriteSurface([userId]);
 
-    const token = chaptersRunToken(process.env.SESSION_SECRET!, new Date());
+    const body = { dryRun: true, ignoreWindow: true, userId };
     const res = await request(app)
       .post("/api/internal/chapters/run")
-      .set("x-internal-token", token)
-      .send({ dryRun: true, ignoreWindow: true, userId });
+      .set("x-internal-token", internalToken("chapters-run", body))
+      .send(body);
 
     expect(res.status).toBe(200);
     expect(res.body.dryRun).toBe(true);

@@ -1,9 +1,12 @@
 import crypto from "node:crypto";
+import { secretFor } from "./secrets";
 
 // ─── Per-call voice tokens ────────────────────────────────────────────────────
 // ElevenLabs' servers call our custom-LLM endpoint directly (no browser session
 // cookie), so each voice call carries a short-lived HMAC token identifying the
-// logged-in user. Signed with SESSION_SECRET — no new secret required.
+// logged-in user. Signed with VOICE_TOKEN_SECRET (lib/secrets.ts; derived from
+// SESSION_SECRET until that is set), so a leaked voice key can never forge a
+// login cookie or a sweep token, and vice versa.
 //
 // Format: "<userId>.<issuedAt>.<expiresAt>.<env>.<signature>"
 //
@@ -18,9 +21,7 @@ import crypto from "node:crypto";
 // verifyVoiceToken only accepts tokens minted in the SAME environment.
 
 function getSecret(): string {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret) throw new Error("SESSION_SECRET is required for voice tokens");
-  return secret;
+  return secretFor("voice-token");
 }
 
 function envTag(): "prod" | "dev" {

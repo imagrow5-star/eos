@@ -1,23 +1,21 @@
 /**
- * Stories — the self-serve refresh and the legacy sweep alias.
+ * Stories — the self-serve refresh and the internal route's email scope.
  *
  *  - POST /stories/refresh runs today's sweeps for the signed-in user only,
  *    ignoring the morning window, and is throttled per user so a reload can't
  *    spend model calls; it reports what was written and why not.
- *  - /internal/weekly-reviews/run (the stage-3 name) still triggers the
- *    sweeps, with either token prefix, so a scheduled-job deployment built
- *    before the rename keeps working.
- *  - the internal route accepts an email as the scope.
+ *  - the internal route accepts an email as the scope, and an address with
+ *    no account answers exactly like an account with nothing due (no 404
+ *    oracle — security review).
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import pg from "pg";
-import crypto from "crypto";
 import { eq } from "drizzle-orm";
 import { db, profileTable, habitsTable, habitCompletionsTable } from "@workspace/db";
 import app from "../app.js";
-import { storiesRunToken } from "../routes/stories.js";
+import { internalToken } from "./helpers/internalToken.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const DB = Boolean(process.env.DATABASE_URL);
@@ -76,22 +74,27 @@ describe.skipIf(!DB)("POST /stories/refresh", () => {
   });
 });
 
-describe.skipIf(!DB)("legacy sweep alias", () => {
-  it("accepts the old path with the old token prefix, scoped by email", async () => {
-    const stamp = new Date().toISOString().slice(0, 13);
-    const legacy = crypto.createHmac("sha256", process.env.SESSION_SECRET!).update(`weekly-review-run:${stamp}`).digest("hex");
+describe.skipIf(!DB)("internal sweep scoped by email", () => {
+  it("scopes the run to the account behind the address", async () => {
+    const body = { email, ignoreWindow: true };
     const res = await request(app)
-      .post("/api/internal/weekly-reviews/run")
-      .set("x-internal-token", legacy)
-      .send({ email, ignoreWindow: true });
+      .post("/api/internal/stories/run")
+      .set("x-internal-token", internalToken("stories-run", body))
+      .send(body);
     expect(res.status).toBe(200);
     expect(res.body.subjects.considered).toBe(1);
     expect(res.body.subjects.skipped["routines:exists"]).toBe(1);
+  });
 
+  it("an address with no account answers like an account with nothing due (no oracle)", async () => {
+    const body = { email: "nobody@example.com", ignoreWindow: true };
     const unknown = await request(app)
       .post("/api/internal/stories/run")
-      .set("x-internal-token", storiesRunToken(process.env.SESSION_SECRET!, new Date()))
-      .send({ email: "nobody@example.com" });
-    expect(unknown.status).toBe(404);
+      .set("x-internal-token", internalToken("stories-run", body))
+      .send(body);
+    expect(unknown.status).toBe(200);
+    expect(unknown.body.subjects.considered).toBe(0);
+    expect(unknown.body.week.considered).toBe(0);
+    expect(Object.keys(unknown.body)).toEqual(["week", "subjects"]);
   });
 });

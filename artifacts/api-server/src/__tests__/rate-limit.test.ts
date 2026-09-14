@@ -19,11 +19,26 @@ import type { Express } from "express";
 
 process.env.AUTH_RATE_LIMIT_MAX = "10";
 process.env.FORGOT_RATE_LIMIT_MAX = "2";
+process.env.INTERNAL_RATE_LIMIT_MAX = "3";
 
 let app: Express;
 
 beforeAll(async () => {
   app = (await import("../app.js")).default;
+});
+
+describe("internal endpoint rate limiting", () => {
+  it("throttles /api/internal after its limit with a JSON 429, before any token work", async () => {
+    // Unauthenticated probes: each costs a token check and nothing else.
+    for (let i = 0; i < 3; i++) {
+      const res = await request(app).post("/api/internal/chapters/run").send({});
+      expect(res.status).toBe(401);
+    }
+    const limited = await request(app).post("/api/internal/chapters/run").send({});
+    expect(limited.status).toBe(429);
+    expect(limited.headers["content-type"]).toMatch(/application\/json/);
+    expect(limited.body.error).toMatch(/Too many internal requests/);
+  });
 });
 
 describe("auth rate limiting", () => {
