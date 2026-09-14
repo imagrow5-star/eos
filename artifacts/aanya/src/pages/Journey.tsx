@@ -792,10 +792,18 @@ export default function Journey() {
           <h1 className="font-display text-[34px] font-medium text-foreground tracking-wide leading-tight">
             Your journey
           </h1>
-          {/* Warm lede — mirrors the user back instead of scoring them */}
+          {/* Warm lede — mirrors the user back instead of scoring them. The
+              first day gets its own line: "0 days in" was the first thing a
+              new person read, and it read like a scoreboard at zero. */}
           <p className="font-serif text-[15px] text-secondary italic leading-relaxed mt-2 max-w-md">
-            {journey.dayCounter} {journey.dayCounter === 1 ? "day" : "days"} in{userName ? `, ${userName}` : ""}. You keep
-            choosing yourself, quietly, even on the hard days.
+            {journey.dayCounter < 1 ? (
+              <>Your first day{userName ? `, ${userName}` : ""}. Coming here was the whole first step.</>
+            ) : (
+              <>
+                {journey.dayCounter} {journey.dayCounter === 1 ? "day" : "days"} in{userName ? `, ${userName}` : ""}. You keep
+                choosing yourself, quietly, even on the hard days.
+              </>
+            )}
           </p>
         </div>
 

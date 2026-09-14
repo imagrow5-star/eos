@@ -39,7 +39,7 @@
          swap). display=swap paints text in the fallback immediately, then
          swaps. <noscript> keeps fonts for the (JS-required app's) rare no-JS
          probe / crawlers. -->
-    <script src="load-fonts.js" data-href="https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,500;0,600;1,500&family=IBM+Plex+Mono:wght@400;500&family=Inter:opsz,wght@14..32,400;500;600&family=Fraunces:ital,opsz,wght@0,9..144,420;0,9..144,520;1,9..144,420&display=swap" defer></script>
+    <script src="%BASE_URL%load-fonts.js" data-href="https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,500;0,600;1,500&family=IBM+Plex+Mono:wght@400;500&family=Inter:opsz,wght@14..32,400;500;600&family=Fraunces:ital,opsz,wght@0,9..144,420;0,9..144,520;1,9..144,420&display=swap" defer></script>
     <noscript><link href="https://fonts.googleapis.com/css2?family=Cormorant:ital,wght@0,500;0,600;1,500&family=IBM+Plex+Mono:wght@400;500&family=Inter:opsz,wght@14..32,400;500;600&family=Fraunces:ital,opsz,wght@0,9..144,420;0,9..144,520;1,9..144,420&display=swap" rel="stylesheet"></noscript>
     <!-- Paint the calm cream shell immediately: the app CSS arrives later, and
          without this slower devices show a stark white flash first.
@@ -47,7 +47,7 @@
          chose dark mode. -->
     <style>html{background:#FBF7EF}</style>
     <!-- Pre-paint theme attribute stamp (external: CSP forbids inline JS) -->
-    <script src="theme-init.js"></script>
+    <script src="%BASE_URL%theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>
@@ -72,8 +72,11 @@
       </div>
     </div>
     <!-- External (not inline) so the production CSP's script-src 'self'
-         allows it; plain non-module script so pre-ES2015 engines still run it. -->
-    <script src="browser-guard.js"></script>
+         allows it; plain non-module script so pre-ES2015 engines still run it.
+         The three helper scripts are addressed from the app's base, not the
+         current path: on a nested route (/memory/signals) a relative src asked
+         for /memory/browser-guard.js and got the app shell back instead. -->
+    <script src="%BASE_URL%browser-guard.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
