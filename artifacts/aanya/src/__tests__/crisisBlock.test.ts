@@ -12,8 +12,8 @@ import {
 } from "../lib/crisisBlock";
 
 describe("splitCrisisBlock", () => {
-  it("knows all 11 language markers (en + 10 activated)", () => {
-    expect(HELPLINE_BLOCK_MARKERS).toHaveLength(11);
+  it("knows all 22 markers (en + 10 activated languages, two intros each)", () => {
+    expect(HELPLINE_BLOCK_MARKERS).toHaveLength(22);
     expect(HELPLINE_BLOCK_MARKERS[0]).toBe(HELPLINE_BLOCK_MARKER);
     for (const m of HELPLINE_BLOCK_MARKERS) {
       expect(m.startsWith("—\n")).toBe(true);
@@ -25,6 +25,14 @@ describe("splitCrisisBlock", () => {
     const { body, block } = splitCrisisBlock(content);
     expect(body).toBe("I'm here with you.");
     expect(block!.startsWith(HELPLINE_BLOCK_MARKER)).toBe(true);
+  });
+
+  it("splits the ambiguous-tier English block (backstop-only detection)", () => {
+    const marker = "—\nWhichever it is — these are here if you ever want them:";
+    const content = `Is that a philosophical question, or how you're feeling right now?\n\n${marker}\n- 988 — 988 — 24/7 (call)\nI'm not going anywhere. Take your time.`;
+    const { body, block } = splitCrisisBlock(content);
+    expect(body).toBe("Is that a philosophical question, or how you're feeling right now?");
+    expect(block!.startsWith(marker)).toBe(true);
   });
 
   it("splits a German block", () => {

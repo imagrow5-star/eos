@@ -210,7 +210,7 @@ router.post("/chat/stream", requireSubscriptionForChat, ...chatUsageLimits, asyn
     // A classifier that couldn't run (no key/error/timeout → available:false)
     // simply leaves the regex result standing — never a missed detection.
     const semantic = await semanticP;
-    const { active: crisisActive, pattern: crisisPattern } = resolveCrisisOutcome(crisis, semantic);
+    const { active: crisisActive, pattern: crisisPattern, tier: crisisTier } = resolveCrisisOutcome(crisis, semantic);
 
     // Drop the just-inserted user message from context window
     const contextMessages = [...recentMessages].reverse().slice(0, -1);
@@ -237,7 +237,7 @@ router.post("/chat/stream", requireSubscriptionForChat, ...chatUsageLimits, asyn
     // the `done` event also carries it separately so the client renders it as
     // a distinct, dismissible card rather than Eos's own words.
     const resolved = crisisActive ? resolveHelplines(profile.country, userLanguage) : null;
-    const helplineBlockText = resolved ? buildHelplineBlockText(resolved.lines, userLanguage) : null;
+    const helplineBlockText = resolved ? buildHelplineBlockText(resolved.lines, userLanguage, crisisTier) : null;
     const persistedContent = helplineBlockText
       ? `${aiContent}\n\n${helplineBlockText}`
       : aiContent;
@@ -344,7 +344,7 @@ router.post("/chat/send", requireSubscriptionForChat, ...chatUsageLimits, async 
   // Union the backstop with regex before generation (fail-safe: a classifier
   // that couldn't run leaves the regex result standing).
   const semantic = await semanticP;
-  const { active: crisisActive, pattern: crisisPattern } = resolveCrisisOutcome(crisis, semantic);
+  const { active: crisisActive, pattern: crisisPattern, tier: crisisTier } = resolveCrisisOutcome(crisis, semantic);
 
   const contextMessages = recentMessages.reverse().slice(0, -1);
   const reply = await getCompanionReply(systemPrompt, contextMessages, content, stage, {
@@ -363,7 +363,7 @@ router.post("/chat/send", requireSubscriptionForChat, ...chatUsageLimits, async 
   // Crisis floor: deterministic helpline append after generation (works even
   // on a degraded reply — that is the point of a floor).
   const resolved = crisisActive ? resolveHelplines(profile.country, userLanguage) : null;
-  const helplineBlockText = resolved ? buildHelplineBlockText(resolved.lines, userLanguage) : null;
+  const helplineBlockText = resolved ? buildHelplineBlockText(resolved.lines, userLanguage, crisisTier) : null;
   const persistedContent = helplineBlockText ? `${aiContent}\n\n${helplineBlockText}` : aiContent;
 
   const [assistantMsg] = await db

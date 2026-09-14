@@ -53,7 +53,7 @@ export async function recordVoiceCrisisEvent(args: {
 export async function pendingVoiceCrisisEvent(
   userId: number,
   windowMs = 15 * 60 * 1000,
-): Promise<{ id: number; countryServed: string; detectedAt: Date } | null> {
+): Promise<{ id: number; countryServed: string; detectedAt: Date; patternMatched: string } | null> {
   const since = new Date(Date.now() - windowMs);
   // source and block_dismissed are encrypted at rest — the window filters in
   // SQL on the plaintext timestamp; the rest is decided in JS on a small set.
@@ -62,6 +62,7 @@ export async function pendingVoiceCrisisEvent(
       id: crisisEventsTable.id,
       countryServed: crisisEventsTable.countryServed,
       detectedAt: crisisEventsTable.detectedAt,
+      patternMatched: crisisEventsTable.patternMatched,
       source: crisisEventsTable.source,
       blockDismissed: crisisEventsTable.blockDismissed,
     })
@@ -69,7 +70,9 @@ export async function pendingVoiceCrisisEvent(
     .where(and(eq(crisisEventsTable.userId, userId), gte(crisisEventsTable.detectedAt, since)))
     .orderBy(desc(crisisEventsTable.detectedAt));
   const row = rows.find((r) => r.source === "voice" && !r.blockDismissed);
-  return row ? { id: row.id, countryServed: row.countryServed, detectedAt: row.detectedAt } : null;
+  return row
+    ? { id: row.id, countryServed: row.countryServed, detectedAt: row.detectedAt, patternMatched: row.patternMatched }
+    : null;
 }
 
 /**

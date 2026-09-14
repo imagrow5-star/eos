@@ -166,7 +166,7 @@ router.post("/demo/message", demoLimiter, async (req, res): Promise<void> => {
 
     const systemPrompt = await buildSystemPrompt(profile, DEMO_STAGE);
     const semantic = await semanticP;
-    const { active: crisisActive } = resolveCrisisOutcome(crisis, semantic);
+    const { active: crisisActive, tier: crisisTier } = resolveCrisisOutcome(crisis, semantic);
 
     const systemExtra = [DEMO_SYSTEM_ADDENDUM, crisisActive ? CRISIS_REINFORCEMENT_BLOCK : ""]
       .filter(Boolean)
@@ -182,7 +182,7 @@ router.post("/demo/message", demoLimiter, async (req, res): Promise<void> => {
     );
 
     const helplineBlockText = crisisActive
-      ? buildHelplineBlockText(resolveHelplines("", "en").lines, "en")
+      ? buildHelplineBlockText(resolveHelplines("", "en").lines, "en", crisisTier)
       : null;
     const content = helplineBlockText ? `${reply.text}\n\n${helplineBlockText}` : reply.text;
 
