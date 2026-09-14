@@ -31,6 +31,17 @@ export const memoryFactsTable = pgTable("memory_facts", {
   // Lets the morning generators avoid re-asking about the same one-time
   // "event" fact day after day. Nullable/additive — no backfill needed.
   lastSurfacedAt: timestamp("last_surfaced_at"),
+  // ── Lifecycle (memory audit, item 1) ──────────────────────────────────────
+  // A fact changes in place when the conversation updates it ("I moved to
+  // Berlin" after "lives in London"): the row keeps its id, creation date and
+  // reference counts; the old wording moves here and updated_at is stamped.
+  // A fact that is simply no longer true, with nothing replacing it, is
+  // RETIRED: retired_at set, and the row is invisible everywhere (prompts,
+  // the Memory page, chapters, the export) — kept only so a wrong retire
+  // can be undone by hand. The model never hard-deletes a memory.
+  previousFact: encryptedText("previous_fact", "memory_facts.previous_fact"),
+  updatedAt: timestamp("updated_at"),
+  retiredAt: timestamp("retired_at"),
 });
 
 export const personalitySignalsTable = pgTable("personality_signals", {

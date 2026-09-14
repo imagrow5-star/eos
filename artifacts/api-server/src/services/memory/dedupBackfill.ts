@@ -25,7 +25,7 @@
  * safe to run anytime; only the boot trigger is gated.
  */
 
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   db,
   memoryFactsTable,
@@ -176,7 +176,7 @@ async function backfillFacts(userId: number, grouper: ClusterGrouper): Promise<T
       userMarkedImportant: memoryFactsTable.userMarkedImportant,
     })
     .from(memoryFactsTable)
-    .where(eq(memoryFactsTable.userId, userId))
+    .where(and(eq(memoryFactsTable.userId, userId), isNull(memoryFactsTable.retiredAt)))
     .orderBy(asc(memoryFactsTable.createdAt));
   const before = rows.length;
   if (before < 2) return { table: "memory_facts", beforeCount: before, afterCount: before, mergedCount: 0 };

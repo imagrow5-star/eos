@@ -193,3 +193,16 @@ export async function ensureDemoSessionsTable(): Promise<void> {
   );
   logger.info("schema guard: demo_sessions table present");
 }
+
+/**
+ * Idempotent schema guard for the memory-fact lifecycle columns (memory
+ * audit, item 1): previous_fact (encrypted, the wording before an in-place
+ * update), updated_at, retired_at. Every fact read filters on retired_at, so
+ * without the columns chat would 42703 — the guard runs before traffic.
+ */
+export async function ensureMemoryFactLifecycleColumns(): Promise<void> {
+  await db.execute(sql`ALTER TABLE memory_facts ADD COLUMN IF NOT EXISTS previous_fact text`);
+  await db.execute(sql`ALTER TABLE memory_facts ADD COLUMN IF NOT EXISTS updated_at timestamp`);
+  await db.execute(sql`ALTER TABLE memory_facts ADD COLUMN IF NOT EXISTS retired_at timestamp`);
+  logger.info("schema guard: memory_facts lifecycle columns present");
+}

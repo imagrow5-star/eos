@@ -623,7 +623,7 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
       [userId, ...messagesRange.params],
     ),
     pool.query(
-      `SELECT fact, category, created_at, times_referenced, last_referenced_at, emotional_weight, user_marked_important FROM memory_facts WHERE user_id = $1${memoryRange.clause} ORDER BY created_at ASC`,
+      `SELECT fact, category, created_at, times_referenced, last_referenced_at, emotional_weight, user_marked_important FROM memory_facts WHERE user_id = $1 AND retired_at IS NULL${memoryRange.clause} ORDER BY created_at ASC`,
       [userId, ...memoryRange.params],
     ),
     pool.query(
@@ -1017,7 +1017,7 @@ router.get("/account/export/summary", ...accountExportSummaryUsageLimits, async 
         [userId],
       ),
       pool.query(
-        `SELECT COUNT(*) AS count FROM memory_facts WHERE user_id = $1`,
+        `SELECT COUNT(*) AS count FROM memory_facts WHERE user_id = $1 AND retired_at IS NULL`,
         [userId],
       ),
       pool.query(

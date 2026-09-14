@@ -52,8 +52,21 @@ export interface DedupEntry {
   content: string;
 }
 
+/**
+ * How a candidate relates to the existing rows:
+ *   • "duplicate" — the same thing, same content, worded differently: bump
+ *     the existing row, insert nothing;
+ *   • "update"    — the same thing, but the content CHANGED (a new number,
+ *     place, date, state): the existing row is replaced in place, never
+ *     appended beside (memory audit, item 1);
+ *   • "different" — a distinct thing: insert.
+ */
+export type DedupRelation = "duplicate" | "update" | "different";
+
 export interface DedupDecision {
+  /** True only for "duplicate" — kept for callers that only merge repeats. */
   isDuplicate: boolean;
+  relation: DedupRelation;
   matchingId: number | null;
   reasoning: string;
 }
@@ -128,10 +141,13 @@ New candidate:
 Existing entries (id: text):
 ${list}
 
-Two entries are the SAME thing if a person would consider them one item (e.g. "hit 100 crores this year" and "my target is 100 cr" — same goal; "read before bed" and "read before sleep" — same habit). They are DIFFERENT if they capture distinct things even if related (e.g. "read before bed" vs "read before work" — different habits).
+Three possible relations:
+- "duplicate": the same thing with the same content, worded differently (e.g. "hit 100 crores this year" and "my target is 100 cr" — same goal; "read before bed" and "read before sleep" — same habit). A person would consider them one item.
+- "update": the same thing, but the content has CHANGED — a new number, place, date, name or state (e.g. "my target is 200 cr" after "hit 100 crores this year"; "lives in Berlin now" after "lives in London"; "the wedding is in June" after "the wedding is in May"). The new candidate replaces the old entry.
+- "different": distinct things, even if related or on the same topic (e.g. "read before bed" vs "read before work" — different habits; "has a sister, Ana" vs "has a brother, Tom").
 
 Reply with ONLY this JSON, no prose:
-{"is_duplicate": true|false, "matching_id": <id of the equivalent existing entry, or null>, "reasoning": "<one short sentence>"}`;
+{"relation": "duplicate"|"update"|"different", "matching_id": <id of the existing entry for duplicate/update, or null>, "reasoning": "<one short sentence>"}`;
 }
 
 export function buildClusterPrompt(entries: DedupEntry[]): string {
@@ -187,9 +203,22 @@ export function parseDedupDecision(text: string): DedupDecision {
       : typeof rawId === "string" && /^\d+$/.test(rawId)
         ? Number(rawId)
         : null;
+  // The three-way `relation` is the current shape; the older boolean
+  // `is_duplicate` is still honoured so a model answering in the old shape
+  // (or a cached prompt) degrades to duplicate-or-different, never to an
+  // exception.
+  const rawRel = typeof obj.relation === "string" ? obj.relation.toLowerCase() : null;
+  const relation: DedupRelation =
+    rawRel === "duplicate" || rawRel === "update" || rawRel === "different"
+      ? rawRel
+      : obj.is_duplicate === true
+        ? "duplicate"
+        : "different";
+  const linked = relation !== "different";
   return {
-    isDuplicate: obj.is_duplicate === true,
-    matchingId: obj.is_duplicate === true ? matchingId : null,
+    isDuplicate: relation === "duplicate",
+    relation: linked && matchingId != null ? relation : "different",
+    matchingId: linked ? matchingId : null,
     reasoning: typeof obj.reasoning === "string" ? obj.reasoning : "",
   };
 }
@@ -247,6 +276,7 @@ export async function findSemanticDuplicate(
 ): Promise<DedupDecision> {
   const notDup = (reasoning: string): DedupDecision => ({
     isDuplicate: false,
+    relation: "different",
     matchingId: null,
     reasoning,
   });
@@ -259,7 +289,7 @@ export async function findSemanticDuplicate(
     const text = await llm(buildDedupPrompt(candidate, existing));
     const decision = parseDedupDecision(text);
     // Guard against a hallucinated id: the match must be a real existing row.
-    if (decision.isDuplicate && decision.matchingId != null) {
+    if (decision.relation !== "different" && decision.matchingId != null) {
       if (existing.some((e) => e.id === decision.matchingId)) return decision;
       return notDup("model returned an unknown matching_id");
     }

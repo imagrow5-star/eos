@@ -49,7 +49,21 @@ describe("lexical overlap (cheap negative fast-path)", () => {
 describe("parseDedupDecision", () => {
   it("parses a positive decision", () => {
     const d = parseDedupDecision('{"is_duplicate": true, "matching_id": 7, "reasoning": "same revenue goal"}');
-    expect(d).toEqual({ isDuplicate: true, matchingId: 7, reasoning: "same revenue goal" });
+    expect(d).toEqual({ isDuplicate: true, relation: "duplicate", matchingId: 7, reasoning: "same revenue goal" });
+  });
+
+  it("parses the three-way relation (memory audit, item 1)", () => {
+    expect(parseDedupDecision('{"relation": "duplicate", "matching_id": 4, "reasoning": "r"}')).toEqual({
+      isDuplicate: true, relation: "duplicate", matchingId: 4, reasoning: "r",
+    });
+    expect(parseDedupDecision('{"relation": "update", "matching_id": "4", "reasoning": "new number"}')).toEqual({
+      isDuplicate: false, relation: "update", matchingId: 4, reasoning: "new number",
+    });
+    expect(parseDedupDecision('{"relation": "different", "matching_id": 4, "reasoning": "x"}')).toEqual({
+      isDuplicate: false, relation: "different", matchingId: null, reasoning: "x",
+    });
+    // An update or duplicate that names no row is no relation at all.
+    expect(parseDedupDecision('{"relation": "update", "matching_id": null}').relation).toBe("different");
   });
 
   it("tolerates code fences and surrounding prose", () => {
@@ -62,7 +76,7 @@ describe("parseDedupDecision", () => {
 
   it("parses a negative decision and nulls the id", () => {
     const d = parseDedupDecision('{"is_duplicate": false, "matching_id": null, "reasoning": "different activities"}');
-    expect(d).toEqual({ isDuplicate: false, matchingId: null, reasoning: "different activities" });
+    expect(d).toEqual({ isDuplicate: false, relation: "different", matchingId: null, reasoning: "different activities" });
   });
 
   it("never reports a matching id when not a duplicate", () => {

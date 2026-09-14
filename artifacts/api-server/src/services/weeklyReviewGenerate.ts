@@ -18,7 +18,7 @@
  * streaks, feelings-in-context (inferred emotion). See the composer's header.
  */
 
-import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, isNull } from "drizzle-orm";
 import {
   db,
   messagesTable,
@@ -198,6 +198,7 @@ export async function gatherWeek(userId: number, weekStart: string, weekEnd: str
         .where(
           and(
             eq(memoryFactsTable.userId, userId),
+            isNull(memoryFactsTable.retiredAt),
             inArray(memoryFactsTable.category, ["person", "event"]),
             gte(memoryFactsTable.createdAt, new Date(`${ymdAddDays(weekStart, -1)}T00:00:00Z`)),
           ),

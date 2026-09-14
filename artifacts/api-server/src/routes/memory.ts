@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, asc, and } from "drizzle-orm";
+import { eq, desc, asc, and, isNull } from "drizzle-orm";
 import { db, pool } from "@workspace/db";
 import {
   memoryFactsTable,
@@ -270,10 +270,11 @@ router.post(
 
 router.get("/memory/facts", async (req, res): Promise<void> => {
   const userId = req.userId;
+  // Retired facts (no longer true) are not shown — see lib/db memory.ts.
   const facts = await db
     .select()
     .from(memoryFactsTable)
-    .where(eq(memoryFactsTable.userId, userId))
+    .where(and(eq(memoryFactsTable.userId, userId), isNull(memoryFactsTable.retiredAt)))
     .orderBy(desc(memoryFactsTable.createdAt));
   res.json(GetMemoryFactsResponse.parse(facts));
 });

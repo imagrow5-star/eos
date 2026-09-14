@@ -83,8 +83,8 @@ const lexFinder: DedupFinder = async (candidate, existing) => {
     const s = lexicalOverlap(candidate, e.content);
     if (s > bestScore) { bestScore = s; best = e; }
   }
-  if (best && bestScore >= 0.3) return { isDuplicate: true, matchingId: best.id, reasoning: "lex" };
-  return { isDuplicate: false, matchingId: null, reasoning: "no" };
+  if (best && bestScore >= 0.3) return { isDuplicate: true, relation: "duplicate", matchingId: best.id, reasoning: "lex" };
+  return { isDuplicate: false, relation: "different", matchingId: null, reasoning: "no" };
 };
 
 describe.skipIf(!DB)("feelings extraction", () => {

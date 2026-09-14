@@ -1,4 +1,4 @@
-import { desc, eq, and, sql } from "drizzle-orm";
+import { desc, eq, and, sql, isNull } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   memoryFactsTable,
@@ -20,9 +20,11 @@ import { logger } from "../lib/logger.js";
 import { kindStreak } from "../lib/kindStreak.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { recordMemoryReferences } from "./memory/references.js";
+import { rankFactsByImportance } from "./memory/importance.js";
 import { detectRememberIntent } from "./memory/rememberTriggers.js";
 import {
   defaultDedupFinder,
+  lexicalOverlap,
   type DedupEntry,
   type DedupFinder,
 } from "./memory/dedup.js";
@@ -639,7 +641,10 @@ export async function appendRecentPhrase(userId: number, aiContent: string): Pro
 // ─── Memory extraction (runs every 4 user messages in background) ─────────────
 
 interface ExtractedMemory {
-  facts?: Array<{ fact: string; category: string }>;
+  facts?: Array<{ fact: string; category: string; supersedes?: unknown }>;
+  /** Ids of existing facts the conversation says are no longer true, with
+   *  nothing replacing them. Retired (hidden), never deleted. */
+  retired?: unknown;
   signals?: string[];
   wins?: string[];
   moodScore?: number;
@@ -653,6 +658,40 @@ interface ExtractedMemory {
 // inserting a near-duplicate (the pollution the Memory Manifest was showing).
 const DEDUP_CANDIDATE_WINDOW = 50;
 
+// ─── What extraction gets to see (memory audit, item 1) ───────────────────────
+// Extraction used to see only the conversation, so a change ("I moved to
+// Berlin" after "lives in London") was a brand-new candidate: dedup either
+// discarded it in favour of the stale row or appended it beside. Now the
+// prompt carries the facts most likely to be affected — the same top-ranked
+// facts the chat prompt holds, plus any older fact sharing a word with the
+// new messages — each with its id, and the model may say a new fact
+// SUPERSEDES one of them, or that one is RETIRED (no longer true).
+export const EXTRACT_CONTEXT_RANKED = 40;
+export const EXTRACT_CONTEXT_MAX = 60;
+
+export interface ExtractContextFact {
+  id: number;
+  fact: string;
+}
+
+/** Pure: pick which existing facts ride along with the extraction prompt. */
+export function selectExtractContext<F extends { id: number; fact: string; createdAt: Date; timesReferenced?: number | null; lastReferencedAt?: Date | null; emotionalWeight?: number | null; userMarkedImportant?: boolean | null }>(
+  allFacts: F[],
+  recentMessages: { role: string; content: string }[],
+  now = Date.now(),
+): ExtractContextFact[] {
+  const ranked = rankFactsByImportance(allFacts, now, EXTRACT_CONTEXT_RANKED);
+  const chosen = new Map<number, F>();
+  for (const f of ranked) chosen.set(f.id, f);
+  const text = recentMessages.filter((m) => m.role === "user").map((m) => m.content).join("\n");
+  for (const f of allFacts) {
+    if (chosen.size >= EXTRACT_CONTEXT_MAX) break;
+    if (chosen.has(f.id)) continue;
+    if (lexicalOverlap(text, f.fact) > 0) chosen.set(f.id, f);
+  }
+  return [...chosen.values()].map((f) => ({ id: f.id, fact: f.fact }));
+}
+
 // Prompt for the structured-memory pass (facts, signals, wins, mood). Pure +
 // exported so the wins voice contract can be unit-tested: wins are read back
 // to the user on Journey ("Small things you did for yourself") and feed the
@@ -662,19 +701,28 @@ export function buildMemoryExtractPrompt(
   recentMessages: { role: string; content: string }[],
   userName: string,
   companionName: string,
+  existingFacts: ExtractContextFact[] = [],
 ): string {
   const conversation = recentMessages
     .map((m) => `${m.role === "user" ? userName : companionName}: ${m.content}`)
     .join("\n");
 
+  const existingBlock =
+    existingFacts.length > 0
+      ? `\nAlready remembered about ${userName} (id: fact) — use these ONLY to decide whether something changed:\n${existingFacts
+          .map((f) => `  ${f.id}: ${f.fact}`)
+          .join("\n")}\n`
+      : "";
+
   return `From this conversation, extract structured memory. Return valid JSON only — no explanation.
 
 Conversation:
 ${conversation}
-
+${existingBlock}
 Extract and return this JSON shape:
 {
-  "facts": [{"fact": "...", "category": "life|interest|routine|person|work|value|soother|preference|event|goal"}],
+  "facts": [{"fact": "...", "category": "life|interest|routine|person|work|value|soother|preference|event|goal", "supersedes": <id of an already-remembered fact this REPLACES, or null>}],
+  "retired": [<ids of already-remembered facts that are no longer true and have no replacement>],
   "signals": ["personality/communication style observations about the user"],
   "wins": ["things the user actually did in real life, each written in the user's own first-person voice"],
   "moodScore": <1-10 estimate of user's current emotional state, 1=very low, 10=excellent>,
@@ -693,6 +741,8 @@ Rules:
   "event"     — a specific thing that happened to or around them
   "goal"      — a specific future aspiration, dream, or plan they named
   "life"      — general life fact that doesn't fit any category above
+- supersedes: when the conversation UPDATES an already-remembered fact — a new number, place, date, name or state for the same thing ("lives in Berlin now" replaces "lives in London"; "the target is 200 cr" replaces "the target is 100 cr") — return the new fact with the id it replaces. Use null for anything genuinely new. Never "supersede" a fact that is merely related or on the same topic. Never repeat an already-remembered fact that hasn't changed.
+- retired: only ids the conversation clearly says are no longer true with nothing to replace them ("we broke up" retires a fact about the relationship being good). When in doubt, leave it.
 - signals: ONLY communication style, humor level, openness, support needs — NOT facts about their life
 - wins: ONLY things they actually did in the real world (went for a walk, called a friend, cooked dinner, slept 8 hours). These are read back to the user as their OWN memories, so write each one in the FIRST PERSON, as the user would remember it — plain words, no clinical distance, and keep the feeling when they gave one:
   - "I walked two days running, even though it felt heavy."
@@ -703,6 +753,67 @@ Rules:
 - changeTalk: true if they said things like "I want to get better", "I'm ready to try", "I need to move on"
 
 Return empty arrays if nothing fits. Do NOT make things up.`;
+}
+
+/** A model-supplied id → integer or null. */
+function asId(v: unknown): number | null {
+  if (typeof v === "number" && Number.isInteger(v) && v > 0) return v;
+  if (typeof v === "string" && /^\d+$/.test(v)) return Number(v);
+  return null;
+}
+
+/**
+ * Replace a fact in place (memory audit, item 1). The row keeps its id,
+ * creation date and reference history; the old wording moves to
+ * previous_fact and updated_at is stamped. Ownership-checked and live-only:
+ * an id the model made up, a retired row, or another user's row is ignored
+ * (the caller then treats the candidate as new). Returns true when a row
+ * was updated.
+ */
+export async function supersedeFact(
+  userId: number,
+  factId: number,
+  next: { fact: string; category: string; markImportant?: boolean },
+  now = new Date(),
+): Promise<boolean> {
+  const [old] = await db
+    .select({ fact: memoryFactsTable.fact, userMarkedImportant: memoryFactsTable.userMarkedImportant })
+    .from(memoryFactsTable)
+    .where(and(eq(memoryFactsTable.id, factId), eq(memoryFactsTable.userId, userId), isNull(memoryFactsTable.retiredAt)));
+  if (!old) return false;
+  await db
+    .update(memoryFactsTable)
+    .set({
+      fact: next.fact,
+      category: next.category,
+      // previous_fact is encrypted with its own AAD, so the old wording is
+      // read back and written explicitly — never copied column to column.
+      previousFact: old.fact,
+      updatedAt: now,
+      lastReferencedAt: now,
+      timesReferenced: sql`${memoryFactsTable.timesReferenced} + 1`,
+      userMarkedImportant: old.userMarkedImportant || next.markImportant === true,
+    })
+    .where(and(eq(memoryFactsTable.id, factId), eq(memoryFactsTable.userId, userId)));
+  return true;
+}
+
+/** Retire facts that are no longer true (hidden everywhere, never deleted).
+ *  Ownership-checked; returns how many rows changed. */
+export async function retireFacts(userId: number, ids: number[], now = new Date()): Promise<number> {
+  if (ids.length === 0) return 0;
+  const rows = await db
+    .update(memoryFactsTable)
+    .set({ retiredAt: now })
+    .where(
+      and(
+        eq(memoryFactsTable.userId, userId),
+        isNull(memoryFactsTable.retiredAt),
+        sql`${memoryFactsTable.id} IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`,
+      ),
+    )
+    .returning({ id: memoryFactsTable.id });
+  return rows.length;
 }
 
 export async function extractMemory(
@@ -717,16 +828,28 @@ export async function extractMemory(
   const anthropic = getAnthropic();
   if (!anthropic) return;
 
+  const userId = (profile as any).userId as number;
+
+  // The facts extraction may update or retire: live rows only, ranked, plus
+  // lexical neighbours of the new messages (selectExtractContext).
+  const liveFacts = await db
+    .select()
+    .from(memoryFactsTable)
+    .where(and(eq(memoryFactsTable.userId, userId), isNull(memoryFactsTable.retiredAt)));
+  const contextFacts = selectExtractContext(liveFacts, recentMessages);
+  const liveIds = new Set(liveFacts.map((f) => f.id));
+
   const extractPrompt = buildMemoryExtractPrompt(
     recentMessages,
     profile.userName || "User",
     profile.companionName,
+    contextFacts,
   );
 
   try {
     const response = await anthropic.messages.create({
       model: "claude-haiku-4-5",
-      max_tokens: 600,
+      max_tokens: 700,
       messages: [{ role: "user", content: extractPrompt }],
     });
     logAiUsage("extract_memory", "claude-haiku-4-5", response.usage);
@@ -744,25 +867,53 @@ export async function extractMemory(
       return;
     }
 
-    const userId = (profile as any).userId as number;
     const dedupFinder = opts?.dedupFinder ?? defaultDedupFinder;
+    let superseded = 0;
+    let retired = 0;
+
+    // Retire first, so a retired id can't also be superseded in this batch.
+    const retireIds = Array.isArray(extracted.retired)
+      ? [...new Set(extracted.retired.map(asId).filter((id): id is number => id != null && liveIds.has(id)))]
+      : [];
+    if (retireIds.length > 0) {
+      retired = await retireFacts(userId, retireIds);
+      for (const id of retireIds) liveIds.delete(id);
+    }
+
     if (extracted.facts && extracted.facts.length > 0) {
-      // Semantic dedup: compare each candidate against the user's recent facts
-      // and, on a hit, bump the matched row's reference counters instead of
-      // inserting a near-duplicate. The local `existing` array mirrors inserts
-      // so repeats WITHIN one batch also collapse. Fail-open (findSemanticDuplicate
-      // never throws) — a flaky check inserts as normal rather than losing data.
-      const recentFacts = await db
-        .select({ id: memoryFactsTable.id, fact: memoryFactsTable.fact })
-        .from(memoryFactsTable)
-        .where(eq(memoryFactsTable.userId, userId))
-        .orderBy(desc(memoryFactsTable.createdAt))
-        .limit(DEDUP_CANDIDATE_WINDOW);
-      const existing: DedupEntry[] = recentFacts.map((r) => ({ id: r.id, content: r.fact }));
+      // Dedup window: the most recent rows plus everything the prompt saw,
+      // so an update the model missed still lands as "update", not a twin.
+      const recent = [...liveFacts]
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        .slice(0, DEDUP_CANDIDATE_WINDOW);
+      const existingById = new Map<number, DedupEntry>();
+      for (const r of recent) existingById.set(r.id, { id: r.id, content: r.fact });
+      for (const c of contextFacts) if (!existingById.has(c.id)) existingById.set(c.id, { id: c.id, content: c.fact });
+      const existing: DedupEntry[] = [...existingById.values()].filter((e) => liveIds.has(e.id));
+
+      const replaceInPlace = async (id: number, f: { fact: string; category: string }): Promise<boolean> => {
+        const ok = await supersedeFact(userId, id, { fact: f.fact, category: f.category || "life", markImportant });
+        if (ok) {
+          const e = existing.find((x) => x.id === id);
+          if (e) e.content = f.fact;
+          superseded++;
+        }
+        return ok;
+      };
 
       for (const f of extracted.facts) {
         if (!f.fact || f.fact.length < 5) continue;
+
+        // 1. The model named the fact this one replaces.
+        const supersedes = asId(f.supersedes);
+        if (supersedes != null && liveIds.has(supersedes) && (await replaceInPlace(supersedes, f))) continue;
+
+        // 2. The dedup pass: same-and-unchanged bumps the old row; same-but-
+        //    changed replaces it; different inserts. Fail-open on any error.
         const decision = await dedupFinder(f.fact, existing);
+        if (decision.relation === "update" && decision.matchingId != null) {
+          if (await replaceInPlace(decision.matchingId, f)) continue;
+        }
         if (decision.isDuplicate && decision.matchingId != null) {
           await db
             .update(memoryFactsTable)
@@ -781,7 +932,10 @@ export async function extractMemory(
           .insert(memoryFactsTable)
           .values({ fact: f.fact, category: f.category || "life", userId, userMarkedImportant: markImportant })
           .returning({ id: memoryFactsTable.id });
-        if (inserted) existing.unshift({ id: inserted.id, content: f.fact });
+        if (inserted) {
+          existing.unshift({ id: inserted.id, content: f.fact });
+          liveIds.add(inserted.id);
+        }
       }
     }
 
@@ -839,7 +993,7 @@ export async function extractMemory(
     }
 
     logger.info(
-      { facts: extracted.facts?.length ?? 0, wins: extracted.wins?.length ?? 0, moodScore: extracted.moodScore },
+      { facts: extracted.facts?.length ?? 0, superseded, retired, wins: extracted.wins?.length ?? 0, moodScore: extracted.moodScore },
       "Memory extraction complete",
     );
   } catch (err) {
