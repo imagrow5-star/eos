@@ -201,6 +201,23 @@
   .demo-end{margin-top:22px;text-align:center;color:var(--ink-soft);font-size:16px;line-height:1.65}
   .demo-end a{display:inline-block;margin-top:10px}
   .demo-end[hidden],.demo-form[hidden]{display:none}
+  /* Voice: one line under the box that IS the button, then a call panel —
+     a thin line filling over the minute (no clock), a status word, End. */
+  .demo-voice{margin-top:16px;text-align:center}
+  .demo-voice[hidden]{display:none}
+  .demo-voice-btn{background:none;border:0;border-bottom:1px solid rgba(92,72,44,.25);border-radius:0;padding:2px 1px;cursor:pointer;font:inherit;font-size:15.5px;color:var(--ink-soft);transition:color .2s,border-color .2s}
+  .demo-voice-btn:hover{color:var(--ink);border-color:var(--ink-soft)}
+  .demo-voice-btn:focus-visible{outline:none;color:var(--ink);box-shadow:0 0 0 3px rgba(95,127,92,.18)}
+  .demo-voice-btn[disabled]{opacity:.55;cursor:default}
+  .demo-call{margin-top:18px}
+  .demo-call[hidden]{display:none}
+  .demo-call-line{position:relative;height:2px;border-radius:2px;background:var(--hair);overflow:hidden}
+  .demo-call-fill{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:2px;background:var(--green);transition:width .2s linear}
+  .demo-call-row{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:10px}
+  .demo-call-status{font-size:14px;color:var(--muted)}
+  .demo-call-status.is-live{color:var(--green)}
+  .demo-call-end{background:none;border:1px solid rgba(92,72,44,.25);border-radius:999px;padding:6px 14px;font:inherit;font-size:13.5px;color:var(--ink-soft);cursor:pointer;transition:border-color .2s,color .2s}
+  .demo-call-end:hover{color:var(--ink);border-color:var(--ink-soft)}
   @media(max-width:600px){
     /* The first screen on a phone must hold the headline, the subtitle and
        the demo's box and button. Everything above the demo gives a little. */
@@ -484,6 +501,19 @@
         <button class="btn" type="submit" id="demo-send">Say it</button>
         <p class="demo-err" id="demo-err" role="alert" hidden></p>
       </form>
+      <!-- Voice: shown only when the server says a minute is available for this
+           browser and address today (demo-voice.js asks). The line is the button. -->
+      <div class="demo-voice" id="demo-voice" hidden>
+        <button type="button" class="demo-voice-btn" id="demo-voice-btn">Or hear it &mdash; one minute, no signup.</button>
+        <p class="demo-err" id="demo-voice-err" role="alert" hidden></p>
+      </div>
+      <div class="demo-call" id="demo-call" hidden aria-live="polite">
+        <div class="demo-call-line" aria-hidden="true"><div class="demo-call-fill" id="demo-call-fill"></div></div>
+        <div class="demo-call-row">
+          <span class="demo-call-status" id="demo-call-status">Connecting&hellip;</span>
+          <button type="button" class="demo-call-end" id="demo-call-end">End</button>
+        </div>
+      </div>
       <p class="demo-end" id="demo-end" hidden>That's the demo. Eos remembers you &mdash; across weeks, months, whatever you give it. This didn't remember you at all.<br><a class="lead-secondary" href="/?enter=1">Start the 7-day trial &rarr;</a></p>
     </div>
 
@@ -979,6 +1009,7 @@
   });
 })();
 </script>
+<script src="demo-voice.js" defer></script>
 <script>
 // ── Hear it — the sample-conversation recording ─────────────────────────────
 // Plain <audio> with a custom control so it matches the page. Nothing plays

@@ -9,7 +9,7 @@ import { backfillLanguageSunset } from "./services/settings/languageSunset";
 import { scrubMessageAnnotations } from "./services/messageAnnotationScrub";
 import { migrateRomanticPersona } from "./services/settings/romanticPersonaMigration";
 import { ensureProfileThemeColumns, ensureReflectionReportsTable, ensureMorningNoteColumns, ensureDodoBillingColumns, ensureHumeVoiceColumn,
-  ensureLoginLockoutColumns, dropRetiredPushTables } from "./services/schemaGuard";
+  ensureLoginLockoutColumns, dropRetiredPushTables, ensureDemoSessionsTable } from "./services/schemaGuard";
 import { backfillMemoryImportance } from "./services/memory/backfill";
 import { runDedupBackfill } from "./services/memory/dedupBackfill";
 import { warnIfAgentEnvIncomplete } from "./services/voiceAgentRouting";
@@ -137,6 +137,13 @@ await ensureLoginLockoutColumns().catch((e) =>
     { err: e },
     "login lockout column guard failed at boot — logins will fail until users.failed_login_attempts / locked_until exist",
   ),
+);
+
+// Create the landing-page demo log if a deploy predates it. Idempotent. On
+// failure we still boot — the voice demo's availability check fails closed,
+// so the button stays hidden until a later boot creates the table.
+await ensureDemoSessionsTable().catch((e) =>
+  logger.error({ err: e }, "demo_sessions guard failed at boot — the voice demo stays hidden until the table exists"),
 );
 
 // Drop the retired web-push tables (device endpoints, delivery log, and a
