@@ -29,6 +29,12 @@
     <priority>0.4</priority>
   </url>
   <url>
+    <loc>https://eoscompanion.com/security</loc>
+    <lastmod>2026-09-14</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://eoscompanion.com/refunds</loc>
     <lastmod>2026-08-18</lastmod>
     <changefreq>yearly</changefreq>

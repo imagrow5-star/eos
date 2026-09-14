@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Security · Eos</title>
+<meta name="description" content="What I can see, what I can't, what's encrypted and how, who holds the key, who else touches your data, and what happens if something goes wrong. In plain words.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,420;0,9..144,520;1,9..144,420&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FBF7EF; --card:#FFFFFF;
+    --cream:#37302A; --cream-dim:#5C5348; --muted:#8A7E6F;
+    --gold:#4A6648; --gold-dim:#5F7F5C;
+    --hair:#E9E0CD; --hair-gold:rgba(95,127,92,.30);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--cream);font-family:'Inter',sans-serif;font-size:16px;line-height:1.75;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:720px;margin:0 auto;padding:48px 24px 96px}
+  header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:56px}
+  .wordmark{font-family:'Fraunces',Georgia,serif;font-weight:520;font-size:22px;color:var(--cream);text-decoration:none}
+  .wordmark span{color:var(--gold-dim)}
+  .back{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--muted);text-decoration:none;text-transform:uppercase}
+  .back:hover{color:var(--gold)}
+  .label{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.42em;color:var(--gold-dim);text-transform:uppercase;margin-bottom:14px}
+  h1{font-family:'Fraunces',Georgia,serif;font-size:40px;font-weight:500;line-height:1.2;margin-bottom:10px}
+  .updated{font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.14em;color:var(--muted);margin-bottom:44px}
+  h2{font-family:'Fraunces',Georgia,serif;font-size:23px;font-weight:500;color:var(--gold);margin:44px 0 12px}
+  h3{font-family:'Fraunces',Georgia,serif;font-size:18px;font-weight:500;color:var(--cream);margin:26px 0 6px}
+  p{color:var(--cream-dim);margin-bottom:14px}
+  p b,li b,td b{color:var(--cream);font-weight:600}
+  ul{margin:0 0 14px 22px;color:var(--cream-dim)}
+  li{margin-bottom:8px}
+  a{color:var(--gold);text-decoration:none;border-bottom:1px solid var(--hair-gold)}
+  a:hover{border-bottom-color:var(--gold)}
+  .note{background:var(--card);border:1px solid var(--hair);border-left:2px solid var(--gold-dim);border-radius:10px;padding:18px 20px;margin:18px 0;color:var(--cream-dim)}
+  .tablewrap{overflow-x:auto;margin:18px 0 8px}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--hair);border-radius:10px;overflow:hidden;font-size:15px}
+  th,td{text-align:left;vertical-align:top;padding:12px 14px;border-bottom:1px solid var(--hair);color:var(--cream-dim)}
+  th{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold-dim);font-weight:500;background:var(--bg)}
+  tr:last-child td{border-bottom:none}
+  td.yes{color:var(--cream);font-weight:600;white-space:nowrap}
+  td.no{color:var(--gold);font-weight:600;white-space:nowrap}
+  td.part{color:var(--cream);font-weight:600;white-space:nowrap}
+  code{font-family:'IBM Plex Mono',monospace;font-size:13px;background:var(--bg);border:1px solid var(--hair);border-radius:5px;padding:1px 6px;color:var(--cream)}
+  footer{margin-top:72px;padding-top:24px;border-top:1px solid var(--hair);display:flex;gap:22px;flex-wrap:wrap}
+  footer a{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.16em;color:var(--muted);border:none;text-transform:uppercase}
+  footer a:hover{color:var(--gold)}
+  footer .operator{width:100%;margin:0;font-size:12.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="wordmark" href="/">eos<span>.</span></a>
+    <a class="back" href="/">← eoscompanion.com</a>
+  </header>
+
+  <div class="label">The honest version</div>
+  <h1>Security</h1>
+  <p class="updated">LAST UPDATED · SEPTEMBER 14, 2026</p>
+
+  <p>You tell Eos things you might not tell anyone. This page is where I set out, without softening, what happens to those things: what I can see, what I can't, what's encrypted and how, who holds the key, who else touches your data, and what I'd do if something went wrong. I run Eos, so "I" on this page is me.</p>
+
+  <h2>What I can see, and what I can't</h2>
+  <p>The short version: I can see <b>that</b> you use Eos. I can't see <b>what</b> you say to it. The table is the long version.</p>
+
+  <div class="tablewrap">
+  <table>
+    <thead>
+      <tr><th>What</th><th>Can I see it?</th><th>Why</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>What you say to Eos, and what Eos says back</td>
+        <td class="no">No</td>
+        <td>Encrypted before it's saved. Only the running app can read it, and only to reply to you.</td>
+      </tr>
+      <tr>
+        <td>Memories, feelings, wins, sealed notes, chapters, stories, reflections, reminders</td>
+        <td class="no">No</td>
+        <td>Same. Everything Eos writes about you is encrypted the same way as what you wrote.</td>
+      </tr>
+      <tr>
+        <td>Your name, the name you gave when we met, how you describe your gender in your own words</td>
+        <td class="no">No</td>
+        <td>Encrypted.</td>
+      </tr>
+      <tr>
+        <td>Your mood scores and the weekly check-in sliders</td>
+        <td class="no">No</td>
+        <td>Encrypted. A number about how you felt is as private as a sentence about it.</td>
+      </tr>
+      <tr>
+        <td>That a crisis message was detected, and when</td>
+        <td class="part">Partly</td>
+        <td>I can see the time. What you said, which words triggered it, and which country's helpline you were shown are encrypted.</td>
+      </tr>
+      <tr>
+        <td>Your password</td>
+        <td class="no">No</td>
+        <td>Stored as a one-way hash. I can reset it for you; I can never read it.</td>
+      </tr>
+      <tr>
+        <td>Your email address, when you joined, whether it's verified</td>
+        <td class="yes">Yes</td>
+        <td>Plain text. I need it to send you a password reset and nothing else.</td>
+      </tr>
+      <tr>
+        <td>When you were active: message times, sign-in times, how many messages, how long a call lasted</td>
+        <td class="yes">Yes</td>
+        <td>Timestamps and counts. That you wrote, not what you wrote.</td>
+      </tr>
+      <tr>
+        <td>Country, timezone, age band, and the choices you made setting Eos up (voice, energy, who Eos is for you)</td>
+        <td class="yes">Yes</td>
+        <td>Plain settings. Eos uses them to know which helpline to show and when your morning is.</td>
+      </tr>
+      <tr>
+        <td>Your membership status and voice minutes used</td>
+        <td class="yes">Yes</td>
+        <td>Billing records. Your card details never reach Eos; the payment provider holds them.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>"Can I see it" means: if I opened the database, would it be readable. For the rows marked No, it isn't. For the rows marked Yes, it is, and I don't go looking. There is no admin screen in Eos for reading anyone's account. Reading a person's conversation would take me deliberately writing code to do it. That is a promise, not a lock, and I would rather tell you that than pretend the lock exists.</p>
+
+  <h2>What's encrypted, and how</h2>
+  <p>Every value in the No rows above is encrypted <b>before</b> it's written to the database, by the app itself, using AES-256-GCM. Each value gets its own random nonce and is bound to the exact table and column it lives in, so a value moved somewhere else fails to decrypt rather than quietly reading as something it isn't. The database only ever holds ciphertext for those columns. So do the database's backups.</p>
+  <p>This is not end-to-end encryption, and I won't call it that. End-to-end would mean only your device could ever read your words. Eos can't work that way: the AI that replies to you runs on a server and has to read what you said. So the encryption protects your words <b>at rest</b>, against a stolen copy of the database, a stolen backup, or someone who gets read access to the database. It does not protect them from the running app, or from me.</p>
+  <p>What stays readable even encrypted: the metadata in the Yes rows. Someone with the raw database could tell that an account exists, how active it is, and when. They could not tell what was said.</p>
+
+  <h2>Who holds the key</h2>
+  <p>There is one encryption key. It lives in the secret store of the hosting provider and is loaded into the running server's memory at start-up. It is never written to the database, the logs, or the code. Eos has to hold it: without it, it couldn't read your history back to you or write a reply.</p>
+  <p>I hold it too. I can read the hosting environment, so I could take the key and the database together and decrypt everything. I say this plainly because it's true of every service that processes your words on a server, and most of them don't say it. What I've done about it is remove every easy path: no admin tooling reads user data, no script decrypts it, and the code that could is tested to make sure it doesn't exist.</p>
+  <p>If the key were ever lost, every encrypted value would be unreadable forever. There's no recovery path by design. It's backed up offline, and it can be rotated: every row re-encrypted under a new key, verified before the old one is retired.</p>
+
+  <h2>Who else touches your data</h2>
+  <p>Two companies process your words, each for exactly one job. Neither trains on them, neither sells them, and both are named here so you can read their own policies.</p>
+
+  <h3>Anthropic</h3>
+  <p>Eos thinks with Claude, made by Anthropic. To write each reply, Eos sends Anthropic <b>your message, the conversation so far, and the memories and profile details Eos keeps to reply well</b>. The same happens when Eos writes your weekly chapter, a reflection, a story, or a morning note, and when it checks a message for signs of crisis. Anthropic does not use anything sent through Eos to train its models. It may hold the data briefly for abuse monitoring, up to about 30 days, and then it's gone from their side.</p>
+  <ul>
+    <li><a href="https://www.anthropic.com/legal/privacy" rel="noopener">Anthropic's privacy policy</a></li>
+    <li><a href="https://www.anthropic.com/legal/commercial-terms" rel="noopener">Anthropic's commercial terms</a>, which cover how customer data is used and kept</li>
+  </ul>
+
+  <h3>Hume</h3>
+  <p>Voice calls run on Hume. During a call, Hume receives <b>your voice</b>, to turn it into text and to read the tone of it, and <b>Eos's words</b>, to speak them. Zero data retention is switched on for the Eos account, so Hume keeps nothing after the call: no recordings, no transcripts. What you said becomes text inside Eos, encrypted like everything else. The tone readings are used in the moment and are not stored.</p>
+  <ul>
+    <li><a href="https://www.hume.ai/privacy" rel="noopener">Hume's privacy policy</a></li>
+    <li><a href="https://dev.hume.ai/docs/resources/privacy-and-security" rel="noopener">Hume's data retention documentation</a></li>
+  </ul>
+
+  <h3>The plumbing</h3>
+  <p>Three more services see a little, none of them your words. <b>Render</b> hosts the server and the database, so it holds the ciphertext and the metadata described above. <b>Resend</b> delivers account emails only, like a verification link or a password reset, and sees your email address and that email. <b>Dodo Payments</b> handles your membership and card; Eos sees your membership status, never your card. If you sign in with Google, Google tells Eos your email address and nothing else, and Eos tells Google nothing.</p>
+
+  <h2>Retention and deletion</h2>
+  <p>Eos keeps what you share for as long as you have an account, because remembering is the point. Deletion is real deletion, and it's yours to do at any time:</p>
+  <ul>
+    <li><b>One message.</b> Tap it, choose forget. It's deleted, along with any quote of it in a chapter or story thread, and can't appear in anything written afterwards.</li>
+    <li><b>One memory.</b> On the Memory page, tap the × on anything Eos has remembered.</li>
+    <li><b>Everything.</b> Settings → delete account, with your password. Every message, memory, chapter, note, story, mood, and your account itself are erased in one transaction, immediately. Every signed-in device is signed out. No recycle bin, no thirty-day grace period.</li>
+  </ul>
+  <p>Two honest footnotes. The hosting provider keeps automated backups of the database for a limited time; a deleted row can survive in those until they expire, still encrypted, then it's gone there too. And the record that a payment happened is kept, because accounting requires it; it holds no content.</p>
+  <p>On the processors' side: Anthropic's copy ages out within about 30 days on its own. Hume never had one.</p>
+
+  <h2>If there's a breach</h2>
+  <p>Here is what a stolen copy of the database would give someone: the email addresses of everyone with an account, when each person joined and was active, their settings and membership status, and ciphertext for everything else. It would not give them a single conversation, memory, or mood.</p>
+  <p>Here is what I would do:</p>
+  <ul>
+    <li>Sign every device out, everywhere, so any stolen session cookie stops working.</li>
+    <li>Rotate every secret and, if there was any chance the key was exposed, rotate the encryption key and re-encrypt everything under it.</li>
+    <li>Email every affected person within 72 hours of confirming it, saying exactly what was taken and what wasn't, in the same plain words as this page. No "out of an abundance of caution", no burying it.</li>
+  </ul>
+  <p>The worst case is the key and the database being taken together. If that ever happened, I would say so, in those words.</p>
+
+  <h2>Reporting a vulnerability</h2>
+  <p>If you find a security problem in Eos, I want to hear about it, and I'd rather hear from you than find out another way. Write to <a href="mailto:hello@eoscompanion.com">hello@eoscompanion.com</a> with what you found and how to reproduce it. I'll reply within three days, keep you informed while it's fixed, and credit you here if you'd like.</p>
+  <p>Good-faith research is welcome: I won't take legal action against anyone who reports a problem responsibly, keeps other people's data out of it, and gives me reasonable time to fix it. Please don't test against other people's accounts. There is no bug bounty, only thanks. The machine-readable version of this is at <a href="/.well-known/security.txt">/.well-known/security.txt</a>.</p>
+
+  <h2>The rest of it</h2>
+  <p>The smaller things, listed so you don't have to take them on trust:</p>
+  <ul>
+    <li>Everything travels over TLS, in the browser and between the server and the database.</li>
+    <li>Passwords are hashed with bcrypt, checked against known breaches when you set one, and rate-limited per account after repeated wrong guesses.</li>
+    <li>Sign-in cookies are HTTP-only and secure, and you can sign out every other device from Settings. Changing your password or your email address signs the other devices out for you.</li>
+    <li>Deleting your account or changing your email or password requires your current password, so a stolen cookie alone can't do any of them.</li>
+    <li>Eos runs no ad trackers and no analytics companies. There is nothing on these pages that phones anyone.</li>
+    <li>The internal jobs that write your weekly chapter and stories authenticate with signed, short-lived tokens, and every route has a ceiling so a stuck client or a stolen cookie can't run wild.</li>
+  </ul>
+  <p>Questions about any of this: <a href="mailto:hello@eoscompanion.com">hello@eoscompanion.com</a>. I answer them myself.</p>
+
+  <footer>
+    <a href="/">Home</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/terms">Terms</a>
+    <a href="/refunds">Refunds</a>
+    <a href="mailto:hello@eoscompanion.com">hello@eoscompanion.com</a>
+    <p class="operator">Eos is operated by Itslexa, Vizianagaram, Andhra Pradesh, India.</p>
+  </footer>
+</div>
+</body>
+</html>
