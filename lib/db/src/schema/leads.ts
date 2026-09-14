@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, serial } from "drizzle-orm/pg-core";
+import { encryptedText } from "../encryptedColumns";
 
 /**
  * Landing-page "Ask the founder" captures. A visitor with doubts reaches
@@ -14,8 +15,8 @@ export const leadsTable = pgTable("leads", {
   // submit updates the stored message rather than piling up rows).
   email: text("email").notNull().unique(),
   // What's stopping them — free text, optional. Nullable: an email-only reach
-  // out is allowed.
-  message: text("message"),
+  // out is allowed. A stranger's worry in their own words: encrypted at rest.
+  message: encryptedText("message", "leads.message"),
   // Which surface captured it — e.g. "landing_hero" | "landing_footer".
   source: text("source").notNull(),
   // The exact promise shown next to the form when they submitted, versioned by

@@ -54,7 +54,21 @@ export const SPECS: TableSpec[] = [
   // memory_feelings shipped after the encryption rollout, so it has no
   // plaintext legacy rows — it is listed so the ROTATION script (which
   // iterates these SPECS) covers it, and as the registry of encrypted columns.
-  { table: "memory_feelings", idCol: "id", cols: [{ name: "feeling", kind: "text", aad: "memory_feelings.feeling" }] },
+  {
+    table: "memory_feelings",
+    idCol: "id",
+    cols: [
+      { name: "feeling", kind: "text", aad: "memory_feelings.feeling" },
+      // The emotion category was plaintext beside the encrypted feeling text
+      // (security review): "shame" next to ciphertext still says a lot.
+      { name: "category", kind: "text", aad: "memory_feelings.category" },
+    ],
+  },
+  // Reminders: the person's own words (security review).
+  { table: "reminders", idCol: "id", cols: [{ name: "content", kind: "text", aad: "reminders.content" }] },
+  // Landing-page "Ask the founder" messages: a stranger's worry, in their words
+  // (security review). No user_id — keyed by the row id.
+  { table: "leads", idCol: "id", cols: [{ name: "message", kind: "text", aad: "leads.message" }] },
   // Crisis floor event log: the pattern name, the country served, the channel
   // and the dismissal flag are all encrypted (security review). Only the two
   // timestamps stay plaintext — the rolling windows filter on them in SQL;
@@ -137,7 +151,15 @@ export const SPECS: TableSpec[] = [
       { name: "working_through", kind: "jsonb", aad: "weekly_chapters.working_through" },
     ],
   },
-  { table: "story_threads", idCol: "id", cols: [{ name: "retellings", kind: "jsonb", aad: "story_threads.retellings" }] },
+  {
+    table: "story_threads",
+    idCol: "id",
+    cols: [
+      // The label names the thing they keep returning to (security review).
+      { name: "label", kind: "text", aad: "story_threads.label" },
+      { name: "retellings", kind: "jsonb", aad: "story_threads.retellings" },
+    ],
+  },
   // Stories (the Journey markers): the circle fragment and the card JSON are
   // the person's own words. story_drops keeps every card a gate refused.
   {

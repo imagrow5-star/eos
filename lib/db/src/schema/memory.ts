@@ -62,7 +62,7 @@ export const moodScoresTable = pgTable("mood_scores", {
 export const remindersTable = pgTable("reminders", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => usersTable.id),
-  content: text("content").notNull(),
+  content: encryptedText("content", "reminders.content").notNull(), // their own words — encrypted at rest
   scheduledTime: text("scheduled_time"), // "HH:MM" 24h, nullable = no specific time
   isRecurring: boolean("is_recurring").notNull().default(false), // repeats daily at scheduledTime
   dueDate: text("due_date"), // YYYY-MM-DD for one-off reminders, nullable

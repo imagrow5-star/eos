@@ -33,9 +33,11 @@ is retired (five columns sat in exactly that state until the security
 review). Summary: message content; memory facts and feelings;
 personality signals; wins; sealed notes (prompt, text, crisis flag); habit,
 goal, commitment and task free text; weekly-chapter narrative fields (jsonb);
-story-thread retellings; stories (the Journey circle fragment and card JSON)
-and every card the story gates dropped; reflection reports; personalization
-phrase arrays; profile display name, original name and custom gender; the mood timeline (`mood_scores.score`) and the weekly
+story-thread labels and retellings; stories (the Journey circle fragment
+and card JSON) and every card the story gates dropped; reflection reports;
+reminder text; landing-page "Ask the founder" messages; feeling categories
+beside the feeling text; personalization phrase arrays; profile display
+name, original name and custom gender; the mood timeline (`mood_scores.score`) and the weekly
 mood/loneliness slider answers; and the crisis-event log's pattern name,
 country served, channel and dismissal flag (`crisis_events.*` — the shape of
 a crisis event alone reveals crisis state; only its two timestamps stay
@@ -44,8 +46,7 @@ plaintext for the rolling windows).
 Deliberately plaintext (SQL filters/sorts on them; they reveal nothing said):
 enums and counters (roles, states, streaks), timestamps, dates,
 billing/subscription records, email addresses, and password hashes
-(bcrypt — hashed, not encrypted). Still plaintext and on the list to encrypt:
-reminder text, landing-form messages, story-thread labels, feeling categories.
+(bcrypt — hashed, not encrypted).
 
 Metadata that remains observable to a database-level attacker even with
 encryption: row counts, timing patterns (when a user talks, when a crisis

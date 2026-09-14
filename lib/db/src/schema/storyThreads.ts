@@ -8,7 +8,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
-import { encryptedJsonb } from "../encryptedColumns";
+import { encryptedJsonb, encryptedText } from "../encryptedColumns";
 
 // ─── Story threads — the processing-vs-stuck engine ──────────────────────────
 // One row per recurring episode/story a user retells across weeks (the airport
@@ -44,7 +44,7 @@ export const storyThreadsTable = pgTable(
       .notNull()
       .references(() => usersTable.id),
     slug: text("slug").notNull(), // stable machine key, e.g. "airport-goodbye"
-    label: text("label").notNull(), // short neutral human label, e.g. "the airport goodbye"
+    label: encryptedText("label", "story_threads.label").notNull(), // short neutral human label, e.g. "the airport goodbye" — names the thing they keep returning to, encrypted at rest
     state: text("state").notNull().default("watch"), // watch | evolving | frozen
     frozenStreak: integer("frozen_streak").notNull().default(0), // consecutive high-confidence same-framing weeks
     retellings: encryptedJsonb("retellings", "story_threads.retellings").notNull().default([]), // StoryRetelling[] (append-only, capped) — encrypted at rest
