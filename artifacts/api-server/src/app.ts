@@ -300,7 +300,13 @@ if (process.env.NODE_ENV !== "test") {
 
 const app: Express = express();
 
-// Trust Replit's reverse proxy so cookie secure-flag and X-Forwarded-* work
+// Exactly ONE reverse proxy sits in front of this server (Render's edge, and
+// before that Replit's), so trust the first hop only. With `1`, Express
+// takes req.ip from the LAST address in X-Forwarded-For — the one the
+// platform appended — and ignores anything a client put in the header
+// itself, so the per-IP auth limiter below cannot be dodged by spoofing the
+// header. `true` would trust the whole chain and reopen that hole; keep it 1.
+// Also what lets Express read X-Forwarded-Proto and mark cookies Secure.
 app.set("trust proxy", 1);
 
 app.use(

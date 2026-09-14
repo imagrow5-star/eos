@@ -8,6 +8,9 @@ import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { chatGateStatus } from "../services/tiers.js";
 import { hashAuthToken, tokenHashMatches } from "../lib/authTokenHash.js";
+import { passwordProblem, isBreachedPassword, BREACHED_PASSWORD_MESSAGE } from "../lib/passwordPolicy.js";
+import { recordFailedLogin, clearLoginFailures, lockoutRemainingSeconds } from "../services/loginLockout.js";
+import { purgeUserSessions } from "../services/userSessions.js";
 
 const router: IRouter = Router();
 
@@ -379,8 +382,9 @@ router.post("/auth/signup", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Email address is too long." });
     return;
   }
-  if (!password || typeof password !== "string" || password.length < 8) {
-    res.status(400).json({ error: "Password must be at least 8 characters." });
+  const problem = passwordProblem(password);
+  if (problem) {
+    res.status(400).json({ error: problem });
     return;
   }
 
@@ -393,6 +397,11 @@ router.post("/auth/signup", async (req, res): Promise<void> => {
 
     if (existing) {
       res.status(409).json({ error: "An account with that email already exists." });
+      return;
+    }
+
+    if (await isBreachedPassword(password)) {
+      res.status(400).json({ error: BREACHED_PASSWORD_MESSAGE });
       return;
     }
 
@@ -427,6 +436,21 @@ router.post("/auth/signup", async (req, res): Promise<void> => {
 
 // ─── POST /auth/login ─────────────────────────────────────────────────────────
 
+/**
+ * A real bcrypt hash compared against when the email has no account. Without
+ * it an unknown address answers in a millisecond and a known one in ~250 ms
+ * (the cost of one bcrypt compare), so the response time alone tells an
+ * attacker which addresses have accounts — the generic error message hides
+ * nothing. Computed once, lazily, so importing this module stays cheap.
+ */
+let dummyHash: Promise<string> | null = null;
+function getDummyHash(): Promise<string> {
+  dummyHash ??= bcrypt.hash("eos-timing-equaliser-not-a-real-password", 12);
+  return dummyHash;
+}
+
+export const LOGIN_FAILED_MESSAGE = "Incorrect email or password.";
+
 router.post("/auth/login", async (req, res): Promise<void> => {
   const { email, password } = req.body ?? {};
 
@@ -445,17 +469,35 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       .limit(1);
 
     if (!user) {
-      // Same message as wrong password to prevent user enumeration
-      res.status(401).json({ error: "Incorrect email or password." });
+      // Same message AND the same bcrypt cost as a wrong password, so neither
+      // the body nor the timing says whether the address has an account.
+      await bcrypt.compare(password, await getDummyHash());
+      res.status(401).json({ error: LOGIN_FAILED_MESSAGE });
+      return;
+    }
+
+    // Per-account hold (services/loginLockout.ts): after repeated failures
+    // even the right password waits. Checked before the compare so a held
+    // account costs nothing to hammer.
+    const retryAfter = lockoutRemainingSeconds(user.lockedUntil);
+    if (retryAfter > 0) {
+      const minutes = Math.max(1, Math.ceil(retryAfter / 60));
+      res.setHeader("Retry-After", String(retryAfter));
+      res.status(429).json({
+        error: `Too many attempts for this account. Wait ${minutes} minute${minutes === 1 ? "" : "s"} and try again, or reset your password.`,
+        retryAfterSeconds: retryAfter,
+      });
       return;
     }
 
     const valid = await bcrypt.compare(password, user.hashedPassword);
     if (!valid) {
-      res.status(401).json({ error: "Incorrect email or password." });
+      await recordFailedLogin(user.id);
+      res.status(401).json({ error: LOGIN_FAILED_MESSAGE });
       return;
     }
 
+    await clearLoginFailures(user.id);
     await regenerateSession(req);
     req.session.userId = user.id;
     try {
@@ -480,6 +522,102 @@ router.post("/auth/logout", (req, res): void => {
     res.clearCookie("sid");
     res.json({ ok: true });
   });
+});
+
+// ─── POST /auth/logout-all ────────────────────────────────────────────────────
+// "Sign out everywhere": revokes every other session of this account and
+// keeps the one making the request. For the person who left themselves
+// logged in on a shared device, or suspects a stolen cookie.
+
+router.post("/auth/logout-all", async (req, res): Promise<void> => {
+  const userId = req.session?.userId;
+  if (!userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+  try {
+    const signedOut = await purgeUserSessions(userId, { except: req.sessionID });
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.info({ uh, signedOut }, "Signed out of other sessions");
+    } catch { /* logging must never crash the caller */ }
+    res.json({ ok: true, signedOut });
+  } catch (err) {
+    logger.error({ err }, "logout-all error");
+    res.status(500).json({ error: "Something went wrong. Please try again." });
+  }
+});
+
+// ─── POST /auth/change-password ──────────────────────────────────────────────
+// Authenticated password change. Needs the current password (a hijacked
+// session must not be able to lock the owner out), applies the same policy
+// as signup, and revokes every OTHER session: a password is usually changed
+// because someone fears the old one leaked, and that fear covers cookies too.
+
+router.post("/auth/change-password", async (req, res): Promise<void> => {
+  const userId = req.session?.userId;
+  if (!userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+
+  const { currentPassword, newPassword } = req.body ?? {};
+  if (!currentPassword || typeof currentPassword !== "string") {
+    res.status(400).json({ error: "Your current password is required." });
+    return;
+  }
+  const problem = passwordProblem(newPassword);
+  if (problem) {
+    res.status(400).json({ error: problem.replace(/^Password/, "New password") });
+    return;
+  }
+
+  try {
+    const [user] = await db
+      .select({ id: usersTable.id, hashedPassword: usersTable.hashedPassword })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+
+    if (!user) {
+      res.status(401).json({ error: "Session invalid" });
+      return;
+    }
+
+    const valid = await bcrypt.compare(currentPassword, user.hashedPassword);
+    if (!valid) {
+      res.status(403).json({ error: "That password is incorrect." });
+      return;
+    }
+
+    if (currentPassword === newPassword) {
+      res.status(400).json({ error: "That's already your password." });
+      return;
+    }
+
+    if (await isBreachedPassword(newPassword)) {
+      res.status(400).json({ error: BREACHED_PASSWORD_MESSAGE });
+      return;
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    await db.update(usersTable).set({ hashedPassword }).where(eq(usersTable.id, userId));
+
+    // Any pending reset link was issued for the OLD password's account state;
+    // nobody should be able to use it now.
+    await db.delete(passwordResetTokensTable).where(eq(passwordResetTokensTable.userId, userId));
+
+    const signedOut = await purgeUserSessions(userId, { except: req.sessionID });
+
+    try {
+      const uh = hashUserIdForLog(userId);
+      if (uh) logger.info({ uh, signedOut }, "Password changed; other sessions revoked");
+    } catch { /* logging must never crash the caller */ }
+    res.json({ ok: true, signedOut });
+  } catch (err) {
+    logger.error({ err }, "change-password error");
+    res.status(500).json({ error: "Something went wrong. Please try again." });
+  }
 });
 
 // ─── GET /auth/me ─────────────────────────────────────────────────────────────
@@ -578,9 +716,14 @@ router.get("/auth/verify-email", async (req, res): Promise<void> => {
         .delete(emailVerificationTokensTable)
         .where(eq(emailVerificationTokensTable.userId, row.userId));
 
+      // The recovery address just changed hands. Every other session goes;
+      // the browser confirming the link stays signed in if it is this account.
+      const keep = req.session?.userId === row.userId ? req.sessionID : undefined;
+      const signedOut = await purgeUserSessions(row.userId, { except: keep });
+
       try {
         const uh = hashUserIdForLog(row.userId);
-        if (uh) logger.info({ uh }, "Email address changed and verified");
+        if (uh) logger.info({ uh, signedOut }, "Email address changed and verified; other sessions revoked");
       } catch { /* logging must never crash the caller */ }
       res.json({ ok: true, emailChanged: true });
       return;
@@ -1056,8 +1199,9 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
     res.status(400).json({ error: "Reset token is required." });
     return;
   }
-  if (!password || typeof password !== "string" || password.length < 8) {
-    res.status(400).json({ error: "Password must be at least 8 characters." });
+  const problem = passwordProblem(password);
+  if (problem) {
+    res.status(400).json({ error: problem });
     return;
   }
 
@@ -1096,6 +1240,11 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
       return;
     }
 
+    if (await isBreachedPassword(password)) {
+      res.status(400).json({ error: BREACHED_PASSWORD_MESSAGE });
+      return;
+    }
+
     const hashedPassword = await bcrypt.hash(password, 12);
 
     // Atomically mark the token as used (conditional — guards against concurrent replay)
@@ -1118,17 +1267,15 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
       return;
     }
 
-    // Update the password now that we own the token
+    // Update the password now that we own the token. The reset also proves
+    // control of the inbox, so any login hold is lifted with it.
     await db
       .update(usersTable)
-      .set({ hashedPassword })
+      .set({ hashedPassword, failedLoginAttempts: 0, lockedUntil: null })
       .where(eq(usersTable.id, anyRow.userId));
 
     // Invalidate all existing sessions for this user
-    await pool.query(
-      `DELETE FROM user_sessions WHERE sess::jsonb->>'userId' = $1::text`,
-      [String(anyRow.userId)],
-    );
+    await purgeUserSessions(anyRow.userId);
 
     try {
       const uh = hashUserIdForLog(anyRow.userId);
