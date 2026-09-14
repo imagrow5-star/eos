@@ -8,7 +8,8 @@ import { backfillVoiceGender } from "./services/settings/voiceGenderBackfill";
 import { backfillLanguageSunset } from "./services/settings/languageSunset";
 import { scrubMessageAnnotations } from "./services/messageAnnotationScrub";
 import { migrateRomanticPersona } from "./services/settings/romanticPersonaMigration";
-import { ensureProfileThemeColumns, ensureReflectionReportsTable, ensureMorningNoteColumns, ensureDodoBillingColumns, ensureHumeVoiceColumn } from "./services/schemaGuard";
+import { ensureProfileThemeColumns, ensureReflectionReportsTable, ensureMorningNoteColumns, ensureDodoBillingColumns, ensureHumeVoiceColumn,
+  ensureLoginLockoutColumns } from "./services/schemaGuard";
 import { backfillMemoryImportance } from "./services/memory/backfill";
 import { runDedupBackfill } from "./services/memory/dedupBackfill";
 import { warnIfAgentEnvIncomplete } from "./services/voiceAgentRouting";
@@ -122,6 +123,16 @@ await ensureHumeVoiceColumn().catch((e) =>
   logger.error(
     { err: e },
     "hume voice column guard failed at boot — profile reads may fail until the column exists",
+  ),
+);
+
+// Add the per-account login throttle columns if a deploy predates them.
+// Idempotent; instant no-op once applied. On failure we still boot — every
+// login would 42703 until a later boot applies it, so the error is loud.
+await ensureLoginLockoutColumns().catch((e) =>
+  logger.error(
+    { err: e },
+    "login lockout column guard failed at boot — logins will fail until users.failed_login_attempts / locked_until exist",
   ),
 );
 

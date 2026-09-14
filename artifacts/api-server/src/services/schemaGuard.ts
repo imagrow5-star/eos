@@ -132,3 +132,22 @@ export async function ensureDodoBillingColumns(): Promise<void> {
   `);
   logger.info("schema guard: subscriptions.dodo_customer_id / dodo_subscription_id present");
 }
+
+/**
+ * Idempotent schema guard for the per-account login throttle columns.
+ *
+ * Login lockout (services/loginLockout.ts) counts consecutive failed password
+ * logins on users.failed_login_attempts and holds password logins until
+ * users.locked_until. Deploys don't run `drizzle-kit push` (see
+ * ensureProfileThemeColumns), and drizzle selects all mapped columns
+ * explicitly — a database missing them would 42703 every login. ADD COLUMN
+ * IF NOT EXISTS with a constant default is instant on Postgres 11+ and a
+ * no-op forever after the first boot.
+ */
+export async function ensureLoginLockoutColumns(): Promise<void> {
+  await db.execute(
+    sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts integer NOT NULL DEFAULT 0`,
+  );
+  await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until timestamp`);
+  logger.info("schema guard: users.failed_login_attempts / users.locked_until present");
+}

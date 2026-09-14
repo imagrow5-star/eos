@@ -119,6 +119,34 @@ keeps. Operator guidance:
   HMAC sweep tokens). Sessions: Postgres-backed, httpOnly, SameSite=Lax,
   Secure in production; helmet CSP; rate limits on auth endpoints.
 - Client↔server TLS is terminated by the hosting platform (Render).
+  `trust proxy` is `1`: exactly one proxy hop is trusted, so `req.ip` (which
+  keys the auth rate limiter) is the address Render's edge appended, never
+  one a client wrote into `X-Forwarded-For` itself.
+
+### Login
+
+- **Per-IP limiter** on every credential-carrying POST under `/api/auth`
+  (20 per 15 minutes; forgot-password 5), keyed on `req.ip`.
+- **Per-account lockout** (`services/loginLockout.ts`): consecutive failed
+  password logins are counted on the users row; from the fifth, password
+  logins are held for 1, 2, 4, 8, then 15 minutes (cap). The right password
+  clears the count; a password reset lifts the hold. Accepted trade-off: the
+  "too many attempts" answer confirms an address has an account, but only
+  after five failures on it, behind the per-IP limiter — an expensive,
+  noisy oracle, preferred over silently refusing a correct password.
+- **No timing oracle**: an unknown address costs the same bcrypt compare as
+  a wrong password, so response time doesn't reveal which addresses exist.
+- **Password policy** wherever a password is set (signup, reset, change):
+  8 characters minimum, 72 bytes maximum (bcrypt ignores anything after
+  byte 72), and a Have I Been Pwned k-anonymity range check that sends five
+  hex characters of the SHA-1 and fails open if HIBP is slow or down
+  (`lib/passwordPolicy.ts`; `PASSWORD_BREACH_CHECK=off` disables it).
+- **Session revocation** (`services/userSessions.ts`): a password change,
+  a password reset, and confirming a new email address all revoke every
+  other session of the account (the browser acting keeps its own, except
+  after a reset, which starts clean). "Sign out everywhere" in Settings does
+  the same on demand. Changing the password also discards pending reset
+  links; changing it or the email requires the current password.
 
 ## 7. What this design protects against — and what it does NOT
 

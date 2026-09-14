@@ -23,6 +23,8 @@ import {
 
 import { useContextualGreeting } from "@/api/contextualGreeting";
 import { ChangeEmailForm } from "@/components/ChangeEmailForm";
+import { ChangePasswordForm } from "@/components/ChangePasswordForm";
+import { SignOutEverywhere } from "@/components/SignOutEverywhere";
 import { chatMessageSchema, type ChatMessageFormValues } from "@/lib/schemas";
 import { CHAT_DRAFT_KEY, ONBOARDING_DRAFT_KEY, clearSessionDrafts } from "@/lib/sessionDrafts";
 import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
@@ -856,6 +858,7 @@ export default function Chat() {
   const accountEmail = authMe?.user.email ?? "";
   const freeMessagesRemaining = authMe?.freeMessagesRemaining ?? null;
   const [showChangeEmail, setShowChangeEmail] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   // Sync rename input with loaded profile
   useEffect(() => {
@@ -3923,6 +3926,42 @@ export default function Chat() {
                   </button>
                 </div>
               )}
+            </div>
+
+            {/* ── Password ────────────────────────────────────────────────── */}
+            <div>
+              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
+                Password
+              </p>
+              {!showChangePassword ? (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[13px] text-foreground/70">Changing it signs out your other devices.</span>
+                  <button
+                    onClick={() => setShowChangePassword(true)}
+                    className="shrink-0 text-[11px] text-primary-strong/80 hover:text-primary-strong tracking-wider uppercase transition-colors"
+                  >
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  <ChangePasswordForm compact />
+                  <button
+                    onClick={() => setShowChangePassword(false)}
+                    className="text-[11px] text-muted-foreground/50 hover:text-muted-foreground/80 tracking-wider uppercase transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* ── Signed-in devices ───────────────────────────────────────── */}
+            <div>
+              <p className="text-[10px] text-muted-foreground/70 tracking-[0.2em] uppercase mb-3">
+                Signed-in devices
+              </p>
+              <SignOutEverywhere compact />
             </div>
 
             {/* ── Membership (Dodo billing) ───────────────────────────────── */}
