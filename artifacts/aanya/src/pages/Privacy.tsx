@@ -132,7 +132,8 @@ export function Privacy() {
             </li>
             <li>
               <span className="text-foreground/80">One memory</span>: on the Memory page, tap the
-              × on anything Eos has remembered.
+              × on anything Eos has remembered. It's gone from every conversation immediately, and
+              within one turn during a live voice call.
             </li>
             <li>
               <span className="text-foreground/80">Everything</span>: Settings → delete account.
@@ -140,6 +141,10 @@ export function Privacy() {
               There's no recycle bin and no "30-day grace period."
             </li>
           </ul>
+          <p className="text-[13px] text-muted-foreground/60">
+            A memory Eos updates in a conversation replaces the old one; a memory that's no longer
+            true is hidden from everything, not kept.
+          </p>
           <p className="text-[13px] text-muted-foreground/60">
             One nuance: weekly chapters quote your own words back to you. Forgetting a message
             keeps it out of everything written <em>after</em> that moment; a chapter that was

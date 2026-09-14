@@ -21,6 +21,7 @@ import { kindStreak } from "../lib/kindStreak.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { recordMemoryReferences } from "./memory/references.js";
 import { rankFactsByImportance } from "./memory/importance.js";
+import { invalidateFrozenSystem } from "./voicePromptCache.js";
 import {
   cleanMemoryText,
   normalizeFactCategory,
@@ -805,6 +806,7 @@ export async function supersedeFact(
       userMarkedImportant: old.userMarkedImportant || next.markImportant === true,
     })
     .where(and(eq(memoryFactsTable.id, factId), eq(memoryFactsTable.userId, userId)));
+  invalidateFrozenSystem(userId); // a live call must not keep the old wording
   return true;
 }
 
@@ -823,6 +825,7 @@ export async function retireFacts(userId: number, ids: number[], now = new Date(
       ),
     )
     .returning({ id: memoryFactsTable.id });
+  if (rows.length > 0) invalidateFrozenSystem(userId);
   return rows.length;
 }
 

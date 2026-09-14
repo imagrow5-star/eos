@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { eq, desc, and, lt, gte } from "drizzle-orm";
 import { db, messagesTable, type Profile } from "@workspace/db";
 import { buildSystemPrompt, REMEMBER_ACK_GUIDANCE, type SystemPromptParts } from "../services/systemPrompt.js";
+import { getFrozenSystem as getFrozenEntry, setFrozenSystem as setFrozenEntry } from "../services/voicePromptCache.js";
 import { detectRememberIntent } from "../services/memory/rememberTriggers.js";
 import {
   streamCompanionReply,
@@ -159,30 +160,21 @@ const TONE_DELIVERY: Record<string, string> = {
     "\n- DELIVERY STYLE (user preference — warm & upbeat): warm with gentle brightness. Encouraging, hopeful phrasing and light energy — still soft and caring, never loud.",
 };
 
-const frozenSystems = new Map<string, { parts: SystemPromptParts; toneExtra: string; at: number }>();
-const FROZEN_SYSTEM_TTL_MS = 15 * 60 * 1000;
-
 async function getFrozenSystem(
   userId: number,
   issuedAt: number,
   profile: Profile,
   stage: number,
 ): Promise<{ parts: SystemPromptParts; toneExtra: string }> {
-  const now = Date.now();
-  for (const [k, v] of frozenSystems) {
-    if (now - v.at > FROZEN_SYSTEM_TTL_MS) frozenSystems.delete(k);
-  }
-  const key = `${userId}:${issuedAt}`;
-  const hit = frozenSystems.get(key);
-  if (hit) {
-    hit.at = now; // sliding TTL — keep the frozen prompt alive for the whole call
-    return { parts: hit.parts, toneExtra: hit.toneExtra };
-  }
+  // The cache itself lives in services/voicePromptCache.ts so memory writes
+  // (forget, star, reset, update, retire) can drop it mid-call.
+  const hit = getFrozenEntry(userId, issuedAt);
+  if (hit) return { parts: hit.parts, toneExtra: hit.toneExtra };
   const parts = await buildSystemPrompt(profile, stage);
   // Tone freezes with the prompt: a mid-call Settings change applies on the
   // NEXT call, keeping this call's cached prefix byte-identical.
   const toneExtra = TONE_DELIVERY[profile.voiceTone ?? "auto"] ?? "";
-  frozenSystems.set(key, { parts, toneExtra, at: now });
+  setFrozenEntry(userId, issuedAt, { parts, toneExtra });
   return { parts, toneExtra };
 }
 
