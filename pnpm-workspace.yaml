@@ -155,6 +155,14 @@ overrides:
   # drizzle-kit uses esbuild internally on an older version that's vulnerable, this overrides it
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.27.3"
+  # Security review: two advisories in API RUNTIME dependencies, pinned by
+  # their parents to vulnerable ranges. qs (express / body-parser's query and
+  # body parser): array-limit bypass and a DoS via a crafted isBuffer.
+  # ip-address (express-rate-limit's IP parsing, which keys every per-IP
+  # limit): leading-zero octets decoded as decimal, so two spellings of one
+  # address could count as two clients. Drop these once the parents move.
+  qs: ">=6.16.0"
+  ip-address: ">=10.3.1"
 
 # esbuild's postinstall only validates/optimizes its platform binary; the
 # binary itself ships as a regular optionalDependency. Approving it silences
