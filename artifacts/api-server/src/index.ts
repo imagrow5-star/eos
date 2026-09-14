@@ -12,6 +12,7 @@ import { ensureProfileThemeColumns, ensureReflectionReportsTable, ensureMorningN
   ensureLoginLockoutColumns, dropRetiredPushTables, ensureDemoSessionsTable, ensureMemoryFactLifecycleColumns } from "./services/schemaGuard";
 import { backfillMemoryImportance } from "./services/memory/backfill";
 import { runDedupBackfill } from "./services/memory/dedupBackfill";
+import { runMemoryTextSweep } from "./services/memoryTextSweep";
 import { warnIfAgentEnvIncomplete } from "./services/voiceAgentRouting";
 import { sessionSecretIssue, checkDbTls } from "./services/bootGuards";
 import { secretSplitWarnings } from "./lib/secrets";
@@ -260,6 +261,14 @@ app.listen(port, (err) => {
   // serving; until it completes, unseeded facts just score on their defaults.
   backfillMemoryImportance().catch((e) =>
     logger.error({ err: e }, "memory importance backfill failed — unseeded facts score on defaults"),
+  );
+
+  // Bring every stored memory line under the cleaner's rules (memory audit,
+  // item 2; services/memoryTextSweep.ts): one bounded, plain line each, and a
+  // category among the ten. Idempotent and advisory-locked; a clean database
+  // makes it a fast no-op. Background — nothing waits on it.
+  runMemoryTextSweep().catch((e) =>
+    logger.error({ err: e }, "memory text sweep failed — retried next boot; new rows are cleaned at write regardless"),
   );
 
   // One-time semantic-dedup sweep of legacy duplicate rows (memory_facts,
