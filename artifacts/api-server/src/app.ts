@@ -343,7 +343,8 @@ app.use(
     // global default-src 'none' header would combine with the SPA's meta CSP and
     // block its own scripts/styles, breaking the app.
     contentSecurityPolicy: false,
-    // CSP frame-ancestors (in apiCsp) covers embedding; X-Frame-Options can't say "self + nothing else" cleanly
+    // Frame protection is set per surface below: apiCsp's frame-ancestors for
+    // /api, and pageFrameGuard (both headers) for every page and asset.
     frameguard: false,
     // Don't break same-origin audio blob playback in the app
     crossOriginEmbedderPolicy: false,
@@ -546,6 +547,22 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", apiCsp, router);
 
+// ─── Frame protection for the pages (SPA, landing, legal, assets) ────────────
+// The SPA's own CSP travels in a <meta> tag (vite.config.ts), and
+// frame-ancestors is the one directive a <meta> policy cannot carry, so
+// without this the app and the marketing pages could be framed by any site
+// and clickjacked. Both headers, same meaning: only this origin may frame
+// them (the in-app report iframe is same-origin). Registered before the
+// static bundle so it applies whether or not the bundle is present.
+export const pageFrameGuard: express.RequestHandler = (req, res, next) => {
+  if (!req.path.startsWith("/api")) {
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader("Content-Security-Policy", "frame-ancestors 'self'");
+  }
+  next();
+};
+app.use(pageFrameGuard);
+
 // JSON 404 for any /api path no route matched. Without this, unmatched API
 // requests fall through to Express's default HTML 404 page, which API clients
 // (the SPA does res.json() on everything) misreport as a network error.
@@ -636,6 +653,17 @@ if (fs.existsSync(frontendIndex)) {
     "Frontend bundle not found — serving API only (set FRONTEND_DIR or build @workspace/aanya)",
   );
 }
+
+// ─── Plain 404 for anything left unmatched outside /api ──────────────────────
+// Reached by a non-GET to a page path, or by any page path when the built
+// bundle is absent (API-only deployments, CI). Express's own fallback would
+// answer with its HTML error page AND replace Content-Security-Policy with
+// that page's policy, silently dropping the frame-ancestors set by
+// pageFrameGuard. A plain-text 404 keeps the headers exactly as set.
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api")) return next();
+  res.status(404).type("text/plain").send("Not found");
+});
 
 // ─── JSON error handler for the API (must be registered last) ─────────────────
 // Catches errors thrown anywhere on an /api request — including body-parser

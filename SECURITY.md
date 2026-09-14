@@ -163,7 +163,14 @@ keeps. Operator guidance:
   other session of the account (the browser acting keeps its own, except
   after a reset, which starts clean). "Sign out everywhere" in Settings does
   the same on demand. Changing the password also discards pending reset
-  links; changing it or the email requires the current password.
+  links; changing it, changing the email, and deleting the account all
+  require the current password, so a stolen cookie can do none of them.
+- **Frame protection**: `/api` responses carry `frame-ancestors 'self'`;
+  every page the server serves (the app, the landing page, the legal
+  pages, static assets) carries `X-Frame-Options: SAMEORIGIN` and
+  `Content-Security-Policy: frame-ancestors 'self'` as headers (the app's
+  own CSP is a `<meta>` tag, which cannot express frame-ancestors), so no
+  other site can frame Eos and clickjack it.
 
 ## 7. What this design protects against — and what it does NOT
 

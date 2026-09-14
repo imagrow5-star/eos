@@ -1289,11 +1289,35 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
 });
 
 // ─── DELETE /auth/account ─────────────────────────────────────────────────────
+// Irreversible, so a session cookie alone is not enough: the current password
+// is required, the same bar as changing the email or the password. A stolen
+// cookie must not be able to wipe someone's history. (An account created
+// through Google has a random unusable password until the person sets one
+// with "Forgot password"; the settings panel says so.)
 
 router.delete("/auth/account", async (req, res): Promise<void> => {
   const userId = req.session?.userId;
   if (!userId) {
     res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+
+  const { password } = (req.body ?? {}) as { password?: unknown };
+  if (!password || typeof password !== "string") {
+    res.status(400).json({ error: "Your current password is required to delete your account." });
+    return;
+  }
+  const [owner] = await db
+    .select({ hashedPassword: usersTable.hashedPassword })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+  if (!owner) {
+    res.status(401).json({ error: "Session invalid" });
+    return;
+  }
+  if (!(await bcrypt.compare(password, owner.hashedPassword))) {
+    res.status(403).json({ error: "That password is incorrect." });
     return;
   }
 

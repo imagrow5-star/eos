@@ -31,7 +31,8 @@ if (!basePath) {
 // Injected as a <meta> tag into PRODUCTION builds only (`apply: 'build'`) —
 // the dev server needs Vite's inline HMR client, and the built app is served
 // as static files so there is no server to add the header. frame-ancestors
-// cannot be set via <meta>; noted on the API side instead.
+// cannot be set via <meta>; the api-server sends it (and X-Frame-Options)
+// as a header on every page it serves — see pageFrameGuard in app.ts.
 const cspMetaPlugin = {
   name: 'inject-csp-meta',
   apply: 'build' as const,
