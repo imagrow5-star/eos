@@ -180,6 +180,28 @@
   .lead-secondary{color:var(--ink-soft);border-bottom:1px solid rgba(92,72,44,.25)}
   .lead-secondary:hover{color:var(--ink)}
 
+  /* ── The demo — thirty seconds of the real thing, no account. Sits in the
+     first screen, in the page's own type and colours. The thread reuses the
+     sample conversation's bubbles (.msg.you / .msg.eos) so the demo looks
+     exactly like the product. Three exchanges, then the closing line. */
+  .demo{max-width:560px;margin:34px auto 0;text-align:left}
+  .demo-prompt{font-family:'Fraunces',Georgia,serif;font-weight:520;font-size:clamp(21px,2.6vw,26px);color:var(--ink);text-align:center;line-height:1.3}
+  .demo-thread{display:flex;flex-direction:column;gap:12px;margin:18px 0 12px}
+  .demo-thread:empty{display:none}
+  .demo-thread .msg{white-space:pre-wrap;overflow-wrap:anywhere}
+  .demo-thread .msg.eos.is-thinking{color:var(--muted)}
+  .demo-thread .msg.eos.is-thinking::after{content:"…";animation:soften 1.4s ease-in-out infinite}
+  .demo-help{align-self:flex-start;max-width:92%;background:var(--blue-soft);border:1px solid rgba(124,142,160,.35);border-radius:14px;padding:12px 16px;font-size:14.5px;line-height:1.55;color:var(--ink-soft);white-space:pre-line}
+  .demo-form{display:flex;flex-direction:column;gap:10px;margin-top:18px}
+  .demo-input{width:100%;padding:14px 18px;border-radius:12px;border:1.5px solid rgba(92,72,44,.2);background:var(--card);color:var(--ink);font-size:16px;font-family:inherit;line-height:1.55;min-height:64px;resize:vertical;transition:border-color .2s,box-shadow .2s}
+  .demo-input:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(95,127,92,.15)}
+  .demo-form .btn{border:0;cursor:pointer;font-family:inherit;width:100%;text-align:center}
+  .demo-form .btn[disabled]{opacity:.55;cursor:default;transform:none;box-shadow:none}
+  .demo-err{margin-top:8px;color:#a2322b;font-size:13.5px;text-align:center}
+  .demo-end{margin-top:22px;text-align:center;color:var(--ink-soft);font-size:16px;line-height:1.65}
+  .demo-end a{display:inline-block;margin-top:10px}
+  .demo-end[hidden],.demo-form[hidden]{display:none}
+
   /* Sunrise illustration: soft hills, quiet sun. Sits at the hero's base. */
   .scene{display:block;width:100%;margin-top:44px}
   .scene svg{display:block;width:100%;height:auto}
@@ -439,9 +461,22 @@
   <div class="wrap">
     <h1 class="rv on" style="--d:.04s">Someone to talk to. Any hour.<br>And nobody else will ever know.</h1>
     <p class="hero-sub rv on" style="--d:.12s">Eos is a private companion you talk to by voice or text. It remembers what matters to you, so you never start from the beginning. What you say is encrypted where it's stored, never sold, and never used to train AI.</p>
-    <p class="lead-ask rv on" style="--d:.18s">Not sure? Ask me.</p>
-    <p class="lead-intro rv on" style="--d:.22s">I'm Naveen, the founder. I read every message myself and I'll answer honestly.</p>
-    <div class="hero-cta rv on" style="--d:.26s">
+
+    <!-- The demo: the real prompt, three exchanges, nothing saved. -->
+    <div class="demo rv on" id="demo" style="--d:.16s">
+      <p class="demo-prompt" id="demo-prompt">Say one true thing. Nothing here is saved.</p>
+      <div class="demo-thread" id="demo-thread" aria-live="polite" aria-label="Your conversation with Eos"></div>
+      <form class="demo-form" id="demo-form" novalidate>
+        <textarea class="demo-input" id="demo-input" rows="2" maxlength="2000" aria-labelledby="demo-prompt" autocomplete="off"></textarea>
+        <button class="btn" type="submit" id="demo-send">Say it</button>
+        <p class="demo-err" id="demo-err" role="alert" hidden></p>
+      </form>
+      <p class="demo-end" id="demo-end" hidden>That's the demo. Eos remembers you &mdash; across weeks, months, whatever you give it. This didn't remember you at all.<br><a class="lead-secondary" href="/?enter=1">Start the 7-day trial &rarr;</a></p>
+    </div>
+
+    <p class="lead-ask rv on" style="--d:.3s">Not sure? Ask me.</p>
+    <p class="lead-intro rv on" style="--d:.34s">I'm Naveen, the founder. I read every message myself and I'll answer honestly.</p>
+    <div class="hero-cta rv on" style="--d:.38s">
       <form class="lead-form" data-source="landing_hero" novalidate>
         <input class="lead-input" type="email" name="email" required autocomplete="email" placeholder="Your email" aria-label="Your email">
         <textarea class="lead-msg" name="message" rows="3" maxlength="2000" placeholder="what's stopping you?" aria-label="Your message"></textarea>
@@ -450,8 +485,8 @@
       </form>
       <p class="lead-ok" role="status" hidden>Thanks. I got your message and I'll reply personally.</p>
     </div>
-    <p class="hero-note lead-fine rv on" style="--d:.3s">I won't add you to anything.</p>
-    <p class="hero-note rv on" style="--d:.34s"><a class="lead-secondary" href="/?enter=1">Or start the 7-day trial &rarr;</a></p>
+    <p class="hero-note lead-fine rv on" style="--d:.42s">I won't add you to anything.</p>
+    <p class="hero-note rv on" style="--d:.46s"><a class="lead-secondary" href="/?enter=1">Or start the 7-day trial &rarr;</a></p>
   </div>
 
   <!-- Morning hills, drawn quietly -->
@@ -814,6 +849,120 @@
         err.textContent = 'Something went wrong. Please try again.';
       });
     });
+  });
+})();
+</script>
+<script>
+// ── The demo — three exchanges with the real Eos, held only in this tab ──────
+// POSTs each turn with the conversation so far to /api/demo/message and reads
+// the reply as it streams. The history lives in this closure and nowhere
+// else: refresh the page and it's gone. Nothing is written server-side.
+(function(){
+  var form = document.getElementById('demo-form');
+  var input = document.getElementById('demo-input');
+  var send = document.getElementById('demo-send');
+  var thread = document.getElementById('demo-thread');
+  var end = document.getElementById('demo-end');
+  var err = document.getElementById('demo-err');
+  if (!form || !input || !thread) return;
+
+  var history = [];
+  var busy = false;
+
+  function bubble(cls, text){
+    var el = document.createElement('div');
+    el.className = 'msg ' + cls;
+    el.textContent = text || '';
+    thread.appendChild(el);
+    return el;
+  }
+  function showErr(msg){ err.textContent = msg; err.hidden = false; }
+  function finish(){
+    form.hidden = true;
+    end.hidden = false;
+    end.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  // Parse "event: x\ndata: {...}\n\n" frames out of a streaming body.
+  function readStream(res, onEvent){
+    var reader = res.body.getReader();
+    var dec = new TextDecoder();
+    var buf = '';
+    function pump(){
+      return reader.read().then(function(r){
+        if (r.done) return;
+        buf += dec.decode(r.value, { stream: true });
+        var idx;
+        while ((idx = buf.indexOf('\n\n')) !== -1) {
+          var frame = buf.slice(0, idx); buf = buf.slice(idx + 2);
+          var ev = null, data = null;
+          frame.split('\n').forEach(function(line){
+            if (line.indexOf('event: ') === 0) ev = line.slice(7);
+            else if (line.indexOf('data: ') === 0) data = line.slice(6);
+          });
+          if (ev && data !== null) { try { onEvent(ev, JSON.parse(data)); } catch (e) {} }
+        }
+        return pump();
+      });
+    }
+    return pump();
+  }
+
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    var text = (input.value || '').trim();
+    if (!text || busy) return;
+    busy = true; err.hidden = true; send.disabled = true; input.disabled = true;
+    bubble('you', text);
+    var eos = bubble('eos', ''); eos.classList.add('is-thinking');
+    var reply = '';
+
+    fetch('/api/demo/message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text, history: history })
+    }).then(function(res){
+      if (!res.ok) {
+        return res.json().catch(function(){ return {}; }).then(function(body){
+          throw new Error((body && body.error) || 'Something went wrong. Please try again.');
+        });
+      }
+      return readStream(res, function(ev, data){
+        if (ev === 'delta') {
+          eos.classList.remove('is-thinking');
+          reply += data.text || '';
+          eos.textContent = reply;
+        } else if (ev === 'done') {
+          eos.classList.remove('is-thinking');
+          var body = data.content || reply;
+          var block = data.crisisHelplineBlock || null;
+          if (block && body.indexOf(block) !== -1) body = body.slice(0, body.indexOf(block)).replace(/\s+$/, '');
+          eos.textContent = body;
+          if (block) {
+            var help = document.createElement('div');
+            help.className = 'demo-help';
+            help.textContent = block.replace(/^—\n/, '');
+            thread.appendChild(help);
+          }
+          history.push({ role: 'user', content: text }, { role: 'assistant', content: data.content || reply });
+          input.value = '';
+          if (data.remaining === 0) finish();
+        } else if (ev === 'error') {
+          throw new Error(data.error || 'Something went wrong. Please try again.');
+        }
+      });
+    }).catch(function(e){
+      if (!reply) { thread.removeChild(eos); }
+      showErr(e && e.message ? e.message : 'Something went wrong. Please try again.');
+    }).then(function(){
+      busy = false;
+      if (!form.hidden) { send.disabled = false; input.disabled = false; input.focus(); }
+    });
+  });
+
+  // Enter sends; Shift+Enter makes a new line.
+  input.addEventListener('keydown', function(e){
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit ? form.requestSubmit() : send.click(); }
   });
 })();
 </script>

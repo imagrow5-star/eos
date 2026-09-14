@@ -26,6 +26,7 @@ import billingWebhookRouter from "./billingWebhook";
 import elevenLabsWebhookRouter from "./elevenLabsWebhook";
 import settingsRouter from "./settings";
 import leadsRouter from "./leads";
+import demoRouter from "./demo";
 
 const router: IRouter = Router();
 
@@ -34,6 +35,7 @@ router.use(healthRouter);
 router.use(authRouter);
 router.use(googleAuthRouter); // "Continue with Google" (additional sign-in option)
 router.use(leadsRouter);  // landing-page email capture (waitlist) — no auth
+router.use(demoRouter);   // landing-page demo: three exchanges with the real prompt, nothing stored — no auth
 // ElevenLabs Conversational AI custom-LLM callback — called by ElevenLabs
 // servers (no browser session); authenticated per-call via HMAC voice token.
 router.use(voiceLlmRouter);
