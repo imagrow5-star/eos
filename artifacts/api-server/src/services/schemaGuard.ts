@@ -151,3 +151,19 @@ export async function ensureLoginLockoutColumns(): Promise<void> {
   await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until timestamp`);
   logger.info("schema guard: users.failed_login_attempts / users.locked_until present");
 }
+
+/**
+ * Drops the retired web-push tables. Push notifications were removed
+ * (nothing reaches a person outside the app), but the tables stayed:
+ * push_subscriptions held every device's push endpoint, push_events the
+ * delivery log, and push_config a VAPID private key in plaintext (security
+ * review). None is read or written anywhere now; DROP TABLE IF EXISTS is a
+ * no-op forever after the first boot. Ordered children first (both reference
+ * users; push_config stands alone).
+ */
+export async function dropRetiredPushTables(): Promise<void> {
+  await db.execute(sql`DROP TABLE IF EXISTS push_events`);
+  await db.execute(sql`DROP TABLE IF EXISTS push_subscriptions`);
+  await db.execute(sql`DROP TABLE IF EXISTS push_config`);
+  logger.info("schema guard: retired push tables absent");
+}

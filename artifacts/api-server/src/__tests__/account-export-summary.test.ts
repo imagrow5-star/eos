@@ -69,8 +69,6 @@ interface SummaryBody {
   chapterOfferEventCount: number;
   sealedNoteCount: number;
   storyThreadCount: number;
-  pushSubscriptionCount: number;
-  pushEventCount: number;
   subscriptionCount: number;
   voiceUsageCount: number;
   crisisEventCount: number;
@@ -383,8 +381,6 @@ describe("GET /api/account/export/summary", () => {
       ["chapterOfferEventCount", "chapterOfferEvents"],
       ["sealedNoteCount", "sealedNotes"],
       ["storyThreadCount", "storyThreads"],
-      ["pushSubscriptionCount", "pushSubscriptions"],
-      ["pushEventCount", "pushEvents"],
       // Billing foundation (phase 1) — empty until billing launches.
       ["subscriptionCount", "subscriptions"],
       ["voiceUsageCount", "voiceUsage"],

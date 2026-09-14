@@ -9,7 +9,7 @@ import { backfillLanguageSunset } from "./services/settings/languageSunset";
 import { scrubMessageAnnotations } from "./services/messageAnnotationScrub";
 import { migrateRomanticPersona } from "./services/settings/romanticPersonaMigration";
 import { ensureProfileThemeColumns, ensureReflectionReportsTable, ensureMorningNoteColumns, ensureDodoBillingColumns, ensureHumeVoiceColumn,
-  ensureLoginLockoutColumns } from "./services/schemaGuard";
+  ensureLoginLockoutColumns, dropRetiredPushTables } from "./services/schemaGuard";
 import { backfillMemoryImportance } from "./services/memory/backfill";
 import { runDedupBackfill } from "./services/memory/dedupBackfill";
 import { warnIfAgentEnvIncomplete } from "./services/voiceAgentRouting";
@@ -137,6 +137,13 @@ await ensureLoginLockoutColumns().catch((e) =>
     { err: e },
     "login lockout column guard failed at boot — logins will fail until users.failed_login_attempts / locked_until exist",
   ),
+);
+
+// Drop the retired web-push tables (device endpoints, delivery log, and a
+// plaintext VAPID private key). Idempotent; no-op once gone. On failure we
+// still boot — nothing reads them.
+await dropRetiredPushTables().catch((e) =>
+  logger.error({ err: e }, "retired push table drop failed at boot — harmless, retried next boot"),
 );
 
 // Hash any auth tokens still stored raw (one-time, idempotent, advisory-locked;

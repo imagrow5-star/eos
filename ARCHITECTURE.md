@@ -88,7 +88,7 @@ A startup guard (`services/agentConfigGuard.ts`) also re-checks on every product
 
 ## 5. How user data is stored and encrypted
 
-**Database.** One Postgres database, accessed through Drizzle ORM. All tables live in `lib/db/src/schema/`. Roughly: `users` (email + password hash), `profile` (names, path, preferences, consent, timezone), `messages` (every chat/voice message), `memory_facts`, `personality_signals`, `wins`, `mood_scores`, `habits` + `habit_completions`, `goals` + `goal_tasks`, `commitments`, `reminders`, `weekly_chapters` + sealed notes + story threads (the weekly letter feature), `push_subscriptions`/`push_events`, `user_sessions` (login sessions), and the token tables for email verification / password reset.
+**Database.** One Postgres database, accessed through Drizzle ORM. All tables live in `lib/db/src/schema/`. Roughly: `users` (email + password hash), `profile` (names, path, preferences, consent, timezone), `messages` (every chat/voice message), `memory_facts`, `personality_signals`, `wins`, `mood_scores`, `habits` + `habit_completions`, `goals` + `goal_tasks`, `commitments`, `reminders`, `weekly_chapters` + sealed notes + story threads (the weekly letter feature), `user_sessions` (login sessions), and the token tables for email verification / password reset.
 
 **Encryption at rest.** The sensitive columns are encrypted by the application itself before they ever reach the database, using AES-256-GCM with a single master key that exists **only** in the `DATA_ENCRYPTION_KEY` environment secret (`lib/db/src/crypto.ts`). Every value gets a fresh random IV and is bound to its table+column, stored as `enc:v1:...` text. The ORM layer (`lib/db/src/encryptedColumns.ts`) encrypts on write and decrypts on read automatically, so someone with a copy of the database but not the key sees only ciphertext.
 
@@ -108,7 +108,7 @@ What is *not* encrypted (worth knowing): emails and password hashes (hashes are 
 
 | Path | What it is | One-liner |
 |---|---|---|
-| `artifacts/api-server` | **Production backend** | Express server: auth, chat, voice, memory, chapters, push, export; serves the built frontend. |
+| `artifacts/api-server` | **Production backend** | Express server: auth, chat, voice, memory, chapters, export; serves the built frontend. |
 | `artifacts/aanya` | **Production frontend** | The React app users see (Aanya was the product's earlier name). |
 | `artifacts/daily-email` | **Scheduler** | Hourly run (Render Cron Job `eos-hourly-sweeps`, defined in `render.yaml`, cron `0 * * * *`): triggers the weekly-chapter, weekly-reflection and stories sweeps via internal HMAC-protected endpoints. Sends nothing to anyone; needs only `APP_URL` and `SESSION_SECRET`. |
 | `artifacts/eos-video` | Side project | A Remotion-style promo/demo video built in React. Not part of the running product. |

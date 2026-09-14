@@ -14,7 +14,7 @@ import { ensureProfileThemeColumns, isMissingThemeColumnError } from "../service
 import { logger } from "../lib/logger.js";
 import { sanitizeGenderWords } from "../services/systemPrompt.js";
 import { ageToBand, normalizeCountryForStorage, AGE_BANDS } from "../lib/basics.js";
-import { normalizeUserName, presentCaseName, USER_NAME_ERROR } from "../lib/userName.js";
+import { normalizeUserName, normalizeCompanionName, COMPANION_NAME_ERROR, presentCaseName, USER_NAME_ERROR } from "../lib/userName.js";
 
 const router: IRouter = Router();
 
@@ -215,7 +215,14 @@ router.put("/profile", async (req, res): Promise<void> => {
       updates.originalUserName = profile.userName.trim() || name;
     }
   }
-  if (data.companionName != null) updates.companionName = data.companionName;
+  if (data.companionName != null) {
+    const companion = normalizeCompanionName(data.companionName);
+    if (companion === null) {
+      res.status(400).json({ error: COMPANION_NAME_ERROR });
+      return;
+    }
+    updates.companionName = companion;
+  }
   // "romantic" was retired (persona refinement, 2026-08) — normalize any
   // straggler client still sending it to the one persona that exists.
   if (data.relationshipType != null) {

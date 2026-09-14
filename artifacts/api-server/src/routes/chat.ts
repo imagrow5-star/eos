@@ -24,7 +24,7 @@ import {
 import { calculateStage, todayInTimezone, getTimeContext, describeCommitmentTiming } from "../services/stage.js";
 import { selectFollowUpCommitments, stampCommitmentsSurfaced } from "../services/morning/threadSelection.js";
 import { getOrCreateProfileForUser } from "./profile.js";
-import { chatUsageLimits } from "../middleware/usageLimits.js";
+import { chatUsageLimits, morningNoteUsageLimits, contextualGreetingUsageLimits } from "../middleware/usageLimits.js";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { detectCrisis } from "../services/crisis/detector.js";
@@ -445,7 +445,7 @@ function getGreetingSlot(partOfDay: string): "morning" | "evening" | "night" | n
   }
 }
 
-router.post("/chat/contextual-greeting", async (req, res): Promise<void> => {
+router.post("/chat/contextual-greeting", ...contextualGreetingUsageLimits, async (req, res): Promise<void> => {
   const userId = req.userId;
   const profile = await getOrCreateProfileForUser(userId);
   const tz = (profile as any).timezone ?? "UTC";
@@ -563,7 +563,7 @@ router.post("/chat/contextual-greeting", async (req, res): Promise<void> => {
   res.json({ message: greetingMsg });
 });
 
-router.post("/chat/morning-note", async (req, res): Promise<void> => {
+router.post("/chat/morning-note", ...morningNoteUsageLimits, async (req, res): Promise<void> => {
   const userId = req.userId;
   const profile = await getOrCreateProfileForUser(userId);
   const today = todayInTimezone((profile as any).timezone ?? "UTC");

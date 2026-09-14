@@ -633,10 +633,6 @@ describe("GET /api/account/export?format=html", () => {
         "Administrative accept/decline log for chapter offers — the goals themselves render in the Goals section; present in the JSON export.",
       storyThreads:
         "Internal narrative-indexing records (thread state machine) — evolving threads already render inside their chapter's Working-it-through section; raw states/streaks are diagnostic, present in the JSON export.",
-      pushSubscriptions:
-        "Browser push endpoint records (device tokens) — technical delivery plumbing with no readable content; present in the JSON export.",
-      pushEvents:
-        "Notification delivery log (kind + timestamp) — administrative cap-enforcement records; present in the JSON export.",
       storyDrops:
         "Story drafts the language gates refused — never shown in the app; kept so the prompt can be tuned; present in the JSON export.",
       subscriptions:

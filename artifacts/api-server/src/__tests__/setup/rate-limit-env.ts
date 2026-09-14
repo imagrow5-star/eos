@@ -30,3 +30,13 @@ process.env.MEMORY_EXPORT_LIMIT_PER_HOUR ??= "100000";
 // in tests so the reset integration suite can call it repeatedly. The dedicated
 // rate-limit test sets it to 1 before importing the app to exercise 429.
 process.env.MEMORY_RESET_LIMIT_PER_HOUR ??= "100000";
+
+// Morning note, contextual greeting, account export (middleware/usageLimits.ts).
+// High here; paid-endpoint-rate-limits.test.ts sets small values before
+// importing the app to exercise the 429 path.
+process.env.MORNING_NOTE_LIMIT_PER_HOUR ??= "100000";
+process.env.MORNING_NOTE_LIMIT_PER_DAY ??= "100000";
+process.env.CONTEXTUAL_GREETING_LIMIT_PER_HOUR ??= "100000";
+process.env.CONTEXTUAL_GREETING_LIMIT_PER_DAY ??= "100000";
+process.env.ACCOUNT_EXPORT_LIMIT_PER_HOUR ??= "100000";
+process.env.ACCOUNT_EXPORT_SUMMARY_LIMIT_PER_HOUR ??= "100000";
