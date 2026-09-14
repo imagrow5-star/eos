@@ -201,6 +201,18 @@
   .demo-end{margin-top:22px;text-align:center;color:var(--ink-soft);font-size:16px;line-height:1.65}
   .demo-end a{display:inline-block;margin-top:10px}
   .demo-end[hidden],.demo-form[hidden]{display:none}
+  @media(max-width:600px){
+    /* The first screen on a phone must hold the headline, the subtitle and
+       the demo's box and button. Everything above the demo gives a little. */
+    .hero{padding-top:36px}
+    h1{font-size:clamp(28px,8vw,34px);line-height:1.14}
+    .hero-sub{margin-top:14px;font-size:15.5px;line-height:1.55}
+    .demo{margin-top:20px}
+    .demo-prompt{font-size:19px}
+    .demo-input{min-height:52px;padding:12px 14px}
+    .demo-form{margin-top:12px;gap:8px}
+    .demo-form .btn{padding:12px 24px}
+  }
 
   /* Sunrise illustration: soft hills, quiet sun. Sits at the hero's base. */
   .scene{display:block;width:100%;margin-top:44px}
@@ -460,7 +472,7 @@
 <header class="hero">
   <div class="wrap">
     <h1 class="rv on" style="--d:.04s">Someone to talk to. Any hour.<br>And nobody else will ever know.</h1>
-    <p class="hero-sub rv on" style="--d:.12s">Eos is a private companion you talk to by voice or text. It remembers what matters to you, so you never start from the beginning. What you say is encrypted where it's stored, never sold, and never used to train AI.</p>
+    <p class="hero-sub rv on" style="--d:.12s">A private companion you talk to by voice or text. It remembers what matters to you. What you say is encrypted where it's stored, never sold, and never used to train AI.</p>
 
     <!-- The demo: the real prompt, three exchanges, nothing saved. -->
     <div class="demo rv on" id="demo" style="--d:.16s">
