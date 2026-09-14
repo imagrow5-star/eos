@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import crypto from "crypto";
 import { logger } from "../lib/logger.js";
+import { requireInternalToken, internalBodyProblem, isProduction } from "../lib/internalAuth.js";
 import { listMarkerStories, markStoryViewed } from "../services/stories.js";
 import { eq } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
@@ -70,58 +70,33 @@ router.post("/stories/:id/viewed", async (req, res): Promise<void> => {
 });
 
 // ─── Internal machine endpoint (mounted BEFORE auth) ──────────────────────────
-// Called hourly by the daily-email scheduled job, right after the chapter
-// sweep (the weekly story's then/now card reads this week's chapter). Runs
-// both sweeps: the weekly story (Sunday evening window) and the daily Goals /
-// Routines cards (from 06:00 user-local). Authenticated by an HMAC of
-// SESSION_SECRET and the current UTC hour — same scheme as
-// /internal/chapters/run; the previous hour is accepted for clock edges.
+// Called hourly by the scheduler, right after the chapter sweep (the weekly
+// story's then/now card reads this week's chapter). Runs both sweeps: the
+// weekly story (Sunday evening window) and the daily Goals / Routines cards
+// (from 06:00 user-local). Authenticated by lib/internalAuth.ts: an HMAC
+// under INTERNAL_SWEEP_SECRET over the prefix, the UTC hour and the body.
 
-export function storiesRunToken(secret: string, d: Date): string {
-  const stamp = d.toISOString().slice(0, 13); // YYYY-MM-DDTHH
-  return crypto.createHmac("sha256", secret).update(`stories-run:${stamp}`).digest("hex");
-}
-
-function legacyRunToken(secret: string, d: Date): string {
-  const stamp = d.toISOString().slice(0, 13);
-  return crypto.createHmac("sha256", secret).update(`weekly-review-run:${stamp}`).digest("hex");
-}
-
-function tokenMatches(provided: string, secret: string, now: Date): boolean {
-  const a = Buffer.from(provided);
-  for (const d of [now, new Date(now.getTime() - 3_600_000)]) {
-    for (const expected of [storiesRunToken(secret, d), legacyRunToken(secret, d)]) {
-      const b = Buffer.from(expected);
-      if (a.length === b.length && crypto.timingSafeEqual(a, b)) return true;
-    }
-  }
-  return false;
-}
+const STORIES_RUN_FIELDS = ["userId", "email", "force", "ignoreWindow"] as const;
 
 export const storiesInternalRouter: IRouter = Router();
 
-async function runStorySweeps(req: import("express").Request, res: import("express").Response): Promise<void> {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret) {
-    res.status(500).json({ error: "SESSION_SECRET not configured" });
-    return;
-  }
-  const token = req.header("x-internal-token") ?? "";
-  if (!token || !tokenMatches(token, secret, new Date())) {
-    res.status(401).json({ error: "unauthorized" });
+storiesInternalRouter.post("/internal/stories/run", requireInternalToken("stories-run"), async (req, res): Promise<void> => {
+  const bodyProblem = internalBodyProblem(req.body, STORIES_RUN_FIELDS);
+  if (bodyProblem) {
+    res.status(400).json({ error: bodyProblem });
     return;
   }
   const body = (req.body ?? {}) as Record<string, unknown>;
-  const isProd = process.env.NODE_ENV === "production";
+  const isProd = isProduction();
   let onlyUserId = Number.isInteger(body.userId) ? (body.userId as number) : undefined;
-  // Operators know emails, not ids: an email scopes the run the same way.
+  // Operators know emails, not ids: an email scopes the run the same way. An
+  // address with no account scopes the run to nobody and answers exactly like
+  // an account with nothing due — this endpoint must not say which addresses
+  // exist, even to a token holder. (An operator who typo'd the address sees
+  // zero considered, and tries again.)
   if (onlyUserId === undefined && typeof body.email === "string" && body.email.trim()) {
     const [u] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, body.email.trim().toLowerCase())).limit(1);
-    if (!u) {
-      res.status(404).json({ error: "no user with that email" });
-      return;
-    }
-    onlyUserId = u.id;
+    onlyUserId = u?.id ?? NO_SUCH_USER;
   }
   // Operator affordances, same policy as the chapter sweep: force never in
   // production; ignoreWindow in production only when scoped to one user.
@@ -140,12 +115,9 @@ async function runStorySweeps(req: import("express").Request, res: import("expre
     logger.info(result, "story sweeps finished");
   } catch { /* logging must never crash the caller */ }
   res.json(result);
-}
+});
 
-storiesInternalRouter.post("/internal/stories/run", runStorySweeps);
-// The stage-3 endpoint name, kept as an alias: a scheduled-job deployment
-// built before the rename still triggers every sweep. Same token scheme,
-// but with the old prefix — the alias accepts either.
-storiesInternalRouter.post("/internal/weekly-reviews/run", runStorySweeps);
+/** A user id no row can have: scopes a sweep to nobody. */
+const NO_SUCH_USER = -1;
 
 export default router;

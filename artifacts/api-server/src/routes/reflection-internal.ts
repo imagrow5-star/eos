@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import { Router, type IRouter } from "express";
 import { pool } from "@workspace/db";
 import { fetchExportPayload } from "./account.js";
@@ -8,6 +7,7 @@ import {
 } from "../services/reflection/generateReport.js";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
+import { requireInternalToken, internalBodyProblem, isProduction } from "../lib/internalAuth.js";
 
 // ─── Weekly reflection sweep (internal machine endpoint, mounted BEFORE auth) ──
 // Called on the hourly daily-email ticker (autoscale servers can't run their
@@ -15,9 +15,9 @@ import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 // per rolling 7 days, so calling this every hour is safe — it just generates for
 // whoever has become due since last time.
 //
-// Authenticated by the same HMAC-over-UTC-hour scheme as the chapter/push
-// sweeps (shared secret = SESSION_SECRET; current or previous hour accepted, so
-// clock edges are safe). Reuses the SAME data loader (fetchExportPayload) and
+// Authenticated by lib/internalAuth.ts, the same scheme as the chapter and
+// story sweeps: HMAC under INTERNAL_SWEEP_SECRET over the prefix, the UTC hour
+// and the body. Reuses the SAME data loader (fetchExportPayload) and
 // generation service as the on-demand path — no parallel pipeline.
 
 const PERIOD_DAYS = 7;
@@ -27,24 +27,6 @@ const PERIOD_DAYS = 7;
 function maxPerRun(): number {
   const n = Number(process.env.REFLECTION_SWEEP_MAX_PER_RUN);
   return Number.isInteger(n) && n > 0 ? n : 25;
-}
-
-function hourStamp(d: Date): string {
-  return d.toISOString().slice(0, 13); // YYYY-MM-DDTHH
-}
-
-export function reflectionRunToken(secret: string, d: Date): string {
-  return crypto.createHmac("sha256", secret).update(`reflection-run:${hourStamp(d)}`).digest("hex");
-}
-
-function tokenMatches(provided: string, secret: string, now: Date): boolean {
-  for (const d of [now, new Date(now.getTime() - 3_600_000)]) {
-    const expected = reflectionRunToken(secret, d);
-    const a = Buffer.from(provided);
-    const b = Buffer.from(expected);
-    if (a.length === b.length && crypto.timingSafeEqual(a, b)) return true;
-  }
-  return false;
 }
 
 /** YYYY-MM-DD (UTC) — the inclusive-date shape fetchExportPayload expects. */
@@ -149,25 +131,21 @@ export async function runReflectionSweep(opts: {
 
 export const reflectionInternalRouter: IRouter = Router();
 
-reflectionInternalRouter.post("/internal/reflection/weekly-run", async (req, res): Promise<void> => {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret) {
-    res.status(500).json({ error: "SESSION_SECRET not configured" });
-    return;
-  }
-  const token = req.header("x-internal-token") ?? "";
-  if (!token || !tokenMatches(token, secret, new Date())) {
-    res.status(401).json({ error: "unauthorized" });
-    return;
-  }
+const REFLECTION_RUN_FIELDS = ["userId", "dryRun"] as const;
 
+reflectionInternalRouter.post("/internal/reflection/weekly-run", requireInternalToken("reflection-run"), async (req, res): Promise<void> => {
+  const bodyProblem = internalBodyProblem(req.body, REFLECTION_RUN_FIELDS);
+  if (bodyProblem) {
+    res.status(400).json({ error: bodyProblem });
+    return;
+  }
   const body = (req.body ?? {}) as Record<string, unknown>;
   const onlyUserId = Number.isInteger(body.userId) ? (body.userId as number) : undefined;
   const dryRun = body.dryRun === true;
 
   const result = await runReflectionSweep({ onlyUserId, dryRun });
-  // Privacy (Tier 3): decisions[] carries raw userIds — hash them for the log
-  // only; the returned result object is left untouched for the caller.
+  // Privacy (Tier 3): decisions[] carries raw userIds — hashed for the log,
+  // and not returned at all in production (the counts are the answer).
   try {
     logger.info(
       {
@@ -183,5 +161,5 @@ reflectionInternalRouter.post("/internal/reflection/weekly-run", async (req, res
   } catch {
     /* logging must never crash the caller */
   }
-  res.json(result);
+  res.json(isProduction() ? { ...result, decisions: undefined } : result);
 });

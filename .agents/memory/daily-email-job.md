@@ -8,7 +8,7 @@ description: Architecture and deployment notes for the Eos hourly scheduler (art
 - **Package**: `@workspace/daily-email` at `artifacts/daily-email/` (name kept to avoid churn in the Render build filter)
 - Deployed as a **Render Cron Job** `eos-hourly-sweeps`, defined in repo-root `render.yaml`, cron `0 * * * *`
 - One job: POST three internal HMAC-protected endpoints on the api-server, in order — chapters, reflection, stories. The api-server owns every decision (windows, idempotency, writes).
-- Needs only `APP_URL` + `SESSION_SECRET` (must equal the web service's). No DB, no encryption key, no model or email keys.
+- Needs only `APP_URL` + `INTERNAL_SWEEP_SECRET` (must equal the web service's; falls back to HKDF(SESSION_SECRET, "eos-internal-sweep-v1") when unset, mirroring api-server `lib/secrets.ts`). No DB, no encryption key, no model or email keys. Tokens sign the body: HMAC(secret, `<prefix>:<UTC hour>:<sha256(body)>`), one token per exact request.
 - Hooks: `SCHEDULER_DRY_RUN=1` (call nothing), `SCHEDULER_ONLY_USER=<id>` (scope to one user; a malformed id refuses to run rather than fanning out). Old `DAILY_EMAIL_*` names still honoured.
 
 ## What was retired, and why

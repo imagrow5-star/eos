@@ -14,6 +14,7 @@ import { backfillMemoryImportance } from "./services/memory/backfill";
 import { runDedupBackfill } from "./services/memory/dedupBackfill";
 import { warnIfAgentEnvIncomplete } from "./services/voiceAgentRouting";
 import { sessionSecretIssue, checkDbTls } from "./services/bootGuards";
+import { secretSplitWarnings } from "./lib/secrets";
 import { runAuthTokenHashSweep } from "./services/authTokenHashSweep";
 
 // User content is encrypted at rest — without the master key the app can
@@ -44,9 +45,10 @@ try {
   process.exit(1);
 }
 
-// SESSION_SECRET signs login cookies, voice tokens, unsubscribe links, and the
-// internal sweep HMACs. app.ts refuses to boot without one; production also
-// refuses a weak (< 32 char) one — a short secret is brute-forceable offline.
+// SESSION_SECRET signs login cookies (and, until the dedicated secrets are
+// set, derives the voice-token and internal-sweep keys — lib/secrets.ts).
+// app.ts refuses to boot without one; production also refuses a weak
+// (< 32 char) one — a short secret is brute-forceable offline.
 {
   const secretIssue = sessionSecretIssue();
   if (secretIssue) {
@@ -56,6 +58,7 @@ try {
     }
     logger.warn(`${secretIssue} — acceptable outside production, but fix before deploying`);
   }
+  for (const w of secretSplitWarnings()) logger.warn(w);
 }
 
 const rawPort = process.env["PORT"];

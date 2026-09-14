@@ -467,6 +467,24 @@ app.use(
   }),
 );
 
+// ─── Rate limit for the internal sweep endpoints ──────────────────────────────
+// The scheduler makes three calls an hour. The tokens are 256-bit HMACs, so
+// guessing is hopeless anyway; this caps how cheaply a stranger can make the
+// server verify tokens and, on the stories route, look up an email.
+const INTERNAL_RATE_LIMIT_MAX = Number(process.env.INTERNAL_RATE_LIMIT_MAX ?? 60);
+app.use(
+  "/api/internal",
+  rateLimit({
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    limit: INTERNAL_RATE_LIMIT_MAX,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (_req, res) => {
+      res.status(429).json({ error: "Too many internal requests." });
+    },
+  }),
+);
+
 // ─── Session store (Postgres-backed, survives restarts) ───────────────────────
 const PgStore = connectPgSimple(session);
 
@@ -513,7 +531,17 @@ app.use("/api/elevenlabs/post-call", express.raw({ type: "*/*", limit: "10mb" })
 
 // 1mb: ElevenLabs custom-LLM requests carry the full call transcript, which can
 // exceed the 100kb default on long voice calls.
-app.use(express.json({ limit: "1mb" }));
+// `verify` keeps the exact bytes on req.rawBody: the internal sweep tokens
+// sign the body (lib/internalAuth.ts), and the digest must be over what was
+// sent, not over a re-serialisation of what was parsed.
+app.use(
+  express.json({
+    limit: "1mb",
+    verify: (req, _res, buf) => {
+      (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
+    },
+  }),
+);
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", apiCsp, router);

@@ -19,10 +19,14 @@
 # pnpm-workspace.yaml, which pnpm 9 cannot read), so the build pins pnpm 10
 # through npx rather than relying on runtime detection. Node 22 matches CI.
 #
-# Secrets: the one value marked `sync: false` is prompted for when the
-# Blueprint is first applied and is stored in the env group, never in git.
-# It MUST be identical to the web service's SESSION_SECRET — the internal
-# endpoints verify an HMAC derived from it. Nothing else is shared.
+# Secrets: values marked `sync: false` are prompted for when the Blueprint is
+# applied and stored in the env group, never in git. INTERNAL_SWEEP_SECRET
+# MUST be identical to the web service's — the internal endpoints verify an
+# HMAC under it (api-server lib/internalAuth.ts). It is the only thing the
+# two services share. SESSION_SECRET is transitional: until
+# INTERNAL_SWEEP_SECRET is set on BOTH services the sweep key is derived from
+# it; once both have the dedicated secret, remove SESSION_SECRET from this
+# group so the cookie-signing secret lives in one place only.
 
 services:
   - type: cron
@@ -46,6 +50,11 @@ services:
 envVarGroups:
   - name: eos-scheduler-secrets
     envVars:
-      # Copy from the web service's Environment tab, byte for byte.
+      # Generate once (openssl rand -hex 32) and set the same value on the
+      # web service. Byte for byte identical, or every trigger returns 401.
+      - key: INTERNAL_SWEEP_SECRET
+        sync: false
+      # Transitional fallback only — see the note above. Remove once
+      # INTERNAL_SWEEP_SECRET is set on both services.
       - key: SESSION_SECRET
         sync: false

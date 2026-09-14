@@ -30,7 +30,7 @@ endpoints. The package is still called `daily-email` for historical reasons
    - Region: the web service's region (Oregon)
 
 3. **Environment variables** — only two matter:
-   - `SESSION_SECRET` — must be byte-for-byte identical to the web service's, or every trigger returns 401
+   - `INTERNAL_SWEEP_SECRET` — must be byte-for-byte identical to the web service's, or every trigger returns 401. Generate it once with `openssl rand -hex 32`. It is the only value the two services share. (Until it is set on both, the job falls back to deriving the sweep key from `SESSION_SECRET`, exactly as the api-server does; remove `SESSION_SECRET` from the cron job once the dedicated secret is in place.)
    - `APP_URL` — `https://eoscompanion.com`
    - plus `NODE_ENV=production` and `NODE_VERSION=22`
 
@@ -44,7 +44,7 @@ endpoints. The package is still called `daily-email` for historical reasons
 ## Local test run
 
 ```
-SESSION_SECRET=… APP_URL=http://localhost:3000 pnpm --filter @workspace/daily-email run dev
+INTERNAL_SWEEP_SECRET=… APP_URL=http://localhost:3000 pnpm --filter @workspace/daily-email run dev
 ```
 
 Runs once immediately against the api-server at `APP_URL`. Two hooks:

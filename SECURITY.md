@@ -114,10 +114,27 @@ keeps. Operator guidance:
   production on cleartext**; `DATABASE_SSL=require|verify` configures the
   pool, `DB_TLS_ENFORCE=off` is a loud, deliberate escape hatch for private
   networks (`api-server/src/services/bootGuards.ts`).
-- Production refuses to boot with a `SESSION_SECRET` under 32 characters
-  (it signs login cookies, voice tokens, unsubscribe links, and internal
-  HMAC sweep tokens). Sessions: Postgres-backed, httpOnly, SameSite=Lax,
-  Secure in production; helmet CSP; rate limits on auth endpoints.
+- Production refuses to boot with a `SESSION_SECRET` under 32 characters.
+  Sessions: Postgres-backed, httpOnly, SameSite=Lax, Secure in production;
+  helmet CSP; rate limits on auth endpoints.
+- **One secret per job** (`api-server/src/lib/secrets.ts`): `SESSION_SECRET`
+  signs login cookies only; `VOICE_TOKEN_SECRET` signs per-call voice
+  tokens; `INTERNAL_SWEEP_SECRET` authenticates the three internal sweep
+  endpoints and is the only value shared with the scheduler. A leak of one
+  forges nothing signed by the others. Until a dedicated secret is set its
+  key is derived from `SESSION_SECRET` with HKDF and a per-purpose label
+  (the keys are still independent of each other and of the cookie key);
+  production logs a warning at boot for each dedicated secret still
+  missing. Setting `INTERNAL_SWEEP_SECRET` on both services and removing
+  `SESSION_SECRET` from the cron job completes the split.
+- **Internal sweep endpoints** (`lib/internalAuth.ts`): the token is an HMAC
+  over the route prefix, the UTC hour and the SHA-256 of the raw request
+  body, so a captured token is good for exactly one request body (it used to
+  be replayable for up to two hours with any body). Current and previous
+  hour accepted. Body keys are whitelisted per route (unknown key → 400).
+  Dry-run responses carry no user ids in production. The stories route's
+  email scope answers identically for an address with no account. All three
+  sit behind a per-IP limiter (60 per 15 minutes).
 - Client↔server TLS is terminated by the hosting platform (Render).
   `trust proxy` is `1`: exactly one proxy hop is trusted, so `req.ip` (which
   keys the auth rate limiter) is the address Render's edge appended, never

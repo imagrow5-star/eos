@@ -20,7 +20,7 @@ import { db, messagesTable, winsTable, commitmentsTable, profileTable, weeklyCha
 import app from "../app.js";
 import { generateWeeklyReviewForUser, runWeeklyReviewSweep, targetWeek, inGenerationWindow } from "../services/weeklyReviewGenerate.js";
 import { listStoriesOfKind } from "../services/stories.js";
-import { storiesRunToken } from "../routes/stories.js";
+import { internalToken } from "./helpers/internalToken.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const DB = Boolean(process.env.DATABASE_URL);
@@ -216,11 +216,11 @@ describe.skipIf(!DB)("sweep + internal route", () => {
     expect(no.status).toBe(401);
     const bad = await request(app).post("/api/internal/stories/run").set("x-internal-token", "nope").send({ userId });
     expect(bad.status).toBe(401);
-    const token = storiesRunToken(process.env.SESSION_SECRET!, new Date());
+    const body = { userId, ignoreWindow: true };
     const ok = await request(app)
       .post("/api/internal/stories/run")
-      .set("x-internal-token", token)
-      .send({ userId, ignoreWindow: true });
+      .set("x-internal-token", internalToken("stories-run", body))
+      .send(body);
     expect(ok.status).toBe(200);
     expect(ok.body.week.considered).toBe(1);
     expect(ok.body.subjects.considered).toBe(1);
