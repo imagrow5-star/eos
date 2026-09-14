@@ -24,6 +24,7 @@ import {
 import { useContextualGreeting } from "@/api/contextualGreeting";
 import { ChangeEmailForm } from "@/components/ChangeEmailForm";
 import { ChangePasswordForm } from "@/components/ChangePasswordForm";
+import { PasswordInput } from "@/components/PasswordInput";
 import { SignOutEverywhere } from "@/components/SignOutEverywhere";
 import { chatMessageSchema, type ChatMessageFormValues } from "@/lib/schemas";
 import { CHAT_DRAFT_KEY, ONBOARDING_DRAFT_KEY, clearSessionDrafts } from "@/lib/sessionDrafts";
@@ -354,6 +355,7 @@ export default function Chat() {
   const [obVoiceId, setObVoiceId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deletePassword, setDeletePassword] = useState("");
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   // Streaming state: text accumulates token-by-token while the model generates
   const [streamingContent, setStreamingContent] = useState("");
@@ -2824,11 +2826,15 @@ export default function Chat() {
   };
 
   const handleDeleteAccount = async () => {
-    if (deleteConfirmText !== "DELETE") return;
+    if (deleteConfirmText !== "DELETE" || !deletePassword) return;
     setIsDeletingAccount(true);
     setDeleteError(null);
     try {
-      const res = await apiFetch(`${import.meta.env.BASE_URL}api/auth/account`, { method: "DELETE" });
+      const res = await apiFetch(`${import.meta.env.BASE_URL}api/auth/account`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: deletePassword }),
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setDeleteError((body as any)?.error ?? "Something went wrong. Please try again.");
@@ -4311,7 +4317,18 @@ export default function Chat() {
                     This permanently deletes your account and all your conversations, memories, habits, and goals. This cannot be undone.
                   </p>
                   <p className="text-[10px] text-muted-foreground/60 tracking-wider uppercase">
-                    Type DELETE to confirm
+                    Enter your password, then type DELETE to confirm
+                  </p>
+                  <PasswordInput
+                    autoComplete="current-password"
+                    value={deletePassword}
+                    onChange={(e) => { setDeletePassword(e.target.value); setDeleteError(null); }}
+                    placeholder="Current password"
+                    className="w-full bg-background/60 border border-destructive/20 rounded-md px-3 h-9 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-destructive/50"
+                    disabled={isDeletingAccount}
+                  />
+                  <p className="text-[10.5px] text-muted-foreground/45 leading-relaxed">
+                    Signed in with Google and never set a password? Use "Forgot password" on the sign-in screen first.
                   </p>
                   {deleteError && (
                     <p className="text-[11px] text-destructive/80">{deleteError}</p>
@@ -4329,7 +4346,7 @@ export default function Chat() {
                       size="sm"
                       className="h-9 bg-destructive/10 text-destructive hover:bg-destructive/20 border border-destructive/25 px-4 disabled:opacity-40"
                       onClick={handleDeleteAccount}
-                      disabled={deleteConfirmText !== "DELETE" || isDeletingAccount}
+                      disabled={deleteConfirmText !== "DELETE" || !deletePassword || isDeletingAccount}
                     >
                       {isDeletingAccount ? (
                         <motion.div
@@ -4345,7 +4362,7 @@ export default function Chat() {
                       size="sm"
                       variant="ghost"
                       className="h-9 text-muted-foreground/50 hover:text-muted-foreground px-3"
-                      onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(""); }}
+                      onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(""); setDeletePassword(""); }}
                       disabled={isDeletingAccount}
                     >
                       <X className="w-4 h-4" />

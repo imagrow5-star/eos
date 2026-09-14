@@ -485,7 +485,7 @@ describe("account deletion cancels Dodo billing", () => {
     await postWebhook(created, sign(created));
 
     const before = dodoCalls.length;
-    const res = await agent.delete("/api/auth/account");
+    const res = await agent.delete("/api/auth/account").send({ password: "Test1234!" });
     expect(res.status).toBe(200);
     expect(
       dodoCalls
@@ -503,7 +503,7 @@ describe("account deletion cancels Dodo billing", () => {
 
     dodoCancelFails = true;
     try {
-      const res = await agent.delete("/api/auth/account");
+      const res = await agent.delete("/api/auth/account").send({ password: "Test1234!" });
       expect(res.status).toBe(200); // the user's right to erase beats bookkeeping
       const gone = await pool.query(`SELECT 1 FROM users WHERE id = $1`, [userId]);
       expect(gone.rowCount).toBe(0);

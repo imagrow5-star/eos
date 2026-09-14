@@ -209,7 +209,15 @@ describe("DELETE /api/auth/account", () => {
     expect(await rowCount("habits", "user_id = $1", [userId])).toBeGreaterThan(0);
 
     // ── 4. Delete account ─────────────────────────────────────────────────
-    const deleteRes = await agent.delete("/api/auth/account");
+    // Without the password nothing happens; with the wrong one nothing happens.
+    const noPassword = await agent.delete("/api/auth/account");
+    expect(noPassword.status).toBe(400);
+    const wrongPassword = await agent.delete("/api/auth/account").send({ password: "not-the-password" });
+    expect(wrongPassword.status).toBe(403);
+    expect(await rowCount("messages", "user_id = $1", [userId])).toBeGreaterThan(0);
+    expect(await rowCount("users", "id = $1", [userId])).toBe(1);
+
+    const deleteRes = await agent.delete("/api/auth/account").send({ password: TEST_PASSWORD });
     expect(deleteRes.status).toBe(200);
     expect(deleteRes.body.ok).toBe(true);
 
@@ -415,7 +423,7 @@ describe("DELETE /api/auth/account", () => {
     ]);
 
     // ── 4. Delete user A's account ────────────────────────────────────────
-    const deleteRes = await agentA.delete("/api/auth/account");
+    const deleteRes = await agentA.delete("/api/auth/account").send({ password: TEST_PASSWORD });
     expect(deleteRes.status).toBe(200);
     expect(deleteRes.body.ok).toBe(true);
 

@@ -71,9 +71,19 @@ describe("security headers (helmet)", () => {
     expect(csp).toContain("default-src 'none'");
     expect(csp).toContain("frame-ancestors 'self'");
     expect(res.headers["cross-origin-resource-policy"]).toBe("same-origin");
-    // frameguard is off — frame-ancestors is the single source of truth
+    // On /api frame-ancestors is the single source of truth
     expect(res.headers["x-frame-options"]).toBeUndefined();
     expect(res.headers["x-content-type-options"]).toBe("nosniff");
+  });
+
+  it("every page outside /api may only be framed by this origin (clickjacking)", async () => {
+    // The landing page, the SPA entry and a legal page — whether or not the
+    // built bundle is present (the guard runs before the static handler).
+    for (const url of ["/", "/?enter=1", "/terms", "/some/spa/route"]) {
+      const res = await request(app).get(url);
+      expect(res.headers["x-frame-options"], url).toBe("SAMEORIGIN");
+      expect(res.headers["content-security-policy"], url).toBe("frame-ancestors 'self'");
+    }
   });
 });
 
