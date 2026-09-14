@@ -12,6 +12,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import request from "supertest";
 import pg from "pg";
 import app from "../app.js";
+import { decryptText } from "@workspace/db";
 import { founderNotifyHtml, LEAD_CONSENT_TEXT } from "../routes/leads.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
@@ -82,7 +83,9 @@ describe("POST /api/leads — the capture", () => {
       [email],
     );
     expect(rows.rowCount).toBe(1);
-    expect(rows.rows[0].message).toBe("What happens to what I tell it?");
+    // The message is a stranger's worry in their own words: ciphertext on disk.
+    expect(rows.rows[0].message).toMatch(/^enc:v1:/);
+    expect(decryptText(rows.rows[0].message, "leads.message")).toBe("What happens to what I tell it?");
     expect(rows.rows[0].source).toBe("landing_hero");
     expect(rows.rows[0].consent_text).toBe(LEAD_CONSENT_TEXT);
   });
@@ -102,14 +105,14 @@ describe("POST /api/leads — the capture", () => {
     await request(app).post("/api/leads").send({ email, message: "second question" });
     const rows = await pool.query("SELECT message FROM leads WHERE email = $1", [email]);
     expect(rows.rowCount).toBe(1);
-    expect(rows.rows[0].message).toBe("second question");
+    expect(decryptText(rows.rows[0].message, "leads.message")).toBe("second question");
   });
 
   it("caps an over-long message rather than storing unbounded text", async () => {
     const email = freshEmail("long");
     await request(app).post("/api/leads").send({ email, message: "x".repeat(5000) });
-    const rows = await pool.query("SELECT length(message) AS n FROM leads WHERE email = $1", [email]);
-    expect(Number(rows.rows[0].n)).toBe(2000);
+    const rows = await pool.query("SELECT message FROM leads WHERE email = $1", [email]);
+    expect(decryptText(rows.rows[0].message, "leads.message")).toHaveLength(2000);
   });
 
   it("rejects an obviously invalid email", async () => {

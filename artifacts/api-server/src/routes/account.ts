@@ -795,7 +795,11 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
       content: dText(r.content, "messages.content"),
     })),
     memoryFacts: memoryResult.rows.map((r) => ({ ...r, fact: dText(r.fact, "memory_facts.fact") })),
-    memoryFeelings: feelingsResult.rows.map((r) => ({ ...r, feeling: dText(r.feeling, "memory_feelings.feeling") })),
+    memoryFeelings: feelingsResult.rows.map((r) => ({
+      ...r,
+      feeling: dText(r.feeling, "memory_feelings.feeling"),
+      category: dText(r.category, "memory_feelings.category"),
+    })),
     wins: winsResult.rows.map((r) => ({ ...r, content: dText(r.content, "wins.content") })),
     habits: habitsResult.rows.map((r) => ({
       ...r,
@@ -817,7 +821,7 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
       content: dText(r.content, "commitments.content"),
       cue: dText(r.cue, "commitments.cue"),
     })),
-    reminders: remindersResult.rows,
+    reminders: remindersResult.rows.map((r) => ({ ...r, content: dText(r.content, "reminders.content") })),
     personalitySignals: personalitySignalsResult.rows.map((r) => ({
       ...r,
       signal: dText(r.signal, "personality_signals.signal"),
@@ -852,6 +856,7 @@ export async function fetchExportPayload(userId: number, range: DateRange = {}) 
     })),
     storyThreads: storyThreadsResult.rows.map((r) => ({
       ...r,
+      label: dText(r.label, "story_threads.label"),
       retellings: dJson(r.retellings, "story_threads.retellings"),
     })),
     pushSubscriptions: pushSubscriptionsResult.rows,

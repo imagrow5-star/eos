@@ -28,7 +28,9 @@ export const memoryFeelingsTable = pgTable("memory_feelings", {
   // Emotion family: grief | shame | joy | fear | anger | love | loneliness |
   // hope | anxiety | pride | other. Free-ish text (model-supplied), defaulted so
   // a bad/blank value never breaks the insert.
-  category: text("category").notNull().default("other"),
+  // The emotion behind the feeling (shame, grief, …): as telling as the text. Encrypted at rest;
+  // the DB default stays plaintext "other" only for rows inserted outside the ORM (the boot sweep encrypts them).
+  category: encryptedText("category", "memory_feelings.category").notNull().default("other"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   // ── Importance ranking (shared with facts, Sprint 2A) ───────────────────────
   // Identical columns to memory_facts so scoreFactImportance ranks feelings and
