@@ -205,8 +205,13 @@
      a thin line filling over the minute (no clock), a status word, End. */
   .demo-voice{margin-top:16px;text-align:center}
   .demo-voice[hidden]{display:none}
-  .demo-voice-btn{background:none;border:0;border-bottom:1px solid rgba(92,72,44,.25);border-radius:0;padding:2px 1px;cursor:pointer;font:inherit;font-size:15.5px;color:var(--ink-soft);transition:color .2s,border-color .2s}
-  .demo-voice-btn:hover{color:var(--ink);border-color:var(--ink-soft)}
+  .demo-voice-btn{display:inline-flex;align-items:center;gap:8px;background:none;border:0;border-radius:0;padding:2px 1px;cursor:pointer;font:inherit;font-size:15.5px;color:var(--ink-soft);transition:color .2s}
+  .demo-voice-btn span{border-bottom:1px solid rgba(92,72,44,.25);transition:border-color .2s}
+  .demo-voice-btn:hover span{border-color:var(--ink-soft)}
+  /* A simple outlined mic, the text's colour, sized to the x-height — a
+     signal people scan for, not a filled button. */
+  .demo-voice-mic{width:17px;height:17px;flex:none;opacity:.85}
+  .demo-voice-btn:hover{color:var(--ink)}
   .demo-voice-btn:focus-visible{outline:none;color:var(--ink);box-shadow:0 0 0 3px rgba(95,127,92,.18)}
   .demo-voice-btn[disabled]{opacity:.55;cursor:default}
   .demo-call{margin-top:18px}
@@ -504,7 +509,7 @@
       <!-- Voice: shown only when the server says a minute is available for this
            browser and address today (demo-voice.js asks). The line is the button. -->
       <div class="demo-voice" id="demo-voice" hidden>
-        <button type="button" class="demo-voice-btn" id="demo-voice-btn">Or hear it &mdash; one minute, no signup.</button>
+        <button type="button" class="demo-voice-btn" id="demo-voice-btn"><svg class="demo-voice-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg><span>Or hear it &mdash; one minute, no signup.</span></button>
         <p class="demo-err" id="demo-voice-err" role="alert" hidden></p>
       </div>
       <div class="demo-call" id="demo-call" hidden aria-live="polite">
