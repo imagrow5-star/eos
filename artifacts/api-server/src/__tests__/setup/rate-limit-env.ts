@@ -40,3 +40,6 @@ process.env.CONTEXTUAL_GREETING_LIMIT_PER_HOUR ??= "100000";
 process.env.CONTEXTUAL_GREETING_LIMIT_PER_DAY ??= "100000";
 process.env.ACCOUNT_EXPORT_LIMIT_PER_HOUR ??= "100000";
 process.env.ACCOUNT_EXPORT_SUMMARY_LIMIT_PER_HOUR ??= "100000";
+
+// Landing-page demo (routes/demo.ts). demo.test.ts sets a small value before importing the app.
+process.env.DEMO_TEXT_LIMIT_PER_HOUR ??= "100000";
