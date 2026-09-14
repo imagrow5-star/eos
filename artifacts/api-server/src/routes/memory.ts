@@ -46,6 +46,7 @@ import {
 } from "@workspace/api-zod";
 import { todayInTimezone, formatDate } from "../services/stage.js";
 import { cleanMemoryText, WIN_TEXT_MAX } from "../lib/memoryText.js";
+import { invalidateFrozenSystem } from "../services/voicePromptCache.js";
 
 const router: IRouter = Router();
 
@@ -251,6 +252,7 @@ router.post(
         };
       });
 
+      invalidateFrozenSystem(userId);
       try {
         const uh = hashUserIdForLog(userId);
         if (uh) logger.info({ uh, deleted }, "Memory reset (dev)");
@@ -322,6 +324,8 @@ router.delete("/memory/facts/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "not found" });
     return;
   }
+  // A live voice call rebuilds its prompt on the next turn (memory audit, item 3).
+  invalidateFrozenSystem(userId);
   res.json({ ok: true });
 });
 
@@ -350,6 +354,7 @@ router.patch("/memory/facts/:factId", async (req, res): Promise<void> => {
     res.status(404).json({ error: "not found" });
     return;
   }
+  invalidateFrozenSystem(userId); // the star changes ranking, so a live call re-ranks next turn
   res.json(GetMemoryFactsResponseItem.parse(updated));
 });
 
