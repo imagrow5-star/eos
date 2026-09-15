@@ -9,7 +9,19 @@
  * specific keys it handles, plus returning users (session cookie).
  */
 import { describe, it, expect } from "vitest";
-import { shouldServeLanding, SPA_ROOT_QUERY_KEYS } from "../lib/landingRoute.js";
+import { shouldServeLanding, shouldServeStaticPricing, hasSessionCookie, SPA_ROOT_QUERY_KEYS } from "../lib/landingRoute.js";
+
+describe("shouldServeStaticPricing — static plans for visitors, the app for members", () => {
+  it("visitors get the static page, members the app", () => {
+    expect(shouldServeStaticPricing(undefined)).toBe(true);
+    expect(shouldServeStaticPricing("")).toBe(true);
+    expect(shouldServeStaticPricing("theme=dark; _ga=x")).toBe(true);
+    expect(shouldServeStaticPricing("sid=abc")).toBe(false);
+    expect(shouldServeStaticPricing("theme=dark; sid=abc")).toBe(false);
+    expect(hasSessionCookie("sid=abc")).toBe(true);
+    expect(hasSessionCookie(undefined)).toBe(false);
+  });
+});
 
 describe("shouldServeLanding — landing page vs SPA at /", () => {
   it("serves the landing page for a clean root URL", () => {
