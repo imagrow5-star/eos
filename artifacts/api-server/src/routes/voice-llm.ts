@@ -32,6 +32,7 @@ import { CRISIS_REINFORCEMENT_BLOCK_VOICE } from "../services/crisis/reinforceme
 import { resolveHelplines } from "../services/crisis/helplines.js";
 import { recordVoiceCrisisEvent } from "../services/crisis/events.js";
 import { memoryCutReport, logMemoryCut } from "../services/memory/cutReport.js";
+import { isContinuationOf } from "../services/voice/continuation.js";
 
 const router: IRouter = Router();
 
@@ -372,7 +373,7 @@ export async function persistVoiceTurn(args: {
       // equality (eq(content, x)) can never match — fetch the call window's
       // rows (drizzle decrypts on read) and compare in app code instead.
       const recentUserRows = await db
-        .select({ content: messagesTable.content })
+        .select({ id: messagesTable.id, content: messagesTable.content, createdAt: messagesTable.createdAt })
         .from(messagesTable)
         .where(
           and(
@@ -380,9 +381,22 @@ export async function persistVoiceTurn(args: {
             eq(messagesTable.role, "user"),
             gte(messagesTable.createdAt, callStart),
           ),
-        );
+        )
+        .orderBy(desc(messagesTable.createdAt), desc(messagesTable.id));
       const userDupe = recentUserRows.some((r) => r.content === userContent);
-      if (!userDupe) {
+      const latest = recentUserRows[0];
+      if (userDupe) {
+        // Exact re-send (transcript revision A→B→A, double fire): nothing new.
+      } else if (latest && isContinuationOf(latest.content, userContent)) {
+        // End of turn fired mid-thought and the person carried on: Hume sent
+        // the whole utterance again with more on the end. One turn, one row —
+        // replace, don't add (services/voice/continuation.ts).
+        await db.update(messagesTable).set({ content: userContent }).where(eq(messagesTable.id, latest.id));
+        savedUser = true;
+      } else if (latest && isContinuationOf(userContent, latest.content)) {
+        // A shorter version of what is already stored (late duplicate of an
+        // earlier fire): the longer row stands.
+      } else {
         await db
           .insert(messagesTable)
           .values({ userId, role: "user", content: userContent, isMorningNote: false });

@@ -89,6 +89,8 @@ describe("voice addendum: length", () => {
       // Reflection craft (PR 7): statements, not questions; the next sentence, not the last one.
       "Reflect as a statement, never a question. Never open with \"it sounds like\", \"it seems like\" or \"what I'm hearing is\".",
       "Don't hand back what they just said. Say the sentence they were about to say next, the one underneath it.",
+      // Tone is felt, never named: the prosody line must never be read aloud.
+      "It is for you alone. Let it shape how you respond; never name it, quote it, or ask about it",
     ]) {
       expect(addendum).toContain(line);
     }
