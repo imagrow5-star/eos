@@ -79,9 +79,17 @@ export const MODEL_PRICES_PER_MTOK: Record<
 /**
  * Default model for companion replies. Text chat always uses this; the
  * realtime voice path passes an override (see routes/voice-llm.ts) because
- * spoken replies are latency-critical and short (max_tokens 600).
+ * spoken replies are latency-critical and short (VOICE_MAX_TOKENS).
  */
 export const DEFAULT_COMPANION_MODEL = "claude-sonnet-4-5-20250929";
+
+/**
+ * Output cap for spoken replies (voice audit, PR 5). The voice addendum asks
+ * for one or two sentences, about 25 words; 300 tokens is a guard well above
+ * that, so a reply that genuinely needs more still fits, while a runaway one
+ * can't be read out for a minute. Text chat keeps its own 600.
+ */
+export const VOICE_MAX_TOKENS = 300;
 
 export function logAiUsage(callType: string, model: string, usage: unknown): void {
   try {
@@ -187,7 +195,7 @@ function logAiDegraded(callType: string, err: unknown): void {
 
 const VOICE_CALL_BASE = `
 VOICE CALL MODE — you are speaking aloud with them on a live voice call right now.
-- Keep replies SHORT: 1–3 brief sentences, under about 45 words. One thought at a time.
+- One or two sentences, about 25 words. Go longer only when what they asked genuinely needs it.
 - Sound like natural speech: contractions, simple warm words. No lists, no headings, no markdown, no emojis, no asterisks, no stage directions.
 - Ask at most one gentle question, and only when it truly helps.
 - When they agree to a goal or routine you proposed, Eos saves it automatically — confirm in one short, warm sentence that it's on their Journey, then move on.`.trim();
@@ -229,6 +237,12 @@ export function buildVoiceCallAddendum(hasSkipTurnTool: boolean): string {
 export interface CompanionCallOptions {
   /** Extra instructions appended to the END of the stable block (e.g. voice brevity). */
   systemExtra?: string;
+  /**
+   * Output cap for this call (defaults to 600, the text-chat cap). Voice
+   * passes VOICE_MAX_TOKENS: a spoken reply is one or two sentences, and the
+   * cap is the guard that a runaway reply can't be read out for a minute.
+   */
+  maxTokens?: number;
   /** Tag for the ai_usage log line: "chat" | "voice" | "voice_fallback" | … */
   callType?: string;
   /**
@@ -366,7 +380,7 @@ export async function streamCompanionReply(
 
     const stream = await (anthropic.messages.create as any)({
       model,
-      max_tokens: 600,
+      max_tokens: opts?.maxTokens ?? 600,
       temperature: 0.8,
       system: systemBlocks,
       messages,

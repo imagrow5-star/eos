@@ -6,7 +6,7 @@ import { logger } from "../lib/logger.js";
 import { mintDemoVoiceToken, parseDemoVoiceToken, type DemoVoiceTokenClaims } from "../lib/demoVoiceToken.js";
 import { fetchHumeAccessToken, humeConfigId, humeVoiceIdForGender } from "../services/hume.js";
 import { buildSystemPrompt } from "../services/systemPrompt.js";
-import { streamCompanionReply, buildVoiceCallAddendum } from "../services/ai.js";
+import { streamCompanionReply, buildVoiceCallAddendum, VOICE_MAX_TOKENS } from "../services/ai.js";
 import { GREETING_POOLS } from "../services/voiceGreeting.js";
 import { detectCrisis } from "../services/crisis/detector.js";
 import { detectCrisisSemantic, SEMANTIC_OFFPATH_TIMEOUT_MS } from "../services/crisis/semanticDetector.js";
@@ -327,7 +327,7 @@ export async function demoVoiceCompletionHandler(
           flushRes();
         }
       },
-      { systemExtra, callType: "demo_voice", cacheConversation: true, model: resolveVoiceLlmModel() },
+      { systemExtra, callType: "demo_voice", cacheConversation: true, model: resolveVoiceLlmModel(), maxTokens: VOICE_MAX_TOKENS },
     );
     const tModelEnd = performance.now();
     finish(reply.text);

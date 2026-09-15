@@ -11,6 +11,7 @@ import {
   appendRecentPhrase,
   runConversationExtractions,
   buildVoiceCallAddendum,
+  VOICE_MAX_TOKENS,
 } from "../services/ai.js";
 import { buildVoiceFirstMessage } from "../services/voiceGreeting.js";
 import { resumeLineFor, isResumeLine } from "../services/voiceResume.js";
@@ -843,6 +844,7 @@ export async function voiceCompletionHandler(
         callType: "voice",
         cacheConversation: true,
         model: resolveVoiceLlmModel(),
+        maxTokens: VOICE_MAX_TOKENS,
         ...(tools.length
           ? {
               tools,
