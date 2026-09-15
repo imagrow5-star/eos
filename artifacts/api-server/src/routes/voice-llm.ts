@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import crypto from "node:crypto";
-import { eq, desc, and, lt, gte } from "drizzle-orm";
+import { eq, desc, asc, and, lt, gte } from "drizzle-orm";
 import { db, messagesTable, type Profile } from "@workspace/db";
 import { buildSystemPrompt, REMEMBER_ACK_GUIDANCE, type SystemPromptParts } from "../services/systemPrompt.js";
 import { getFrozenSystem as getFrozenEntry, setFrozenSystem as setFrozenEntry, peekFrozenSystem } from "../services/voicePromptCache.js";
@@ -13,6 +13,7 @@ import {
   buildVoiceCallAddendum,
 } from "../services/ai.js";
 import { buildVoiceFirstMessage } from "../services/voiceGreeting.js";
+import { resumeLineFor, isResumeLine } from "../services/voiceResume.js";
 import { calculateStage } from "../services/stage.js";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { verifyVoiceToken } from "../lib/voiceToken.js";
@@ -304,6 +305,25 @@ export function prewarmFrozenSystem(userId: number, issuedAt: number, profile: P
   })();
 }
 
+// ─── Reconnect detection ─────────────────────────────────────────────────────
+// Has the person said anything in this call yet? A user row since the call's
+// issuedAt (the voice token is minted at call start and re-sent on every Hume
+// redial, so issuedAt survives a reconnect). Exported for tests.
+export async function hasSpokenThisCall(userId: number, issuedAt: number): Promise<boolean> {
+  const rows = await db
+    .select({ id: messagesTable.id })
+    .from(messagesTable)
+    .where(
+      and(
+        eq(messagesTable.userId, userId),
+        eq(messagesTable.role, "user"),
+        gte(messagesTable.createdAt, new Date(issuedAt)),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
 // ─── Voice-turn persistence with in-call dedup ────────────────────────────────
 // ElevenLabs fires MULTIPLE completion requests per spoken turn: rolling ASR
 // finals revise the user's sentence, interruptions regenerate replies, and
@@ -481,7 +501,15 @@ export async function voiceCompletionHandler(
     // Greeting turn: use the profile the session mint primed seconds ago
     // (DB-free). Real turns always re-read — see primeCallProfile's note.
     const primed = synthetic ? primedCallProfile(userId, issuedAt) : null;
-    const profile = primed ?? (await getOrCreateProfileForUser(userId));
+    // Reconnect check (voice audit, PR 3): Hume's socket redials into a NEW
+    // EVI chat mid-call, whose first request is an empty transcript exactly
+    // like a fresh call's. If the person has already spoken in THIS call (a
+    // user row since issuedAt), this is a reconnect: one resume line, no
+    // second greeting. One indexed count, in parallel with the profile.
+    const [profile, reconnect] = await Promise.all([
+      primed ?? getOrCreateProfileForUser(userId),
+      synthetic ? hasSpokenThisCall(userId, issuedAt) : Promise.resolve(false),
+    ]);
     const tProfile = performance.now();
 
     // ── Fast greeting path (see the section comment above the route) ──
@@ -517,7 +545,15 @@ export async function voiceCompletionHandler(
       const language = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
       let greetingText: string;
       let greetingDegraded = false;
-      if (language === "en") {
+      if (reconnect) {
+        // Mid-call reconnect: pick up, don't greet again. Fixed per language
+        // so the next turn's transcript identifies the reconnect (see below).
+        greetingText = resumeLineFor(language);
+        if (wantStream) {
+          res.write(`data: ${chunkPayload({ content: greetingText }, null)}\n\n`);
+          flushRes();
+        }
+      } else if (language === "en") {
         // Curated instant line — no LLM round trip at all.
         greetingText = buildVoiceFirstMessage(profile);
         if (wantStream) {
@@ -570,8 +606,9 @@ export async function voiceCompletionHandler(
         {
           uh: uhForTiming,
           greeting: true,
+          reconnect,
           primedProfile: primed != null,
-          curated: language === "en",
+          curated: !reconnect && language === "en",
           authMs: ms(tStart, tAuth),
           profileMs: ms(tAuth, tProfile),
           totalMs: ms(tStart),
@@ -583,15 +620,19 @@ export async function voiceCompletionHandler(
 
       // Same persistence contract as before: the greeting lands in chat
       // history (assistant row only; dedup + serialization in persistVoiceTurn).
-      void persistVoiceTurn({
-        userId,
-        issuedAt,
-        synthetic: true,
-        userContent: freshUserContent,
-        fullText: greetingText,
-        profile,
-        degraded: greetingDegraded,
-      }).catch((err) => logger.error({ err }, "voice-llm: persisting greeting failed"));
+      // The resume line is spoken, not stored — it's a connection artefact,
+      // not part of the conversation.
+      if (!reconnect) {
+        void persistVoiceTurn({
+          userId,
+          issuedAt,
+          synthetic: true,
+          userContent: freshUserContent,
+          fullText: greetingText,
+          profile,
+          degraded: greetingDegraded,
+        }).catch((err) => logger.error({ err }, "voice-llm: persisting greeting failed"));
+      }
       return;
     }
 
@@ -617,7 +658,12 @@ export async function voiceCompletionHandler(
     void semanticP.then(() => { classifierResolvedAt = performance.now(); });
     const tDbStart = performance.now();
     const frozenHit = peekFrozenSystem(userId, issuedAt) != null;
-    const [stage, preCallRows] = await Promise.all([
+    // After a reconnect the transcript is the NEW chat only: it opens with
+    // the resume line and has none of the turns before the drop. Those were
+    // persisted per turn since issuedAt, so load them back (only then — a
+    // normal turn pays no extra query).
+    const resumed = callContext.some((t) => t.role === "assistant" && isResumeLine(t.content));
+    const [stage, preCallRows, inCallRows] = await Promise.all([
       calculateStage(profile),
       db
         .select()
@@ -625,6 +671,14 @@ export async function voiceCompletionHandler(
         .where(and(eq(messagesTable.userId, userId), lt(messagesTable.createdAt, new Date(issuedAt))))
         .orderBy(desc(messagesTable.createdAt))
         .limit(12),
+      resumed
+        ? db
+            .select({ role: messagesTable.role, content: messagesTable.content })
+            .from(messagesTable)
+            .where(and(eq(messagesTable.userId, userId), gte(messagesTable.createdAt, new Date(issuedAt))))
+            .orderBy(asc(messagesTable.createdAt))
+            .limit(40)
+        : Promise.resolve([] as { role: string; content: string }[]),
     ]);
     const tDb = performance.now();
     const { parts: systemPrompt, toneExtra } = await getFrozenSystem(userId, issuedAt, profile, stage);
@@ -660,7 +714,22 @@ export async function voiceCompletionHandler(
     // (window size floats 20–29) instead of sliding by one each turn — a
     // per-turn slide changes the first message and would void the cached
     // conversation prefix on every request.
-    const allTurns = sanitizeTurns([...preCall, ...callContext]);
+    // Reconnect: pre-drop turns from the DB go first; whatever the new chat's
+    // transcript already carries (its own turns are persisted too) is dropped
+    // by exact content, and the resume line itself never reaches the model.
+    const transcriptContent = new Set([...callContext.map((t) => t.content), freshUserContent]);
+    const preDrop: ChatMsg[] = resumed
+      ? inCallRows
+          .filter((m) => !transcriptContent.has(m.content))
+          .map((m) => ({
+            role: (m.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
+            content: m.content,
+          }))
+      : [];
+    const thisChat = resumed
+      ? callContext.filter((t) => !(t.role === "assistant" && isResumeLine(t.content)))
+      : callContext;
+    const allTurns = sanitizeTurns([...preCall, ...preDrop, ...thisChat]);
     const windowStart = allTurns.length > 29 ? Math.floor((allTurns.length - 20) / 10) * 10 : 0;
     const merged = mergeTrailingUserTurns(allTurns.slice(windowStart), userContent);
     const contextMessages = merged.context;
@@ -798,6 +867,7 @@ export async function voiceCompletionHandler(
         totalMs: ms(tStart),
         replyWords: fullText.split(/\s+/).filter(Boolean).length,
         contextTurns: contextMessages.length,
+        resumed,
         crisis: crisisActive,
         degraded: reply.degraded,
         tone: voiceTone !== null,
