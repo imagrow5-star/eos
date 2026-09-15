@@ -21,7 +21,12 @@ import { voiceTurnUsageLimits } from "../middleware/usageLimits.js";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { detectCrisis } from "../services/crisis/detector.js";
-import { detectCrisisSemantic, resolveCrisisOutcome } from "../services/crisis/semanticDetector.js";
+import {
+  detectCrisisSemantic,
+  SEMANTIC_PATTERN_NAME,
+  SEMANTIC_OFFPATH_TIMEOUT_MS,
+} from "../services/crisis/semanticDetector.js";
+import { armCallCrisis, takeCallCrisis } from "../services/crisis/callFlag.js";
 import { CRISIS_REINFORCEMENT_BLOCK_VOICE } from "../services/crisis/reinforcement.js";
 import { resolveHelplines } from "../services/crisis/helplines.js";
 import { recordVoiceCrisisEvent } from "../services/crisis/events.js";
@@ -645,17 +650,30 @@ export async function voiceCompletionHandler(
     // only (one uncached turn; the frozen call prefix resumes next turn).
     const voiceUserLanguage = (profile as { preferredLanguage?: string }).preferredLanguage ?? "en";
     const crisis = synthetic ? { matched: false as const } : detectCrisis(freshUserContent, voiceUserLanguage);
-    // Semantic backstop: fire NOW (regex-miss, non-synthetic only) and await it
-    // just before building this turn's prompt — the DB round-trips below overlap
-    // the classifier, so a normal spoken turn isn't taxed while a paraphrased
-    // crisis still earns the full reinforcement + on-screen helpline card.
-    const semanticP = synthetic || crisis.matched
-      ? Promise.resolve({ matched: false, available: false })
-      : detectCrisisSemantic(freshUserContent);
-    // Timing: when the classifier actually resolved, versus when generation
-    // had to wait for it — the difference is what it costs the turn.
+    // A late classifier "yes" on the PREVIOUS turn armed this one (see below).
+    const pendingPattern = synthetic ? null : takeCallCrisis(userId, issuedAt);
+    // Semantic backstop, OFF the critical path (voice audit, PR 4): it fires
+    // now and the reply does not wait for it. Regex keeps its same-turn
+    // reinforcement; a paraphrased crisis the classifier catches late still
+    // gets its event row (the card reaches the screen through the status
+    // poll within seconds) and arms the next turn's reinforcement block.
+    const classifierRan = !(synthetic || crisis.matched);
     let classifierResolvedAt: number | null = null;
-    void semanticP.then(() => { classifierResolvedAt = performance.now(); });
+    if (classifierRan) void detectCrisisSemantic(freshUserContent, { timeoutMs: SEMANTIC_OFFPATH_TIMEOUT_MS }).then((semantic) => {
+      classifierResolvedAt = performance.now();
+      if (!semantic.matched) return;
+      armCallCrisis(userId, issuedAt, SEMANTIC_PATTERN_NAME);
+      void recordVoiceCrisisEvent({
+        userId,
+        patternMatched: SEMANTIC_PATTERN_NAME,
+        countryServed: resolveHelplines(profile.country, voiceUserLanguage).countryServed,
+      }).catch((err) => {
+        try {
+          const uh = hashUserIdForLog(userId);
+          if (uh) logger.error({ err, uh }, "crisis floor: recording late voice event failed");
+        } catch { /* logging must never crash the caller */ }
+      });
+    });
     const tDbStart = performance.now();
     const frozenHit = peekFrozenSystem(userId, issuedAt) != null;
     // After a reconnect the transcript is the NEW chat only: it opens with
@@ -687,14 +705,14 @@ export async function voiceCompletionHandler(
     // Union the backstop with regex (fail-safe: an unavailable classifier
     // leaves the regex result standing). The event row is what flips
     // /voice-agent/crisis-status → the UI overlays the on-screen helpline card.
-    const tClassifierWaitStart = performance.now();
-    const semantic = await semanticP;
-    const tClassifier = performance.now();
-    const { active: crisisActive, pattern: crisisPattern } = resolveCrisisOutcome(crisis, semantic);
-    if (crisisActive) {
+    // Same-turn reinforcement: a regex hit on this turn, or the flag a late
+    // detection armed on the previous one. Only the regex hit records an
+    // event here — the late path recorded its own when it resolved.
+    const crisisActive = crisis.matched || pendingPattern !== null;
+    if (crisis.matched) {
       void recordVoiceCrisisEvent({
         userId,
-        patternMatched: crisisPattern!,
+        patternMatched: crisis.pattern!,
         countryServed: resolveHelplines(profile.country, voiceUserLanguage).countryServed,
       }).catch((err) => {
         try {
@@ -857,11 +875,11 @@ export async function voiceCompletionHandler(
         profileMs: ms(tAuth, tProfile),
         dbMs: ms(tDbStart, tDb),
         promptMs: ms(tDb, tPrompt),
-        // How long generation sat waiting for the classifier (0 = it had
-        // already resolved, or never ran: regex hit / greeting).
-        classifierWaitMs: ms(tClassifierWaitStart, tClassifier),
+        // Classifier wall time from launch; null = still running when the
+        // reply finished (it no longer holds the turn up — a late yes arms
+        // the next turn instead).
         classifierMs: classifierResolvedAt === null ? null : ms(tDbStart, classifierResolvedAt),
-        classifierRan: !(synthetic || crisis.matched),
+        classifierRan,
         firstTokenMs: firstTokenAt === null ? null : ms(tModelStart, firstTokenAt),
         modelMs: ms(tModelStart, tModelEnd),
         totalMs: ms(tStart),
@@ -869,6 +887,7 @@ export async function voiceCompletionHandler(
         contextTurns: contextMessages.length,
         resumed,
         crisis: crisisActive,
+        crisisArmed: pendingPattern !== null,
         degraded: reply.degraded,
         tone: voiceTone !== null,
       },

@@ -23,8 +23,8 @@ Search Render's logs (or a downloaded export) for these exact strings.
 | `dbMs` | memory and history reads |
 | `promptMs` | system prompt build; `frozenHit` says the frozen per-call prompt was reused |
 | `classifierRan` | the semantic crisis classifier ran (no regex hit, not a greeting) |
-| `classifierMs` | classifier wall time from its start, or `null` when it did not run |
-| `classifierWaitMs` | how long generation sat waiting for the classifier. This is the critical-path cost. |
+| `classifierMs` | classifier wall time from its start, or `null` when it did not run or was still running when the reply finished. It no longer holds the reply up: a late yes shows the card through the poll and arms the next turn's reinforcement. |
+| `crisisArmed` | this turn's reinforcement block came from a late detection on the previous turn |
 | `firstTokenMs` | model time to first streamed token |
 | `modelMs` | model time to the last token |
 | `totalMs` | request in to response out |
