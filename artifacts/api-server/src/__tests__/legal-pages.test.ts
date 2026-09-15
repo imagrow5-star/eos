@@ -25,7 +25,7 @@ let app: Express;
 beforeAll(async () => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "eos-legal-pages-"));
   fs.writeFileSync(path.join(fixture, "index.html"), "<!doctype html><title>app</title>");
-  for (const f of ["terms.html", "refunds.html"]) {
+  for (const f of ["privacy.html", "terms.html", "refunds.html"]) {
     fs.copyFileSync(path.join(publicDir, f), path.join(fixture, f));
   }
   process.env.FRONTEND_DIR = fixture;
@@ -55,6 +55,26 @@ describe("legal pages", () => {
     // Privacy pointer must reuse only APPROVED claims — the overreaching
     // marketing phrase must not appear here.
     expect(html).not.toMatch(/end-to-end/i);
+  });
+
+  it("serves /privacy as a static page that needs no JavaScript and no modern engine", async () => {
+    const res = await request(app).get("/privacy");
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/text\/html/);
+    const html = res.text;
+    expect(html).toContain("Your privacy, in plain words");
+    // The trust page must work everywhere: no scripts at all, so JavaScript
+    // off or an old engine still renders every word.
+    expect(html).not.toMatch(/<script/i);
+    // The commitments that must never silently vanish:
+    expect(html).toMatch(/never used to train|Use your conversations to train AI models/i);
+    expect(html).toMatch(/Sell or rent your data/i);
+    expect(html).toMatch(/delete account/i);
+    expect(html).toMatch(/within one turn during a live voice call/i);
+    expect(html).toContain("hello@eoscompanion.com");
+    expect(html).toContain("Itslexa");
+    expect(html).not.toMatch(/end-to-end/i);
+    expect(html).not.toMatch(/\[[A-Z]{2,}/);
   });
 
   it("serves /refunds with the 14-day guarantee", async () => {

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy · Eos</title>
+<meta name="description" content="What Eos keeps and why, who helps run it, what it never does, and how to make it forget. Your privacy, in plain words.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,420;0,9..144,520;1,9..144,420&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FBF7EF; --card:#FFFFFF;
+    --cream:#37302A; --cream-dim:#5C5348; --muted:#8A7E6F;
+    --gold:#4A6648; --gold-dim:#5F7F5C;
+    --hair:#E9E0CD; --hair-gold:rgba(95,127,92,.30);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--cream);font-family:'Inter',sans-serif;font-size:16px;line-height:1.75;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:720px;margin:0 auto;padding:48px 24px 96px}
+  header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:56px}
+  .wordmark{font-family:'Fraunces',Georgia,serif;font-weight:520;font-size:22px;color:var(--cream);text-decoration:none}
+  .wordmark span{color:var(--gold-dim)}
+  .back{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--muted);text-decoration:none;text-transform:uppercase}
+  .back:hover{color:var(--gold)}
+  .label{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.42em;color:var(--gold-dim);text-transform:uppercase;margin-bottom:14px}
+  h1{font-family:'Fraunces',Georgia,serif;font-size:40px;font-weight:500;line-height:1.2;margin-bottom:10px}
+  .updated{font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.14em;color:var(--muted);margin-bottom:44px}
+  .lede{font-family:'Fraunces',Georgia,serif;font-style:italic;font-size:19px;line-height:1.6;color:var(--cream);margin-bottom:8px}
+  h2{font-family:'Fraunces',Georgia,serif;font-size:23px;font-weight:500;color:var(--gold);margin:44px 0 12px}
+  p{color:var(--cream-dim);margin-bottom:14px}
+  p b,li b{color:var(--cream);font-weight:600}
+  ul{margin:0 0 14px 22px;color:var(--cream-dim)}
+  li{margin-bottom:8px}
+  .small{font-size:14px;color:var(--muted)}
+  a{color:var(--gold);text-decoration:none;border-bottom:1px solid var(--hair-gold)}
+  a:hover{border-bottom-color:var(--gold)}
+  footer{margin-top:72px;padding-top:24px;border-top:1px solid var(--hair);display:flex;gap:22px;flex-wrap:wrap}
+  footer a{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.16em;color:var(--muted);border:none;text-transform:uppercase}
+  footer a:hover{color:var(--gold)}
+  footer .operator{width:100%;margin:0;font-size:12.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="wordmark" href="/">eos<span>.</span></a>
+    <a class="back" href="/">← Back to Eos</a>
+  </header>
+
+  <div class="label">In plain words</div>
+  <h1>Your privacy, in plain words</h1>
+  <p class="updated">LAST UPDATED · SEPTEMBER 4, 2026 · QUESTIONS? WRITE TO <a href="mailto:hello@eoscompanion.com">hello@eoscompanion.com</a></p>
+
+  <p class="lede">Eos exists so you have somewhere private to put things down. That only works if you can trust what happens to your words, so here it is, without legal fog.</p>
+
+  <h2>What Eos keeps, and why</h2>
+  <ul>
+    <li><b>Your account</b>: email and a scrambled (hashed) password. We can't see the password itself.</li>
+    <li><b>Profile basics</b>: your name, age band, country, timezone, and the choices you made when setting up your companion. This shapes how Eos speaks to you and which crisis resources it would point to.</li>
+    <li><b>Conversations</b>: what you write and say (voice calls become text). Kept so Eos remembers you; deleted the moment you say so.</li>
+    <li><b>Memories, chapters, notes, moods, habits</b>: the things Eos writes about your journey, always built from what you shared.</li>
+  </ul>
+  <p>That's the whole list. There are no ad trackers, no analytics companies watching you, and no selling of anything, ever.</p>
+
+  <h2>Who helps run Eos</h2>
+  <p>Four services touch your data, each for exactly one job:</p>
+  <ul>
+    <li><b>Anthropic</b>: the "thinking." Your messages pass through their AI to generate each reply. They don't train their models on your words. For abuse prevention they may hold data briefly, up to about 30 days, then it's gone from their side too.</li>
+    <li><b>Hume</b>: the voice. Turns Eos's words into speech and yours into text during calls. Zero data retention is switched on for our account, which means Hume stores nothing. No transcripts, no recordings. Nothing is kept and nothing is used to train their models.</li>
+    <li><b>Resend</b>: delivers account emails only, like verifying your address or resetting a password. Eos never emails you otherwise. They see your email address and the email content.</li>
+    <li><b>Render</b>: the secure hosting and database where everything lives. Your conversations, memories, and the other personal things on this page are encrypted inside the database itself, so a stolen copy of the database can't reveal your words. Eos holds the key so it can read your history back to you and reply. That means our systems can access your content to run Eos, and for nothing else. What stays visible in the database even encrypted: counts and timestamps (that you wrote, not what you wrote).</li>
+  </ul>
+  <p class="small">An honest note: any service can be legally required to preserve data in rare trust-and-safety cases. We pick partners whose default is deletion, and we don't add any storage beyond what's listed here.</p>
+
+  <h2>What we never do</h2>
+  <ul>
+    <li>Sell or rent your data, to anyone, for any reason.</li>
+    <li>Use your conversations to train AI models.</li>
+    <li>Show you ads or share data with advertisers.</li>
+    <li>Read your conversations for our own purposes. There's no admin screen for it, and it isn't part of how we run Eos. (The AI does process your messages to write each reply. See "Who helps run Eos" above.)</li>
+  </ul>
+
+  <h2>Making Eos forget</h2>
+  <ul>
+    <li><b>One message</b>: tap any message in your conversation and choose <em>forget</em>. It's permanently deleted and can never appear in a future chapter or reflection.</li>
+    <li><b>One memory</b>: on the Memory page, tap the × on anything Eos has remembered. It's gone from every conversation immediately, and within one turn during a live voice call.</li>
+    <li><b>Everything</b>: Settings → delete account. Every message, memory, chapter, note, and your account itself are erased immediately. There's no recycle bin and no "30-day grace period."</li>
+  </ul>
+  <p class="small">A memory Eos updates in a conversation replaces the old one; a memory that's no longer true is hidden from everything, not kept.</p>
+  <p class="small">One nuance: weekly chapters quote your own words back to you. Forgetting a message keeps it out of everything written <em>after</em> that moment; a chapter that was already written keeps its wording until you delete it or your account.</p>
+  <p>You can also download everything Eos knows about you (Settings → export) as a file that's yours to keep and works without the internet.</p>
+
+  <h2>What Eos is, and isn't</h2>
+  <p>Eos is companionship and gentle structure for hard seasons. It is not a medical device, a therapist, or a crisis line. If you're ever in danger of hurting yourself, please contact local emergency services or a crisis line. Eos will always step out of the way and point you to real humans.</p>
+
+  <h2>Questions, worries, requests</h2>
+  <p>Write to <a href="mailto:hello@eoscompanion.com">hello@eoscompanion.com</a>. A person reads it. If anything on this page ever changes in a way that matters, you'll be asked to look again before continuing, not silently opted in.</p>
+
+  <footer>
+    <a href="/">Home</a>
+    <a href="/security">Security</a>
+    <a href="/terms">Terms</a>
+    <a href="/refunds">Refunds</a>
+    <a href="mailto:hello@eoscompanion.com">hello@eoscompanion.com</a>
+    <p class="operator">Eos is operated by Itslexa, Vizianagaram, Andhra Pradesh, India.</p>
+  </footer>
+</div>
+</body>
+</html>

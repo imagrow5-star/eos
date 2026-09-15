@@ -117,9 +117,11 @@ describe.skipIf(!DB)("a forget during a voice call", () => {
 describe("the pages say exactly what the code does", () => {
   const CLAUSE = "It's gone from every conversation immediately, and within one turn during a live voice call.";
   const NOTE = "replaces the old one; a memory that's no longer";
-  it("security page and in-app privacy page carry both sentences", () => {
+  it("security page and privacy page carry both sentences", () => {
     const security = readFileSync(fileURLToPath(new URL("../../../aanya/public/security.html", import.meta.url)), "utf8");
-    const privacy = readFileSync(fileURLToPath(new URL("../../../aanya/src/pages/Privacy.tsx", import.meta.url)), "utf8").replace(/\s+/g, " ");
+    // The privacy page is static HTML beside the security page (it must
+    // render with JavaScript off), no longer a React component.
+    const privacy = readFileSync(fileURLToPath(new URL("../../../aanya/public/privacy.html", import.meta.url)), "utf8").replace(/\s+/g, " ");
     expect(security).toContain(CLAUSE);
     expect(security).toContain(NOTE);
     expect(privacy).toContain(CLAUSE);
