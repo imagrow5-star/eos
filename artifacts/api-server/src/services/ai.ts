@@ -180,6 +180,10 @@ export interface CompanionReplyResult {
   text: string;
   /** true = the provider call failed and `text` is the honest fallback. */
   degraded: boolean;
+  /** true = the caller's AbortSignal fired mid-stream (the client went away);
+   *  `text` is whatever had streamed by then and must not be treated as a
+   *  reply anyone heard. */
+  aborted?: boolean;
 }
 
 function logAiDegraded(callType: string, err: unknown): void {
@@ -249,6 +253,12 @@ export interface CompanionCallOptions {
    * cap is the guard that a runaway reply can't be read out for a minute.
    */
   maxTokens?: number;
+  /**
+   * Abort the provider stream when this fires (voice: Hume cancelled the
+   * request because the person started talking again). The result comes back
+   * with `aborted: true` and the partial text, never the degraded fallback.
+   */
+  signal?: AbortSignal;
   /** Tag for the ai_usage log line: "chat" | "voice" | "voice_fallback" | … */
   callType?: string;
   /**
@@ -353,6 +363,7 @@ export async function streamCompanionReply(
     return { text: mock, degraded: false }; // dev mock mode — not an outage
   }
 
+  let fullText = "";
   try {
     const messages: any[] = [
       ...contextMessages.map((m) => ({
@@ -374,7 +385,6 @@ export async function streamCompanionReply(
 
     const systemBlocks = buildSystemBlocks(system, opts);
 
-    let fullText = "";
     const usage: Record<string, number> = {};
     // Tool-use streaming state: Anthropic sends content_block_start(tool_use) →
     // input_json_delta* → content_block_stop. Blocks are sequential, so one
@@ -384,17 +394,21 @@ export async function streamCompanionReply(
 
     const model = opts?.model ?? DEFAULT_COMPANION_MODEL;
 
-    const stream = await (anthropic.messages.create as any)({
-      model,
-      max_tokens: opts?.maxTokens ?? 600,
-      temperature: 0.8,
-      system: systemBlocks,
-      messages,
-      stream: true,
-      ...(opts?.tools?.length ? { tools: opts.tools } : {}),
-    });
+    const stream = await (anthropic.messages.create as any)(
+      {
+        model,
+        max_tokens: opts?.maxTokens ?? 600,
+        temperature: 0.8,
+        system: systemBlocks,
+        messages,
+        stream: true,
+        ...(opts?.tools?.length ? { tools: opts.tools } : {}),
+      },
+      opts?.signal ? { signal: opts.signal } : undefined,
+    );
 
     for await (const event of stream) {
+      if (opts?.signal?.aborted) break;
       if (
         event.type === "content_block_delta" &&
         event.delta?.type === "text_delta"
@@ -436,11 +450,14 @@ export async function streamCompanionReply(
     }
 
     logAiUsage(opts?.callType ?? "chat", model, usage);
+    if (opts?.signal?.aborted) return { text: fullText, degraded: false, aborted: true };
 
     // A tool-only reply (e.g. skip_turn) is INTENTIONAL silence — never swap in
     // the fallback line, or the agent would speak while trying to stay quiet.
     return { text: fullText || (sawToolUse ? "" : "I'm here. Tell me more."), degraded: false };
   } catch (err) {
+    // The caller cancelled (client gone): not an outage, nothing to say.
+    if (opts?.signal?.aborted) return { text: fullText, degraded: false, aborted: true };
     // Provider outage: be HONEST — no fake "normal" reply, no silent success.
     logAiDegraded(opts?.callType ?? "chat", err);
     onChunk(DEGRADED_REPLY);

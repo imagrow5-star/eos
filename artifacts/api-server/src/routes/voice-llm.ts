@@ -818,6 +818,18 @@ export async function voiceCompletionHandler(
     // fails far less gracefully. The degraded line is spoken but never
     // persisted or extracted (see persistVoiceTurn's `degraded` arg).
     const tModelStart = performance.now();
+    // Hume cancels this request when the person starts talking again (end of
+    // turn fired mid-thought). Until now generation carried on and the reply
+    // nobody heard was persisted and fed the anti-repetition list — wrong
+    // history. Now: abort the provider stream, keep the person's words,
+    // store no reply.
+    const abort = new AbortController();
+    let abortedAt: number | null = null;
+    res.on("close", () => {
+      if (res.writableFinished) return; // normal end
+      abortedAt = performance.now();
+      abort.abort();
+    });
     let firstTokenAt: number | null = null;
     // First sentence boundary in the streamed text: if Hume synthesises per
     // sentence, its first audio should trail THIS, not the end of the reply.
@@ -854,6 +866,7 @@ export async function voiceCompletionHandler(
         cacheConversation: true,
         model: resolveVoiceLlmModel(),
         maxTokens: VOICE_MAX_TOKENS,
+        signal: abort.signal,
         ...(tools.length
           ? {
               tools,
@@ -877,7 +890,8 @@ export async function voiceCompletionHandler(
     );
     const fullText = reply.text;
     const tModelEnd = performance.now();
-    logMemoryCut(userId, "voice", memoryCutReport(systemPrompt, freshUserContent, fullText));
+    const aborted = reply.aborted === true || abortedAt !== null;
+    if (!aborted) logMemoryCut(userId, "voice", memoryCutReport(systemPrompt, freshUserContent, fullText));
     logger.info(
       {
         uh: uhForTiming,
@@ -901,6 +915,10 @@ export async function voiceCompletionHandler(
         resumed,
         crisis: crisisActive,
         crisisArmed: pendingPattern !== null,
+        // Hume cancelled mid-reply (the person kept talking): the reply was
+        // never spoken, the person's words are still stored.
+        aborted,
+        abortedAtMs: abortedAt === null ? null : ms(tStart, abortedAt),
         degraded: reply.degraded,
         tone: voiceTone !== null,
       },
@@ -908,6 +926,20 @@ export async function voiceCompletionHandler(
     );
 
     const finishReason = toolCalls.length > 0 ? "tool_calls" : "stop";
+    if (aborted) {
+      // Nobody is listening; persist the person's words only (empty reply ⇒
+      // no assistant row, no anti-repetition entry, extraction still runs).
+      void persistVoiceTurn({
+        userId,
+        issuedAt,
+        synthetic,
+        userContent: freshUserContent,
+        fullText: "",
+        profile,
+        degraded: false,
+      }).catch((err) => logger.error({ err }, "voice-llm: persisting aborted turn failed"));
+      return;
+    }
     if (wantStream) {
       res.write(`data: ${chunkPayload({}, finishReason)}\n\n`);
       res.write("data: [DONE]\n\n");
