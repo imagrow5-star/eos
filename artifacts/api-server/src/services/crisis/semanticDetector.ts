@@ -94,6 +94,11 @@ const NOT_AVAILABLE: SemanticDetection = { matched: false, available: false };
  *  pre-generation work, and on a miss it must not stall the turn. */
 export const SEMANTIC_TIMEOUT_MS = 2500;
 
+/** Wall-clock cap when the classifier runs OFF the critical path (voice calls
+ *  and the voice demo, where the reply no longer waits for it). Nothing is
+ *  stalled by a slow answer there, so a slow answer is still worth having. */
+export const SEMANTIC_OFFPATH_TIMEOUT_MS = 8000;
+
 /**
  * Classify one user message. Never throws. Returns { matched:false,
  * available:false } on any failure so the caller degrades to pure regex.

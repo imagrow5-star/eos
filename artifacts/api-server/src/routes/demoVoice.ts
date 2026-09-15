@@ -9,7 +9,7 @@ import { buildSystemPrompt } from "../services/systemPrompt.js";
 import { streamCompanionReply, buildVoiceCallAddendum } from "../services/ai.js";
 import { GREETING_POOLS } from "../services/voiceGreeting.js";
 import { detectCrisis } from "../services/crisis/detector.js";
-import { detectCrisisSemantic, resolveCrisisOutcome } from "../services/crisis/semanticDetector.js";
+import { detectCrisisSemantic, SEMANTIC_OFFPATH_TIMEOUT_MS } from "../services/crisis/semanticDetector.js";
 import { CRISIS_REINFORCEMENT_BLOCK_VOICE } from "../services/crisis/reinforcement.js";
 import { resolveHelplines, buildHelplineBlockText } from "../services/crisis/helplines.js";
 import { resolveVoiceLlmModel } from "./voice-llm.js";
@@ -284,28 +284,32 @@ export async function demoVoiceCompletionHandler(
     const freshUserContent = turns[lastUserIdx]!.content;
     const context = sanitizeTurns(turns.slice(0, lastUserIdx));
 
-    // Crisis floor, as in the app: regex, then the semantic backstop in
-    // parallel with the prompt build. The card goes to the page via
-    // /demo/voice/status; the reinforcement shapes this reply only.
+    // Crisis floor, as in the app: regex before the reply, the semantic
+    // backstop OFF the critical path (the reply doesn't wait for it). The
+    // card goes to the page via /demo/voice/status; a regex hit shapes this
+    // reply, a late classifier yes shows the card and shapes the next one.
     const crisis = detectCrisis(freshUserContent, "en");
-    const semanticP = crisis.matched
-      ? Promise.resolve({ matched: false, available: false })
-      : detectCrisisSemantic(freshUserContent);
+    const crisisPending = call.crisisPending;
+    call.crisisPending = false;
+    const classifierRan = !crisis.matched;
     let classifierResolvedAt: number | null = null;
-    void semanticP.then(() => { classifierResolvedAt = performance.now(); });
+    if (classifierRan) void detectCrisisSemantic(freshUserContent, { timeoutMs: SEMANTIC_OFFPATH_TIMEOUT_MS }).then((semantic) => {
+      classifierResolvedAt = performance.now();
+      if (!semantic.matched) return;
+      noteDemoCrisis(call, "ambiguous");
+      call.crisisPending = true;
+    });
     const tPromptStart = performance.now();
     const frozenHit = call.system != null;
     if (!call.system) call.system = await buildSystemPrompt(demoProfile(), 1);
     const tPrompt = performance.now();
-    const semantic = await semanticP;
-    const tClassifier = performance.now();
-    const outcome = resolveCrisisOutcome(crisis, semantic);
-    if (outcome.active && outcome.tier) noteDemoCrisis(call, outcome.tier);
+    if (crisis.matched) noteDemoCrisis(call, "clear");
+    const crisisActive = crisis.matched || crisisPending;
 
     const systemExtra =
       buildVoiceCallAddendum(false) +
       `\n${DEMO_SYSTEM_ADDENDUM}` +
-      (outcome.active ? `\n${CRISIS_REINFORCEMENT_BLOCK_VOICE}` : "");
+      (crisisActive ? `\n${CRISIS_REINFORCEMENT_BLOCK_VOICE}` : "");
     const userContent = voiceTone ? `${freshUserContent}\n${voiceTone}` : freshUserContent;
 
     if (wantStream) openStream();
@@ -333,14 +337,14 @@ export async function demoVoiceCompletionHandler(
         greeting: false,
         frozenHit,
         promptMs: ms(tPromptStart, tPrompt),
-        classifierWaitMs: ms(tPrompt, tClassifier),
         classifierMs: classifierResolvedAt === null ? null : ms(tPromptStart, classifierResolvedAt),
-        classifierRan: !crisis.matched,
+        classifierRan,
         firstTokenMs: firstTokenAt === null ? null : ms(tModelStart, firstTokenAt),
         modelMs: ms(tModelStart, tModelEnd),
         totalMs: ms(tStart),
         replyWords: reply.text.split(/\s+/).filter(Boolean).length,
-        crisis: outcome.active,
+        crisis: crisisActive,
+        crisisArmed: crisisPending,
         degraded: reply.degraded,
       },
       "demo voice turn timing",

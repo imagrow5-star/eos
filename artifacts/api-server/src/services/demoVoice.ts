@@ -195,6 +195,9 @@ export async function endVoiceDemo(
 export interface LiveDemoCall {
   system: SystemPromptParts | null;
   crisisTier: HelplineBlockTier | null;
+  /** A late classifier "yes" arms the next turn's reinforcement block
+   *  (the classifier runs off the critical path — see routes/demoVoice.ts). */
+  crisisPending: boolean;
   at: number;
 }
 
@@ -207,7 +210,7 @@ export function liveDemoCall(callId: number, now = Date.now()): LiveDemoCall {
   }
   let call = liveCalls.get(callId);
   if (!call) {
-    call = { system: null, crisisTier: null, at: now };
+    call = { system: null, crisisTier: null, crisisPending: false, at: now };
     liveCalls.set(callId, call);
   }
   call.at = now;
