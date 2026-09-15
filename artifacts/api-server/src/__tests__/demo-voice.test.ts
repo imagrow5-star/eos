@@ -210,7 +210,6 @@ describe.skipIf(!DB)("the end report", () => {
 
 describe.skipIf(!DB)("the Hume brain, demo edition", () => {
   it("greets, replies, shows the crisis card through the status poll, and stores no words", async () => {
-    const before = { messages: await countRows("messages"), crisis: await countRows("crisis_events") };
     const { token } = (await mint(freshIp())).body;
 
     const greet = await turn(token, [humeMsg("user", HUME_GREETING_PREFIX)]);
@@ -233,12 +232,11 @@ describe.skipIf(!DB)("the Hume brain, demo edition", () => {
     const status = await request(app).get("/api/demo/voice/status").query({ token });
     expect(status.body.crisisHelplineBlock).toMatch(/^—\nSomeone who can be with you right now/);
 
-    // Other suites write to these tables in parallel, so only assert that
-    // this call added nothing tied to it: no ownerless rows exist at all.
+    // Other suites write to AND clean up these tables in parallel, so total
+    // counts can go either way; only assert that this call added nothing
+    // tied to it: no ownerless rows exist at all.
     expect(Number((await pool.query("SELECT count(*) AS n FROM messages WHERE user_id IS NULL OR user_id < 0")).rows[0].n)).toBe(0);
     expect(Number((await pool.query("SELECT count(*) AS n FROM crisis_events WHERE user_id IS NULL OR user_id < 0")).rows[0].n)).toBe(0);
-    expect(await countRows("messages")).toBeGreaterThanOrEqual(before.messages);
-    expect(await countRows("crisis_events")).toBeGreaterThanOrEqual(before.crisis);
   });
 
   it("answers nothing once the minute plus grace has passed", async () => {
