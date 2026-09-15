@@ -29,12 +29,15 @@ Search Render's logs (or a downloaded export) for these exact strings.
 | `modelMs` | model time to the last token |
 | `totalMs` | request in to response out |
 | `replyWords`, `contextTurns` | reply length and prior turns sent as context |
+| `resumed` | this turn followed a mid-call reconnect and the pre-drop turns were loaded back from the database |
 | `crisis`, `degraded`, `tone` | crisis block added, provider fallback used, tone delivery applied |
 
 ### Server line, greeting (`greeting: true`)
 
 `authMs`, `profileMs`, `totalMs`, `replyWords`, plus `curated` (English pool
-line, no model) and `primedProfile`.
+line, no model), `primedProfile`, and `reconnect` (the empty transcript came
+from Hume redialling mid-call, so Eos said the resume line instead of a
+second greeting).
 
 ### Client line
 

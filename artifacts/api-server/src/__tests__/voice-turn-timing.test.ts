@@ -102,7 +102,7 @@ describe("server: one 'voice turn timing' line per spoken turn", () => {
       expect(lines).toHaveLength(1);
       const line = lines[0]!;
       expect(Object.keys(line).sort()).toEqual(
-        ["authMs", "curated", "degraded", "greeting", "primedProfile", "profileMs", "replyWords", "totalMs", "uh"].sort(),
+        ["authMs", "curated", "degraded", "greeting", "primedProfile", "profileMs", "reconnect", "replyWords", "totalMs", "uh"].sort(),
       );
       for (const k of ["authMs", "profileMs", "totalMs", "replyWords"]) {
         expect(typeof line[k], k).toBe("number");
@@ -139,7 +139,7 @@ describe("server: one 'voice turn timing' line per spoken turn", () => {
         [
           "uh", "greeting", "frozenHit", "authMs", "profileMs", "dbMs", "promptMs", "classifierWaitMs",
           "classifierMs", "classifierRan", "firstTokenMs", "modelMs", "totalMs", "replyWords", "contextTurns",
-          "crisis", "degraded", "tone",
+          "resumed", "crisis", "degraded", "tone",
         ].sort(),
       );
       for (const k of NUMERIC_REAL_TURN_KEYS) {
@@ -153,7 +153,7 @@ describe("server: one 'voice turn timing' line per spoken turn", () => {
       for (const k of ["firstTokenMs", "classifierMs"]) {
         expect(line[k] === null || typeof line[k] === "number", k).toBe(true);
       }
-      for (const k of ["frozenHit", "classifierRan", "crisis", "degraded", "tone"]) {
+      for (const k of ["frozenHit", "classifierRan", "resumed", "crisis", "degraded", "tone"]) {
         expect(typeof line[k], k).toBe("boolean");
       }
       // A plain sentence is not a crisis and the classifier did run for it.
