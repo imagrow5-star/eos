@@ -315,6 +315,10 @@ export async function demoVoiceCompletionHandler(
     if (wantStream) openStream();
     const tModelStart = performance.now();
     let firstTokenAt: number | null = null;
+    // First sentence boundary in the streamed text: if Hume synthesises per
+    // sentence, its first audio should trail THIS, not the end of the reply.
+    let firstSentenceAt: number | null = null;
+    let streamedSoFar = "";
     const reply = await streamCompanionReply(
       call.system,
       context,
@@ -322,6 +326,10 @@ export async function demoVoiceCompletionHandler(
       1,
       (chunk) => {
         if (firstTokenAt === null) firstTokenAt = performance.now();
+        if (firstSentenceAt === null) {
+          streamedSoFar += chunk;
+          if (/[.!?…](?:["')\]]|\s|$)/.test(streamedSoFar)) firstSentenceAt = performance.now();
+        }
         if (wantStream) {
           res.write(`data: ${chunkPayload({ content: chunk }, null)}\n\n`);
           flushRes();
@@ -340,6 +348,7 @@ export async function demoVoiceCompletionHandler(
         classifierMs: classifierResolvedAt === null ? null : ms(tPromptStart, classifierResolvedAt),
         classifierRan,
         firstTokenMs: firstTokenAt === null ? null : ms(tModelStart, firstTokenAt),
+        firstSentenceMs: firstSentenceAt === null ? null : ms(tModelStart, firstSentenceAt),
         modelMs: ms(tModelStart, tModelEnd),
         totalMs: ms(tStart),
         replyWords: reply.text.split(/\s+/).filter(Boolean).length,

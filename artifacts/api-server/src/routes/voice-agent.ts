@@ -405,6 +405,10 @@ router.post("/voice-agent/turn-timing", ...voiceTurnTimingUsageLimits, (req, res
       finalToFirstAudioMs: num(b.finalToFirstAudioMs),
       textToFirstAudioMs: num(b.textToFirstAudioMs),
       userEndToFinalMs: num(b.userEndToFinalMs),
+      // Last interim transcript → first audio: the wait the person feels,
+      // within one interim's lag (Hume hands over the final transcript with
+      // the reply, so finalToFirstAudioMs is Hume's delivery gap, not the wait).
+      lastInterimToFirstAudioMs: num(b.lastInterimToFirstAudioMs),
       greeting: b.greeting === true,
     },
     "voice turn timing (client)",

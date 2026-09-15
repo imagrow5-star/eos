@@ -11,7 +11,15 @@
  *   • userEndToFinalMs — from the end of the person's speech (Hume's own
  *     utterance timestamp) to the final transcript: the end-of-turn silence
  *     as Hume applied it. Only when the timestamp is wall-clock (epoch ms);
- *     null otherwise.
+ *     null otherwise. In practice Hume's timestamps are relative, so this is
+ *     usually null.
+ *   • lastInterimToFirstAudioMs — from the LAST interim transcript of the
+ *     person's turn to the reply's first audio. Interims arrive while the
+ *     person is still talking, so the last one is the closest wall-clock
+ *     mark we have for the end of their speech; Hume delivers the FINAL
+ *     transcript together with the reply, which is why finalToFirstAudioMs
+ *     reads a few tens of ms and does not measure the wait. This one does,
+ *     within one interim's lag.
  * The greeting turn has no user speech, so its first two fields are null and
  * `greeting` is true. Barge-in or the end of a reply closes the turn so a late
  * audio chunk can't attach to the next one. Tested in turnTiming.test.ts.
@@ -23,6 +31,7 @@ export interface TurnTiming {
   finalToFirstAudioMs: number | null;
   textToFirstAudioMs: number | null;
   userEndToFinalMs: number | null;
+  lastInterimToFirstAudioMs: number | null;
 }
 
 /** A Hume `time.end` that is a real Unix-millisecond timestamp. */
@@ -33,9 +42,15 @@ function isEpochMs(v: unknown): v is number {
 export class TurnTimer {
   private turn = 0;
   private userFinalAt: number | null = null;
+  private lastInterimAt: number | null = null;
   private userEndToFinalMs: number | null = null;
   private assistantTextAt: number | null = null;
   private reported = false;
+
+  /** An interim user transcript arrived — the person is (still) talking. */
+  onUserInterim(now: number): void {
+    this.lastInterimAt = now;
+  }
 
   /** A final (non-interim) user transcript arrived. */
   onUserFinal(now: number, utteranceEnd?: unknown): void {
@@ -63,6 +78,8 @@ export class TurnTimer {
       finalToFirstAudioMs: this.userFinalAt === null ? null : Math.max(0, Math.round(now - this.userFinalAt)),
       textToFirstAudioMs: this.assistantTextAt === null ? null : Math.max(0, Math.round(now - this.assistantTextAt)),
       userEndToFinalMs: greeting ? null : this.userEndToFinalMs,
+      lastInterimToFirstAudioMs:
+        greeting || this.lastInterimAt === null ? null : Math.max(0, Math.round(now - this.lastInterimAt)),
     };
     return timing;
   }
@@ -70,6 +87,7 @@ export class TurnTimer {
   /** The reply ended (assistant_end) or was cut off (user_interruption). */
   onReplyEnd(): void {
     this.userFinalAt = null;
+    this.lastInterimAt = null;
     this.userEndToFinalMs = null;
     this.assistantTextAt = null;
     this.reported = false;

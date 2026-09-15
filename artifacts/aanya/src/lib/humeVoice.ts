@@ -156,6 +156,7 @@ export async function startHumeCall(
         // EVI's detected ASR language — surfaced for mismatch evidence.
         const detected = (msg as { language?: string }).language;
         const isFinal = (msg as { interim?: boolean }).interim === false;
+        if ((msg as { interim?: boolean }).interim === true) turnTimer.onUserInterim(Date.now());
         if (isFinal) {
           // `time.end` is Hume's own end-of-utterance stamp, epoch ms when
           // it is wall-clock; the timer ignores anything else.

@@ -26,6 +26,7 @@ Search Render's logs (or a downloaded export) for these exact strings.
 | `classifierMs` | classifier wall time from its start, or `null` when it did not run or was still running when the reply finished. It no longer holds the reply up: a late yes shows the card through the poll and arms the next turn's reinforcement. |
 | `crisisArmed` | this turn's reinforcement block came from a late detection on the previous turn |
 | `firstTokenMs` | model time to first streamed token |
+| `firstSentenceMs` | model time to the first sentence boundary in the streamed text. If Hume synthesises per sentence, its first audio should trail this, not `totalMs`. |
 | `modelMs` | model time to the last token |
 | `totalMs` | request in to response out |
 | `replyWords`, `contextTurns` | reply length and prior turns sent as context |
@@ -45,13 +46,16 @@ Measured in the browser from Hume's socket events (`lib/turnTiming.ts`):
 
 | field | meaning |
 | --- | --- |
-| `finalToFirstAudioMs` | Hume's final transcript of the person to the first audio of the reply. This is the wait the person feels. |
-| `textToFirstAudioMs` | reply text to its first audio: Hume's TTS on its own |
-| `userEndToFinalMs` | end of the person's speech to the final transcript: the end-of-turn silence as applied. Only when Hume's utterance timestamp is wall-clock, otherwise `null`. |
+| `lastInterimToFirstAudioMs` | the last interim transcript of the person's turn to the first audio of the reply. Interims arrive while the person is still talking, so this is the wait the person feels, within one interim's lag. |
+| `finalToFirstAudioMs` | Hume's final transcript to the first audio. Hume hands the final transcript over together with the reply, so this reads a few tens of ms and is Hume's delivery gap, not the wait. |
+| `textToFirstAudioMs` | reply text to its first audio. Text and audio arrive together after synthesis, so this is small; Hume's synthesis time is `lastInterimToFirstAudioMs` minus the end-of-turn silence minus the server's `totalMs`. |
+| `userEndToFinalMs` | end of the person's speech to the final transcript, only when Hume's utterance timestamp is wall-clock. In practice Hume's timestamps are relative, so this is `null`. |
 | `turn`, `greeting` | reply number in the call, and whether it was the greeting |
 
-Subtract the server `totalMs` from `finalToFirstAudioMs` to see how much of
-the wait is Hume's own transcription and TTS rather than our server.
+Subtract the server `totalMs` from `lastInterimToFirstAudioMs` to see how
+much of the wait is Hume's own end-of-turn silence and synthesis rather than
+our server. Compare Hume's first audio against `firstSentenceMs` and
+`totalMs` to see whether it waits for the first sentence or the whole reply.
 
 ## Medians from a log export
 

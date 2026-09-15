@@ -138,7 +138,7 @@ describe("server: one 'voice turn timing' line per spoken turn", () => {
       expect(Object.keys(line).sort()).toEqual(
         [
           "uh", "greeting", "frozenHit", "authMs", "profileMs", "dbMs", "promptMs",
-          "classifierMs", "classifierRan", "firstTokenMs", "modelMs", "totalMs", "replyWords", "contextTurns",
+          "classifierMs", "classifierRan", "firstTokenMs", "firstSentenceMs", "modelMs", "totalMs", "replyWords", "contextTurns",
           "resumed", "crisis", "crisisArmed", "degraded", "tone",
         ].sort(),
       );
@@ -149,7 +149,7 @@ describe("server: one 'voice turn timing' line per spoken turn", () => {
       // Stages nest: the model can't take longer than the whole turn.
       expect(line.modelMs as number).toBeLessThanOrEqual(line.totalMs as number);
       // firstTokenMs and classifierMs are a number or null (never a string).
-      for (const k of ["firstTokenMs", "classifierMs"]) {
+      for (const k of ["firstTokenMs", "firstSentenceMs", "classifierMs"]) {
         expect(line[k] === null || typeof line[k] === "number", k).toBe(true);
       }
       for (const k of ["frozenHit", "classifierRan", "resumed", "crisis", "crisisArmed", "degraded", "tone"]) {
@@ -207,6 +207,7 @@ describe("client beacon: POST /api/voice-agent/turn-timing", () => {
         finalToFirstAudioMs: 1432.6,
         textToFirstAudioMs: 310,
         userEndToFinalMs: 640,
+        lastInterimToFirstAudioMs: 2210,
         transcript: "should never be logged", // not a field — dropped
       });
       expect(res.status).toBe(200);
@@ -222,6 +223,7 @@ describe("client beacon: POST /api/voice-agent/turn-timing", () => {
         finalToFirstAudioMs: 1433,
         textToFirstAudioMs: 310,
         userEndToFinalMs: 640,
+        lastInterimToFirstAudioMs: 2210,
       });
       expect(line.uh).not.toBe(String(userId));
       expect(JSON.stringify(line)).not.toContain("never be logged");
@@ -249,6 +251,7 @@ describe("client beacon: POST /api/voice-agent/turn-timing", () => {
         finalToFirstAudioMs: null,
         textToFirstAudioMs: null,
         userEndToFinalMs: null,
+        lastInterimToFirstAudioMs: null,
       });
     } finally {
       spy.mockRestore();
