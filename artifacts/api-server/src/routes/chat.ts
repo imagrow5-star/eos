@@ -11,6 +11,7 @@ import {
   GenerateMorningNoteResponse,
 } from "@workspace/api-zod";
 import { buildSystemPrompt } from "../services/systemPrompt.js";
+import { memoryCutReport, logMemoryCut } from "../services/memory/cutReport.js";
 import { detectRememberIntent } from "../services/memory/rememberTriggers.js";
 import {
   streamCompanionReply,
@@ -230,6 +231,7 @@ router.post("/chat/stream", requireSubscriptionForChat, ...chatUsageLimits, asyn
       },
     );
     const aiContent = reply.text;
+    logMemoryCut(userId, voiceMode ? "voice_fallback" : "chat", memoryCutReport(systemPrompt, content, aiContent));
 
     // Crisis floor: append the localized helpline block AFTER generation —
     // deterministic, so it lands even on a degraded (provider-down) reply.
@@ -351,6 +353,7 @@ router.post("/chat/send", requireSubscriptionForChat, ...chatUsageLimits, async 
     systemExtra: composeChatSystemExtra({ voiceMode: false, crisisDetected: crisisActive }),
   });
   const aiContent = reply.text;
+  logMemoryCut(userId, "chat", memoryCutReport(systemPrompt, content, aiContent));
 
   // Anti-repetition + extraction only for REAL replies — a degraded fallback
   // must never feed the phrase list or fire more (failing, billable) AI calls.

@@ -143,6 +143,13 @@ function deriveDiscoveryGaps(facts: Array<{ fact: string; category: string }>): 
 export interface SystemPromptParts {
   stable: string;
   context: string;
+  /**
+   * Memory accounting for the cut measurement (services/memory/cutReport.ts):
+   * how many facts were eligible, and the text of those included in and
+   * excluded from the prompt. In-process only — used to check whether a turn
+   * referenced a fact below the cut; never logged.
+   */
+  memory?: { eligible: number; included: string[]; excluded: string[] };
 }
 
 // Sprint 2B — injected into the VOLATILE context block (never the cached
@@ -253,6 +260,13 @@ export async function buildSystemPrompt(
   const factNowMs = Date.now();
   const FACT_LIMIT = 40;
   const facts = rankFactsByImportance(allFacts, factNowMs, FACT_LIMIT);
+  // What the cut kept and dropped, for the per-turn "memory cut" measurement.
+  const includedFactIds = new Set(facts.map((f) => f.id));
+  const memoryCut = {
+    eligible: allFacts.length,
+    included: facts.map((f) => f.fact),
+    excluded: allFacts.filter((f) => !includedFactIds.has(f.id)).map((f) => f.fact),
+  };
 
   // Sprint 2C — feelings ranked by the SAME importance scorer as facts (they
   // carry the same columns). Kept to a smaller slice: feelings are texture, not
@@ -1318,7 +1332,7 @@ ${rules}`;
     );
   }
 
-  return { stable, context: contextParts.join("\n\n") };
+  return { stable, context: contextParts.join("\n\n"), memory: memoryCut };
 }
 
 /**

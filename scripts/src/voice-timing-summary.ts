@@ -12,6 +12,8 @@
  *   "voice turn timing"          — server, per CLM turn (greeting / real)
  *   "voice turn timing (client)" — browser, per reply (what the person waits)
  *   "demo voice turn timing"     — the landing-page demo's server turns
+ *   "memory cut"                 — per turn, did the person or the reply touch a
+ *                                  fact below the top-40 cut (docs/memory-cut.md)
  * and prints, per numeric field: count, median, p90, max. Numbers only go in,
  * numbers only come out — the lines never carry message text.
  */
@@ -19,7 +21,7 @@
 import fs from "node:fs";
 import readline from "node:readline";
 
-const MESSAGES = ["voice turn timing", "voice turn timing (client)", "demo voice turn timing"] as const;
+const MESSAGES = ["voice turn timing", "voice turn timing (client)", "demo voice turn timing", "memory cut"] as const;
 
 type Row = Record<string, unknown>;
 
@@ -93,8 +95,13 @@ async function main(): Promise<void> {
     if (!(MESSAGES as readonly string[]).includes(msg)) continue;
     // Server lines split into greeting and real turns; the client line is
     // already one row per reply.
-    const serverLine = msg !== "voice turn timing (client)";
-    const key = `${msg}${serverLine ? (row.greeting === true ? " — greeting" : " — real turn") : ""}`;
+    // The memory-cut line groups by call type (chat / voice / voice_fallback).
+    const key =
+      msg === "memory cut"
+        ? `${msg} — ${typeof row.callType === "string" ? row.callType : "unknown"}`
+        : msg === "voice turn timing (client)"
+          ? msg
+          : `${msg}${row.greeting === true ? " — greeting" : " — real turn"}`;
     const arr = groups.get(key) ?? [];
     arr.push(row);
     groups.set(key, arr);
