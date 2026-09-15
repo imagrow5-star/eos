@@ -34,9 +34,6 @@ const ConsentGate = lazy(() =>
 // prototype content. Nothing links here; it exists to be tapped through on a
 // phone before markers appear on Journey.
 const WeekPreview = lazy(() => import("@/pages/WeekPreview"));
-const Privacy = lazy(() =>
-  import("@/pages/Privacy").then((m) => ({ default: m.Privacy })),
-);
 // NOTE: the marketing front door is public/welcome.html (served at "/" by
 // the api-server); unauth arrivals here go straight to AuthScreen.
 
@@ -378,13 +375,6 @@ function AuthGate() {
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
 function App() {
-  // Public privacy page — reachable without an account so the sign-up screen
-  // and the consent step can link to it. Plain pathname check (full-page
-  // navigation) keeps it outside the authed router entirely.
-  const isPrivacyPage =
-    typeof window !== "undefined" &&
-    window.location.pathname.replace(/\/+$/, "").endsWith("/privacy");
-
   // Show splash once per browser session — sessionStorage resets when the tab
   // is closed, so the user sees it on every fresh visit but not on in-app nav.
   const [showSplash, setShowSplash] = useState(() => {
@@ -420,14 +410,6 @@ function App() {
     } catch {}
     setShowSplash(false);
   };
-
-  if (isPrivacyPage) {
-    return (
-      <Suspense fallback={<PageLoader />}>
-        <Privacy />
-      </Suspense>
-    );
-  }
 
   return (
     <QueryClientProvider client={queryClient}>

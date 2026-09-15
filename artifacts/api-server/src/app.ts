@@ -624,12 +624,15 @@ if (fs.existsSync(frontendIndex)) {
   // page. A prior "any query string → SPA" check sent all paid social traffic
   // to the signup screen (a tapped IG bio link arrives as /?igsh=…). The rule
   // is a pure, tested function — see lib/landingRoute.ts.
-  // ─── Standalone pages (/terms, /refunds, /security) ────────────────────────
+  // ─── Standalone pages (/privacy, /terms, /refunds, /security) ──────────────
   // Static files beside welcome.html in the same bundle — the marketing
   // page's footer already links here. Served at the clean path (no .html);
   // if a file is missing the request falls through to the SPA, whose router
-  // shows its not-found state instead of a raw 404 page.
-  for (const legal of ["terms", "refunds", "security"] as const) {
+  // shows its not-found state instead of a raw 404 page. /privacy is static
+  // on purpose: it is the trust page, and it has to render in any browser
+  // and with JavaScript off, which the app bundle (modern engines only)
+  // can't promise.
+  for (const legal of ["privacy", "terms", "refunds", "security"] as const) {
     const legalFile = path.join(frontendDir, `${legal}.html`);
     app.get(`/${legal}`, (_req, res, next) => {
       if (!fs.existsSync(legalFile)) return next();
