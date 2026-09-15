@@ -93,9 +93,13 @@ describe.skipIf(!DB)("mood, threshold and crisis columns are ciphertext at rest"
     for (const col of ["country_served", "source", "block_dismissed"] as const) {
       expect(raw.rows[0]![col]).toMatch(/^enc:v1:/);
     }
-    const dump = JSON.stringify(raw.rows);
-    expect(dump).not.toContain("GB");
-    expect(dump).not.toContain("voice");
+    // Exact-value checks, not substring probes: base64 ciphertext can contain
+    // any two letters by chance ("GB" flaked once in CI), so the proof that
+    // the plaintext isn't there is that the stored value is not the plaintext
+    // and carries the ciphertext prefix (asserted above).
+    expect(raw.rows[0]!.country_served).not.toBe("GB");
+    expect(raw.rows[0]!.source).not.toBe("voice");
+    expect(raw.rows[0]!.block_dismissed).not.toBe("false");
 
     const pending = await pendingVoiceCrisisEvent(userId);
     expect(pending?.countryServed).toBe("GB");
