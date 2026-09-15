@@ -37,6 +37,20 @@ export function shouldServeLanding(
 ): boolean {
   const params = new URLSearchParams(originalUrl.split("?")[1] ?? "");
   const wantsSpa = SPA_ROOT_QUERY_KEYS.some((key) => params.has(key));
-  const hasSession = (cookieHeader ?? "").includes("sid=");
-  return !wantsSpa && !hasSession;
+  return !wantsSpa && !hasSessionCookie(cookieHeader);
+}
+
+/** A returning user: the request carries the session cookie. */
+export function hasSessionCookie(cookieHeader: string | undefined): boolean {
+  return (cookieHeader ?? "").includes("sid=");
+}
+
+/**
+ * True when GET /pricing should serve the static public/pricing.html rather
+ * than the SPA. A visitor gets the static page: it's a decision page and must
+ * render in any browser with JavaScript off. A signed-in member keeps the
+ * app's pricing page, which knows their current plan and opens checkout.
+ */
+export function shouldServeStaticPricing(cookieHeader: string | undefined): boolean {
+  return !hasSessionCookie(cookieHeader);
 }

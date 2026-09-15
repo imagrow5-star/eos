@@ -25,7 +25,7 @@ let app: Express;
 beforeAll(async () => {
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "eos-legal-pages-"));
   fs.writeFileSync(path.join(fixture, "index.html"), "<!doctype html><title>app</title>");
-  for (const f of ["privacy.html", "terms.html", "refunds.html"]) {
+  for (const f of ["privacy.html", "pricing.html", "terms.html", "refunds.html"]) {
     fs.copyFileSync(path.join(publicDir, f), path.join(fixture, f));
   }
   process.env.FRONTEND_DIR = fixture;
@@ -75,6 +75,29 @@ describe("legal pages", () => {
     expect(html).toContain("Itslexa");
     expect(html).not.toMatch(/end-to-end/i);
     expect(html).not.toMatch(/\[[A-Z]{2,}/);
+  });
+
+  it("serves /pricing to a visitor as a static page with all three plans and no JavaScript", async () => {
+    const res = await request(app).get("/pricing");
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/text\/html/);
+    const html = res.text;
+    expect(html).not.toMatch(/<script/i);
+    // The same three plans and prices as the landing page and the structured data.
+    for (const s of ["Essential", "$19.99", "Standard", "$39.99", "Full", "$59.99", "120 minutes", "300 minutes", "500 minutes"]) {
+      expect(html).toContain(s);
+    }
+    expect(html).toMatch(/7-day trial/i);
+    expect(html).toMatch(/pay nothing/i);
+    for (const tier of ["companion", "closer", "always"]) expect(html).toContain(`/?enter=1&amp;plan=${tier}`);
+    expect(html).toContain("/refunds");
+  });
+
+  it("hands /pricing to the app for a signed-in member (session cookie)", async () => {
+    const res = await request(app).get("/pricing").set("Cookie", "sid=abc");
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("<title>app</title>"); // the SPA shell fixture, not the static page
+    expect(res.text).not.toContain("Choose the plan that fits.");
   });
 
   it("serves /refunds with the 14-day guarantee", async () => {

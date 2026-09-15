@@ -9,7 +9,7 @@ import { pool } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { ensureStoryTables, migrateWeeklyReviewsToStories } from "./services/storiesMigration";
-import { shouldServeLanding } from "./lib/landingRoute";
+import { shouldServeLanding, shouldServeStaticPricing } from "./lib/landingRoute";
 import { securityTxt } from "./lib/securityTxt";
 import path from "node:path";
 import fs from "node:fs";
@@ -640,6 +640,19 @@ if (fs.existsSync(frontendIndex)) {
       res.sendFile(legalFile);
     });
   }
+
+  // ─── /pricing for visitors: static, no browser floor ───────────────────────
+  // A decision page has to render everywhere, JavaScript off included. A
+  // signed-in member falls through to the app's pricing page (current plan,
+  // checkout) — see lib/landingRoute.ts.
+  const pricingPage = path.join(frontendDir, "pricing.html");
+  app.get("/pricing", (req, res, next) => {
+    if (shouldServeStaticPricing(req.headers.cookie) && fs.existsSync(pricingPage)) {
+      res.setHeader("Cache-Control", "no-cache");
+      return res.sendFile(pricingPage);
+    }
+    next();
+  });
 
   const landingPage = path.join(frontendDir, "welcome.html");
   app.get("/", (req, res, next) => {
