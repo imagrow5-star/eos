@@ -72,6 +72,7 @@
 <!-- Fonts load non-render-blocking via load-fonts.js (a plain stylesheet link
      holds first paint — Lighthouse flagged ~2s; the CSP forbids the inline
      onload swap). display=swap paints text in the fallback first, then swaps. -->
+<script src="js-flag.js"></script>
 <script src="load-fonts.js" data-href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,420;9..144,520&family=Inter:wght@400;500;600&display=swap" defer></script>
 <noscript><link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,420;9..144,520&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"></noscript>
 <style>
@@ -112,10 +113,13 @@
   h1,h2{font-family:'Fraunces',Georgia,serif;font-weight:520;letter-spacing:-.01em}
 
   /* Reveal on scroll (gentle; disabled for reduced motion) */
-  .rv{opacity:0;transform:translateY(22px);transition:opacity .65s var(--ease),transform .65s var(--ease);transition-delay:var(--d,0s)}
-  .rv.on{opacity:1;transform:none}
+  /* Reveal on scroll runs only when JavaScript is there to do the revealing
+     (html.js is stamped by js-flag.js in <head>). With JavaScript off, or a
+     script that failed, everything — pricing included — is simply visible. */
+  .js .rv{opacity:0;transform:translateY(22px);transition:opacity .65s var(--ease),transform .65s var(--ease);transition-delay:var(--d,0s)}
+  .js .rv.on{opacity:1;transform:none}
   @media (prefers-reduced-motion: reduce){
-    .rv{opacity:1;transform:none;transition:none}
+    .js .rv{opacity:1;transform:none;transition:none}
     html{scroll-behavior:auto}
     *,*::before,*::after{animation:none!important;transition:none!important}
   }
@@ -162,6 +166,9 @@
   h1{font-size:clamp(38px,6.4vw,64px);line-height:1.12;color:var(--ink)}
   .hero-sub{color:var(--ink-soft);font-size:clamp(16.5px,2vw,18.5px);max-width:680px;margin:26px auto 0;text-align:left}
   @media(min-width:700px){.hero-sub{text-align:center}}
+  .hero-price{margin:22px auto 0;max-width:680px;text-align:center;font-size:14px;color:var(--muted)}
+  .hero-price a{color:var(--muted);text-decoration:underline;text-underline-offset:3px}
+  .hero-price a:hover{color:var(--ink)}
   .hero-cta{margin-top:38px;display:flex;gap:14px;justify-content:center;align-items:center;flex-wrap:wrap}
   .hero-note{margin-top:20px;font-size:13.5px;color:var(--muted)}
   /* Ask-the-founder — a direct line, not a signup. Stacked email + message. */
@@ -482,6 +489,7 @@
     <a class="wordmark" href="#">eos<span>.</span></a>
     <div class="nav-links">
       <a class="hide-sm" href="#what-eos-is">About</a>
+      <a href="#membership">Pricing</a>
       <a class="hide-sm" href="/privacy">Privacy</a>
       <a href="/?enter=1&amp;mode=login">Sign in</a>
       <a class="btn small" href="/?enter=1">Start talking</a>
@@ -521,6 +529,10 @@
       </div>
       <p class="demo-end" id="demo-end" hidden>That's the demo. Eos remembers you &mdash; across weeks, months, whatever you give it. This didn't remember you at all.<br><a class="lead-secondary" href="/?enter=1">Start the 7-day trial &rarr;</a></p>
     </div>
+
+    <!-- Price up front: hiding it makes people assume it's bad. The three
+         plans are in the Membership section below; this is the one line. -->
+    <p class="hero-price rv on" style="--d:.2s">Plans from $19.99 a month. Seven-day free trial, cancel any time. <a href="#membership">See the plans</a></p>
 
     <!-- The founder's "Not sure? Ask me." form lives in the footer (the final
          CTA section): the demo is what shows people what Eos is, so it holds
