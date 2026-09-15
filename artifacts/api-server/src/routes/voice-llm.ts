@@ -819,6 +819,10 @@ export async function voiceCompletionHandler(
     // persisted or extracted (see persistVoiceTurn's `degraded` arg).
     const tModelStart = performance.now();
     let firstTokenAt: number | null = null;
+    // First sentence boundary in the streamed text: if Hume synthesises per
+    // sentence, its first audio should trail THIS, not the end of the reply.
+    let firstSentenceAt: number | null = null;
+    let streamedSoFar = "";
     const reply = await streamCompanionReply(
       systemPrompt,
       contextMessages,
@@ -826,6 +830,10 @@ export async function voiceCompletionHandler(
       stage,
       (chunk) => {
         if (firstTokenAt === null) firstTokenAt = performance.now();
+        if (firstSentenceAt === null) {
+          streamedSoFar += chunk;
+          if (/[.!?…](?:["')\]]|\s|$)/.test(streamedSoFar)) firstSentenceAt = performance.now();
+        }
         if (wantStream) {
           res.write(`data: ${chunkPayload({ content: chunk }, null)}\n\n`);
           flushRes();
@@ -885,6 +893,7 @@ export async function voiceCompletionHandler(
         classifierMs: classifierResolvedAt === null ? null : ms(tDbStart, classifierResolvedAt),
         classifierRan,
         firstTokenMs: firstTokenAt === null ? null : ms(tModelStart, firstTokenAt),
+        firstSentenceMs: firstSentenceAt === null ? null : ms(tModelStart, firstSentenceAt),
         modelMs: ms(tModelStart, tModelEnd),
         totalMs: ms(tStart),
         replyWords: fullText.split(/\s+/).filter(Boolean).length,

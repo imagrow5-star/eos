@@ -20,13 +20,32 @@ describe("TurnTimer", () => {
       finalToFirstAudioMs: 1500,
       textToFirstAudioMs: 300,
       userEndToFinalMs: 600,
+      lastInterimToFirstAudioMs: null, // no interim seen
     });
+  });
+
+  it("measures from the last interim transcript to first audio — the wait the person feels", () => {
+    const t = new TurnTimer();
+    t.onUserInterim(1000);
+    t.onUserInterim(2400); // still talking
+    t.onUserInterim(3100); // last words
+    t.onUserFinal(5900); // Hume hands the final over with the reply, ~3 s later
+    t.onAssistantText(5920);
+    const timing = t.onAudio(6000)!;
+    expect(timing.lastInterimToFirstAudioMs).toBe(2900);
+    expect(timing.finalToFirstAudioMs).toBe(100); // Hume's delivery gap, not the wait
+    // The next turn starts its own clock.
+    t.onReplyEnd();
+    t.onUserInterim(9000);
+    t.onUserFinal(9800);
+    t.onAssistantText(9900);
+    expect(t.onAudio(10_000)!.lastInterimToFirstAudioMs).toBe(1000);
   });
 
   it("reports the greeting without user fields, and only once per reply", () => {
     const t = new TurnTimer();
     t.onAssistantText(1000);
-    expect(t.onAudio(1400)).toEqual({ turn: 1, greeting: true, finalToFirstAudioMs: null, textToFirstAudioMs: 400, userEndToFinalMs: null });
+    expect(t.onAudio(1400)).toEqual({ turn: 1, greeting: true, finalToFirstAudioMs: null, textToFirstAudioMs: 400, userEndToFinalMs: null, lastInterimToFirstAudioMs: null });
     expect(t.onAudio(1500)).toBeNull();
     expect(t.onAudio(1600)).toBeNull();
     t.onReplyEnd();
