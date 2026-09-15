@@ -1,5 +1,5 @@
 /**
- * Spoken reply length (voice audit, PR 5).
+ * Spoken reply length (voice audit, PR 5) and spoken register (PR 6).
  *
  *   • the voice addendum asks for one or two sentences, about 25 words, longer
  *     only when the question needs it (the old "1–3 sentences, under about 45
@@ -75,6 +75,22 @@ describe("voice addendum: length", () => {
       expect(addendum).toContain("One or two sentences, about 25 words. Go longer only when what they asked genuinely needs it.");
       expect(addendum).not.toMatch(/45 words|1–3 brief sentences/);
     }
+  });
+
+  it("carries the spoken-register rules, with the numbers line kept neutral (no British examples)", () => {
+    const addendum = buildVoiceCallAddendum(false);
+    for (const line of [
+      "This is talking, not writing. Fragments are fine. One thought per turn, then let them respond.",
+      "React to what they just said before you ask anything. At most one question, and never two in a row.",
+      "No summaries, no recaps, no \"so what I'm hearing is\". Just respond.",
+      "Say numbers and times the way people say them aloud, not as written figures.",
+      "Never read a memory back word for word. Mention it the way a friend would, in passing.",
+    ]) {
+      expect(addendum).toContain(line);
+    }
+    expect(addendum).not.toMatch(/half seven|quid/i);
+    // The old "one gentle question" line is folded into the react-first rule.
+    expect(addendum).not.toContain("Ask at most one gentle question");
   });
 
   it("the guard is 300 output tokens", () => {
