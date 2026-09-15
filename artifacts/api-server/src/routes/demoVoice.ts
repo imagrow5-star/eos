@@ -314,6 +314,15 @@ export async function demoVoiceCompletionHandler(
 
     if (wantStream) openStream();
     const tModelStart = performance.now();
+    // Hume cancels the request when the person keeps talking — stop paying
+    // for a reply nobody will hear.
+    const abort = new AbortController();
+    let abortedAt: number | null = null;
+    res.on("close", () => {
+      if (res.writableFinished) return;
+      abortedAt = performance.now();
+      abort.abort();
+    });
     let firstTokenAt: number | null = null;
     // First sentence boundary in the streamed text: if Hume synthesises per
     // sentence, its first audio should trail THIS, not the end of the reply.
@@ -335,10 +344,11 @@ export async function demoVoiceCompletionHandler(
           flushRes();
         }
       },
-      { systemExtra, callType: "demo_voice", cacheConversation: true, model: resolveVoiceLlmModel(), maxTokens: VOICE_MAX_TOKENS },
+      { systemExtra, callType: "demo_voice", cacheConversation: true, model: resolveVoiceLlmModel(), maxTokens: VOICE_MAX_TOKENS, signal: abort.signal },
     );
     const tModelEnd = performance.now();
-    finish(reply.text);
+    const aborted = reply.aborted === true || abortedAt !== null;
+    if (!aborted) finish(reply.text);
     logger.info(
       {
         demoCallId: claims.callId,
@@ -354,6 +364,8 @@ export async function demoVoiceCompletionHandler(
         replyWords: reply.text.split(/\s+/).filter(Boolean).length,
         crisis: crisisActive,
         crisisArmed: crisisPending,
+        aborted,
+        abortedAtMs: abortedAt === null ? null : ms(tStart, abortedAt),
         degraded: reply.degraded,
       },
       "demo voice turn timing",

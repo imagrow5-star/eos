@@ -31,6 +31,7 @@ Search Render's logs (or a downloaded export) for these exact strings.
 | `totalMs` | request in to response out |
 | `replyWords`, `contextTurns` | reply length and prior turns sent as context |
 | `resumed` | this turn followed a mid-call reconnect and the pre-drop turns were loaded back from the database |
+| `aborted`, `abortedAtMs` | Hume cancelled the request mid-reply because the person started talking again (end of turn fired mid-thought), and when. The provider stream is stopped, the person's words are stored, the unheard reply is not. A high abort rate means the EVI end-of-turn silence is too short. |
 | `crisis`, `degraded`, `tone` | crisis block added, provider fallback used, tone delivery applied |
 
 ### Server line, greeting (`greeting: true`)
