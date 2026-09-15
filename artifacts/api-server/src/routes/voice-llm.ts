@@ -13,7 +13,7 @@ import {
   buildVoiceCallAddendum,
   VOICE_MAX_TOKENS,
 } from "../services/ai.js";
-import { buildVoiceFirstMessage } from "../services/voiceGreeting.js";
+import { buildVoiceFirstMessage, isResumeGreeting } from "../services/voiceGreeting.js";
 import { resumeLineFor, isResumeLine } from "../services/voiceResume.js";
 import { calculateStage } from "../services/stage.js";
 import { getOrCreateProfileForUser } from "./profile.js";
@@ -240,7 +240,7 @@ const GREETING_LANGUAGE_NAMES: Record<string, string> = {
 };
 
 /** Tiny greeting-only prompt for non-English calls (exported for tests). */
-export function buildGreetingPrompt(profile: Profile): {
+export function buildGreetingPrompt(profile: Profile, opts: { resume?: boolean } = {}): {
   stable: string;
   instruction: string;
 } {
@@ -258,9 +258,13 @@ export function buildGreetingPrompt(profile: Profile): {
       `natural spoken language; never claim to remember specifics; ` +
       `no clinical or therapy phrasing.` +
       toneExtra,
-    instruction:
-      `(The user just joined the voice call and hasn't spoken yet. ` +
-      `Greet them briefly and warmly in ${langName} — one short sentence.)`,
+    instruction: opts.resume
+      ? `(The user just joined the voice call and hasn't spoken yet. You talked with them ` +
+        `only a few hours ago, so don't greet them as if for the first time today or ask ` +
+        `how they are afresh — pick up briefly and warmly in ${langName}, one short sentence, ` +
+        `without claiming to remember what was said.)`
+      : `(The user just joined the voice call and hasn't spoken yet. ` +
+        `Greet them briefly and warmly in ${langName} — one short sentence.)`,
   };
 }
 
@@ -331,6 +335,17 @@ export async function hasSpokenThisCall(userId: number, issuedAt: number): Promi
     )
     .limit(1);
   return rows.length > 0;
+}
+
+/** When the person last talked with Eos before this call (any message), or null. */
+export async function lastTalkedAtBefore(userId: number, issuedAt: number): Promise<Date | null> {
+  const rows = await db
+    .select({ createdAt: messagesTable.createdAt })
+    .from(messagesTable)
+    .where(and(eq(messagesTable.userId, userId), lt(messagesTable.createdAt, new Date(issuedAt))))
+    .orderBy(desc(messagesTable.createdAt))
+    .limit(1);
+  return rows[0]?.createdAt ?? null;
 }
 
 // ─── Voice-turn persistence with in-call dedup ────────────────────────────────
@@ -528,11 +543,15 @@ export async function voiceCompletionHandler(
     // like a fresh call's. If the person has already spoken in THIS call (a
     // user row since issuedAt), this is a reconnect: one resume line, no
     // second greeting. One indexed count, in parallel with the profile.
-    const [profile, reconnect] = await Promise.all([
+    const [profile, reconnect, lastTalkedAt] = await Promise.all([
       primed ?? getOrCreateProfileForUser(userId),
       synthetic ? hasSpokenThisCall(userId, issuedAt) : Promise.resolve(false),
+      // A second call within hours of the last conversation picks up rather
+      // than greeting afresh (services/voiceGreeting.ts, isResumeGreeting).
+      synthetic ? lastTalkedAtBefore(userId, issuedAt) : Promise.resolve(null),
     ]);
     const tProfile = performance.now();
+    const resumeGreeting = synthetic && !reconnect && isResumeGreeting(lastTalkedAt);
 
     // ── Fast greeting path (see the section comment above the route) ──
     if (synthetic) {
@@ -577,7 +596,7 @@ export async function voiceCompletionHandler(
         }
       } else if (language === "en") {
         // Curated instant line — no LLM round trip at all.
-        greetingText = buildVoiceFirstMessage(profile);
+        greetingText = buildVoiceFirstMessage(profile, { lastTalkedAt });
         if (wantStream) {
           res.write(`data: ${chunkPayload({ content: greetingText }, null)}\n\n`);
           flushRes();
@@ -585,7 +604,7 @@ export async function voiceCompletionHandler(
       } else {
         // Non-English: tiny greeting-only prompt so the first tokens arrive
         // fast AND in the user's language (the curated pools are English).
-        const tiny = buildGreetingPrompt(profile);
+        const tiny = buildGreetingPrompt(profile, { resume: resumeGreeting });
         const reply = await streamCompanionReply(
           { stable: tiny.stable, context: "" },
           [],
@@ -629,6 +648,7 @@ export async function voiceCompletionHandler(
           uh: uhForTiming,
           greeting: true,
           reconnect,
+          resumeGreeting,
           primedProfile: primed != null,
           curated: !reconnect && language === "en",
           authMs: ms(tStart, tAuth),
