@@ -31,6 +31,7 @@ Search Render's logs (or a downloaded export) for these exact strings.
 | `totalMs` | request in to response out |
 | `replyWords`, `contextTurns` | reply length and prior turns sent as context |
 | `resumed` | this turn followed a mid-call reconnect and the pre-drop turns were loaded back from the database |
+| `held`, `heldMs` | the turn looked unfinished (trailing filler, dangling word or pause mark; `services/voice/settle.ts`) and generation was held for up to 1.2 s first. `held` with `aborted` means the hold saved a generation: the person resumed and Hume cancelled. `held` without `aborted` means it only added `heldMs` of wait. |
 | `aborted`, `abortedAtMs` | Hume cancelled the request mid-reply because the person started talking again (end of turn fired mid-thought), and when. The provider stream is stopped, the person's words are stored, the unheard reply is not. A high abort rate means the EVI end-of-turn silence is too short. |
 | `crisis`, `degraded`, `tone` | crisis block added, provider fallback used, tone delivery applied |
 
