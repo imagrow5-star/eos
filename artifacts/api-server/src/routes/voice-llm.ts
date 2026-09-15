@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import { eq, desc, and, lt, gte } from "drizzle-orm";
 import { db, messagesTable, type Profile } from "@workspace/db";
 import { buildSystemPrompt, REMEMBER_ACK_GUIDANCE, type SystemPromptParts } from "../services/systemPrompt.js";
-import { getFrozenSystem as getFrozenEntry, setFrozenSystem as setFrozenEntry } from "../services/voicePromptCache.js";
+import { getFrozenSystem as getFrozenEntry, setFrozenSystem as setFrozenEntry, peekFrozenSystem } from "../services/voicePromptCache.js";
 import { detectRememberIntent } from "../services/memory/rememberTriggers.js";
 import {
   streamCompanionReply,
@@ -417,10 +417,21 @@ export async function persistVoiceTurn(args: {
  * user_token}). Behavior is identical to the previous inline handler; the
  * ElevenLabs route below registers it unchanged.
  */
+// ─── Per-turn timing (voice audit, PR 1) ─────────────────────────────────────
+// One log line per spoken turn, "voice turn timing", with the stage durations
+// the audit could only estimate: auth, profile, database reads, the frozen
+// prompt (hit or build), how long generation waited on the crisis classifier,
+// first model token, model total, and the reply's word count. Hashed user id
+// only; never a word of content. grep: "voice turn timing".
+function ms(from: number, to = performance.now()): number {
+  return Math.round(to - from);
+}
+
 export async function voiceCompletionHandler(
   req: import("express").Request,
   res: import("express").Response,
 ): Promise<void> {
+  const tStart = performance.now();
   const body = (req.body ?? {}) as Record<string, any>;
 
   // ── Identify which logged-in user this call belongs to ──
@@ -434,6 +445,8 @@ export async function voiceCompletionHandler(
     return;
   }
   const { userId, issuedAt } = auth;
+  const tAuth = performance.now();
+  const uhForTiming = (() => { try { return hashUserIdForLog(userId); } catch { return undefined; } })();
 
   const model = typeof body.model === "string" && body.model ? body.model : "eos-claude";
   const wantStream = body.stream !== false;
@@ -469,6 +482,7 @@ export async function voiceCompletionHandler(
     // (DB-free). Real turns always re-read — see primeCallProfile's note.
     const primed = synthetic ? primedCallProfile(userId, issuedAt) : null;
     const profile = primed ?? (await getOrCreateProfileForUser(userId));
+    const tProfile = performance.now();
 
     // ── Fast greeting path (see the section comment above the route) ──
     if (synthetic) {
@@ -552,6 +566,21 @@ export async function voiceCompletionHandler(
         });
       }
 
+      logger.info(
+        {
+          uh: uhForTiming,
+          greeting: true,
+          primedProfile: primed != null,
+          curated: language === "en",
+          authMs: ms(tStart, tAuth),
+          profileMs: ms(tAuth, tProfile),
+          totalMs: ms(tStart),
+          replyWords: greetingText.split(/\s+/).filter(Boolean).length,
+          degraded: greetingDegraded,
+        },
+        "voice turn timing",
+      );
+
       // Same persistence contract as before: the greeting lands in chat
       // history (assistant row only; dedup + serialization in persistVoiceTurn).
       void persistVoiceTurn({
@@ -582,6 +611,12 @@ export async function voiceCompletionHandler(
     const semanticP = synthetic || crisis.matched
       ? Promise.resolve({ matched: false, available: false })
       : detectCrisisSemantic(freshUserContent);
+    // Timing: when the classifier actually resolved, versus when generation
+    // had to wait for it — the difference is what it costs the turn.
+    let classifierResolvedAt: number | null = null;
+    void semanticP.then(() => { classifierResolvedAt = performance.now(); });
+    const tDbStart = performance.now();
+    const frozenHit = peekFrozenSystem(userId, issuedAt) != null;
     const [stage, preCallRows] = await Promise.all([
       calculateStage(profile),
       db
@@ -591,12 +626,16 @@ export async function voiceCompletionHandler(
         .orderBy(desc(messagesTable.createdAt))
         .limit(12),
     ]);
+    const tDb = performance.now();
     const { parts: systemPrompt, toneExtra } = await getFrozenSystem(userId, issuedAt, profile, stage);
+    const tPrompt = performance.now();
 
     // Union the backstop with regex (fail-safe: an unavailable classifier
     // leaves the regex result standing). The event row is what flips
     // /voice-agent/crisis-status → the UI overlays the on-screen helpline card.
+    const tClassifierWaitStart = performance.now();
     const semantic = await semanticP;
+    const tClassifier = performance.now();
     const { active: crisisActive, pattern: crisisPattern } = resolveCrisisOutcome(crisis, semantic);
     if (crisisActive) {
       void recordVoiceCrisisEvent({
@@ -689,12 +728,15 @@ export async function voiceCompletionHandler(
     // its dashboard-configured generic error blurb or sit in dead air, which
     // fails far less gracefully. The degraded line is spoken but never
     // persisted or extracted (see persistVoiceTurn's `degraded` arg).
+    const tModelStart = performance.now();
+    let firstTokenAt: number | null = null;
     const reply = await streamCompanionReply(
       systemPrompt,
       contextMessages,
       userContent,
       stage,
       (chunk) => {
+        if (firstTokenAt === null) firstTokenAt = performance.now();
         if (wantStream) {
           res.write(`data: ${chunkPayload({ content: chunk }, null)}\n\n`);
           flushRes();
@@ -736,6 +778,32 @@ export async function voiceCompletionHandler(
       },
     );
     const fullText = reply.text;
+    const tModelEnd = performance.now();
+    logger.info(
+      {
+        uh: uhForTiming,
+        greeting: false,
+        frozenHit,
+        authMs: ms(tStart, tAuth),
+        profileMs: ms(tAuth, tProfile),
+        dbMs: ms(tDbStart, tDb),
+        promptMs: ms(tDb, tPrompt),
+        // How long generation sat waiting for the classifier (0 = it had
+        // already resolved, or never ran: regex hit / greeting).
+        classifierWaitMs: ms(tClassifierWaitStart, tClassifier),
+        classifierMs: classifierResolvedAt === null ? null : ms(tDbStart, classifierResolvedAt),
+        classifierRan: !(synthetic || crisis.matched),
+        firstTokenMs: firstTokenAt === null ? null : ms(tModelStart, firstTokenAt),
+        modelMs: ms(tModelStart, tModelEnd),
+        totalMs: ms(tStart),
+        replyWords: fullText.split(/\s+/).filter(Boolean).length,
+        contextTurns: contextMessages.length,
+        crisis: crisisActive,
+        degraded: reply.degraded,
+        tone: voiceTone !== null,
+      },
+      "voice turn timing",
+    );
 
     const finishReason = toolCalls.length > 0 ? "tool_calls" : "stop";
     if (wantStream) {

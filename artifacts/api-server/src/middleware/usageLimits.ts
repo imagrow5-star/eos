@@ -232,6 +232,17 @@ function humeSessionTokenKey(req: Request): string {
   return demo ? `d:${demo.callId}` : ipKeyGenerator(req.ip ?? "");
 }
 
+/** Per-turn timing beacons from the call screen (routes/voice-agent.ts):
+ *  one per spoken turn, so the ceiling mirrors the turn limits. */
+export const voiceTurnTimingUsageLimits: RequestHandler[] = limiterPair({
+  hourEnv: "VOICE_TURN_TIMING_LIMIT_PER_HOUR",
+  hourDefault: 600,
+  dayEnv: "VOICE_TURN_TIMING_LIMIT_PER_DAY",
+  dayDefault: 2400,
+  hourMessage: "Too many timing reports.",
+  dayMessage: "Too many timing reports.",
+});
+
 export const humeTurnUsageLimits: RequestHandler[] = limiterPair({
   hourEnv: "HUME_TURN_LIMIT_PER_HOUR",
   hourDefault: 600,

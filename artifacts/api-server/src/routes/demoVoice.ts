@@ -211,10 +211,12 @@ export async function demoVoiceCompletionHandler(
   messages: HumeChatMessage[],
   voiceTone: string | null,
 ): Promise<void> {
+  const tStart = performance.now();
   const body = (req.body ?? {}) as Record<string, unknown>;
   const model = typeof body.model === "string" && body.model ? body.model : "eos-hume";
   const wantStream = body.stream !== false;
   const call = liveDemoCall(claims.callId);
+  const ms = (from: number, to = performance.now()) => Math.round(to - from);
 
   const completionId = `chatcmpl-${crypto.randomUUID()}`;
   const created = Math.floor(Date.now() / 1000);
@@ -275,6 +277,7 @@ export async function demoVoiceCompletionHandler(
         flushRes();
       }
       finish(greeting);
+      logger.info({ demoCallId: claims.callId, greeting: true, totalMs: ms(tStart) }, "demo voice turn timing");
       return;
     }
 
@@ -288,8 +291,14 @@ export async function demoVoiceCompletionHandler(
     const semanticP = crisis.matched
       ? Promise.resolve({ matched: false, available: false })
       : detectCrisisSemantic(freshUserContent);
+    let classifierResolvedAt: number | null = null;
+    void semanticP.then(() => { classifierResolvedAt = performance.now(); });
+    const tPromptStart = performance.now();
+    const frozenHit = call.system != null;
     if (!call.system) call.system = await buildSystemPrompt(demoProfile(), 1);
+    const tPrompt = performance.now();
     const semantic = await semanticP;
+    const tClassifier = performance.now();
     const outcome = resolveCrisisOutcome(crisis, semantic);
     if (outcome.active && outcome.tier) noteDemoCrisis(call, outcome.tier);
 
@@ -300,12 +309,15 @@ export async function demoVoiceCompletionHandler(
     const userContent = voiceTone ? `${freshUserContent}\n${voiceTone}` : freshUserContent;
 
     if (wantStream) openStream();
+    const tModelStart = performance.now();
+    let firstTokenAt: number | null = null;
     const reply = await streamCompanionReply(
       call.system,
       context,
       userContent,
       1,
       (chunk) => {
+        if (firstTokenAt === null) firstTokenAt = performance.now();
         if (wantStream) {
           res.write(`data: ${chunkPayload({ content: chunk }, null)}\n\n`);
           flushRes();
@@ -313,7 +325,26 @@ export async function demoVoiceCompletionHandler(
       },
       { systemExtra, callType: "demo_voice", cacheConversation: true, model: resolveVoiceLlmModel() },
     );
+    const tModelEnd = performance.now();
     finish(reply.text);
+    logger.info(
+      {
+        demoCallId: claims.callId,
+        greeting: false,
+        frozenHit,
+        promptMs: ms(tPromptStart, tPrompt),
+        classifierWaitMs: ms(tPrompt, tClassifier),
+        classifierMs: classifierResolvedAt === null ? null : ms(tPromptStart, classifierResolvedAt),
+        classifierRan: !crisis.matched,
+        firstTokenMs: firstTokenAt === null ? null : ms(tModelStart, firstTokenAt),
+        modelMs: ms(tModelStart, tModelEnd),
+        totalMs: ms(tStart),
+        replyWords: reply.text.split(/\s+/).filter(Boolean).length,
+        crisis: outcome.active,
+        degraded: reply.degraded,
+      },
+      "demo voice turn timing",
+    );
   } catch (err) {
     logger.error({ err }, "demo voice: completion failed");
     if (res.headersSent) {

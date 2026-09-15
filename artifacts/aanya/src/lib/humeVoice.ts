@@ -5,6 +5,7 @@ import {
   convertBlobToBase64,
   getAudioStream,
 } from "hume";
+import { TurnTimer, type TurnTiming } from "./turnTiming";
 
 // ─── Realtime voice via Hume EVI (provider trial — allowlist only) ───────────
 // Hume handles mic streaming, transcription, turn-taking, and barge-in; its
@@ -59,6 +60,11 @@ export type HumeCallHandlers = {
    *  already been re-sent by the time this fires — this is observability,
    *  not a call to action. */
   onReconnect?: (chatId: string) => void;
+  /** Once per reply, when its first audio is accepted: the wait from the
+   *  final transcript to audio, Hume's TTS gap, and the end-of-turn silence
+   *  (lib/turnTiming.ts). Numbers only — Chat.tsx beacons them so the
+   *  per-stage feel of a call is measurable in production logs. */
+  onTurnTiming?: (timing: TurnTiming) => void;
 };
 
 /** Structurally compatible with how Chat.tsx drives the ElevenLabs convo. */
@@ -104,6 +110,9 @@ export async function startHumeCall(
   let recorder: MediaRecorder | null = null;
   let ended = false;
   let firstAudio = false;
+  // Per-turn timing (final transcript → first audio, text → audio, end of
+  // speech → final). Pure rule, fed with the wall clock here.
+  const turnTimer = new TurnTimer();
   // Last chat id seen in chat_metadata — a DIFFERENT id later in the same
   // call means the reconnecting socket silently redialed into a new chat.
   let currentChatId: string | null = null;
@@ -146,29 +155,39 @@ export async function startHumeCall(
         // simply replaces the interim it refined. Finalized turns also carry
         // EVI's detected ASR language — surfaced for mismatch evidence.
         const detected = (msg as { language?: string }).language;
-        if (typeof detected === "string" && (msg as { interim?: boolean }).interim === false) {
-          handlers.onDetectedLanguage?.(detected);
+        const isFinal = (msg as { interim?: boolean }).interim === false;
+        if (isFinal) {
+          // `time.end` is Hume's own end-of-utterance stamp, epoch ms when
+          // it is wall-clock; the timer ignores anything else.
+          turnTimer.onUserFinal(Date.now(), (msg as { time?: { end?: unknown } }).time?.end);
+          if (typeof detected === "string") handlers.onDetectedLanguage?.(detected);
         }
         handlers.onUserText(msg.message?.content ?? "");
         break;
       }
       case "assistant_message":
+        turnTimer.onAssistantText(Date.now());
         handlers.onAgentText(msg.message?.content ?? "");
         handlers.onMode("speaking");
         break;
-      case "audio_output":
+      case "audio_output": {
         if (!firstAudio) {
           firstAudio = true;
           handlers.onFirstAudio?.();
         }
+        const turnTiming = turnTimer.onAudio(Date.now());
+        if (turnTiming) handlers.onTurnTiming?.(turnTiming);
         void player.enqueue(msg).catch((err) => handlers.onError(`audio playback failed: ${String(err)}`));
         break;
+      }
       case "assistant_end":
+        turnTimer.onReplyEnd();
         handlers.onMode("listening");
         break;
       case "user_interruption":
         // Barge-in: cut her audio right now and hand the turn to the user.
         try { player.stop(); } catch { /* nothing playing */ }
+        turnTimer.onReplyEnd();
         handlers.onMode("listening");
         break;
       case "error":
