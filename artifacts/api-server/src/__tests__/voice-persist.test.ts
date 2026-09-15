@@ -118,18 +118,20 @@ describe("persistVoiceTurn — voice echo dedup", () => {
   );
 
   it(
-    "ASR revisions A→B→A never re-save A (the old latest-row check missed this)",
+    "ASR revisions A→B→A: the longer version replaces the row, the shorter resend is dropped",
     async () => {
       const { userId, profile } = await makeUser("revisions");
       const issuedAt = callStart();
       const base = { userId, issuedAt, synthetic: false, profile };
 
       await persistVoiceTurn({ ...base, userContent: "I feel tired.", fullText: "Reply one." });
-      await persistVoiceTurn({ ...base, userContent: "I feel tired today.", fullText: "Reply two." });
+      // B is A continued (services/voice/continuation.ts): one turn, one row.
+      const r2 = await persistVoiceTurn({ ...base, userContent: "I feel tired today.", fullText: "Reply two." });
       const r3 = await persistVoiceTurn({ ...base, userContent: "I feel tired.", fullText: "Reply three." });
 
+      expect(r2.savedUser).toBe(true); // replaced, and still a fresh turn for extraction
       expect(r3.savedUser).toBe(false); // the A-revision resend was dropped
-      expect(await countRows(userId, "user", "I feel tired.")).toBe(1);
+      expect(await countRows(userId, "user", "I feel tired.")).toBe(0);
       expect(await countRows(userId, "user", "I feel tired today.")).toBe(1);
       // All three replies were genuinely different — each was partly spoken.
       expect(await countRows(userId, "assistant", "Reply one.")).toBe(1);
