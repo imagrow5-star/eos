@@ -727,6 +727,12 @@ export default function Chat() {
   //             via our custom-LLM endpoint.
   // "classic":  browser SpeechRecognition + sentence TTS (fallback mode).
   const [voiceEngine, setVoiceEngine] = useState<"realtime" | "classic" | null>(null);
+  // Which provider is behind a realtime call. Hume handles barge-in itself
+  // and its socket has no "stop speaking" command, so a manual interrupt
+  // there could only mute — the call screen shows the hint instead of a
+  // button. ElevenLabs keeps the button. Only read while voiceEngine is
+  // "realtime"; set at each connect, so a stale value can't leak between calls.
+  const [realtimeProvider, setRealtimeProvider] = useState<"hume" | "elevenlabs" | null>(null);
   const voiceEngineRef   = useRef<"realtime" | "classic" | null>(null);
   const realtimeConvoRef = useRef<RealtimeConversation | null>(null);
   // Manual realtime interrupt: the ElevenLabs SDK has no "stop speaking" call,
@@ -2084,11 +2090,11 @@ export default function Chat() {
           const convo = await startHumeCall(session, {
             onMode: (mode) => {
               if (realtimeGenRef.current !== rtGen || !continuousVoiceRef.current) return;
-              // Mirror the ElevenLabs handler's unmute: a manual interrupt
-              // muted the PREVIOUS reply (setVolume 0 in interruptRealtime);
-              // this transition to "speaking" is a fresh reply, which must be
-              // audible again. Without this, one tap of "Tap to interrupt" on
-              // a Hume call silenced every later reply for the whole call.
+              // Mirror the ElevenLabs handler's unmute. Hume calls no longer
+              // show the interrupt button (barge-in is Hume's own, and a tap
+              // could only mute), so the mute flag is never set here; the
+              // restore stays as a guard so a muted volume can never outlive
+              // one reply.
               if (mode === "speaking" && realtimeMutedRef.current) {
                 realtimeMutedRef.current = false;
                 try { realtimeConvoRef.current?.setVolume({ volume: 1 }); } catch { /* best-effort */ }
@@ -2182,6 +2188,7 @@ export default function Chat() {
           voiceEngineRef.current = "realtime";
           stopSpeaking();
           voice.stopListening();
+          setRealtimeProvider("hume");
           setVoiceEngine("realtime");
           setVoiceCallMessage(null);
           console.log("[voice-call] hume engine connected");
@@ -2321,6 +2328,7 @@ export default function Chat() {
           // handshake window before the engine flag existed.
           stopSpeaking();
           voice.stopListening();
+          setRealtimeProvider("elevenlabs");
           setVoiceEngine("realtime");
           setVoiceCallMessage(null);
           console.log("[voice-call] realtime engine connected");
@@ -4766,12 +4774,16 @@ export default function Chat() {
                   </p>
                 )}
 
-                {/* Barge-in affordance — so users know they can cut in anytime */}
+                {/* Barge-in affordance — so users know they can cut in anytime.
+                    Hume: talking IS the interrupt (there is no button, see
+                    realtimeProvider). ElevenLabs and classic keep the button. */}
                 {voiceCallPhase === "speaking" && !voiceCallMessage && (
                   <p className="text-center text-[11px] text-muted-foreground/45 px-2">
-                    {voiceEngine === "realtime"
-                      ? "Just start talking, or tap the button below to stop Eos"
-                      : "Start talking to interrupt, or tap the button below"}
+                    {voiceEngine === "realtime" && realtimeProvider === "hume"
+                      ? "Just start talking to interrupt."
+                      : voiceEngine === "realtime"
+                        ? "Just start talking, or tap the button below to stop Eos"
+                        : "Start talking to interrupt, or tap the button below"}
                   </p>
                 )}
 
@@ -4871,10 +4883,13 @@ export default function Chat() {
                 </button>
               )}
 
-              {/* Realtime engine: the ElevenLabs SDK can't force a stop, so this
-                  mutes her instantly and hands the turn back — a guaranteed way
-                  to interrupt when their voice detection misses you. */}
-              {voiceCallPhase === "speaking" && voiceEngine === "realtime" && (
+              {/* Realtime engine, ElevenLabs only: their SDK can't force a stop,
+                  so this mutes her instantly and hands the turn back — a
+                  guaranteed way to interrupt when their voice detection misses
+                  you. Not on Hume: Hume's barge-in is real (audio stops on
+                  user_interruption), and a button that could only mute her
+                  while she kept talking underneath is worse than no button. */}
+              {voiceCallPhase === "speaking" && voiceEngine === "realtime" && realtimeProvider !== "hume" && (
                 <button
                   onClick={interruptRealtime}
                   className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-primary/20 border-2 border-primary/50 text-primary-strong hover:bg-primary/30 text-[12px] font-semibold tracking-wider uppercase transition-all shadow-[0_0_16px_hsl(var(--primary)/0.18)]"
