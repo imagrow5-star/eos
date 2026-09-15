@@ -103,7 +103,13 @@ export async function startHumeCall(
   handlers: HumeCallHandlers,
 ): Promise<HumeCallControls> {
   const client = new HumeClient({ accessToken: session.accessToken });
-  const socket = client.empathicVoice.chat.connect({ configId: session.configId });
+  // verboseTranscription: Hume sends interim user transcripts ONLY when the
+  // handshake asks for them. They feed two things: the live "You said" line
+  // while the person is still talking, and lastInterimToFirstAudioMs in
+  // lib/turnTiming.ts — the only wall-clock mark we have for the end of their
+  // speech (the final transcript arrives with the reply, and Hume's own
+  // timestamps are relative). Without this flag that figure is always null.
+  const socket = client.empathicVoice.chat.connect({ configId: session.configId, verboseTranscription: true });
 
   const player = new EVIWebAudioPlayer();
   let stream: MediaStream | null = null;
