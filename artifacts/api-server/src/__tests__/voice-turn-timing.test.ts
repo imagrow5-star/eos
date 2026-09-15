@@ -102,7 +102,7 @@ describe("server: one 'voice turn timing' line per spoken turn", () => {
       expect(lines).toHaveLength(1);
       const line = lines[0]!;
       expect(Object.keys(line).sort()).toEqual(
-        ["authMs", "curated", "degraded", "greeting", "primedProfile", "profileMs", "reconnect", "replyWords", "totalMs", "uh"].sort(),
+        ["authMs", "curated", "degraded", "greeting", "primedProfile", "profileMs", "reconnect", "resumeGreeting", "replyWords", "totalMs", "uh"].sort(),
       );
       for (const k of ["authMs", "profileMs", "totalMs", "replyWords"]) {
         expect(typeof line[k], k).toBe("number");

@@ -48,11 +48,34 @@ const ANYTIME_POOL: GreetingTemplate[] = [
   (n) => (n ? `Hey, ${n}. Good to hear your voice. What's going on?` : "Hey. Good to hear your voice. What's going on?"),
 ];
 
+// Second call within a few hours: greeting as if for the first time that day
+// ("I'm glad you called. How are you?") reads as forgetting — the one thing
+// the product can't do. These pick up instead. Same hard rules: no specifics,
+// nothing that claims to remember WHAT was said, only that there was an
+// earlier conversation.
+const RESUME_POOL: GreetingTemplate[] = [
+  (n) => (n ? `Hey, ${n}. Back again — what's on your mind?` : "Hey, back again — what's on your mind?"),
+  (n) => (n ? `Hi, ${n}. Good to hear you again. What's up?` : "Hi. Good to hear you again. What's up?"),
+  (n) => (n ? `Hey, ${n}. Picking up from earlier, or something new?` : "Hey. Picking up from earlier, or something new?"),
+  (n) => (n ? `Hi again, ${n}. Go on, I'm listening.` : "Hi again. Go on, I'm listening."),
+];
+
+/** A call this soon after the last conversation is a resumption, not a fresh hello. */
+export const RESUME_GREETING_WINDOW_MS = 8 * 60 * 60 * 1000;
+
+/** True when the last conversation was recent enough to pick up rather than greet afresh. */
+export function isResumeGreeting(lastTalkedAt: Date | null | undefined, now = new Date()): boolean {
+  if (!lastTalkedAt) return false;
+  const ago = now.getTime() - lastTalkedAt.getTime();
+  return ago >= 0 && ago < RESUME_GREETING_WINDOW_MS;
+}
+
 /** Exported for tests — every pool entry must obey the hard rules above. */
 export const GREETING_POOLS = {
   morning: MORNING_POOL,
   evening: EVENING_POOL,
   anytime: ANYTIME_POOL,
+  resume: RESUME_POOL,
 } as const;
 
 export type GreetingSlot = keyof typeof GREETING_POOLS;
@@ -68,6 +91,9 @@ export interface VoiceGreetingOpts {
   now?: Date;
   /** [0, 1) — injectable for deterministic tests. */
   rng?: () => number;
+  /** When the person last talked with Eos (any message, voice or text). Within
+   *  RESUME_GREETING_WINDOW_MS the greeting picks up instead of starting over. */
+  lastTalkedAt?: Date | null;
 }
 
 /**
@@ -83,10 +109,14 @@ export function buildVoiceFirstMessage(
   // Long or multi-word "names" read awkwardly in a spoken hello — first word only.
   const name = rawName ? (rawName.split(/\s+/)[0] ?? "").slice(0, 30) || null : null;
 
-  const timeCtx = getTimeContext(profile?.timezone || "UTC", opts.now ?? new Date());
+  const now = opts.now ?? new Date();
+  const timeCtx = getTimeContext(profile?.timezone || "UTC", now);
   const slot = greetingSlotFor(timeCtx.partOfDay);
   // Mix the time slot's pool with the anytime pool so even one slot varies.
-  const pool = [...GREETING_POOLS[slot], ...GREETING_POOLS.anytime];
+  // A call soon after the last conversation picks up instead.
+  const pool = isResumeGreeting(opts.lastTalkedAt, now)
+    ? [...GREETING_POOLS.resume]
+    : [...GREETING_POOLS[slot], ...GREETING_POOLS.anytime];
   const pick = pool[Math.floor(rng() * pool.length) % pool.length]!;
   return pick(name);
 }
