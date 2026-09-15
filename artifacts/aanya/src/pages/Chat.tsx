@@ -1807,6 +1807,19 @@ export default function Chat() {
     }).catch(() => {});
   };
 
+  // Per-turn timing beacon on Hume calls (voice audit PR 1): one POST per
+  // reply with the wait from the final transcript to first audio, Hume's TTS
+  // gap, and the end-of-turn silence. Numbers only — never the words.
+  // grep: "voice turn timing (client)".
+  const reportVoiceTurnTiming = (timing: Record<string, unknown>) => {
+    fetch(`${import.meta.env.BASE_URL}api/voice-agent/turn-timing`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(timing),
+    }).catch(() => {});
+  };
+
   // Session prefetcher: the /voice-agent/session bootstrap (voice token +
   // ElevenLabs signed URL) is fetched quietly on call INTENT (hover/touch on
   // the Voice button) and handed over instantly on press — see
@@ -2100,6 +2113,10 @@ export default function Chat() {
                 timing.firstAudioMs = Date.now() - tPress;
                 reportVoiceCallTiming(timing);
               }
+            },
+            onTurnTiming: (turnTiming) => {
+              if (realtimeGenRef.current !== rtGen) return;
+              reportVoiceTurnTiming({ ...turnTiming });
             },
             onDisconnect: (info) => {
               if (

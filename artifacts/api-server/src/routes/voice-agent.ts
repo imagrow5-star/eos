@@ -11,7 +11,7 @@ import {
 import { resolveVoiceGender } from "../services/settings/voiceCatalog.js";
 import { getOrCreateProfileForUser } from "./profile.js";
 import { isVoiceCallEnabled } from "../lib/featureFlags.js";
-import { voiceSessionUsageLimits } from "../middleware/usageLimits.js";
+import { voiceSessionUsageLimits, voiceTurnTimingUsageLimits } from "../middleware/usageLimits.js";
 import { logger } from "../lib/logger.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { resolveHelplines, buildHelplineBlockText } from "../services/crisis/helplines.js";
@@ -378,6 +378,38 @@ router.post("/voice-agent/client-error", (req, res): void => {
     /* logging must never break the beacon */
   }
   res.status(204).end();
+});
+
+// ─── Browser-side per-turn timing beacon (voice audit, PR 1) ─────────────────
+// One POST per spoken turn from the call screen (lib/turnTiming.ts): the gap
+// from Hume's final transcript of what the person said to the first audio of
+// the reply (what the person actually waits), the gap from the reply's text to
+// its first audio (Hume's TTS alone), and, when Hume's utterance timestamps
+// are wall-clock, the gap from the end of speech to the final transcript
+// (the end-of-turn silence as applied). Numbers only; hashed id only.
+// grep: "voice turn timing (client)".
+router.post("/voice-agent/turn-timing", ...voiceTurnTimingUsageLimits, (req, res): void => {
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const num = (v: unknown): number | null =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 120_000 ? Math.round(v) : null;
+  const turn = num(b.turn);
+  if (turn === null) {
+    res.status(400).json({ error: "turn is required" });
+    return;
+  }
+  const uh = hashUserIdForLog(req.userId); // Tier 3: hashed id only
+  logger.info(
+    {
+      uh,
+      turn,
+      finalToFirstAudioMs: num(b.finalToFirstAudioMs),
+      textToFirstAudioMs: num(b.textToFirstAudioMs),
+      userEndToFinalMs: num(b.userEndToFinalMs),
+      greeting: b.greeting === true,
+    },
+    "voice turn timing (client)",
+  );
+  res.json({ ok: true });
 });
 
 // ─── Browser-side connect-timing beacon ──────────────────────────────────────
