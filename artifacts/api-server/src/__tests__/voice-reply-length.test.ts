@@ -1,5 +1,6 @@
 /**
- * Spoken reply length (voice audit, PR 5) and spoken register (PR 6).
+ * Spoken reply length (voice audit, PR 5), spoken register (PR 6) and
+ * reflection craft (PR 7).
  *
  *   • the voice addendum asks for one or two sentences, about 25 words, longer
  *     only when the question needs it (the old "1–3 sentences, under about 45
@@ -85,6 +86,9 @@ describe("voice addendum: length", () => {
       "No summaries, no recaps, no \"so what I'm hearing is\". Just respond.",
       "Say numbers and times the way people say them aloud, not as written figures.",
       "Never read a memory back word for word. Mention it the way a friend would, in passing.",
+      // Reflection craft (PR 7): statements, not questions; the next sentence, not the last one.
+      "Reflect as a statement, never a question. Never open with \"it sounds like\", \"it seems like\" or \"what I'm hearing is\".",
+      "Don't hand back what they just said. Say the sentence they were about to say next, the one underneath it.",
     ]) {
       expect(addendum).toContain(line);
     }
