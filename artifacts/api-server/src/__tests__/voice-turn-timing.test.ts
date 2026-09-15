@@ -86,7 +86,7 @@ function voiceTurn(userId: number, messages: { role: "user" | "assistant"; conte
 }
 
 const NUMERIC_REAL_TURN_KEYS = [
-  "authMs", "profileMs", "dbMs", "promptMs", "modelMs", "totalMs", "replyWords", "contextTurns",
+  "heldMs", "authMs", "profileMs", "dbMs", "promptMs", "modelMs", "totalMs", "replyWords", "contextTurns",
 ] as const;
 
 describe("server: one 'voice turn timing' line per spoken turn", () => {
@@ -137,7 +137,7 @@ describe("server: one 'voice turn timing' line per spoken turn", () => {
       const line = lines[0]!;
       expect(Object.keys(line).sort()).toEqual(
         [
-          "uh", "greeting", "frozenHit", "authMs", "profileMs", "dbMs", "promptMs",
+          "uh", "greeting", "frozenHit", "held", "heldMs", "authMs", "profileMs", "dbMs", "promptMs",
           "classifierMs", "classifierRan", "firstTokenMs", "firstSentenceMs", "modelMs", "totalMs", "replyWords", "contextTurns",
           "resumed", "crisis", "crisisArmed", "aborted", "abortedAtMs", "degraded", "tone",
         ].sort(),
@@ -152,7 +152,7 @@ describe("server: one 'voice turn timing' line per spoken turn", () => {
       for (const k of ["firstTokenMs", "firstSentenceMs", "classifierMs"]) {
         expect(line[k] === null || typeof line[k] === "number", k).toBe(true);
       }
-      for (const k of ["frozenHit", "classifierRan", "resumed", "crisis", "crisisArmed", "aborted", "degraded", "tone"]) {
+      for (const k of ["frozenHit", "held", "classifierRan", "resumed", "crisis", "crisisArmed", "aborted", "degraded", "tone"]) {
         expect(typeof line[k], k).toBe("boolean");
       }
       // A plain sentence is not a crisis and the classifier did run for it.

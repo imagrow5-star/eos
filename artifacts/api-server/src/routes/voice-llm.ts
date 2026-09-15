@@ -33,6 +33,7 @@ import { resolveHelplines } from "../services/crisis/helplines.js";
 import { recordVoiceCrisisEvent } from "../services/crisis/events.js";
 import { memoryCutReport, logMemoryCut } from "../services/memory/cutReport.js";
 import { isContinuationOf } from "../services/voice/continuation.js";
+import { looksUnfinished, settleHold, SETTLE_HOLD_MS } from "../services/voice/settle.js";
 
 const router: IRouter = Router();
 
@@ -814,6 +815,65 @@ export async function voiceCompletionHandler(
       }
     };
 
+    // Hume cancels this request when the person starts talking again (end of
+    // turn fired mid-thought). Generation used to carry on and the reply
+    // nobody heard was persisted and fed the anti-repetition list — wrong
+    // history. Now: abort the provider stream, keep the person's words,
+    // store no reply.
+    const abort = new AbortController();
+    let abortedAt: number | null = null;
+    res.on("close", () => {
+      if (res.writableFinished) return; // normal end
+      abortedAt = performance.now();
+      abort.abort();
+    });
+
+    // Settle hold (services/voice/settle.ts): a turn that ends in a filler,
+    // a dangling word or a pause mark is probably not over. Hold for a
+    // moment before generating; if the person resumes, Hume cancels this
+    // request and nothing is generated (or stored — the longer version of
+    // the turn is on its way). If they don't, the reply goes ahead, late by
+    // the hold. `held`/`heldMs` on the timing line say which happened.
+    const held = looksUnfinished(freshUserContent);
+    let heldMs = 0;
+    if (held) {
+      const tHold = performance.now();
+      await settleHold(SETTLE_HOLD_MS, abort.signal);
+      heldMs = ms(tHold);
+      if (abortedAt !== null) {
+        logger.info(
+          {
+            uh: uhForTiming,
+            greeting: false,
+            frozenHit,
+            held,
+            heldMs,
+            authMs: ms(tStart, tAuth),
+            profileMs: ms(tAuth, tProfile),
+            dbMs: ms(tDbStart, tDb),
+            promptMs: ms(tDb, tPrompt),
+            classifierMs: classifierResolvedAt === null ? null : ms(tDbStart, classifierResolvedAt),
+            classifierRan,
+            firstTokenMs: null,
+            firstSentenceMs: null,
+            modelMs: 0,
+            totalMs: ms(tStart),
+            replyWords: 0,
+            contextTurns: contextMessages.length,
+            resumed,
+            crisis: crisisActive,
+            crisisArmed: pendingPattern !== null,
+            aborted: true,
+            abortedAtMs: ms(tStart, abortedAt),
+            degraded: false,
+            tone: voiceTone !== null,
+          },
+          "voice turn timing",
+        );
+        return;
+      }
+    }
+
     // System tools ElevenLabs exposes for this agent (skip_turn today). When
     // Claude invokes one, echo it back in OpenAI streaming format — ElevenLabs
     // executes it (skip_turn = agent stays silent this turn).
@@ -832,18 +892,6 @@ export async function voiceCompletionHandler(
     // fails far less gracefully. The degraded line is spoken but never
     // persisted or extracted (see persistVoiceTurn's `degraded` arg).
     const tModelStart = performance.now();
-    // Hume cancels this request when the person starts talking again (end of
-    // turn fired mid-thought). Until now generation carried on and the reply
-    // nobody heard was persisted and fed the anti-repetition list — wrong
-    // history. Now: abort the provider stream, keep the person's words,
-    // store no reply.
-    const abort = new AbortController();
-    let abortedAt: number | null = null;
-    res.on("close", () => {
-      if (res.writableFinished) return; // normal end
-      abortedAt = performance.now();
-      abort.abort();
-    });
     let firstTokenAt: number | null = null;
     // First sentence boundary in the streamed text: if Hume synthesises per
     // sentence, its first audio should trail THIS, not the end of the reply.
@@ -911,6 +959,8 @@ export async function voiceCompletionHandler(
         uh: uhForTiming,
         greeting: false,
         frozenHit,
+        held,
+        heldMs,
         authMs: ms(tStart, tAuth),
         profileMs: ms(tAuth, tProfile),
         dbMs: ms(tDbStart, tDb),

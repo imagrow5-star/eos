@@ -111,7 +111,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 describe("Hume cancels the request mid-reply", () => {
   it("aborts the provider stream, keeps the person's words, stores no reply", async () => {
     const { userId } = await makeUser("cut");
-    const said = "I was going to say something about my brother but";
+    // A finished sentence: the settle hold must not apply here, so the cancel
+    // lands mid-stream (the hold has its own test).
+    const said = "I wanted to tell you something about my brother today.";
     const spy = vi.spyOn(logger, "info");
     signals.length = 0;
     try {
