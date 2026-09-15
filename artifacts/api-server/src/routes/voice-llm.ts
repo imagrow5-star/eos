@@ -31,6 +31,7 @@ import { armCallCrisis, takeCallCrisis } from "../services/crisis/callFlag.js";
 import { CRISIS_REINFORCEMENT_BLOCK_VOICE } from "../services/crisis/reinforcement.js";
 import { resolveHelplines } from "../services/crisis/helplines.js";
 import { recordVoiceCrisisEvent } from "../services/crisis/events.js";
+import { memoryCutReport, logMemoryCut } from "../services/memory/cutReport.js";
 
 const router: IRouter = Router();
 
@@ -868,6 +869,7 @@ export async function voiceCompletionHandler(
     );
     const fullText = reply.text;
     const tModelEnd = performance.now();
+    logMemoryCut(userId, "voice", memoryCutReport(systemPrompt, freshUserContent, fullText));
     logger.info(
       {
         uh: uhForTiming,
