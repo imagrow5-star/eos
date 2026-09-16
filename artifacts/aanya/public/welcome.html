@@ -469,6 +469,12 @@
   .foot .links{display:flex;gap:26px;flex-wrap:wrap;justify-content:center;font-size:14px;color:var(--ink-soft);margin-top:16px}
   .foot .links a{transition:color .2s}
   .foot .links a:hover{color:var(--green-deep)}
+  /* AlternativeTo listing badge: small and quiet, sitting with the legal links.
+     The artwork is our own copy (alternativeto-badge.svg), not hotlinked, so
+     the page still loads nothing from anyone else — see /security. */
+  .foot .badge{margin-top:22px;line-height:0}
+  .foot .badge img{height:36px;width:auto;opacity:.72;transition:opacity .2s}
+  .foot .badge a:hover img{opacity:1}
   .foot .meaning{margin-top:6px;font-size:13.5px;color:var(--muted)}
   .foot .disclosure{margin-top:28px;font-size:13.5px;color:var(--muted);max-width:640px;margin-left:auto;margin-right:auto;line-height:1.7}
   .foot .copy{margin-top:16px;font-size:12.5px;color:var(--muted)}
@@ -836,6 +842,7 @@
       <a href="/security">Security</a>
       <a href="mailto:hello@eoscompanion.com">hello@eoscompanion.com</a>
     </div>
+    <p class="badge"><a href="https://alternativeto.net/software/eos-1/about/?utm_source=badge&amp;utm_medium=referral" target="_blank" rel="noopener noreferrer"><img src="alternativeto-badge.svg" alt="EOS on AlternativeTo" width="244" height="83" loading="lazy"></a></p>
     <p class="disclosure">Eos is an AI companion, here to listen, but not a person or a substitute for professional help. If you're in crisis, please reach a real person. Dial your local helpline.</p>
     <p class="copy">Eos is operated by Itslexa, Vizianagaram, Andhra Pradesh, India.</p>
     <p class="copy">© 2026 Eos · eoscompanion.com</p>
