@@ -62,6 +62,25 @@ try {
   for (const w of secretSplitWarnings()) logger.warn(w);
 }
 
+// ─── Account email delivery ──────────────────────────────────────────────────
+// Verification, password reset and email-change mails are the one thing that
+// has to work: a person who never gets the link is locked out before they
+// start. Without RESEND_API_KEY every send silently no-ops; without APP_URL
+// on a non-Replit host the link can't be built and every send fails. Say so
+// at boot, loudly, in production — not only in a log line per attempt.
+if (process.env.NODE_ENV === "production") {
+  if (!process.env.RESEND_API_KEY) {
+    logger.error(
+      "RESEND_API_KEY not set — account emails (verification, password reset, email change) will NOT be delivered",
+    );
+  }
+  if (!process.env.APP_URL?.trim() && !process.env.REPLIT_DOMAINS && !process.env.REPLIT_DEV_DOMAIN) {
+    logger.error(
+      "APP_URL not set — verification and reset links cannot be built; every account email will fail to send",
+    );
+  }
+}
+
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {
