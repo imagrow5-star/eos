@@ -184,6 +184,10 @@ export interface CompanionReplyResult {
    *  `text` is whatever had streamed by then and must not be treated as a
    *  reply anyone heard. */
   aborted?: boolean;
+  /** Token counts as the provider reported them (streaming path only). */
+  usage?: Record<string, number>;
+  /** The model that produced `text` (streaming path only). */
+  model?: string;
 }
 
 function logAiDegraded(callType: string, err: unknown): void {
@@ -451,11 +455,11 @@ export async function streamCompanionReply(
     }
 
     logAiUsage(opts?.callType ?? "chat", model, usage);
-    if (opts?.signal?.aborted) return { text: fullText, degraded: false, aborted: true };
+    if (opts?.signal?.aborted) return { text: fullText, degraded: false, aborted: true, usage, model };
 
     // A tool-only reply (e.g. skip_turn) is INTENTIONAL silence — never swap in
     // the fallback line, or the agent would speak while trying to stay quiet.
-    return { text: fullText || (sawToolUse ? "" : "I'm here. Tell me more."), degraded: false };
+    return { text: fullText || (sawToolUse ? "" : "I'm here. Tell me more."), degraded: false, usage, model };
   } catch (err) {
     // The caller cancelled (client gone): not an outage, nothing to say.
     if (opts?.signal?.aborted) return { text: fullText, degraded: false, aborted: true };
