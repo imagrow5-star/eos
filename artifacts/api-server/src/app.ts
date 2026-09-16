@@ -13,6 +13,7 @@ import { shouldServeLanding, shouldServeStaticPricing } from "./lib/landingRoute
 import { securityTxt } from "./lib/securityTxt";
 import path from "node:path";
 import fs from "node:fs";
+import { sendPublicPage } from "./lib/publicPage";
 
 // SESSION_SECRET is required — fail fast rather than silently use a weak fallback
 const sessionSecret = process.env.SESSION_SECRET;
@@ -636,8 +637,7 @@ if (fs.existsSync(frontendIndex)) {
     const legalFile = path.join(frontendDir, `${legal}.html`);
     app.get(`/${legal}`, (_req, res, next) => {
       if (!fs.existsSync(legalFile)) return next();
-      res.setHeader("Cache-Control", "no-cache");
-      res.sendFile(legalFile);
+      sendPublicPage(res, legalFile);
     });
   }
 
@@ -648,8 +648,7 @@ if (fs.existsSync(frontendIndex)) {
   const pricingPage = path.join(frontendDir, "pricing.html");
   app.get("/pricing", (req, res, next) => {
     if (shouldServeStaticPricing(req.headers.cookie) && fs.existsSync(pricingPage)) {
-      res.setHeader("Cache-Control", "no-cache");
-      return res.sendFile(pricingPage);
+      return sendPublicPage(res, pricingPage);
     }
     next();
   });
@@ -657,8 +656,7 @@ if (fs.existsSync(frontendIndex)) {
   const landingPage = path.join(frontendDir, "welcome.html");
   app.get("/", (req, res, next) => {
     if (shouldServeLanding(req.originalUrl, req.headers.cookie) && fs.existsSync(landingPage)) {
-      res.setHeader("Cache-Control", "no-cache");
-      return res.sendFile(landingPage);
+      return sendPublicPage(res, landingPage);
     }
     next();
   });
