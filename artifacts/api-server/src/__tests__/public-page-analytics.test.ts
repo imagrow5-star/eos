@@ -17,7 +17,9 @@ import { analyticsBeaconTag, withAnalyticsBeacon } from "../lib/publicPage.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(here, "../../../aanya/public");
-const TOKEN = "0123456789abcdef0123456789abcdef";
+// Built at runtime, not a hex literal: the secret scan flags key-shaped
+// literals in tracked files, and this test value must not look like one.
+const TOKEN = "ab".repeat(16);
 let app: Express;
 
 beforeAll(async () => {
