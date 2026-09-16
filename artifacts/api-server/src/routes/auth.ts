@@ -105,19 +105,27 @@ async function sendPasswordResetEmail(
   }
 }
 
+/**
+ * Sends the verification email. Resolves true when Resend accepted it, false
+ * when there is no RESEND_API_KEY (nothing was sent — never report that as a
+ * send), and throws on a Resend error so the caller can log the status and
+ * body (a 403 "domain not verified" or "testing emails only" reads exactly
+ * like "no email arrived" from the outside).
+ */
 async function sendVerificationEmail(
   toEmail: string,
   verifyUrl: string,
-): Promise<void> {
+): Promise<boolean> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     // Privacy audit Tier 1: never log the token or the verify URL (or userId).
     // To retrieve a token in dev, add a `pnpm token:reveal` script that reads
     // it from the DB (not built here).
-    logger.warn(
-      "Email delivery unavailable (RESEND_API_KEY not set). Email-verification token generated but not delivered. Retrieve via DB or set the env var.",
-    );
-    return;
+    const msg =
+      "Email delivery unavailable (RESEND_API_KEY not set). Email-verification token generated but not delivered. Retrieve via DB or set the env var.";
+    if (process.env.NODE_ENV === "production") logger.error(msg);
+    else logger.warn(msg);
+    return false;
   }
 
   const res = await fetch("https://api.resend.com/emails", {
@@ -149,6 +157,7 @@ async function sendVerificationEmail(
     const body = await res.text();
     throw new Error(`Resend API error ${res.status}: ${body}`);
   }
+  return true;
 }
 
 /**
@@ -296,10 +305,13 @@ async function issueAndSendVerification(userId: number, email: string): Promise<
 
     const verifyUrl = `${getAppBaseUrl()}/?verifyToken=${token}`;
 
-    await sendVerificationEmail(email, verifyUrl);
+    const delivered = await sendVerificationEmail(email, verifyUrl);
     try {
       const uh = hashUserIdForLog(userId);
-      if (uh) logger.info({ uh }, "Verification email sent");
+      // "sent" only when Resend accepted it. A missing key already logged
+      // its own line; saying "sent" on top of it misled a real investigation.
+      if (uh && delivered) logger.info({ uh }, "Verification email sent");
+      if (uh && !delivered) logger.error({ uh }, "Verification email NOT sent: email delivery is not configured");
     } catch { /* logging must never crash the caller */ }
   } catch (err) {
     try {
@@ -834,10 +846,11 @@ router.post("/auth/resend-verification", async (req, res): Promise<void> => {
     void (async () => {
       try {
         const verifyUrl = `${getAppBaseUrl()}/?verifyToken=${token}`;
-        await sendVerificationEmail(targetEmail, verifyUrl);
+        const delivered = await sendVerificationEmail(targetEmail, verifyUrl);
         try {
           const uh = hashUserIdForLog(targetUserId);
-          if (uh) logger.info({ uh }, "Verification email sent");
+          if (uh && delivered) logger.info({ uh }, "Verification email sent");
+          if (uh && !delivered) logger.error({ uh }, "Verification email NOT sent: email delivery is not configured");
         } catch { /* logging must never crash the caller */ }
       } catch (err) {
         try {
