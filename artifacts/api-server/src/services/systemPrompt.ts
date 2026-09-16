@@ -168,10 +168,23 @@ export const REMEMBER_ACK_GUIDANCE =
   "like \"Got it — I'll hold this\" or \"Okay, I've got it.\" Then continue the " +
   "conversation naturally.";
 
+/**
+ * Memory supplied by the caller instead of read from the database. Used by
+ * the evaluation endpoint (routes/eval.ts) so a harness can hand Eos a
+ * person's facts and feelings for one turn without any row existing. The
+ * rows go through the same ranking, cut and formatting as real ones; only
+ * the fetch is replaced. Every other per-user lookup still runs against the
+ * profile's user id, which for the eval route matches no row.
+ */
+export interface MemoryOverride {
+  facts: Array<typeof memoryFactsTable.$inferSelect>;
+  feelings: Array<typeof memoryFeelingsTable.$inferSelect>;
+}
+
 export async function buildSystemPrompt(
   profile: Profile,
   precomputedStage?: number,
-  opts?: { rememberIntent?: boolean },
+  opts?: { rememberIntent?: boolean; memory?: MemoryOverride },
 ): Promise<SystemPromptParts> {
   const stage = precomputedStage ?? await calculateStage(profile);
   const { label, rules } = stageMeta(stage);
@@ -189,12 +202,15 @@ export async function buildSystemPrompt(
       // rank in app code below — an old-but-important fact must be able to beat
       // a newer trivial one, which "ORDER BY created_at LIMIT 30" could not.
       // Retired facts (no longer true, nothing replaced them) never reach a prompt.
-      db.select().from(memoryFactsTable).where(and(eq(memoryFactsTable.userId, userId), isNull(memoryFactsTable.retiredAt))),
+      opts?.memory
+        ? Promise.resolve(opts.memory.facts.filter((f) => f.retiredAt == null))
+        : db.select().from(memoryFactsTable).where(and(eq(memoryFactsTable.userId, userId), isNull(memoryFactsTable.retiredAt))),
       // Sprint 2C — feelings-in-context. Same fetch-all-then-rank shape as facts
       // (they share the importance columns and scorer). Guarded so a
       // freshly-published prod without the table yet degrades to none, never
       // breaks chat.
       (async () => {
+        if (opts?.memory) return opts.memory.feelings;
         try {
           return await db.select().from(memoryFeelingsTable).where(eq(memoryFeelingsTable.userId, userId));
         } catch {
