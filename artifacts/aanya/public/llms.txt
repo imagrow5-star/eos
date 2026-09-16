@@ -8,7 +8,6 @@
 
 Site: https://eoscompanion.com
 Category: AI companion / someone to talk to
-Availability: web app, any modern browser, phone or desktop
 Age: adults only (18+)
 
 ## Who it's for
@@ -136,7 +135,8 @@ Existing subscribers get at least 30 days' notice of any price change.
 ## About
 
 Eos is built by Eppili Naveen and operated by Itslexa,
-Vizianagaram, Andhra Pradesh, India. The founder reads every message
-sent through the site personally.
+Vizianagaram, Andhra Pradesh, India. Messages sent through the site's
+contact form are read by the founder personally. Conversations inside
+Eos are not.
 Contact: hello@eoscompanion.com
 Listed on AlternativeTo: https://alternativeto.net/software/eos-1/about/
