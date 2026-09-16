@@ -79,11 +79,32 @@ describe("the public routes", () => {
 
   it("never reaches the app shell", async () => {
     process.env.CF_BEACON_TOKEN = TOKEN;
-    // A signed-in member's /pricing and any app route fall through to index.html.
-    for (const [url, cookie] of [["/pricing", "sid=abc"], ["/memory", ""], ["/", "sid=abc"]] as const) {
-      const res = await request(app).get(url).set("Cookie", cookie);
+    // Any app route falls through to index.html…
+    const anon = await request(app).get("/memory");
+    expect(anon.status).toBe(200);
+    expect(anon.text).not.toContain("cloudflareinsights");
+    // …and so do / and /pricing for a signed-in member.
+    const member = request.agent(app);
+    const signup = await member
+      .post("/api/auth/signup")
+      .send({ email: `analytics-member-${Date.now()}@example.com`, password: "Test1234!" });
+    expect(signup.status).toBe(201);
+    for (const url of ["/", "/pricing"]) {
+      const res = await member.get(url);
       expect(res.status, url).toBe(200);
+      expect(res.text, url).toContain("<title>app</title>");
       expect(res.text, url).not.toContain("cloudflareinsights");
     }
+  });
+
+  // The regression: a stale sid cookie must not turn the landing page into
+  // the app's sign-in form. The beacon still rides along, and the cookie goes.
+  it("serves the landing page, beacon and all, over a stale sid cookie", async () => {
+    process.env.CF_BEACON_TOKEN = TOKEN;
+    const res = await request(app).get("/").set("Cookie", "sid=s%3Agone.sig");
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain("<title>app</title>");
+    expect(res.text).toContain("beacon.min.js");
+    expect(String(res.headers["set-cookie"])).toMatch(/(^|,)sid=;/);
   });
 });

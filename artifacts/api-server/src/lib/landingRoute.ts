@@ -9,7 +9,7 @@
  * outbound link (?igsh=…, ?igshid=…, ?fbclid=…, utm_ params, gclid), so a tapped bio
  * link arrives as /?igsh=… — which is NOT a clean root URL. The landing page
  * must win for those; the SPA owns "/" only for the specific query keys it
- * actually handles, plus returning users (who carry a session cookie).
+ * actually handles, plus returning users (who are signed in).
  */
 
 /**
@@ -27,22 +27,41 @@ export const SPA_ROOT_QUERY_KEYS = [
 ] as const;
 
 /**
+ * The session's view of the visitor. Only userId matters here; the module
+ * takes this narrow shape so the rule stays a pure function under test.
+ */
+export type SessionView = { userId?: number | null } | null | undefined;
+
+/**
  * True when GET "/" should serve welcome.html rather than the SPA. Serve the
  * landing page unless the URL carries a known SPA query key, or the visitor
- * already has a session cookie (a returning user should land in the app).
+ * is signed in (a returning member should land in the app).
+ *
+ * "Signed in" means the session middleware resolved the cookie to a live
+ * session with a user on it — NOT that a cookie named sid is present. A
+ * cookie outlives its session (it is set for 30 days; the row behind it can
+ * expire, be destroyed, or belong to an abandoned Google sign-in), and a
+ * stale one used to send every such visitor to the app, which greeted them
+ * with the sign-in form instead of the landing page.
  */
-export function shouldServeLanding(
-  originalUrl: string,
-  cookieHeader: string | undefined,
-): boolean {
+export function shouldServeLanding(originalUrl: string, signedIn: boolean): boolean {
   const params = new URLSearchParams(originalUrl.split("?")[1] ?? "");
   const wantsSpa = SPA_ROOT_QUERY_KEYS.some((key) => params.has(key));
-  return !wantsSpa && !hasSessionCookie(cookieHeader);
+  return !wantsSpa && !signedIn;
 }
 
-/** A returning user: the request carries the session cookie. */
+/** A member: the request's session carries a user. */
+export function isSignedIn(session: SessionView): boolean {
+  return typeof session?.userId === "number";
+}
+
+/**
+ * The request carries a cookie NAMED sid (not merely one whose name ends in
+ * "sid"). With isSignedIn false, that cookie is stale and worth clearing so
+ * the browser stops sending it.
+ */
 export function hasSessionCookie(cookieHeader: string | undefined): boolean {
-  return (cookieHeader ?? "").includes("sid=");
+  return /(^|;\s*)sid=/.test(cookieHeader ?? "");
 }
 
 /**
@@ -51,6 +70,6 @@ export function hasSessionCookie(cookieHeader: string | undefined): boolean {
  * render in any browser with JavaScript off. A signed-in member keeps the
  * app's pricing page, which knows their current plan and opens checkout.
  */
-export function shouldServeStaticPricing(cookieHeader: string | undefined): boolean {
-  return !hasSessionCookie(cookieHeader);
+export function shouldServeStaticPricing(signedIn: boolean): boolean {
+  return !signedIn;
 }
