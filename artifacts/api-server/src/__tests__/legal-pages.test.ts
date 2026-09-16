@@ -93,11 +93,27 @@ describe("legal pages", () => {
     expect(html).toContain("/refunds");
   });
 
-  it("hands /pricing to the app for a signed-in member (session cookie)", async () => {
-    const res = await request(app).get("/pricing").set("Cookie", "sid=abc");
+  it("hands /pricing to the app for a signed-in member (live session)", async () => {
+    const agent = request.agent(app);
+    const signup = await agent
+      .post("/api/auth/signup")
+      .send({ email: `pricing-member-${Date.now()}@example.com`, password: "Test1234!" });
+    expect(signup.status).toBe(201);
+    const res = await agent.get("/pricing");
     expect(res.status).toBe(200);
     expect(res.text).toContain("<title>app</title>"); // the SPA shell fixture, not the static page
     expect(res.text).not.toContain("Choose the plan that fits.");
+  });
+
+  // A sid cookie is not a session. One left behind by an expired or destroyed
+  // session (or an abandoned Google sign-in) used to send the visitor to the
+  // app, which met them with the sign-in form. The static page wins, and the
+  // stale cookie is cleared so the browser stops presenting it.
+  it("serves /pricing to a visitor whose sid cookie no longer maps to a session, and clears it", async () => {
+    const res = await request(app).get("/pricing").set("Cookie", "sid=s%3Astale.signature; theme=dark");
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("Choose the plan that fits.");
+    expect(String(res.headers["set-cookie"])).toMatch(/sid=;.*Expires=Thu, 01 Jan 1970/);
   });
 
   it("serves /refunds with the 14-day guarantee", async () => {

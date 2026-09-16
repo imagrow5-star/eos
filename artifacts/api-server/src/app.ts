@@ -9,7 +9,7 @@ import { pool } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { ensureStoryTables, migrateWeeklyReviewsToStories } from "./services/storiesMigration";
-import { shouldServeLanding, shouldServeStaticPricing } from "./lib/landingRoute";
+import { shouldServeLanding, shouldServeStaticPricing, isSignedIn, hasSessionCookie } from "./lib/landingRoute";
 import { securityTxt } from "./lib/securityTxt";
 import path from "node:path";
 import fs from "node:fs";
@@ -633,6 +633,16 @@ if (fs.existsSync(frontendIndex)) {
   // on purpose: it is the trust page, and it has to render in any browser
   // and with JavaScript off, which the app bundle (modern engines only)
   // can't promise.
+  // A cookie named sid that the session middleware did not resolve to a live
+  // session (expired, destroyed, or an abandoned Google sign-in) is stale.
+  // Clear it, or the browser keeps presenting it for up to 30 days. A session
+  // mid-way through Google sign-in has no user yet but is not stale.
+  const dropStaleSessionCookie = (req: express.Request, res: express.Response): void => {
+    if (!hasSessionCookie(req.headers.cookie)) return;
+    if (isSignedIn(req.session) || req.session?.googleOauthState) return;
+    res.clearCookie("sid");
+  };
+
   for (const legal of ["privacy", "terms", "refunds", "security"] as const) {
     const legalFile = path.join(frontendDir, `${legal}.html`);
     app.get(`/${legal}`, (_req, res, next) => {
@@ -647,15 +657,22 @@ if (fs.existsSync(frontendIndex)) {
   // checkout) — see lib/landingRoute.ts.
   const pricingPage = path.join(frontendDir, "pricing.html");
   app.get("/pricing", (req, res, next) => {
-    if (shouldServeStaticPricing(req.headers.cookie) && fs.existsSync(pricingPage)) {
+    if (shouldServeStaticPricing(isSignedIn(req.session)) && fs.existsSync(pricingPage)) {
+      dropStaleSessionCookie(req, res);
       return sendPublicPage(res, pricingPage);
     }
     next();
   });
 
   const landingPage = path.join(frontendDir, "welcome.html");
+  if (!fs.existsSync(landingPage)) {
+    // Never silent: without this file "/" falls through to the app shell and
+    // every visitor meets the sign-in form instead of the landing page.
+    logger.error({ landingPage }, "Landing page missing from the frontend bundle — / will serve the app to every visitor");
+  }
   app.get("/", (req, res, next) => {
-    if (shouldServeLanding(req.originalUrl, req.headers.cookie) && fs.existsSync(landingPage)) {
+    if (shouldServeLanding(req.originalUrl, isSignedIn(req.session)) && fs.existsSync(landingPage)) {
+      dropStaleSessionCookie(req, res);
       return sendPublicPage(res, landingPage);
     }
     next();

@@ -648,7 +648,10 @@ router.get("/auth/me", async (req, res): Promise<void> => {
     .limit(1);
 
   if (!user) {
+    // Destroy the row AND clear the cookie: a cookie left behind keeps
+    // presenting a session that no longer exists, for up to 30 days.
     req.session.destroy(() => {});
+    res.clearCookie("sid");
     res.status(401).json({ error: "Session invalid" });
     return;
   }
