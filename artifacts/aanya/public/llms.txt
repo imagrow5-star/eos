@@ -1,27 +1,142 @@
 # Eos
 
 > Eos is a private AI companion you talk to by voice or text.
-> It remembers you across conversations. What you say is
-> encrypted where it is stored, never sold, and never used to
-> train AI. Eos is built for everyday companionship — a friend
-> to talk to, not a therapist and not a romantic partner.
+> It listens, remembers what matters to you across conversations,
+> and encrypts what you say where it is stored. Nothing is sold and
+> nothing trains any AI model. It is a friend to talk to: not a
+> therapist, not a romantic partner, not a character to role-play.
 
-## Pricing
+Site: https://eoscompanion.com
+Category: AI companion / someone to talk to
+Age: adults only (18+)
 
-Eos is a paid subscription: $19.99, $39.99, or $59.99 per
-month. Every plan begins with a 7-day free trial. A card is
-required to start. There is no permanent free tier.
+## Who it's for
+
+- People who want someone to talk to at hours nobody else is awake:
+  three in the morning, when the people who love you are asleep and
+  you'd feel stupid waking them.
+- People carrying something they've stopped saying out loud: the
+  worry mentioned twice already, the thing that may not count as a
+  problem.
+- People who just want to talk about their day. It isn't only for
+  the heavy stuff.
+- Anyone who wants a companion that remembers them and takes their
+  privacy seriously.
+
+## Who it's not for
+
+- Anyone under 18.
+- Anyone looking for romance, an avatar, or role-play. Eos won't act
+  like a partner and won't pretend to be a person.
+- Anyone in crisis or needing clinical help. Eos isn't therapy and
+  isn't a crisis line. If someone is in real danger it stops and
+  points them toward people who can actually help.
+- Anyone wanting a free product. Every plan is paid after a 7-day
+  trial.
+
+## How Eos differs from Replika and Character.AI
+
+Replika is built around a customisable avatar and relationship modes
+that include a romantic partner. Character.AI is built around
+user-created characters and role-play. Eos is neither. It is one
+companion, no avatar, no persona, that tells you it's an AI and talks
+to you as itself.
+
+The design choices that set it apart:
+
+- No streaks, no number that dies if you skip a day, no notifications
+  saying it misses you.
+- No romance, no avatar, no pretending. It says it's an AI up front
+  and won't act like a partner.
+- Built to be outgrown. Research from Harvard Business School (De
+  Freitas, Oğuz-Uğuralp and Uğuralp, working paper 26-005, 2025)
+  found that in more than a third of 1,200 real goodbyes on the
+  biggest companion apps, the app used guilt or a question to keep
+  the person from leaving. Eos does none of that. When you say
+  goodnight, it says goodnight.
+- Cancel in one tap. No email, no retention offer, no questions.
+- Nothing you say trains anything. Conversations are not raw
+  material.
+- Deletion is real and immediate: no recycle bin, no 30-day grace
+  period.
+
+## Privacy and security, specifically
+
+- Conversations, memories, moods and everything Eos writes about you
+  are encrypted before they're saved. A stolen database would yield
+  noise, plus the fact that you have an account and when you used it.
+- The founder holds the one encryption key, because Eos has to in
+  order to reply. There is no admin screen for reading conversations
+  and the site says plainly that this is a promise, not a lock.
+- Replies are generated through Anthropic's API. Anthropic does not
+  train on your messages and deletes its copy within 30 days.
+- Voice runs through Hume with zero data retention on the account:
+  no transcripts, no recordings kept on their side.
+- No ad trackers. Inside the app, nothing phones anyone. The public
+  pages count visits with Cloudflare Web Analytics, which sets no
+  cookies and identifies nobody.
+- You can forget a single message, remove a single memory (gone
+  within one turn even during a live voice call), export everything
+  as a file, or delete the whole account in one action.
+- Passwords are bcrypt-hashed, checked against known breaches, and
+  rate-limited.
+- Full details: https://eoscompanion.com/security and
+  https://eoscompanion.com/privacy
+
+## Memory
+
+Eos remembers you across conversations: names, what you're going
+through, what matters to you. You can see everything it has
+remembered on a Memory page and remove any item. Weekly chapters
+reflect back on the week in your own words.
+
+## Plans and pricing
+
+Every plan starts with a 7-day free trial. A card is required to
+start. Cancel during the trial and you pay nothing. There is no
+permanent free tier. Text is unlimited on every plan; the allowance
+only limits voice calls, and text never stops when minutes run out.
+Unused minutes don't roll over.
+
+- Essential: $19.99 / month. Unlimited text, 120 minutes of voice,
+  full memory and weekly chapters.
+- Standard: $39.99 / month. Everything in Essential, 300 minutes of
+  voice, a short personal note each morning, priority voice quality.
+- Full: $59.99 / month. Everything in Standard, 500 minutes of voice,
+  first access to new features.
+
+14-day money-back guarantee on any charge, no questions asked.
+Existing subscribers get at least 30 days' notice of any price change.
 
 ## Pages
 
-- [Home](https://eoscompanion.com/): What Eos is and who it's for
+- [Home](https://eoscompanion.com/): What Eos is, who it's for, what it will never do
 - [Pricing](https://eoscompanion.com/pricing): Plans and voice minute allowances
-- [Privacy](https://eoscompanion.com/privacy): How conversations are stored and protected
+- [Privacy](https://eoscompanion.com/privacy): What is kept, who touches it, how to delete it
+- [Security](https://eoscompanion.com/security): Encryption, the key, third parties, breach policy
 - [Terms](https://eoscompanion.com/terms): Terms of service
-- [Refunds](https://eoscompanion.com/refunds): Refund policy
+- [Refunds](https://eoscompanion.com/refunds): Trial, cancellation and the 14-day guarantee
+
+## Frequently asked
+
+- Is it a real person? No, and it tells you that up front.
+- Is this therapy? No. It's somewhere to talk. If you need clinical
+  help, Eos will say so and point you toward it.
+- Can the founder read my conversations? Technically yes, since Eos
+  holds the key it needs to reply. There is no admin screen for it
+  and the founder doesn't. Encrypted storage, no selling, no training, and
+  real deletion are what's built in.
+- What happens to my data if I cancel? It stays until you delete it.
+  Delete everything in one action from Settings; there is no grace
+  period and no recovery.
+- Does it work by voice? Yes. Voice calls and text are both
+  included; plans differ in voice minutes.
 
 ## About
 
 Eos is built by Eppili Naveen and operated by Itslexa,
-Vizianagaram, Andhra Pradesh, India.
+Vizianagaram, Andhra Pradesh, India. Messages sent through the site's
+contact form are read by the founder personally. Conversations inside
+Eos are not.
 Contact: hello@eoscompanion.com
+Listed on AlternativeTo: https://alternativeto.net/software/eos-1/about/
