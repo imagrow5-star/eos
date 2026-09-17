@@ -103,7 +103,8 @@ Every field except `message` is optional.
     "referencedByMessage": { "aboveCut": 2, "belowCut": 0 }
   },
   "model": "claude-sonnet-4-5-20250929",
-  "usage": { "input_tokens": 4210, "output_tokens": 38, "cache_read_input_tokens": 3900, "cache_creation_input_tokens": 0 }
+  "usage": { "input_tokens": 4210, "output_tokens": 38, "cache_read_input_tokens": 3900, "cache_creation_input_tokens": 0 },
+  "flags": { "bannedComfort": [] }
 }
 ```
 
@@ -118,6 +119,7 @@ Every field except `message` is optional.
   production memory-cut measurement (`docs/memory-cut.md`). It is a
   cheap signal, not a judgement of recall quality.
 - `usage` is what the provider reported; `null` in keyless mock mode.
+- `flags.bannedComfort` lists any banned "I'm here for …" comfort phrases the Rule 1 output guard found and rewrote in this reply (empty when clean). The `reply` above is already the rewritten text.
 - `degraded: true` appears only when the provider call failed and the
   reply is the honest fallback line.
 

@@ -20,6 +20,7 @@ import { getOrCreateProfileForUser } from "./profile.js";
 import { verifyVoiceToken } from "../lib/voiceToken.js";
 import { voiceTurnUsageLimits } from "../middleware/usageLimits.js";
 import { logger } from "../lib/logger.js";
+import { detectBannedComfort } from "../services/outputGuard.js";
 import { hashUserIdForLog } from "../lib/logging/hashUserIdForLog.js";
 import { detectCrisis } from "../services/crisis/detector.js";
 import {
@@ -971,6 +972,10 @@ export async function voiceCompletionHandler(
       },
     );
     const fullText = reply.text;
+    {
+      const rule1 = detectBannedComfort(fullText);
+      if (rule1.length > 0) logger.warn({ rule1 }, "rule1 output check: banned comfort in voice reply");
+    }
     const tModelEnd = performance.now();
     const aborted = reply.aborted === true || abortedAt !== null;
     if (!aborted) logMemoryCut(userId, "voice", memoryCutReport(systemPrompt, freshUserContent, fullText));
