@@ -34,6 +34,7 @@ import { CRISIS_REINFORCEMENT_BLOCK } from "../services/crisis/reinforcement.js"
 import { resolveHelplines, buildHelplineBlockText } from "../services/crisis/helplines.js";
 import { recordChatCrisisEvent, dismissChatCrisisBlock } from "../services/crisis/events.js";
 import { detectBannedComfort, detectSelfNarration } from "../services/outputGuard.js";
+import { additionalSafetyReinforcement } from "../services/crisis/additionalSafety.js";
 
 // ─── Crisis floor (chat path) ────────────────────────────────────────────────
 // Deterministic, code-level guarantee that a crisis message gets helpline
@@ -48,10 +49,12 @@ import { detectBannedComfort, detectSelfNarration } from "../services/outputGuar
 export function composeChatSystemExtra(opts: {
   voiceMode: boolean;
   crisisDetected: boolean;
+  safetyExtra?: string;
 }): string | undefined {
   const parts = [
     opts.voiceMode ? buildVoiceCallAddendum(false) : "",
     opts.crisisDetected ? CRISIS_REINFORCEMENT_BLOCK : "",
+    opts.safetyExtra ?? "",
   ].filter(Boolean);
   return parts.length > 0 ? parts.join("\n") : undefined;
 }
@@ -227,7 +230,7 @@ router.post("/chat/stream", requireSubscriptionForChat, ...chatUsageLimits, asyn
       {
         // Classic voice engine has no ElevenLabs system tools — never include
         // the listening/skip_turn rules here.
-        systemExtra: composeChatSystemExtra({ voiceMode, crisisDetected: crisisActive }),
+        systemExtra: composeChatSystemExtra({ voiceMode, crisisDetected: crisisActive, safetyExtra: additionalSafetyReinforcement(content) }),
         callType: voiceMode ? "voice_fallback" : "chat",
       },
     );
@@ -358,7 +361,7 @@ router.post("/chat/send", requireSubscriptionForChat, ...chatUsageLimits, async 
 
   const contextMessages = recentMessages.reverse().slice(0, -1);
   const reply = await getCompanionReply(systemPrompt, contextMessages, content, stage, {
-    systemExtra: composeChatSystemExtra({ voiceMode: false, crisisDetected: crisisActive }),
+    systemExtra: composeChatSystemExtra({ voiceMode: false, crisisDetected: crisisActive, safetyExtra: additionalSafetyReinforcement(content) }),
   });
   const aiContent = reply.text;
   logMemoryCut(userId, "chat", memoryCutReport(systemPrompt, content, aiContent));

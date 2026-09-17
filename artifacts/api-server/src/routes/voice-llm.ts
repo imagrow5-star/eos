@@ -30,6 +30,7 @@ import {
 } from "../services/crisis/semanticDetector.js";
 import { armCallCrisis, takeCallCrisis } from "../services/crisis/callFlag.js";
 import { CRISIS_REINFORCEMENT_BLOCK_VOICE } from "../services/crisis/reinforcement.js";
+import { additionalSafetyReinforcement } from "../services/crisis/additionalSafety.js";
 import { resolveHelplines } from "../services/crisis/helplines.js";
 import { recordVoiceCrisisEvent } from "../services/crisis/events.js";
 import { memoryCutReport, logMemoryCut } from "../services/memory/cutReport.js";
@@ -944,6 +945,7 @@ export async function voiceCompletionHandler(
           buildVoiceCallAddendum(tools.length > 0) +
           toneExtra +
           (crisisActive ? `\n${CRISIS_REINFORCEMENT_BLOCK_VOICE}` : "") +
+          (additionalSafetyReinforcement(freshUserContent) ? `\n${additionalSafetyReinforcement(freshUserContent)}` : "") +
           (rememberIntent ? `\n${REMEMBER_ACK_GUIDANCE}` : ""),
         callType: "voice",
         cacheConversation: true,
