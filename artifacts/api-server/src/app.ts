@@ -14,6 +14,7 @@ import { securityTxt } from "./lib/securityTxt";
 import path from "node:path";
 import fs from "node:fs";
 import { sendPublicPage } from "./lib/publicPage";
+import { apexRedirectFor, cleanPathForTwin, HTML_TWINS } from "./lib/canonicalUrls";
 
 // SESSION_SECRET is required — fail fast rather than silently use a weak fallback
 const sessionSecret = process.env.SESSION_SECRET;
@@ -311,6 +312,16 @@ const app: Express = express();
 // Also what lets Express read X-Forwarded-Proto and mark cookies Secure.
 app.set("trust proxy", 1);
 
+// ─── One host: www → apex ─────────────────────────────────────────────────────
+// Permanent, path and query kept, so a crawler that reached the www variant
+// is told where the page lives instead of finding a duplicate. Any other
+// host (the Render hostname, localhost, a preview) is left alone.
+app.use((req, res, next) => {
+  const target = apexRedirectFor(req.hostname, req.originalUrl);
+  if (!target) return next();
+  res.redirect(req.method === "GET" || req.method === "HEAD" ? 301 : 308, target);
+});
+
 app.use(
   pinoHttp({
     logger,
@@ -597,6 +608,16 @@ const frontendDir = process.env.FRONTEND_DIR
 const frontendIndex = path.join(frontendDir, "index.html");
 
 if (fs.existsSync(frontendIndex)) {
+  // The public pages are files in the bundle, and express.static would serve
+  // each under its file name too (/welcome.html for /). One address per page:
+  // the file-name twin redirects permanently to the clean path.
+  app.get(Object.keys(HTML_TWINS), (req, res, next) => {
+    const clean = cleanPathForTwin(req.path);
+    if (!clean) return next();
+    const query = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
+    res.redirect(301, `${clean}${query}`);
+  });
+
   // Hashed assets are safe to cache hard; index.html must stay fresh so new
   // deploys are picked up.
   app.use(
