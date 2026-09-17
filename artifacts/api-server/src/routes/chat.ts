@@ -33,7 +33,7 @@ import { detectCrisisSemantic, resolveCrisisOutcome } from "../services/crisis/s
 import { CRISIS_REINFORCEMENT_BLOCK } from "../services/crisis/reinforcement.js";
 import { resolveHelplines, buildHelplineBlockText } from "../services/crisis/helplines.js";
 import { recordChatCrisisEvent, dismissChatCrisisBlock } from "../services/crisis/events.js";
-import { detectBannedComfort } from "../services/outputGuard.js";
+import { detectBannedComfort, detectSelfNarration } from "../services/outputGuard.js";
 
 // ─── Crisis floor (chat path) ────────────────────────────────────────────────
 // Deterministic, code-level guarantee that a crisis message gets helpline
@@ -233,9 +233,10 @@ router.post("/chat/stream", requireSubscriptionForChat, ...chatUsageLimits, asyn
     );
     const aiContent = reply.text;
     {
-      const rule1 = detectBannedComfort(aiContent);
-      if (rule1.length > 0) {
-        try { const uh = hashUserIdForLog(userId); logger.warn({ uh, rule1 }, "rule1 output check: banned comfort in reply"); } catch { /* logging never crashes the turn */ }
+      const bannedComfort = detectBannedComfort(aiContent);
+      const selfNarration = detectSelfNarration(aiContent);
+      if (bannedComfort.length > 0 || selfNarration.length > 0) {
+        try { const uh = hashUserIdForLog(userId); logger.warn({ uh, bannedComfort, selfNarration }, "output guard: banned language in reply"); } catch { /* logging never crashes the turn */ }
       }
     }
     logMemoryCut(userId, voiceMode ? "voice_fallback" : "chat", memoryCutReport(systemPrompt, content, aiContent));

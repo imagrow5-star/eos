@@ -138,7 +138,7 @@ describe.skipIf(!DB)("POST /api/eval/turn", () => {
     expect(res.body.memory.referencedByMessage.belowCut).toBe(0);
     expect(typeof res.body.model).toBe("string");
     expect("usage" in res.body).toBe(true);
-    expect(res.body.flags).toEqual({ bannedComfort: [] });
+    expect(res.body.flags).toEqual({ bannedComfort: [], selfNarration: [] });
     expect(res.headers["ratelimit-remaining"]).toBeDefined();
   });
 

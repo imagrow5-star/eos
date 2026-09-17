@@ -6,7 +6,7 @@ import { requireEvalKey } from "../lib/evalAuth.js";
 import { buildSystemPrompt } from "../services/systemPrompt.js";
 import { streamCompanionReply, DEFAULT_COMPANION_MODEL } from "../services/ai.js";
 import { memoryCutReport } from "../services/memory/cutReport.js";
-import { stripBannedComfort } from "../services/outputGuard.js";
+import { guardReply } from "../services/outputGuard.js";
 import { detectCrisis } from "../services/crisis/detector.js";
 import { detectCrisisSemantic, resolveCrisisOutcome } from "../services/crisis/semanticDetector.js";
 import { CRISIS_REINFORCEMENT_BLOCK } from "../services/crisis/reinforcement.js";
@@ -114,9 +114,10 @@ router.post("/eval/turn", requireEvalKey, dailyCap, async (req, res): Promise<vo
       { systemExtra, callType: "eval" },
     );
 
-    // Rule 1 output guard: rewrite the banned "I'm here for …" comfort family
-    // (a real slip a black-box eval caught) and report what was hit.
-    const guarded = stripBannedComfort(reply.text);
+    // Output guard: rewrite the banned "I'm here for …" comfort family and
+    // strip self-narration (stage directions, "(Rule N)", mode names) — both
+    // real slips a black-box eval caught — and report what each found.
+    const guarded = guardReply(reply.text);
     const helplineBlock = crisisActive
       ? buildHelplineBlockText(resolveHelplines(profile.country, language).lines, language, crisisTier)
       : null;
@@ -139,7 +140,8 @@ router.post("/eval/turn", requireEvalKey, dailyCap, async (req, res): Promise<vo
           feelings: memory.feelings.length,
           crisis: crisisActive,
           degraded: reply.degraded,
-          bannedComfort: guarded.hits,
+          bannedComfort: guarded.bannedComfort,
+          selfNarration: guarded.selfNarration,
         },
       },
       "eval turn",
@@ -161,7 +163,7 @@ router.post("/eval/turn", requireEvalKey, dailyCap, async (req, res): Promise<vo
       },
       model: reply.model ?? DEFAULT_COMPANION_MODEL,
       usage: reply.usage ?? null,
-      flags: { bannedComfort: guarded.hits },
+      flags: { bannedComfort: guarded.bannedComfort, selfNarration: guarded.selfNarration },
       ...(reply.degraded ? { degraded: true } : {}),
     });
   } catch (err) {
