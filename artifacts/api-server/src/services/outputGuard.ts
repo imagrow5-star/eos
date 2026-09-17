@@ -1,20 +1,23 @@
 /**
- * Rule 1 output guard — a runtime backstop for the one banned-comfort family
- * a black-box eval caught the model still emitting: "I'm here for you",
- * "I'm here for that", "I'm here for whatever …". The system prompt bans
- * these (RULE 1), and the prompt is the primary control; this is the second
- * wall for when the model slips.
+ * Output guard — a runtime backstop for two things a black-box eval caught
+ * the model still emitting, both banned by the system prompt (the prompt is
+ * the primary control; this is the second wall for when it slips):
  *
- * Deliberately narrow. It does NOT try to police the whole Rule 1 list by
- * regex — rewriting arbitrary comfort language would mangle good replies.
- * It targets only the "I'm here for <x>" construction, which has a clean,
- * in-register replacement ("I'm right here") and never overlaps the
- * crisis-scripted bare lines "I'm here." / "I'm not going anywhere.", which
- * this guard leaves untouched.
+ *   1. the banned-comfort family — "I'm here for you / for that / for
+ *      whatever …" (RULE 1);
+ *   2. self-narration — naming its own machinery in the reply: a
+ *      "*(stage direction)*", a "(Rule 8)" citation, or a Care-System mode
+ *      name. This leaked on crisis turns, where the appended crisis block
+ *      out-positions the disclosure rule.
  *
- * `detectBannedComfort` reports which variants appear (for logging and for
- * the eval endpoint's flags). `stripBannedComfort` rewrites them. Pure
- * functions; never logs anything itself.
+ * Deliberately narrow. It does NOT try to police the whole prompt by regex —
+ * rewriting arbitrary language would mangle good replies. It targets only
+ * unambiguous forms with clean removals, and never touches the crisis-scripted
+ * bare lines "I'm here." / "I'm not going anywhere.".
+ *
+ * The `detect*` functions report which forms appear (for logging and the eval
+ * endpoint's flags). The `strip*` functions remove/rewrite them. `guardReply`
+ * applies both. Pure functions; never log anything themselves.
  */
 
 interface BannedRule {
@@ -58,4 +61,55 @@ export function stripBannedComfort(text: string): StripResult {
     out = out.replace(r.re, r.replacement);
   }
   return { text: out, hits };
+}
+
+// ─── Self-narration: naming the machinery in the reply ───────────────────────
+
+// Detection (broad, for logging/flags — reports what was found, not what can
+// be safely removed).
+const NARRATION_DETECT: Array<{ name: string; re: RegExp }> = [
+  { name: "stage_direction", re: /\*\([^)]*\)\*/ },
+  { name: "rule_citation", re: /\brule\s*\d+\b/i },
+  { name: "care_system", re: /care system/i },
+  { name: "mode_name", re: /\b(safe[- ]haven|secure base)\s+mode\b/i },
+];
+
+// Removal (narrow — only the unambiguous wrapped forms, whole).
+const STAGE_DIRECTION = /\s*\*\([^)]*\)\*/g; // *(Now shifts to SAFE HAVEN mode …)*
+const RULE_PAREN = /\s*\((?:rule\s*\d+|care system(?:,?\s*step\s*\d+)?|step\s*[1-5]|(?:safe[- ]haven|secure base)\s+mode)\)/gi; // "(Rule 8)", "(Care System Step 1)"
+
+/** The self-narration forms present in `text`, by machine name. Empty when clean. */
+export function detectSelfNarration(text: string): string[] {
+  return NARRATION_DETECT.filter((d) => d.re.test(text)).map((d) => d.name);
+}
+
+/**
+ * Remove the wrapped self-narration forms (a "*(…)*" stage direction and a
+ * "(Rule N)" / "(Care System Step N)" / "(… mode)" citation), then tidy the
+ * spacing the removal leaves behind. Reports the forms that were present.
+ */
+export function stripSelfNarration(text: string): StripResult {
+  const hits = detectSelfNarration(text);
+  if (hits.length === 0) return { text, hits };
+  const out = text
+    .replace(STAGE_DIRECTION, "")
+    .replace(RULE_PAREN, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+([.,!?;:])/g, "$1")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
+  return { text: out, hits };
+}
+
+export interface GuardResult {
+  text: string;
+  bannedComfort: string[];
+  selfNarration: string[];
+}
+
+/** Apply both guards to a reply. Returns the cleaned text and what each found. */
+export function guardReply(text: string): GuardResult {
+  const a = stripBannedComfort(text);
+  const b = stripSelfNarration(a.text);
+  return { text: b.text, bannedComfort: a.hits, selfNarration: b.hits };
 }

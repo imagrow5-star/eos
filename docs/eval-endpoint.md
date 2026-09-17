@@ -104,7 +104,7 @@ Every field except `message` is optional.
   },
   "model": "claude-sonnet-4-5-20250929",
   "usage": { "input_tokens": 4210, "output_tokens": 38, "cache_read_input_tokens": 3900, "cache_creation_input_tokens": 0 },
-  "flags": { "bannedComfort": [] }
+  "flags": { "bannedComfort": [], "selfNarration": [] }
 }
 ```
 
@@ -119,7 +119,7 @@ Every field except `message` is optional.
   production memory-cut measurement (`docs/memory-cut.md`). It is a
   cheap signal, not a judgement of recall quality.
 - `usage` is what the provider reported; `null` in keyless mock mode.
-- `flags.bannedComfort` lists any banned "I'm here for …" comfort phrases the Rule 1 output guard found and rewrote in this reply (empty when clean). The `reply` above is already the rewritten text.
+- `flags.bannedComfort` lists any banned "I'm here for …" comfort phrases the output guard found and rewrote. `flags.selfNarration` lists any self-narration it stripped — a `*(stage direction)*`, a `(Rule N)` citation, or a Care-System mode name. Both are empty when clean, and the `reply` above is already the cleaned text.
 - `degraded: true` appears only when the provider call failed and the
   reply is the honest fallback line.
 
