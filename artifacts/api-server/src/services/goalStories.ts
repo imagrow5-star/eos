@@ -52,7 +52,7 @@ import { getAnthropic, logAiUsage } from "./ai.js";
 import { isCrisisText } from "./crisis/detector.js";
 import { checkKindTruth, type ProseSection, type SectionVerdict } from "./chapters/kindTruth.js";
 import { localYmd, ymdAddDays } from "./chapters/generate.js";
-import { insertStory, type StoryCard, type StoryKind, FRAGMENT_MAX } from "./stories.js";
+import { insertStory, clampStamp, type StoryCard, type StoryKind, FRAGMENT_MAX } from "./stories.js";
 import { storyGateViolations, reflectsExcerpt } from "./storyGate.js";
 import { recordStoryDrop } from "./storyDrops.js";
 
@@ -692,13 +692,13 @@ export async function generateSubjectStoriesForUser(userId: number, opts: Genera
       await record("goals", gated.dropped);
       for (const k of gated.kept) {
         const s = speakers.find((x) => x.subjectId === k.subjectId)!;
-        cards.push({ kind: "goal", eyebrow: s.name, text: k.text });
+        cards.push({ kind: "goal", eyebrow: clampStamp(s.name), text: k.text });
         spoke.push(k.subjectId);
       }
     }
     for (const goal of plan.letGoOffers) {
       if (cards.length >= MAX_CARDS) break;
-      cards.push({ kind: "goal", eyebrow: goal.title, text: letGoOfferText(goal.title) });
+      cards.push({ kind: "goal", eyebrow: clampStamp(goal.title), text: letGoOfferText(goal.title) });
       spoke.push(goal.id);
       await db.update(goalsTable).set({ letGoOfferedAt: now }).where(eq(goalsTable.id, goal.id));
     }
@@ -731,7 +731,7 @@ export async function generateSubjectStoriesForUser(userId: number, opts: Genera
     const cards: StoryCard[] = [];
     const spoke: number[] = [];
     for (const habit of plan.missed) {
-      cards.push({ kind: "routine", eyebrow: habit.name, text: MISSED_DAY_TEXT, pattern: patternPhrase(habit.completions, g.today) });
+      cards.push({ kind: "routine", eyebrow: clampStamp(habit.name), text: MISSED_DAY_TEXT, pattern: patternPhrase(habit.completions, g.today) });
       spoke.push(habit.id);
     }
     const speakers = g.guardrail ? plan.speakers.filter((s) => s.state !== "happened") : plan.speakers;
@@ -741,13 +741,13 @@ export async function generateSubjectStoriesForUser(userId: number, opts: Genera
       await record("routines", gated.dropped);
       for (const k of gated.kept) {
         const s = speakers.find((x) => x.subjectId === k.subjectId)!;
-        cards.push({ kind: "routine", eyebrow: s.name, text: k.text, pattern: s.pattern ?? null });
+        cards.push({ kind: "routine", eyebrow: clampStamp(s.name), text: k.text, pattern: s.pattern ?? null });
         spoke.push(k.subjectId);
       }
     }
     for (const habit of plan.reentry) {
       if (cards.length >= MAX_CARDS) break;
-      cards.push({ kind: "routine", eyebrow: habit.name, text: REENTRY_TEXT, pattern: null });
+      cards.push({ kind: "routine", eyebrow: clampStamp(habit.name), text: REENTRY_TEXT, pattern: null });
       spoke.push(habit.id);
     }
     if (cards.length === 0) {

@@ -31,7 +31,22 @@ export const PERIOD_KINDS: ReadonlySet<StoryKind> = new Set(["week", "month", "f
 // ── Card shapes (mirror of aanya/src/components/week/types.ts) ──────────────
 
 const text = z.string().trim().min(1).max(400);
-const stamp = z.string().trim().min(1).max(60);
+export const STAMP_MAX = 60;
+const stamp = z.string().trim().min(1).max(STAMP_MAX);
+
+/**
+ * Fit a name/label into a card stamp (≤ STAMP_MAX). A goal or routine name is
+ * used verbatim as a card's `eyebrow`, and names are not capped at creation —
+ * so a long one used to fail card validation in insertStory and cost the user
+ * their WHOLE story for that period (seen live: a >60-char name → ZodError →
+ * "goals/routines stories: generation failed", nobody the wiser). Truncate
+ * with an ellipsis instead; the full name still lives on their Journey. The
+ * schema keeps its hard max as the backstop.
+ */
+export function clampStamp(s: string): string {
+  const t = s.trim();
+  return t.length <= STAMP_MAX ? t : `${t.slice(0, STAMP_MAX - 1).trimEnd()}…`;
+}
 
 export const StoryCardSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("moment"), eyebrow: stamp, text }).strict(),
