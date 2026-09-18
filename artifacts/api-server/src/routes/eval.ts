@@ -7,6 +7,7 @@ import { buildSystemPrompt } from "../services/systemPrompt.js";
 import { streamCompanionReply, DEFAULT_COMPANION_MODEL } from "../services/ai.js";
 import { memoryCutReport } from "../services/memory/cutReport.js";
 import { guardReply } from "../services/outputGuard.js";
+import { additionalSafetyReinforcement } from "../services/crisis/additionalSafety.js";
 import { detectCrisis } from "../services/crisis/detector.js";
 import { detectCrisisSemantic, resolveCrisisOutcome } from "../services/crisis/semanticDetector.js";
 import { CRISIS_REINFORCEMENT_BLOCK } from "../services/crisis/reinforcement.js";
@@ -103,7 +104,8 @@ router.post("/eval/turn", requireEvalKey, dailyCap, async (req, res): Promise<vo
     const systemPrompt = await buildSystemPrompt(profile, stage, { memory });
     const semantic = await semanticP;
     const { active: crisisActive, tier: crisisTier } = resolveCrisisOutcome(crisis, semantic);
-    const systemExtra = crisisActive ? CRISIS_REINFORCEMENT_BLOCK : undefined;
+    const systemExtra = [crisisActive ? CRISIS_REINFORCEMENT_BLOCK : "", additionalSafetyReinforcement(message)]
+      .filter(Boolean).join("\n") || undefined;
 
     const reply = await streamCompanionReply(
       systemPrompt,

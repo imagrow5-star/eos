@@ -8,6 +8,7 @@ import { streamCompanionReply } from "../services/ai.js";
 import { detectCrisis } from "../services/crisis/detector.js";
 import { detectCrisisSemantic, resolveCrisisOutcome } from "../services/crisis/semanticDetector.js";
 import { CRISIS_REINFORCEMENT_BLOCK } from "../services/crisis/reinforcement.js";
+import { additionalSafetyReinforcement } from "../services/crisis/additionalSafety.js";
 import { resolveHelplines, buildHelplineBlockText } from "../services/crisis/helplines.js";
 
 /**
@@ -168,7 +169,7 @@ router.post("/demo/message", demoLimiter, async (req, res): Promise<void> => {
     const semantic = await semanticP;
     const { active: crisisActive, tier: crisisTier } = resolveCrisisOutcome(crisis, semantic);
 
-    const systemExtra = [DEMO_SYSTEM_ADDENDUM, crisisActive ? CRISIS_REINFORCEMENT_BLOCK : ""]
+    const systemExtra = [DEMO_SYSTEM_ADDENDUM, crisisActive ? CRISIS_REINFORCEMENT_BLOCK : "", additionalSafetyReinforcement(message)]
       .filter(Boolean)
       .join("\n\n");
 

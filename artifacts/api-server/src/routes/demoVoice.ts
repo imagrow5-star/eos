@@ -11,6 +11,7 @@ import { GREETING_POOLS } from "../services/voiceGreeting.js";
 import { detectCrisis } from "../services/crisis/detector.js";
 import { detectCrisisSemantic, SEMANTIC_OFFPATH_TIMEOUT_MS } from "../services/crisis/semanticDetector.js";
 import { CRISIS_REINFORCEMENT_BLOCK_VOICE } from "../services/crisis/reinforcement.js";
+import { additionalSafetyReinforcement } from "../services/crisis/additionalSafety.js";
 import { resolveHelplines, buildHelplineBlockText } from "../services/crisis/helplines.js";
 import { resolveVoiceLlmModel } from "./voice-llm.js";
 import { demoProfile, DEMO_SYSTEM_ADDENDUM } from "./demo.js";
@@ -309,7 +310,8 @@ export async function demoVoiceCompletionHandler(
     const systemExtra =
       buildVoiceCallAddendum(false) +
       `\n${DEMO_SYSTEM_ADDENDUM}` +
-      (crisisActive ? `\n${CRISIS_REINFORCEMENT_BLOCK_VOICE}` : "");
+      (crisisActive ? `\n${CRISIS_REINFORCEMENT_BLOCK_VOICE}` : "") +
+      (additionalSafetyReinforcement(freshUserContent) ? `\n${additionalSafetyReinforcement(freshUserContent)}` : "");
     const userContent = voiceTone ? `${freshUserContent}\n${voiceTone}` : freshUserContent;
 
     if (wantStream) openStream();
