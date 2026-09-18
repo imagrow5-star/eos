@@ -86,7 +86,7 @@ function voiceTurn(userId: number, messages: { role: "user" | "assistant"; conte
 }
 
 const NUMERIC_REAL_TURN_KEYS = [
-  "heldMs", "authMs", "profileMs", "dbMs", "promptMs", "modelMs", "totalMs", "replyWords", "contextTurns",
+  "heldMs", "authMs", "profileMs", "dbMs", "promptMs", "modelMs", "totalMs", "replyWords", "contextTurns", "userChars",
 ] as const;
 
 describe("server: one 'voice turn timing' line per spoken turn", () => {
@@ -138,7 +138,7 @@ describe("server: one 'voice turn timing' line per spoken turn", () => {
       expect(Object.keys(line).sort()).toEqual(
         [
           "uh", "greeting", "frozenHit", "held", "heldMs", "authMs", "profileMs", "dbMs", "promptMs",
-          "classifierMs", "classifierRan", "firstTokenMs", "firstSentenceMs", "modelMs", "totalMs", "replyWords", "contextTurns",
+          "classifierMs", "classifierRan", "firstTokenMs", "firstSentenceMs", "modelMs", "totalMs", "replyWords", "userChars", "contextTurns",
           "resumed", "crisis", "crisisArmed", "aborted", "abortedAtMs", "degraded", "tone",
         ].sort(),
       );
