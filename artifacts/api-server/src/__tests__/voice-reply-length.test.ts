@@ -82,7 +82,9 @@ describe("voice addendum: length", () => {
     const addendum = buildVoiceCallAddendum(false);
     for (const line of [
       "This is talking, not writing. Fragments are fine. One thought per turn, then let them respond.",
-      "React to what they just said before you ask anything. At most one question, and never two in a row.",
+      // Reflection ratio (voice PR): the addendum is the recency-position block on a
+      // call, so the 2:1 discipline lives HERE where it out-ranks the stable prompt.
+      "Most turns are pure reflection — no question at all. Across the call, reflect at least twice as often as you ask. A question is only for when you truly need to know something to stay with them — never to keep the conversation going, never to fill a pause, never as the way you end a turn. If you just reflected, stop there; don't tack a question on.",
       "No summaries, no recaps, no \"so what I'm hearing is\". Just respond.",
       "Say numbers and times the way people say them aloud, not as written figures.",
       "Never read a memory back word for word. Mention it the way a friend would, in passing.",
