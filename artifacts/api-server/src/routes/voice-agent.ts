@@ -360,6 +360,16 @@ router.post("/voice-agent/crisis-events/:id/dismiss", async (req, res): Promise<
   res.json({ ok: true, reviewFlagged: result.reviewFlagged });
 });
 
+// Stages the browser beacons that are NOT call deaths: an ASR-language
+// mismatch is evidence for Hume support (the call keeps going — see
+// lib/asrLanguage.ts and Chat.tsx onDetectedLanguage, which only beacons), and
+// a mid-call hume reconnect has already recovered (settings re-sent) by the
+// time it beacons. Logging these at error under "voice-call failed in browser"
+// cried wolf AND buried real deaths in the same bucket, so they couldn't be
+// told apart or alerted on. They log at warn with an honest message; a real
+// failure (handshake, unreachable provider, socket death) still logs at error.
+const NON_FATAL_CLIENT_STAGES = new Set(["hume-asr-language", "hume-reconnect"]);
+
 router.post("/voice-agent/client-error", (req, res): void => {
   const b = (req.body ?? {}) as Record<string, unknown>;
   const clip = (v: unknown, max: number) =>
@@ -369,11 +379,17 @@ router.post("/voice-agent/client-error", (req, res): void => {
   const detail = clip(b.detail, 2000);
   // Privacy (Tier 2): this was the ONE log line still carrying a raw userId —
   // hash it like every other line (and skip the line entirely when no salt is
-  // configured, same fail-safe as elsewhere). message/detail are ElevenLabs
+  // configured, same fail-safe as elsewhere). message/detail are voice
   // SDK/WebSocket error strings from the browser, never transcript content.
   try {
     const uh = hashUserIdForLog(req.userId);
-    if (uh !== undefined) logger.error({ uh, stage, message, detail }, "voice-call failed in browser");
+    if (uh !== undefined) {
+      if (NON_FATAL_CLIENT_STAGES.has(stage)) {
+        logger.warn({ uh, stage, message, detail }, "voice-call client note (non-fatal)");
+      } else {
+        logger.error({ uh, stage, message, detail }, "voice-call failed in browser");
+      }
+    }
   } catch {
     /* logging must never break the beacon */
   }
