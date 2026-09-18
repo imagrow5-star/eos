@@ -881,6 +881,11 @@ export async function voiceCompletionHandler(
             modelMs: 0,
             totalMs: ms(tStart),
             replyWords: 0,
+            // Length only, never content: lets us see across the fires of one
+            // spoken turn whether the user text GREW (Hume end-of-turn firing
+            // twice on a growing transcript) vs stayed identical (a true
+            // double-fire). grep the paired lines at one contextTurns.
+            userChars: freshUserContent.length,
             contextTurns: contextMessages.length,
             resumed,
             crisis: crisisActive,
@@ -1003,6 +1008,10 @@ export async function voiceCompletionHandler(
         modelMs: ms(tModelStart, tModelEnd),
         totalMs: ms(tStart),
         replyWords: fullText.split(/\s+/).filter(Boolean).length,
+        // Length only, never content (see the held-turn line): across the
+        // fires of one spoken turn, growing userChars = Hume firing twice on a
+        // growing transcript; identical = a true double-fire.
+        userChars: freshUserContent.length,
         contextTurns: contextMessages.length,
         resumed,
         crisis: crisisActive,
