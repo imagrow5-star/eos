@@ -36,6 +36,7 @@ import { recordVoiceCrisisEvent } from "../services/crisis/events.js";
 import { memoryCutReport, logMemoryCut } from "../services/memory/cutReport.js";
 import { isContinuationOf } from "../services/voice/continuation.js";
 import { looksUnfinished, settleHold, SETTLE_HOLD_MS } from "../services/voice/settle.js";
+import { beginFire, attachController, markReplied, markAborted } from "../services/voice/fireCoalescing.js";
 
 const router: IRouter = Router();
 
@@ -486,6 +487,49 @@ function ms(from: number, to = performance.now()): number {
   return Math.round(to - from);
 }
 
+// Return shape for a SUPPRESSED duplicate fire: a well-formed but EMPTY
+// OpenAI-compatible completion, so Hume speaks nothing for this redundant
+// request.
+//
+// ⚠️ UNVERIFIED against Hume's CLM contract from the build environment
+// (dev.hume.ai egress-blocked). Hume's own SSE example forwards empty-content
+// chunks and terminates with [DONE] without special-casing, so the shape is
+// valid OpenAI SSE — but how EVI's TTS backend reacts to an empty completion is
+// documented only on pages we can't reach. This is ONLY ever sent when a PRIOR
+// fire for the same turn already spoke (see fireCoalescing: suppress requires
+// state "replied"), so a wrong guess here is a stray error on the redundant
+// request AFTER the real reply played — never a silent turn. Isolated so the
+// shape can be swapped in one place if a live test shows Hume errors on empty.
+function respondEmptyCompletion(
+  res: import("express").Response,
+  model: string,
+  wantStream: boolean,
+): void {
+  const id = `chatcmpl-${crypto.randomUUID()}`;
+  const created = Math.floor(Date.now() / 1000);
+  if (wantStream) {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+    res.write(
+      `data: ${JSON.stringify({
+        id, object: "chat.completion.chunk", created, model,
+        choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: "stop" }],
+      })}\n\n`,
+    );
+    res.write("data: [DONE]\n\n");
+    res.end();
+  } else {
+    res.json({
+      id, object: "chat.completion", created, model,
+      choices: [{ index: 0, message: { role: "assistant", content: "" }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    });
+  }
+}
+
 export async function voiceCompletionHandler(
   req: import("express").Request,
   res: import("express").Response,
@@ -680,6 +724,42 @@ export async function voiceCompletionHandler(
       return;
     }
 
+    // ── Coalesce Hume's multi-fires (services/voice/fireCoalescing.ts) ──
+    // Hume fires this endpoint more than once per spoken turn — a true
+    // double-send of one utterance, or a fragment then the fuller turn. Decide
+    // before any work: a duplicate of a turn a prior fire already answered is
+    // suppressed (empty completion, nothing re-spoken); a duplicate or
+    // continuation of a still-generating fire aborts that fire and proceeds
+    // here (latest-wins). The controller is attached once it's created, below.
+    // Suppression is logged with matched length + gap (never content) so a
+    // wrongly-swallowed turn shows up here rather than only to the caller.
+    const fire = beginFire(userId, issuedAt, freshUserContent, null);
+    if (fire.decision.action === "suppress") {
+      logger.info(
+        {
+          uh: uhForTiming,
+          reason: fire.decision.kind,
+          matchedChars: fire.decision.matchedChars,
+          gapMs: fire.decision.gapMs,
+        },
+        "voice fire suppressed",
+      );
+      respondEmptyCompletion(res, model, wantStream);
+      return;
+    }
+    if (fire.decision.action === "supersede") {
+      logger.info(
+        {
+          uh: uhForTiming,
+          kind: fire.decision.kind,
+          matchedChars: fire.decision.matchedChars,
+          gapMs: fire.decision.gapMs,
+        },
+        "voice fire superseded prior",
+      );
+    }
+    const fireId = fire.fireId!; // non-null for generate/supersede
+
     // ── Crisis floor (voice) ──
     // Deterministic detection on the freshly spoken turn. The spoken reply
     // deliberately carries NO helpline text (numbers read aloud interrupt the
@@ -843,6 +923,7 @@ export async function voiceCompletionHandler(
     // history. Now: abort the provider stream, keep the person's words,
     // store no reply.
     const abort = new AbortController();
+    attachController(userId, issuedAt, fireId, abort); // let a later fire supersede this one
     let abortedAt: number | null = null;
     res.on("close", () => {
       if (res.writableFinished) return; // normal end
@@ -897,6 +978,7 @@ export async function voiceCompletionHandler(
           },
           "voice turn timing",
         );
+        markAborted(userId, issuedAt, fireId); // never spoke — a later fire may still come
         return;
       }
     }
@@ -1027,6 +1109,11 @@ export async function voiceCompletionHandler(
     );
 
     const finishReason = toolCalls.length > 0 ? "tool_calls" : "stop";
+    // Coalescing state: a spoken reply lets a duplicate within the tight window
+    // be suppressed; anything not actually spoken (aborted, degraded fallback,
+    // empty skip_turn) marks aborted so a genuine retry is never swallowed.
+    if (!aborted && !reply.degraded && fullText.trim().length > 0) markReplied(userId, issuedAt, fireId);
+    else markAborted(userId, issuedAt, fireId);
     if (aborted) {
       // Nobody is listening; persist the person's words only (empty reply ⇒
       // no assistant row, no anti-repetition entry, extraction still runs).
