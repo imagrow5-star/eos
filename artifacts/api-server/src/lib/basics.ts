@@ -16,32 +16,82 @@ export function ageToBand(age: number): string {
 export type AgeParse =
   | { kind: "age"; age: number; birthYear: number }
   | { kind: "band"; band: string } // legacy chip answers like "26-35"
+  | { kind: "needsDate" } // a bare birth year at the 18 boundary — ask for the full date
   | { kind: "under18" }
   | { kind: "invalid" };
 
+const MONTHS: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+
+/** Exact age today from birth parts (month 1-12, day 1-31). */
+export function ageFromParts(year: number, month: number, day: number, now = new Date()): number {
+  let age = now.getFullYear() - year;
+  const m = now.getMonth() + 1;
+  const d = now.getDate();
+  if (m < month || (m === month && d < day)) age -= 1; // birthday hasn't happened yet this year
+  return age;
+}
+
+function ageVerdict(age: number, birthYear: number): AgeParse {
+  if (age < 0 || age > 120) return { kind: "invalid" };
+  if (age < 18) return { kind: "under18" };
+  return { kind: "age", age, birthYear };
+}
+
 /**
- * Understand an age answer however they said it: "24", "I'm 24", a birth year
- * ("2001"), a DOB ("12/05/2001", "5 May 2001"), or a legacy band chip.
+ * Understand an age answer however they said it: a date of birth
+ * ("12/05/2001", "5 May 2001"), a bare birth year ("2001"), a plain age
+ * ("24", "I'm 24"), or a legacy band chip ("26-35").
+ *
+ * When a full date is given, the age is exact (month and day are used for the
+ * cutoff, then discarded — only the year and band are ever stored). A bare
+ * year that lands on the 18 boundary can't be resolved without the date, so it
+ * returns `needsDate` and the caller asks for the full date. `now` is
+ * injectable for tests.
  */
-export function parseAgeText(raw: string): AgeParse {
-  const t = raw.toLowerCase().trim();
+export function parseAgeText(raw: string, now = new Date()): AgeParse {
+  const t = (raw ?? "").toLowerCase().trim();
   const compact = t.replace(/\s/g, "");
   const band = AGE_BANDS.find((b) => compact === b || compact.includes(b));
   if (band) return { kind: "band", band };
 
-  const nowYear = new Date().getFullYear();
-
-  // A 4-digit year anywhere (birth year alone, or inside a DOB)
+  const nowYear = now.getFullYear();
   const ym = t.match(/\b(19\d{2}|20\d{2})\b/);
+
   if (ym) {
-    const birthYear = parseInt(ym[1]!, 10);
-    const age = nowYear - birthYear;
-    if (age < 0 || age > 120) return { kind: "invalid" };
-    if (age < 18) return { kind: "under18" };
-    return { kind: "age", age, birthYear };
+    const year = parseInt(ym[1]!, 10);
+    // Pull day and month from what's left after removing the year, so the
+    // year's own digits can never be mistaken for a day or month.
+    const rest = t.replace(ym[0]!, " ");
+    const monName = Object.keys(MONTHS).find((k) => rest.includes(k));
+    const nums = (rest.match(/\d{1,2}/g) ?? []).map(Number);
+    let month: number | undefined;
+    let day: number | undefined;
+    if (monName) {
+      month = MONTHS[monName];
+      day = nums.find((n) => n >= 1 && n <= 31);
+    } else if (nums.length >= 2) {
+      const [a, b] = nums as [number, number];
+      if (a > 12) { day = a; month = b; }        // first > 12 must be the day
+      else if (b > 12) { day = b; month = a; }   // second > 12 must be the day
+      else { day = a; month = b; }               // ambiguous → day-first
+    }
+    if (month && day && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return ageVerdict(ageFromParts(year, month, day, now), year); // exact
+    }
+
+    // Bare year only: decide when it's unambiguous, else ask for the date.
+    const ageMax = nowYear - year;   // birthday already passed this year
+    const ageMin = ageMax - 1;       // birthday not yet this year
+    if (ageMax < 0 || ageMax > 120) return { kind: "invalid" };
+    if (ageMax < 18) return { kind: "under18" };
+    if (ageMin >= 18) return { kind: "age", age: ageMin, birthYear: year };
+    return { kind: "needsDate" };    // could be 17 or 18 — the date settles it
   }
 
-  // A plain number — their age
+  // A plain number — their stated age.
   const nm = t.match(/\b(\d{1,3})\b/);
   if (nm) {
     const age = parseInt(nm[1]!, 10);
