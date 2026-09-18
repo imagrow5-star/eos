@@ -99,7 +99,7 @@ function getStepQuestion(step: string, profile: Profile): string {
       return "And which country do you call home? I ask only so I know who to point you to if you ever need support beyond what we share here — completely fine to skip.";
 
     case "ageBand":
-      return "A couple of small things so I can meet you where you are — how old are you? And which country do you call home? The country part is completely optional.";
+      return "A couple of small things so I can meet you where you are — what's your date of birth? Eos is for adults, so I just need to know you're eighteen or over. And which country do you call home? The country part is completely optional.";
 
     case "userGender":
       return "One last thing — completely optional, so skip it if you like. What's your gender? Tap one below, or just tell me in your own words.";
@@ -347,13 +347,15 @@ router.post("/onboarding/answer", async (req, res): Promise<void> => {
         );
         return;
       }
-      if (parsed.kind === "invalid") {
+      if (parsed.kind === "needsDate" || parsed.kind === "invalid") {
+        // A bare year on the 18 boundary, or an answer we couldn't read: ask
+        // for the full date so the age is exact (and store nothing from this).
         res.json(
           SubmitOnboardingAnswerResponse.parse({
             isComplete: false,
             currentStep: "ageBand",
             companionFirstMessage:
-              "I didn't quite catch that — could you tell me your age as a number? Like 24 — or your birth year, if that's easier.",
+              "Could you give me your date of birth — day, month and year? That way I get your age right.",
           }),
         );
         return;
