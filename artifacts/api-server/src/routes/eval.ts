@@ -144,6 +144,7 @@ router.post("/eval/turn", requireEvalKey, dailyCap, async (req, res): Promise<vo
           degraded: reply.degraded,
           bannedComfort: guarded.bannedComfort,
           selfNarration: guarded.selfNarration,
+          selfNarrationFlagged: guarded.selfNarrationFlagged ?? false,
         },
       },
       "eval turn",
