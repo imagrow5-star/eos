@@ -319,7 +319,8 @@ describe("crisis reinforcement blocks", () => {
   it("chat block carries the hard rules verbatim", () => {
     expect(CRISIS_REINFORCEMENT_BLOCK).toContain("CRISIS DETECTED IN THIS MESSAGE");
     expect(CRISIS_REINFORCEMENT_BLOCK).toContain("Are you thinking about ending your life?");
-    expect(CRISIS_REINFORCEMENT_BLOCK).toContain("the system will append below");
+    expect(CRISIS_REINFORCEMENT_BLOCK).toContain("that card is what carries them");
+    expect(CRISIS_REINFORCEMENT_BLOCK).toContain("Never restate the numbers, names, or hours in your own sentences");
     expect(CRISIS_REINFORCEMENT_BLOCK).toContain("Never end by disappearing.");
   });
 
