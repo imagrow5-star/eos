@@ -76,7 +76,11 @@ const NARRATION_DETECT: Array<{ name: string; re: RegExp }> = [
 
 // Removal (narrow — only the unambiguous wrapped forms, whole).
 const STAGE_DIRECTION = /\s*\*\([^)]*\)\*/g; // *(Now shifts to SAFE HAVEN mode …)*
-const RULE_PAREN = /\s*\((?:rule\s*\d+|care system(?:,?\s*step\s*\d+)?|step\s*[1-5]|(?:safe[- ]haven|secure base)\s+mode)\)/gi; // "(Rule 8)", "(Care System Step 1)"
+// A parenthetical that OPENS with a machinery citation is removed whole, even
+// when it carries trailing content: "(Rule 8)", "(Rule 8, Safe Haven)",
+// "(Rule 8 dominates)", "(Care System Step 1)". A good reply never opens a
+// parenthetical with one of these tokens, so the trailing `[^)]*` is safe.
+const RULE_PAREN = /\s*\((?:rule\s*\d+|care system|step\s*[1-5]|(?:safe[- ]haven|secure base)\s+mode)[^)]*\)/gi;
 
 /** The self-narration forms present in `text`, by machine name. Empty when clean. */
 export function detectSelfNarration(text: string): string[] {
