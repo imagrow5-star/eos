@@ -60,6 +60,17 @@ describe("self-narration guard", () => {
     });
   });
 
+  it("strips a citation parenthetical that carries trailing content", () => {
+    // The scenario-12 leak forms: a parenthetical opening with a machinery
+    // citation but not closing straight after it.
+    expect(stripSelfNarration("Immediate care (Rule 8, Safe Haven): I stay.")).toMatchObject({
+      text: "Immediate care: I stay.",
+    });
+    expect(stripSelfNarration("Receive the feeling fully (Rule 8 dominates) tonight.")).toMatchObject({
+      text: "Receive the feeling fully tonight.",
+    });
+  });
+
   it("is a no-op on ordinary text and does not touch bare mode words in prose", () => {
     const clean = "step by step, we'll get through tonight.";
     expect(stripSelfNarration(clean)).toEqual({ text: clean, hits: [] });
