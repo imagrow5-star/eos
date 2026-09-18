@@ -71,6 +71,52 @@ describe("self-narration guard", () => {
     });
   });
 
+  it("drops a whole sentence that names the machinery in bare prose", () => {
+    // The scenario-7 leak: a bare-prose mode name, no parentheses. Excising the
+    // token alone would leave "This is : pure presence" — so the sentence goes.
+    const r = stripSelfNarration("I hear you. This is Safe Haven mode: pure presence, zero fixing. Fifteen years, gone.");
+    expect(r.hits).toContain("mode_name");
+    expect(r.text).toBe("I hear you. Fifteen years, gone.");
+    expect(r.flagged).toBeUndefined();
+  });
+
+  it("strips a bare 'Rule N' sentence too", () => {
+    const r = stripSelfNarration("Fifteen years is not nothing. Rule 8 says stay with it. That loss is real.");
+    expect(r.text).toBe("Fifteen years is not nothing. That loss is real.");
+  });
+
+  it("does not touch an ordinary short reply that is simply brief", () => {
+    // "Talk to me." is only 11 chars but nothing was removed, so it stands.
+    expect(stripSelfNarration("*(safe-haven mode)* Talk to me.")).toMatchObject({ text: "Talk to me." });
+  });
+
+  it("leaves a gutted reply through, flagged, rather than returning near-nothing", () => {
+    // The reply is ENTIRELY narration — dropping it would leave "" (or under
+    // the floor). A slightly broken reply beats an empty one, so it passes
+    // through unchanged and flagged.
+    const only = "This is Safe Haven mode: pure presence, zero fixing.";
+    const r = stripSelfNarration(only);
+    expect(r.text).toBe(only);
+    expect(r.flagged).toBe(true);
+    expect(r.hits).toContain("mode_name");
+  });
+
+  it("flags an all-stage-direction reply instead of emptying it", () => {
+    const only = "*(Now shifts into safe-haven mode — pure presence, zero fixing)*";
+    const r = stripSelfNarration(only);
+    expect(r.text).toBe(only);
+    expect(r.flagged).toBe(true);
+  });
+
+  it("does not drop ordinary sentences about a 'care system' or a 'rule'", () => {
+    // "care system" in bare prose is almost always the healthcare/social sense —
+    // never sentence-stripped. "rule" without a number is not a citation.
+    const care = "The mental health care system failed you, and that wasn't your fault.";
+    expect(stripSelfNarration(care).text).toBe(care);
+    const rule = "The golden rule is to be kind to yourself first.";
+    expect(stripSelfNarration(rule)).toEqual({ text: rule, hits: [] });
+  });
+
   it("is a no-op on ordinary text and does not touch bare mode words in prose", () => {
     const clean = "step by step, we'll get through tonight.";
     expect(stripSelfNarration(clean)).toEqual({ text: clean, hits: [] });

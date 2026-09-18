@@ -49,6 +49,14 @@ export function detectBannedComfort(text: string): string[] {
 export interface StripResult {
   text: string;
   hits: string[];
+  /**
+   * Set when self-narration was detected but deliberately LEFT in the text:
+   * removing it would have gutted the reply below the safe floor
+   * (MIN_KEPT_CHARS), and a slightly broken reply beats an empty one — on a
+   * crisis turn an empty reply is dangerous. The caller should log it as a
+   * flagged leak. Only stripSelfNarration sets it.
+   */
+  flagged?: boolean;
 }
 
 /** Rewrite the banned-comfort family to "I'm right here", reporting what was hit. */
@@ -82,38 +90,90 @@ const STAGE_DIRECTION = /\s*\*\([^)]*\)\*/g; // *(Now shifts to SAFE HAVEN mode 
 // parenthetical with one of these tokens, so the trailing `[^)]*` is safe.
 const RULE_PAREN = /\s*\((?:rule\s*\d+|care system|step\s*[1-5]|(?:safe[- ]haven|secure base)\s+mode)[^)]*\)/gi;
 
+// A sentence/line that names the machinery in BARE PROSE (the wrapped forms
+// above are removed first, so what reaches this is unwrapped): "Rule 8",
+// "safe-haven mode", "secure base mode". Excising just the token would leave a
+// fragment ("This is  : pure presence"), so a whole sentence containing one of
+// these is dropped instead. Deliberately NOT "care system": in bare prose it
+// collides with ordinary talk ("the mental health care system failed you"),
+// and dropping that sentence would delete real content. The wrapped
+// "(Care System Step 1)" form is still removed by RULE_PAREN, and detection
+// still flags a bare mention for the log — it just isn't sentence-stripped.
+const BARE_NARRATION = /\brule\s*\d+\b|\b(?:safe[- ]haven|secure base)\s+mode\b/i;
+
+// Below this many characters a stripped reply is treated as gutted: we let the
+// (still-leaking) text through, flagged, rather than hand back near-nothing.
+const MIN_KEPT_CHARS = 20;
+
 /** The self-narration forms present in `text`, by machine name. Empty when clean. */
 export function detectSelfNarration(text: string): string[] {
   return NARRATION_DETECT.filter((d) => d.re.test(text)).map((d) => d.name);
 }
 
+/** Tidy the spacing that a removal leaves behind. */
+function tidy(s: string): string {
+  return s
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+([.,!?;:])/g, "$1")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Drop whole sentences/lines that name the machinery in bare prose. */
+function dropNarrationSentences(text: string): string {
+  const units = text.match(/[^.!?\n]*(?:[.!?]+|\n+|$)/g) ?? [text];
+  return units.filter((u) => u.length > 0 && !BARE_NARRATION.test(u)).join("");
+}
+
 /**
- * Remove the wrapped self-narration forms (a "*(…)*" stage direction and a
- * "(Rule N)" / "(Care System Step N)" / "(… mode)" citation), then tidy the
- * spacing the removal leaves behind. Reports the forms that were present.
+ * Remove self-narration in two passes:
+ *   1. the wrapped forms — a "*(…)*" stage direction and a "(Rule 8 …)"
+ *      parenthetical — always a clean removal;
+ *   2. bare-prose machinery mentions — drop the whole sentence, since excising
+ *      the token alone leaves a fragment.
+ *
+ * Safeguard: if pass 2 (or, failing that, an all-stage-direction reply in pass
+ * 1) would leave the reply below MIN_KEPT_CHARS, don't hand back near-nothing.
+ * Keep the most-cleaned text that still has real content and set `flagged` so
+ * the caller logs the residual leak. A slightly broken reply beats an empty
+ * one — on a crisis turn an empty reply is dangerous.
  */
 export function stripSelfNarration(text: string): StripResult {
   const hits = detectSelfNarration(text);
   if (hits.length === 0) return { text, hits };
-  const out = text
-    .replace(STAGE_DIRECTION, "")
-    .replace(RULE_PAREN, "")
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/[ \t]+([.,!?;:])/g, "$1")
-    .replace(/[ \t]+\n/g, "\n")
-    .trim();
-  return { text: out, hits };
+
+  const wrapped = tidy(text.replace(STAGE_DIRECTION, "").replace(RULE_PAREN, ""));
+  const sentences = tidy(dropNarrationSentences(wrapped));
+
+  // Pass 2 removed sentences and that guts the reply → keep the wrapped-cleaned
+  // text (bare-prose leak stays) and flag it.
+  if (wrapped.length - sentences.length > 0 && sentences.length < MIN_KEPT_CHARS) {
+    return { text: wrapped.length > 0 ? wrapped : text.trim(), hits, flagged: true };
+  }
+  // The clean removal itself emptied the reply (the whole thing was a wrapped
+  // stage direction) → let the original through, flagged, rather than empty.
+  if (sentences.length === 0) return { text: text.trim(), hits, flagged: true };
+
+  return { text: sentences, hits };
 }
 
 export interface GuardResult {
   text: string;
   bannedComfort: string[];
   selfNarration: string[];
+  /** True when self-narration was detected but left in the text (see StripResult.flagged). */
+  selfNarrationFlagged?: boolean;
 }
 
 /** Apply both guards to a reply. Returns the cleaned text and what each found. */
 export function guardReply(text: string): GuardResult {
   const a = stripBannedComfort(text);
   const b = stripSelfNarration(a.text);
-  return { text: b.text, bannedComfort: a.hits, selfNarration: b.hits };
+  return {
+    text: b.text,
+    bannedComfort: a.hits,
+    selfNarration: b.hits,
+    ...(b.flagged ? { selfNarrationFlagged: true } : {}),
+  };
 }
